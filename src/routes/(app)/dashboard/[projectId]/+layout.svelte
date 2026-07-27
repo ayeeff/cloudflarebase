@@ -399,7 +399,7 @@
 
 <div class="flex h-dvh overflow-hidden bg-background text-foreground">
 	<!-- Sidebar -->
-	<aside class="hidden w-60 shrink-0 flex-col border-r border-border bg-card md:flex">
+	<aside class="hidden w-60 shrink-0 flex-col border-r border-border bg-card lg:flex">
 		<a
 			href={resolve('/')}
 			class="flex h-14 shrink-0 items-center gap-2 border-b border-border px-5 font-bold"
@@ -503,10 +503,10 @@
 				class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-3 py-3 sm:px-6 md:h-14 md:flex-nowrap md:py-0"
 			>
 				<div class="flex min-w-0 items-center gap-2 text-sm">
-					<a href={resolve('/')} class="shrink-0 md:hidden" aria-label="Cloudflarebase home">
+					<a href={resolve('/')} class="shrink-0 lg:hidden" aria-label="Cloudflarebase home">
 						<img src="/brand/mark.svg" alt="" class="h-5 w-5" />
 					</a>
-					<span class="hidden text-muted-foreground md:inline">Project</span>
+					<span class="hidden text-muted-foreground lg:inline">Project</span>
 					<Badge
 						variant="secondary"
 						class="max-w-28 truncate font-mono sm:max-w-none"
@@ -553,7 +553,7 @@
 			</header>
 			{#if !mobileAgentOpen}
 				<nav
-					class="flex gap-1 overflow-x-auto border-b px-3 py-2 md:hidden"
+					class="flex gap-1 overflow-x-auto border-b px-3 py-2 lg:hidden"
 					aria-label="Project tools"
 				>
 					<a
@@ -611,7 +611,7 @@
 				</ScrollArea>
 			{/if}
 
-			<nav class="flex border-t border-border bg-card md:hidden" aria-label="Project view">
+			<nav class="flex border-t border-border bg-card lg:hidden" aria-label="Project view">
 				<button
 					type="button"
 					class={[
@@ -643,7 +643,8 @@
 		</Resizable.Pane>
 
 		{#if !isMobile.current}
-			<!-- hidden md:flex kills the SSR flash on phones: the server always
+			<!-- hidden lg:flex kills the SSR flash on phones and portrait tablets:
+			     the server always
 			     renders this desktop pane (it cannot know the viewport), and CSS
 			     hides it at first paint until hydration removes it. The pane stays
 			     mounted while closed (collapsed to 0) so collapse/expand can
@@ -652,8 +653,8 @@
 				withHandle
 				onDraggingChange={(dragging) => (paneDragging = dragging)}
 				class={[
-					'hidden after:w-2 hover:bg-primary/50 md:flex [&>div]:h-10 [&>div]:w-1.5',
-					!copilotOpen && 'md:hidden'
+					'hidden after:w-2 hover:bg-primary/50 lg:flex [&>div]:h-10 [&>div]:w-1.5',
+					!copilotOpen && 'lg:hidden'
 				]}
 			/>
 			<Resizable.Pane
@@ -668,7 +669,7 @@
 				onCollapse={() => setCopilotOpen(false)}
 				onExpand={() => setCopilotOpen(true)}
 				class={[
-					'hidden min-w-0 flex-col md:flex',
+					'hidden min-w-0 flex-col lg:flex',
 					!paneDragging && 'transition-[flex-grow] duration-300 ease-out'
 				]}
 			>
@@ -679,7 +680,7 @@
 
 	{#if !isMobile.current && !copilotOpen}
 		<div
-			class="hidden w-10 shrink-0 flex-col items-center gap-3 border-l border-border bg-background py-3 md:flex"
+			class="hidden w-10 shrink-0 flex-col items-center gap-3 border-l border-border bg-background py-3 lg:flex"
 			in:fly={{ x: 12, duration: 180, delay: 200, easing: cubicOut }}
 			out:fly={{ x: 12, duration: 120, easing: cubicOut }}
 		>
