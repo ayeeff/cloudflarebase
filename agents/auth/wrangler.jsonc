@@ -37,14 +37,6 @@
 	},
 	"upload_source_maps": true,
 	"compatibility_flags": ["nodejs_compat", "nodejs_als"],
-	// Drizzle migrations are imported as text modules (drizzle/migrations.js).
-	"rules": [
-		{
-			"type": "Text",
-			"globs": ["**/*.sql"],
-			"fallthrough": true,
-		},
-	],
 	"workers_dev": false,
 	"preview_urls": false,
 	"ai": {
@@ -53,26 +45,46 @@
 	"send_email": [{ "name": "EMAIL" }],
 
 	/**
-	 * BETTER_AUTH_SECRET must be set as a secret for deployed environments:
-	 *   npx wrangler secret put BETTER_AUTH_SECRET [--env preview]
-	 * TRUSTED_ORIGINS is a comma-separated list of origins allowed to call
-	 * the per-project auth endpoints (CSRF protection).
+	 * No secret has to be set for this Worker to work.
 	 *
-	 * Optional secrets: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (social
-	 * sign-in), CF_ACCOUNT_ID / CF_ANALYTICS_API_TOKEN (Analytics Engine SQL
-	 * API querying — writes need no credentials).
+	 * BETTER_AUTH_SECRET is optional: when unset, each project generates its
+	 * own signing key on first start and keeps it in its own Durable Object
+	 * storage. Set it with `wrangler secret put BETTER_AUTH_SECRET` only if you
+	 * want to own and rotate the value yourself - it then applies to every
+	 * project on this deployment.
+	 *
+	 * Also optional: GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET (social sign-in,
+	 * settable per project from the console instead), and CF_ACCOUNT_ID /
+	 * CF_ANALYTICS_API_TOKEN (Analytics Engine SQL reads - writes need no
+	 * credentials).
+	 *
+	 * Self-hosted defaults. cloudflarebase.com's own values are in
+	 * env.production - the top level must be deployable by someone who does
+	 * not own this project's domain or mail sender.
+	 *
+	 * TRUSTED_ORIGINS is the CSRF allowlist for EXTRA origins. A deployment
+	 * trusts its own origin automatically, so sign-in works right after a
+	 * fresh deploy with this empty. Add origins here (comma separated, no
+	 * trailing slash) only when another domain serves the console or calls
+	 * the API with cookies.
+	 *
+	 * DEMO_MODE is absent on purpose. It makes demo-<hex> projects throwaway -
+	 * capped, mail-less, and self-erasing after DEMO_TTL_HOURS - which is only
+	 * wanted on a public demo.
 	 */
 	"vars": {
 		"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-		"SENTRY_DSN": "https://50ed6e26b886124ac39e983efb72144d@o4510375271530496.ingest.de.sentry.io/4511764380778576",
+		// Empty on purpose: a committed DSN would collect every fork's errors.
+		// Set your own with `wrangler secret put SENTRY_DSN` to turn it on.
+		"SENTRY_DSN": "",
 		"SENTRY_ENV": "production",
-		"TRUSTED_ORIGINS": "https://cloudflarebase.com",
+		"TRUSTED_ORIGINS": "",
 		"WAE_DATASET": "cloudflarebase_auth_events",
-		"EMAIL_FROM": "auth@notifications.cloudflarebase.com",
+		"EMAIL_FROM": "",
 	},
 
 	"secrets": {
-		"required": ["CF_ACCOUNT_ID", "CF_ANALYTICS_API_TOKEN", "BETTER_AUTH_SECRET"],
+		"required": [],
 	},
 
 	// Metrics pipeline: every auth event writes a data point (event type,
@@ -86,6 +98,54 @@
 	],
 
 	"env": {
+		/**
+		 * cloudflarebase.com's own agent. The name is pinned rather than derived
+		 * so it stays `auth-agent`, which is what the dashboard Worker's
+		 * AUTH_AGENT service binding resolves. Wrangler does not inherit
+		 * top-level configuration into an environment, so this repeats it.
+		 */
+		"production": {
+			"name": "auth-agent",
+			"ai": { "binding": "AI" },
+			"send_email": [{ "name": "EMAIL" }],
+
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "AuthAgent",
+						"name": "AuthAgent",
+					},
+				],
+			},
+
+			"vars": {
+				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+				"DEMO_MODE": "true",
+				"DEMO_TTL_HOURS": "24",
+				// Committed on purpose: env.production is cloudflarebase.com's own
+				// block (forks deploy the top level, whose DSN stays empty).
+				"SENTRY_DSN": "https://50ed6e26b886124ac39e983efb72144d@o4510375271530496.ingest.de.sentry.io/4511764380778576",
+				"SENTRY_ENV": "production",
+				"TRUSTED_ORIGINS": "https://cloudflarebase.com",
+				"WAE_DATASET": "cloudflarebase_auth_events",
+				"EMAIL_FROM": "auth@notifications.cloudflarebase.com",
+			},
+
+			"analytics_engine_datasets": [
+				{
+					"binding": "AUTH_EVENTS",
+					"dataset": "cloudflarebase_auth_events",
+				},
+			],
+
+			"workers_dev": false,
+			"preview_urls": false,
+
+			"secrets": {
+				"required": [],
+			},
+		},
+
 		"local": {
 			"name": "auth-agent-local",
 			"ai": {
@@ -104,6 +164,8 @@
 
 			"vars": {
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+				"DEMO_MODE": "true",
+				"DEMO_TTL_HOURS": "24",
 				"TRUSTED_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8788",
 				"WAE_DATASET": "cloudflarebase_auth_events_local",
 			},
@@ -138,9 +200,18 @@
 			},
 
 			"vars": {
+				// Pinned so a reused local stack keeps sessions valid across restarts;
+				// unset, each project would generate its own. Test-only, worthless
+				// elsewhere.
 				"BETTER_AUTH_SECRET": "P6YAEopHeROWj8TE/tlIA7HnPNO8CGsF6bw+5G5UVxsVidsO5pJF8by37OWYEBlE",
 				"DISABLE_RATE_LIMIT": "true",
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+				// DEMO_MODE is deliberately NOT set on the agent here, while the web
+				// Worker does set it. The web flag is what lets anonymous demo
+				// traffic past the console guard, which the demo specs need; the
+				// agent flag would additionally refuse the console owner claim,
+				// which console.setup.ts performs and every operator spec depends
+				// on. A real demo deployment sets both.
 				"TRUSTED_ORIGINS": "http://localhost:8797,http://127.0.0.1:8797",
 				"WAE_DATASET": "cloudflarebase_auth_events_test",
 			},
@@ -178,10 +249,12 @@
 
 			"vars": {
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+				"DEMO_MODE": "true",
+				"DEMO_TTL_HOURS": "24",
 				"EMAIL_FROM": "auth@notifications.cloudflarebase.com",
 				"SENTRY_DSN": "https://093f7505d223a871223f9a15130ef116@o4510375271530496.ingest.de.sentry.io/4511764377043024",
 				"SENTRY_ENV": "preview",
-				"TRUSTED_ORIGINS": "https://preview.cloudflarebase.com",
+				"TRUSTED_ORIGINS": "https://preview-cloudflarebase-com.cloudflarebase.workers.dev",
 				"WAE_DATASET": "cloudflarebase_auth_events_preview",
 			},
 
@@ -196,7 +269,7 @@
 			"preview_urls": false,
 
 			"secrets": {
-				"required": ["CF_ACCOUNT_ID", "CF_ANALYTICS_API_TOKEN", "BETTER_AUTH_SECRET"],
+				"required": [],
 			},
 		},
 	},

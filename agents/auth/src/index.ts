@@ -1,8 +1,9 @@
 import * as Sentry from '@sentry/cloudflare';
-import { routeAgentRequest } from 'agents';
+import { getAgentByName, routeAgentRequest } from 'agents';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { AuthAgent as AuthAgentBase } from './agent';
 import { getFleetOverview } from './fleet';
+import { projectIdSchema } from './schemas';
 
 export type {
 	AgentChatReply,
@@ -14,6 +15,7 @@ export type {
 	FleetProjectCounts,
 } from './agent';
 export type { FleetOverview, FleetProject, FleetTotals } from './fleet';
+export type { AssertAuthAgentEnv, AuthAgentBindings } from './bindings';
 
 const sentryOptions = (env: Env) => ({
 	dsn: env.SENTRY_DSN,
@@ -25,7 +27,7 @@ const sentryOptions = (env: Env) => ({
 export const AuthAgent = Sentry.instrumentDurableObjectWithSentry(sentryOptions, AuthAgentBase);
 
 /**
- * Auth service for Cloudflarebase. Each project gets its own AuthAgent — a
+ * Auth service for Cloudflarebase. Each project gets its own AuthAgent - a
  * SQLite-backed Durable Object running Better Auth with realtime state sync.
  *
  * Reached two ways:
@@ -40,8 +42,23 @@ class AuthService extends WorkerEntrypoint<Env> {
 			return Response.json({ service: 'auth-agent', status: 'ok' });
 		}
 
+		// Erases one project's auth data. Outside /agents/* for the same reason
+		// the fleet rollup is: reachable only over the dashboard's service
+		// binding. The console owns the fan-out across agents, so this endpoint
+		// knows nothing about any agent but its own.
+		const erase = url.pathname.match(/^\/internal\/projects\/([^/]+)$/);
+		if (erase && request.method === 'DELETE') {
+			const projectId = decodeURIComponent(erase[1]);
+			if (!projectIdSchema.safeParse(projectId).success) {
+				return Response.json({ error: 'invalid project id' }, { status: 400 });
+			}
+			const agent = await getAgentByName<Env, AuthAgentBase>(this.env.AuthAgent, projectId);
+			await agent.destroy();
+			return Response.json({ erased: true });
+		}
+
 		// Fleet rollup for the platform admin dashboard. Not under /agents/*, so
-		// it is only reachable via the dashboard's service binding — the worker
+		// it is only reachable via the dashboard's service binding - the worker
 		// has no public route and the dashboard forwards only /agents/* paths.
 		if (url.pathname === '/fleet/overview') {
 			const requestedLimit = Number(url.searchParams.get('limit'));

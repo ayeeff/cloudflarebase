@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { CONSOLE_STORAGE_STATE } from './e2e/helpers';
 
 /**
  * E2E tests against a production-mirroring local stack:
@@ -11,7 +12,7 @@ import { defineConfig, devices } from '@playwright/test';
  *    target any deployed (or tunnelled) stack; the local servers are then not
  *    started. With BrowserStack, run through `browserstack-node-sdk` (or a
  *    `connectOptions` endpoint) and expose the local stack with BrowserStack
- *    Local — no test changes required.
+ *    Local - no test changes required.
  *  - The only exception is the direct agent smoke test, which skips itself
  *    when BASE_URL is set (the agent worker has no public route).
  */
@@ -31,32 +32,43 @@ export default defineConfig({
 		trace: 'on-first-retry'
 	},
 	projects: [
+		// Claims the console owner and saves the operator session. Runs first:
+		// every console surface (including the endpoints the seed reads back)
+		// requires that session.
+		{
+			name: 'console',
+			testMatch: /console\.setup\.ts/,
+			use: { extraHTTPHeaders: { origin: baseURL } }
+		},
 		// Seeds baseline data through the public API; everything depends on it.
 		// Better Auth requires an Origin header on cookie-carrying POSTs, which
-		// browsers send automatically — API contexts must set it themselves
+		// browsers send automatically - API contexts must set it themselves
 		// (individual tests can still override it, e.g. the CSRF spec).
 		{
 			name: 'seed',
-			testMatch: /.*\.setup\.ts/,
-			use: { extraHTTPHeaders: { origin: baseURL } }
+			testMatch: /seed\.setup\.ts/,
+			dependencies: ['console'],
+			use: { extraHTTPHeaders: { origin: baseURL }, storageState: CONSOLE_STORAGE_STATE }
 		},
-		// Backend/API tests — no browser, Playwright request contexts only.
+		// Backend/API tests - no browser, Playwright request contexts only.
+		// Specs that need to prove a route is closed opt out of the stored
+		// session with their own `test.use({ storageState: ... })`.
 		{
 			name: 'api',
 			testMatch: /.*\.api\.spec\.ts/,
 			dependencies: ['seed'],
-			use: { extraHTTPHeaders: { origin: baseURL } }
+			use: { extraHTTPHeaders: { origin: baseURL }, storageState: CONSOLE_STORAGE_STATE }
 		},
-		// Frontend tests — real browser against the built app.
+		// Frontend tests - real browser against the built app.
 		{
 			name: 'chromium',
-			use: { ...devices['Desktop Chrome'] },
+			use: { ...devices['Desktop Chrome'], storageState: CONSOLE_STORAGE_STATE },
 			testMatch: /.*\.ui\.spec\.ts/,
 			dependencies: ['seed']
 		}
 	],
 	// Locally, running servers are reused (fast re-runs, works with the VSCode
-	// Test Explorer keeping servers alive) — seeding is idempotent to support
+	// Test Explorer keeping servers alive) - seeding is idempotent to support
 	// this. CI always starts from wiped state for a strict fresh-DB guarantee.
 	// kill-port clears zombie workerd processes that survive a killed wrangler
 	// wrapper on Windows and would otherwise hold ports/file locks.

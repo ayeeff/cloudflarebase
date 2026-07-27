@@ -1,4 +1,5 @@
 import { betterAuth } from 'better-auth';
+import { APIError } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { anonymous, bearer, jwt } from 'better-auth/plugins';
 import type { DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
@@ -14,7 +15,7 @@ export interface AuthHookUser {
 }
 
 export interface ProjectAuthConfig {
-	/** Cloudflarebase project id — one AuthAgent (and one auth database) per project. */
+	/** Cloudflarebase project id - one AuthAgent (and one auth database) per project. */
 	projectId: string;
 	/** Drizzle handle over the Durable Object's embedded SQLite database. */
 	db: AuthDatabase;
@@ -35,6 +36,14 @@ export interface ProjectAuthConfig {
 		to: string;
 		url: string;
 	}) => Promise<void>;
+	/**
+	 * Veto over user creation, consulted at the database layer. Returning a
+	 * reason string rejects the creation with 403. Route-level checks cannot
+	 * cover every path that creates a user - social sign-in creates one
+	 * implicitly on the OAuth callback without touching any sign-up route - so
+	 * an instance that must not grow (the console) enforces it here.
+	 */
+	denyUserCreation?: () => Promise<string | null>;
 	onUserCreated?: (user: AuthHookUser) => void | Promise<void>;
 	onSessionActivity?: (
 		session: { id: string; userId: string },
@@ -52,7 +61,15 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 		appName: `cloudflarebase:${config.projectId}`,
 		basePath: '/api/auth',
 		secret: config.secret,
-		trustedOrigins: config.trustedOrigins,
+		// A deployment trusts its own origin automatically: a browser only sends
+		// an Origin equal to the URL it is actually on, so same-origin requests
+		// are never CSRF. The configured list is for anything else - custom
+		// domains, external apps - and a fresh install needs no configuration
+		// before sign-in works.
+		trustedOrigins: (request) => [
+			...config.trustedOrigins,
+			request ? new URL(request.url).origin : null,
+		],
 		database: drizzleAdapter(config.db, {
 			provider: 'sqlite',
 			schema,
@@ -86,7 +103,7 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 				'/sign-in/anonymous': { window: 60, max: 20 },
 			},
 		},
-		// Guest sign-in (POST /sign-in/anonymous) — adds user.isAnonymous.
+		// Guest sign-in (POST /sign-in/anonymous) - adds user.isAnonymous.
 		plugins: [
 			anonymous(),
 			bearer(),
@@ -127,10 +144,24 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 			// Scope cookies per project so multiple project dashboards on the
 			// same origin don't clobber each other's sessions.
 			cookiePrefix: `cfb-${config.projectId}`,
+			// Cloudflare resolves the client address at the edge and overwrites
+			// any inbound attempt to spoof it. Without this, rate limiting
+			// cannot see an IP and falls back to one shared per-path bucket,
+			// where a single noisy client exhausts sign-in for everyone.
+			ipAddress: {
+				ipAddressHeaders: ['cf-connecting-ip'],
+			},
 		},
 		databaseHooks: {
 			user: {
 				create: {
+					before: async (user) => {
+						const denied = await config.denyUserCreation?.();
+						if (denied) {
+							throw new APIError('FORBIDDEN', { message: denied });
+						}
+						return { data: user };
+					},
 					after: async (user) => {
 						await config.onUserCreated?.(user as AuthHookUser);
 					},

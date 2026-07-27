@@ -9,10 +9,17 @@ on:
       - 'agents/auth/**'
       - 'src/lib/**'
 
+permissions:
+  contents: read
+
 jobs:
   deploy-prod:
     runs-on: ubuntu-latest
     name: Deploy Prod
+    # Cloudflare credentials live in this GitHub environment, not repository
+    # secrets, so only jobs that declare it - running refs its protection
+    # rules allow - can read them.
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -32,3 +39,7 @@ jobs:
           accountId: ${{ secrets.CF_ACCOUNT_ID}}
           workingDirectory: 'agents/auth'
           packageManager: npm
+          # The top level of wrangler.jsonc is the self-hosted default now;
+          # cloudflarebase.com's own configuration lives in env.production,
+          # which pins the Worker name back to `auth-agent`.
+          environment: production
