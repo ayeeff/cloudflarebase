@@ -13,7 +13,7 @@ name: Release
 # wait for an approval click on the exact ref being released.
 #
 # One-time setup per package on npmjs.com (package settings → Trusted
-# Publisher): repository cloudflarebase/cloudflarebase.com, workflow
+# Publisher): repository cloudflarebase/cloudflarebase, workflow
 # release.yaml, environment release. If npm will not accept a trusted
 # publisher for a package that has never been published, publish the first
 # version locally with `npm publish --access public`, configure the trusted

@@ -2,7 +2,7 @@
 
 Better Auth on a Cloudflare Durable Object. One isolated instance per project,
 each with its own embedded SQLite database, in your account. This is the auth
-primitive behind [Cloudflarebase](https://github.com/cloudflarebase/cloudflarebase.com).
+primitive behind [Cloudflarebase](https://github.com/cloudflarebase/cloudflarebase).
 
 What each project's agent gives you: email/password, guest, and social sign-in;
 cookie sessions and bearer tokens; project-signed JWTs (`GET /token`, keys on

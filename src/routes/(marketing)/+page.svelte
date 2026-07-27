@@ -138,7 +138,7 @@
 		},
 		{
 			q: 'Can I run it on my own Cloudflare account?',
-			a: 'Yes - it is open source under Apache-2.0 at github.com/cloudflarebase/cloudflarebase.com. It is two Workers deployed with Wrangler, and the README walks through the deploy order for your own account. No secrets are required: each project generates its own signing key.'
+			a: 'Yes - it is open source under Apache-2.0 at github.com/cloudflarebase/cloudflarebase. It is two Workers deployed with Wrangler, and the README walks through the deploy order for your own account. No secrets are required: each project generates its own signing key.'
 		},
 		{
 			q: 'Is this production-ready?',
@@ -279,7 +279,7 @@
 					<div class="hero-stagger text-center sm:mx-auto lg:mt-0 lg:mr-auto">
 						<div>
 							<a
-								href="https://github.com/cloudflarebase/cloudflarebase.com"
+								href="https://github.com/cloudflarebase/cloudflarebase"
 								target="_blank"
 								rel="noreferrer"
 								class="mx-auto flex w-fit items-center gap-4 rounded-full border bg-muted p-1 pl-4 shadow-md shadow-zinc-950/5 transition-colors hover:bg-muted/70 dark:border-t-white/5 dark:shadow-zinc-950"
@@ -322,7 +322,7 @@
 								size="lg"
 								variant="ghost"
 								class="rounded-xl px-5"
-								href="https://github.com/cloudflarebase/cloudflarebase.com"
+								href="https://github.com/cloudflarebase/cloudflarebase"
 								target="_blank"
 								rel="noreferrer"
 							>
@@ -768,7 +768,7 @@
 				<Button
 					size="lg"
 					variant="outline"
-					href="https://github.com/cloudflarebase/cloudflarebase.com"
+					href="https://github.com/cloudflarebase/cloudflarebase"
 					target="_blank"
 					rel="noreferrer"
 				>
@@ -814,7 +814,7 @@
 							Resources
 						</h4>
 						<a
-							href="https://github.com/cloudflarebase/cloudflarebase.com"
+							href="https://github.com/cloudflarebase/cloudflarebase"
 							target="_blank"
 							rel="noreferrer"
 							class="mb-2.5 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
