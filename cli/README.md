@@ -1,6 +1,6 @@
 # @cloudflarebase/cli
 
-Scaffold and deploy a [Cloudflarebase](https://github.com/cloudflarebase/cloudflarebase.com)
+Scaffold and deploy a [Cloudflarebase](https://github.com/cloudflarebase/cloudflarebase)
 backend on your own Cloudflare account.
 
 ```bash

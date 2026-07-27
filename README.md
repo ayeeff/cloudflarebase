@@ -25,8 +25,8 @@ same shape.
 ## Run it locally
 
 ```bash
-git clone https://github.com/cloudflarebase/cloudflarebase.com.git
-cd cloudflarebase.com
+git clone https://github.com/cloudflarebase/cloudflarebase.git
+cd cloudflarebase
 npm install
 npm run dev
 ```
@@ -39,8 +39,8 @@ dev runs in demo mode, so you get a throwaway project without signing in.
 Two Workers. The agent goes first because the dashboard binds to it by name
 (Cloudflare's deploy button does one Worker per click).
 
-1. Agent: [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflarebase/cloudflarebase.com/tree/main/agents/auth)
-2. Dashboard: [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflarebase/cloudflarebase.com)
+1. Agent: [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflarebase/cloudflarebase/tree/main/agents/auth)
+2. Dashboard: [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflarebase/cloudflarebase)
 
 Or from a clone: `npm run deploy:all`.
 

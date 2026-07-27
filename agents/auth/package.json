@@ -6,11 +6,11 @@
 	"type": "module",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/cloudflarebase/cloudflarebase.com.git",
+		"url": "git+https://github.com/cloudflarebase/cloudflarebase.git",
 		"directory": "agents/auth"
 	},
-	"homepage": "https://github.com/cloudflarebase/cloudflarebase.com/tree/main/agents/auth#readme",
-	"bugs": "https://github.com/cloudflarebase/cloudflarebase.com/issues",
+	"homepage": "https://github.com/cloudflarebase/cloudflarebase/tree/main/agents/auth#readme",
+	"bugs": "https://github.com/cloudflarebase/cloudflarebase/issues",
 	"keywords": [
 		"cloudflare",
 		"workers",
