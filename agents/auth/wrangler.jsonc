@@ -203,7 +203,7 @@
 				// Pinned so a reused local stack keeps sessions valid across restarts;
 				// unset, each project would generate its own. Test-only, worthless
 				// elsewhere.
-				"BETTER_AUTH_SECRET": "P6YAEopHeROWj8TE/tlIA7HnPNO8CGsF6bw+5G5UVxsVidsO5pJF8by37OWYEBlE",
+				"BETTER_AUTH_SECRET": "cloudflarebase-e2e-test-secret-at-least-32-chars-long",
 				"DISABLE_RATE_LIMIT": "true",
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 				// DEMO_MODE is deliberately NOT set on the agent here, while the web
