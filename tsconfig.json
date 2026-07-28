@@ -3,7 +3,11 @@
 	"compilerOptions": {
 		"rewriteRelativeImportExtensions": true,
 		"allowJs": true,
-		"checkJs": true,
+		// checkJs must stay off: wrangler types emits GlobalProps.mainModule as
+		// `typeof import(<main>)`, and main is the BUILT bundle - with checkJs
+		// on, any tree that has run a build gets thousands of errors from
+		// type-checking .svelte-kit/cloudflare/_worker.js. All source is TS.
+		"checkJs": false,
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true,
