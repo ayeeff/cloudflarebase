@@ -1355,6 +1355,11 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 	 */
 	async destroy(): Promise<void> {
 		await this.ctx.storage.deleteAll();
+		// deleteAll() leaves the Durable Object's alarm armed. An orphaned alarm
+		// wakes the erased object later, where the SDK's alarm handler dies
+		// querying its dropped cf_agents_schedules table - and a demo shell
+		// revived that way would even schedule itself a fresh expiry.
+		await this.ctx.storage.deleteAlarm();
 		setTimeout(() => this.ctx.abort(), 0);
 	}
 

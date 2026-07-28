@@ -60,7 +60,7 @@ Two project ids get special behaviour, decided in `onRequest` before Better Auth
 
 Expiry uses `this.schedule(seconds, 'expireDemoProject', undefined, { idempotent: true })` from `onStart`: repeated wakes reuse one row, and the deadline runs from first provision. `expireDemoProject()` re-checks the flag before erasing, so pending timers cannot delete real projects if `DEMO_MODE` is later unset.
 
-`destroy()` calls `ctx.storage.deleteAll()` (drops the whole SQLite database and KV entries), then defers `ctx.abort()` by a tick - aborting immediately would destroy the RPC's own response and make every successful delete look like a failure.
+`destroy()` calls `ctx.storage.deleteAll()` (drops the whole SQLite database and KV entries) and `deleteAlarm()` - deleteAll leaves the DO alarm armed, and an orphaned alarm wakes the erased object where the SDK's handler dies reading its dropped `cf_agents_schedules` table - then defers `ctx.abort()` by a tick, because aborting immediately would destroy the RPC's own response and make every successful delete look like a failure.
 
 `e2e/demo-project.api.spec.ts` pins that a demo project still serves the whole Integration-tab REST flow unauthenticated.
 

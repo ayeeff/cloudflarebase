@@ -936,7 +936,10 @@
 						<Card.Root data-testid="sessions-card">
 							<Card.Header>
 								<Card.Title>Active sessions</Card.Title>
-								<Card.Description>{overview.sessions.length} currently active</Card.Description>
+								<!-- Counter, not overview.sessions.length: that array is capped by
+								     the agent, so past the cap it disagreed with the stat tile
+								     directly above this card. -->
+								<Card.Description>{agentState.activeSessions} currently active</Card.Description>
 							</Card.Header>
 							<Card.Content>
 								{#if overview.sessions.length === 0}
