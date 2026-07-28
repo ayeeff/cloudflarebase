@@ -20,7 +20,12 @@ const SCHEMA_STATEMENTS = [
 		name text NOT NULL,
 		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL
 	)`,
-	`CREATE INDEX IF NOT EXISTS project_created_at ON project (created_at)`
+	`CREATE INDEX IF NOT EXISTS project_created_at ON project (created_at)`,
+	`CREATE TABLE IF NOT EXISTS demo_project (
+		id text PRIMARY KEY NOT NULL,
+		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS demo_project_created_at ON demo_project (created_at)`
 ];
 
 /**

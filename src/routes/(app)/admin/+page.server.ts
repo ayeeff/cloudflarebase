@@ -1,5 +1,6 @@
 import type { FleetOverview } from '$lib/agents';
 import { requireAuthAgent } from '$lib/server/auth-agent';
+import { countDemoProjectsAllTime } from '$lib/server/demo-log';
 import { error, fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -21,19 +22,22 @@ async function sha256Hex(value: string): Promise<string> {
 export const load: PageServerLoad = async ({ cookies, platform, url }) => {
 	const secret = platform?.env?.ADMIN_SECRET;
 	if (!secret) {
-		return { configured: false, authed: false, fleet: null };
+		return { configured: false, authed: false, fleet: null, demosAllTime: null };
 	}
 	if (cookies.get(COOKIE) !== (await sha256Hex(secret))) {
-		return { configured: true, authed: false, fleet: null };
+		return { configured: true, authed: false, fleet: null, demosAllTime: null };
 	}
 
 	const agent = requireAuthAgent(platform);
-	const response = await agent.fetch(`${url.origin}/fleet/overview`);
+	const [response, demosAllTime] = await Promise.all([
+		agent.fetch(`${url.origin}/fleet/overview`),
+		countDemoProjectsAllTime(platform)
+	]);
 	if (!response.ok) {
 		error(502, `auth agent fleet endpoint responded with ${response.status}`);
 	}
 	const fleet = (await response.json()) as FleetOverview;
-	return { configured: true, authed: true, fleet };
+	return { configured: true, authed: true, fleet, demosAllTime };
 };
 
 export const actions: Actions = {

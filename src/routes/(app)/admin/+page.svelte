@@ -28,8 +28,10 @@
 			? [
 					{
 						id: 'demos',
+						// All-time from the control-plane demo log; the fleet number only
+						// covers demos still visible in the 90-day event window.
 						label: 'Demos created',
-						value: `${fleet.totals.demoProjects}`,
+						value: `${data.demosAllTime ?? fleet.totals.demoProjects}`,
 						icon: FlaskConical
 					},
 					{
