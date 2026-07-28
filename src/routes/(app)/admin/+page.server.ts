@@ -1,6 +1,6 @@
 import type { FleetOverview } from '$lib/agents';
 import { requireAuthAgent } from '$lib/server/auth-agent';
-import { countDemoProjectsAllTime } from '$lib/server/demo-log';
+import { absorbFleetDemos, countDemoProjectsAllTime } from '$lib/server/demo-log';
 import { error, fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -29,14 +29,19 @@ export const load: PageServerLoad = async ({ cookies, platform, url }) => {
 	}
 
 	const agent = requireAuthAgent(platform);
-	const [response, demosAllTime] = await Promise.all([
-		agent.fetch(`${url.origin}/fleet/overview`),
-		countDemoProjectsAllTime(platform)
-	]);
+	const response = await agent.fetch(`${url.origin}/fleet/overview`);
 	if (!response.ok) {
 		error(502, `auth agent fleet endpoint responded with ${response.status}`);
 	}
 	const fleet = (await response.json()) as FleetOverview;
+
+	// The demo log postdates the first demos: fold what the fleet still sees
+	// into it before counting, so pre-log history is not reported as zero.
+	await absorbFleetDemos(
+		platform,
+		fleet.projects.filter((project) => project.demo)
+	);
+	const demosAllTime = await countDemoProjectsAllTime(platform);
 	return { configured: true, authed: true, fleet, demosAllTime };
 };
 
