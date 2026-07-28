@@ -1,3 +1,4 @@
+import { recordDemoProject } from '$lib/server/demo-log';
 import { listProjects } from '$lib/server/registry';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -19,6 +20,8 @@ export const load: PageServerLoad = async ({ cookies, locals, platform }) => {
 		let projectId = cookies.get(COOKIE);
 		if (!projectId || !PROJECT_PATTERN.test(projectId)) {
 			projectId = `demo-${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`;
+			// The all-time demo counter on /admin; recordDemoProject never rejects.
+			platform?.ctx.waitUntil(recordDemoProject(platform, projectId));
 			cookies.set(COOKIE, projectId, {
 				path: '/',
 				httpOnly: true,

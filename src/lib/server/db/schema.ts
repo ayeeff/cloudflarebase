@@ -24,3 +24,21 @@ export const project = sqliteTable(
 );
 
 export type ProjectRow = typeof project.$inferSelect;
+
+/**
+ * Append-only log of demo projects, written when the dashboard mints a
+ * `demo-<hex>` id for an anonymous visitor. Demo Durable Objects self-erase
+ * after DEMO_TTL_HOURS and their auth events age out of Analytics Engine after
+ * 90 days, so this log is the only all-time record - the fleet dashboard reads
+ * its count as the "demos created" total. Rows are never deleted.
+ */
+export const demoProject = sqliteTable(
+	'demo_project',
+	{
+		id: text('id').primaryKey(),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' })
+			.notNull()
+			.default(sql`(unixepoch() * 1000)`)
+	},
+	(table) => [index('demo_project_created_at').on(table.createdAt)]
+);

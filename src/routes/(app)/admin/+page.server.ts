@@ -1,5 +1,6 @@
 import type { FleetOverview } from '$lib/agents';
 import { requireAuthAgent } from '$lib/server/auth-agent';
+import { absorbFleetDemos, countDemoProjectsAllTime } from '$lib/server/demo-log';
 import { error, fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -21,10 +22,10 @@ async function sha256Hex(value: string): Promise<string> {
 export const load: PageServerLoad = async ({ cookies, platform, url }) => {
 	const secret = platform?.env?.ADMIN_SECRET;
 	if (!secret) {
-		return { configured: false, authed: false, fleet: null };
+		return { configured: false, authed: false, fleet: null, demosAllTime: null };
 	}
 	if (cookies.get(COOKIE) !== (await sha256Hex(secret))) {
-		return { configured: true, authed: false, fleet: null };
+		return { configured: true, authed: false, fleet: null, demosAllTime: null };
 	}
 
 	const agent = requireAuthAgent(platform);
@@ -33,7 +34,15 @@ export const load: PageServerLoad = async ({ cookies, platform, url }) => {
 		error(502, `auth agent fleet endpoint responded with ${response.status}`);
 	}
 	const fleet = (await response.json()) as FleetOverview;
-	return { configured: true, authed: true, fleet };
+
+	// The demo log postdates the first demos: fold what the fleet still sees
+	// into it before counting, so pre-log history is not reported as zero.
+	await absorbFleetDemos(
+		platform,
+		fleet.projects.filter((project) => project.demo)
+	);
+	const demosAllTime = await countDemoProjectsAllTime(platform);
+	return { configured: true, authed: true, fleet, demosAllTime };
 };
 
 export const actions: Actions = {

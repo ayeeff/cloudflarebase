@@ -48,9 +48,11 @@
 		"PUBLIC_SENTRY_DSN": "",
 		"PUBLIC_SENTRY_ENV": "production"
 	},
-	"secrets": {
-		"required": ["ADMIN_SECRET"]
-	},
+
+	// No required secrets: a fresh clone deploys with zero configuration.
+	// ADMIN_SECRET is optional - /admin (the fleet dashboard) reports itself
+	// unconfigured until you enable it with `wrangler secret put ADMIN_SECRET`.
+	// cloudflarebase.com's own environments below do require it.
 
 	"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent" }],
 
