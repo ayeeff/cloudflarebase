@@ -1,0 +1,35 @@
+{
+	"manifestVersion": 1,
+	"name": "db",
+	"title": "Database",
+	"description": "Firestore-style JSON documents with live queries, one Durable Object per collection.",
+	"packageName": "@cloudflarebase/db",
+	"worker": "db-agent",
+	"durableObjects": [
+		{ "class": "DbAgent", "scope": "perProject" },
+		{ "class": "DbCollection", "scope": "perCollection" }
+	],
+	"entrypoint": { "assertEnvType": "AssertDbAgentEnv" },
+	"erase": { "method": "DELETE", "path": "/internal/projects/:projectId" },
+	"bindings": {
+		"analyticsEngine": [{ "binding": "DB_EVENTS", "dataset": "cloudflarebase_db_events" }],
+		"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent", "optional": true }]
+	},
+	"secrets": { "generated": [], "optional": ["SENTRY_DSN"] },
+	"vars": {
+		"TRUSTED_ORIGINS": { "default": "", "hint": "Extra origins beyond the deployment's own." }
+	},
+	"routes": [
+		{ "path": "/collections/*", "access": "public" },
+		{ "path": "/config", "access": "public" },
+		{ "path": "/overview", "access": "operator" },
+		{ "path": "/admin/*", "access": "operator" }
+	],
+	"proxy": { "apiPrefix": "db", "agentBasePath": "" },
+	"permissions": ["documents:read", "documents:write", "collections:write"],
+	"console": {
+		"section": "Build",
+		"icon": "database",
+		"pages": [{ "path": "/db", "title": "Database", "testId": "nav-db" }]
+	}
+}

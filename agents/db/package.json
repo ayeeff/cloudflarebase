@@ -1,0 +1,75 @@
+{
+	"name": "@cloudflarebase/db",
+	"version": "0.1.0",
+	"description": "Firestore-style JSON documents with live queries on Cloudflare Durable Objects, one isolated instance per collection - the database primitive behind Cloudflarebase.",
+	"license": "Apache-2.0",
+	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/cloudflarebase/cloudflarebase.git",
+		"directory": "agents/db"
+	},
+	"homepage": "https://github.com/cloudflarebase/cloudflarebase/tree/main/agents/db#readme",
+	"bugs": "https://github.com/cloudflarebase/cloudflarebase/issues",
+	"keywords": [
+		"cloudflare",
+		"workers",
+		"durable-objects",
+		"database",
+		"realtime",
+		"live-queries",
+		"agents",
+		"cloudflarebase"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./client": {
+			"types": "./dist/client.d.ts",
+			"default": "./dist/client.js"
+		},
+		"./wrangler-fragment.jsonc": "./template/wrangler-fragment.jsonc",
+		"./cloudflarebase.agent.json": "./cloudflarebase.agent.json",
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"template",
+		"NOTICE",
+		"cloudflarebase.agent.json"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsc --noEmit",
+		"prepublishOnly": "npm run build",
+		"test:unit": "node --import tsx --test src/query.unit.test.ts src/live.unit.test.ts",
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev --env local --persist-to=../../.wrangler/state/ --ip 0.0.0.0 --port 8789",
+		"start": "wrangler dev",
+		"cf-typegen": "wrangler types",
+		"dev:test": "wrangler dev --env test --ip 127.0.0.1 --port 8799 --persist-to ../../.wrangler/test-state/db-agent",
+		"deploy:production": "wrangler deploy --env production",
+		"migrations": "drizzle-kit generate && node scripts/generate-migrations.mjs"
+	},
+	"devDependencies": {
+		"@types/node": "^26.1.1",
+		"drizzle-kit": "^0.31.10",
+		"tsx": "^4.20.0",
+		"typescript": "^5.5.2",
+		"wrangler": "^4.110.0"
+	},
+	"dependencies": {
+		"@sentry/cloudflare": "^10.66.0",
+		"agents": "^0.17.4",
+		"drizzle-orm": "^0.45.2",
+		"jose": "^6.0.11",
+		"zod": "^4.4.3"
+	}
+}
