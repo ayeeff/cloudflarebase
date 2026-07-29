@@ -18,7 +18,9 @@ export default defineConfig(
 	// ignored by a subproject's own .gitignore - agents/auth/dist, cli/dist -
 	// would otherwise be linted as source. Both are tsc output for published
 	// packages.
-	{ ignores: ['**/worker-configuration.d.ts', 'agents/auth/dist/', 'cli/dist/'] },
+	{
+		ignores: ['**/worker-configuration.d.ts', 'agents/auth/dist/', 'agents/db/dist/', 'cli/dist/']
+	},
 	js.configs.recommended,
 	ts.configs.recommended,
 	svelte.configs.recommended,

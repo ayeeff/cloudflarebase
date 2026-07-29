@@ -39,15 +39,14 @@ export const whereClauseSchema = z
 	.strictObject({
 		field: fieldPathSchema,
 		op: z.enum(['==', '!=', '<', '<=', '>', '>=', 'in', 'array-contains']),
-		value: z.union([scalarSchema, z.array(scalarSchema).min(1).max(20)])
+		value: z.union([scalarSchema, z.array(scalarSchema).min(1).max(20)]),
 	})
 	.refine((clause) => (clause.op === 'in') === Array.isArray(clause.value), {
-		message: "'in' takes an array of values; every other operator takes a scalar"
+		message: "'in' takes an array of values; every other operator takes a scalar",
 	})
-	.refine(
-		(clause) => clause.op === '==' || clause.op === '!=' || !isNullish(clause.value),
-		{ message: 'null can only be compared with == or !=' }
-	);
+	.refine((clause) => clause.op === '==' || clause.op === '!=' || !isNullish(clause.value), {
+		message: 'null can only be compared with == or !=',
+	});
 
 function isNullish(value: unknown): boolean {
 	return value === null || (Array.isArray(value) && value.some((entry) => entry === null));
@@ -55,7 +54,7 @@ function isNullish(value: unknown): boolean {
 
 export const orderBySchema = z.strictObject({
 	field: fieldPathSchema,
-	direction: z.enum(['asc', 'desc'])
+	direction: z.enum(['asc', 'desc']),
 });
 
 export const MAX_QUERY_LIMIT = 200;
@@ -65,7 +64,7 @@ export const querySchema = z.strictObject({
 	orderBy: z.array(orderBySchema).max(2).optional(),
 	limit: z.number().int().min(1).max(MAX_QUERY_LIMIT).optional(),
 	/** Opaque continuation from a previous page. REST only - never subscriptions. */
-	cursor: z.string().max(2048).optional()
+	cursor: z.string().max(2048).optional(),
 });
 
 export type Query = z.infer<typeof querySchema>;
@@ -83,11 +82,11 @@ export const documentDataSchema = z.record(z.string().max(256), z.unknown());
 
 export const createDocumentSchema = z.strictObject({
 	id: documentIdSchema.optional(),
-	data: documentDataSchema
+	data: documentDataSchema,
 });
 
 export const writeDocumentSchema = z.strictObject({
-	data: documentDataSchema
+	data: documentDataSchema,
 });
 
 /** The wire shape of a document: metadata outside `data`, no collisions. */
@@ -107,7 +106,7 @@ export type AccessMode = z.infer<typeof accessModeSchema>;
 
 export const collectionModesSchema = z.strictObject({
 	readAccess: accessModeSchema.default('auth'),
-	writeAccess: accessModeSchema.default('auth')
+	writeAccess: accessModeSchema.default('auth'),
 });
 
 /** Pushed parent -> child on create/config change; cached in collection_meta. */
@@ -119,7 +118,7 @@ export const collectionConfigSchema = z.strictObject({
 	allowedOrigins: z.array(z.string()).max(10),
 	demo: z.boolean(),
 	/** Monotonic; lets a child ignore a stale push after a failed retry. */
-	configVersion: z.number().int().min(0)
+	configVersion: z.number().int().min(0),
 });
 export type CollectionConfig = z.infer<typeof collectionConfigSchema>;
 
@@ -151,10 +150,10 @@ export const settingsRequestSchema = z.strictObject({
 						return z.NEVER;
 					}
 					return parsed.origin;
-				})
+				}),
 		)
 		.max(10)
-		.transform((origins) => [...new Set(origins)])
+		.transform((origins) => [...new Set(origins)]),
 });
 
 // ---------------------------------------------------------------------------
@@ -164,12 +163,12 @@ export const subscribeFrameSchema = z.strictObject({
 	type: z.literal('subscribe'),
 	id: z.string().min(1).max(64),
 	query: querySchema.omit({ cursor: true }),
-	token: z.string().max(8192).optional()
+	token: z.string().max(8192).optional(),
 });
 
 export const unsubscribeFrameSchema = z.strictObject({
 	type: z.literal('unsubscribe'),
-	id: z.string().min(1).max(64)
+	id: z.string().min(1).max(64),
 });
 
 export const clientFrameSchema = z.union([subscribeFrameSchema, unsubscribeFrameSchema]);
@@ -180,20 +179,20 @@ const dbDocumentSchema = z.object({
 	data: z.record(z.string(), z.unknown()),
 	owner: z.string().nullable(),
 	createdAt: z.string(),
-	updatedAt: z.string()
+	updatedAt: z.string(),
 });
 
 export const serverFrameSchema = z.union([
 	z.strictObject({
 		type: z.literal('snapshot'),
 		id: z.string(),
-		docs: z.array(dbDocumentSchema)
+		docs: z.array(dbDocumentSchema),
 	}),
 	z.strictObject({
 		type: z.literal('change'),
 		id: z.string(),
 		kind: z.enum(['added', 'modified', 'removed']),
-		doc: dbDocumentSchema
+		doc: dbDocumentSchema,
 	}),
 	z.strictObject({ type: z.literal('unsubscribed'), id: z.string() }),
 	z.strictObject({
@@ -205,10 +204,10 @@ export const serverFrameSchema = z.union([
 			'unauthorized',
 			'token-expired',
 			'subscription-limit',
-			'internal'
+			'internal',
 		]),
-		message: z.string()
-	})
+		message: z.string(),
+	}),
 ]);
 export type ServerFrame = z.infer<typeof serverFrameSchema>;
 
@@ -217,7 +216,7 @@ export type ServerFrame = z.infer<typeof serverFrameSchema>;
 
 /** The auth agent's JWKS endpoint - untrusted input across a binding. */
 export const jwksResponseSchema = z.object({
-	keys: z.array(z.record(z.string(), z.unknown())).max(10)
+	keys: z.array(z.record(z.string(), z.unknown())).max(10),
 });
 
 /** JWT payload after signature verification - claims we rely on. */
@@ -225,6 +224,6 @@ export const jwtClaimsSchema = z.object({
 	sub: z.string().min(1),
 	email: z.string().optional(),
 	role: z.string().optional(),
-	permissions: z.array(z.string()).optional()
+	permissions: z.array(z.string()).optional(),
 });
 export type JwtClaims = z.infer<typeof jwtClaimsSchema>;

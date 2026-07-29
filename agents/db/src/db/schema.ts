@@ -17,7 +17,7 @@ export const collections = sqliteTable('collections', {
 	/** Last count reported by the child; the child's own count is exact. */
 	docs: integer('docs').notNull().default(0),
 	createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
-	reportedAt: integer('reported_at', { mode: 'timestamp_ms' })
+	reportedAt: integer('reported_at', { mode: 'timestamp_ms' }),
 });
 
 /** DbCollection only: the documents of ONE collection. */
@@ -30,12 +30,12 @@ export const documents = sqliteTable(
 		/** jwt.sub stamped by owner-mode writes; null elsewhere. */
 		owner: text('owner'),
 		createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
-		updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
+		updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 	},
 	(table) => [
 		index('documents_updated_at').on(table.updatedAt),
-		index('documents_owner').on(table.owner)
-	]
+		index('documents_owner').on(table.owner),
+	],
 );
 
 /**
@@ -56,12 +56,12 @@ export const subscriptions = sqliteTable(
 		tokenExp: integer('token_exp'),
 		/** JSON id[] of the last delivered window - orderBy+limit queries only. */
 		lastMembership: text('last_membership'),
-		createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull()
+		createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 	},
 	(table) => [
 		primaryKey({ columns: [table.connId, table.subId] }),
-		index('subscriptions_conn').on(table.connId)
-	]
+		index('subscriptions_conn').on(table.connId),
+	],
 );
 
 /** DbCollection only: single-row cached config pushed from the parent. */
@@ -70,5 +70,5 @@ export const collectionMeta = sqliteTable('collection_meta', {
 	id: integer('id').primaryKey(),
 	/** JSON CollectionConfig. */
 	config: text('config').notNull(),
-	updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull()
+	updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 });

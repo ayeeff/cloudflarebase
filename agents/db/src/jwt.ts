@@ -51,7 +51,7 @@ export class ProjectJwtVerifier {
 	constructor(
 		private readonly storage: DurableObjectStorage,
 		private readonly env: JwksAuthEnv,
-		private readonly projectId: string
+		private readonly projectId: string,
 	) {}
 
 	get configured(): boolean {
@@ -72,8 +72,8 @@ export class ProjectJwtVerifier {
 				{
 					issuer: `cloudflarebase:${this.projectId}`,
 					audience: this.projectId,
-					algorithms: ALLOWED_ALGS
-				}
+					algorithms: ALLOWED_ALGS,
+				},
 			);
 			const claims = jwtClaimsSchema.safeParse(payload);
 			if (!claims.success) return { ok: false, code: 'invalid' };
@@ -85,7 +85,7 @@ export class ProjectJwtVerifier {
 
 	private async resolveKey(
 		kid: string | undefined,
-		alg: string | undefined
+		alg: string | undefined,
 	): Promise<CryptoKey | Uint8Array | null> {
 		const cacheId = kid ?? 'default';
 		const memoized = this.imported.get(cacheId);
@@ -143,7 +143,11 @@ export class ProjectJwtVerifier {
 			return this.env.AUTH_AGENT.fetch(url) as unknown as Promise<Response>;
 		}
 		if (this.env.AuthAgent) {
-			const stub = this.env.AuthAgent.get(this.env.AuthAgent.idFromName(this.projectId));
+			// Instantiating get()/fetch() over DurableObjectNamespace<any> sends
+			// tsc into unbounded recursion; the parameterless namespace type has
+			// the same runtime shape without the explosion.
+			const namespace = this.env.AuthAgent as unknown as DurableObjectNamespace;
+			const stub = namespace.get(namespace.idFromName(this.projectId));
 			return stub.fetch(url) as unknown as Promise<Response>;
 		}
 		return null;

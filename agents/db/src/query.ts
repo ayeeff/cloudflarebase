@@ -78,7 +78,7 @@ export function compileQuery(query: Query, options: CompileOptions = {}): Compil
 	}
 
 	const orderParts = (query.orderBy ?? []).map(
-		(order) => `${extract(order.field)} ${order.direction === 'desc' ? 'DESC' : 'ASC'}`
+		(order) => `${extract(order.field)} ${order.direction === 'desc' ? 'DESC' : 'ASC'}`,
 	);
 	orderParts.push('id ASC');
 
@@ -86,7 +86,7 @@ export function compileQuery(query: Query, options: CompileOptions = {}): Compil
 		whereSql: conditions.length ? conditions.join(' AND ') : '1=1',
 		params,
 		orderSql: orderParts.join(', '),
-		limit: query.limit ?? DEFAULT_QUERY_LIMIT
+		limit: query.limit ?? DEFAULT_QUERY_LIMIT,
 	};
 }
 
@@ -129,7 +129,7 @@ function compileClause(clause: WhereClause, conditions: string[], params: unknow
 			// which would false-positive without it.
 			conditions.push(
 				`json_type(data, ${jsonPath(clause.field)}) = 'array' AND EXISTS ` +
-					`(SELECT 1 FROM json_each(data, ${jsonPath(clause.field)}) WHERE json_each.value = ?)`
+					`(SELECT 1 FROM json_each(data, ${jsonPath(clause.field)}) WHERE json_each.value = ?)`,
 			);
 			params.push(bind(clause.value));
 			return;
@@ -170,7 +170,7 @@ function compileCursor(
 	query: Query,
 	cursor: DecodedCursor,
 	conditions: string[],
-	params: unknown[]
+	params: unknown[],
 ): void {
 	const orders = query.orderBy ?? [];
 	if (cursor.values.length !== orders.length) {
@@ -251,9 +251,7 @@ function matchesClause(clause: WhereClause, data: Record<string, unknown>): bool
 		case 'in':
 			return (clause.value as unknown[]).some((value) => normEqual(docValue, value));
 		case 'array-contains':
-			return (
-				Array.isArray(docValue) && docValue.some((entry) => normEqual(entry, clause.value))
-			);
+			return Array.isArray(docValue) && docValue.some((entry) => normEqual(entry, clause.value));
 	}
 }
 
