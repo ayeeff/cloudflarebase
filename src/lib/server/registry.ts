@@ -1,8 +1,9 @@
 import { RESERVED_PROJECT_IDS } from '$lib/console';
+import { AGENT_REGISTRY } from '$lib/agent-registry';
 import type { RegistryProject } from '$lib/agents';
 import { getDb } from '$lib/server/db';
-import { project } from '$lib/server/db/schema';
-import { requireAuthAgent } from '$lib/server/auth-agent';
+import { project, projectAgent } from '$lib/server/db/schema';
+import { requireAgent } from '$lib/server/agents';
 import { projectIdSchema } from '$lib/schemas/auth';
 import { asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -82,6 +83,20 @@ export async function createProject(
 		.values({ id: parsed.data.id, name: parsed.data.name, createdAt: new Date() })
 		.returning();
 
+	// Every registry agent is enabled by default. Deletion never reads these
+	// rows (erase always fans out to every agent), so this is bookkeeping the
+	// console can build on, not a gate user data depends on.
+	await db
+		.insert(projectAgent)
+		.values(
+			Object.values(AGENT_REGISTRY).map(({ manifest }) => ({
+				projectId: created.id,
+				agent: manifest.name,
+				enabledAt: new Date()
+			}))
+		)
+		.onConflictDoNothing();
+
 	return { ok: true, project: toDto(created) };
 }
 
@@ -125,16 +140,21 @@ async function eraseProjectData(
 ): Promise<string[]> {
 	const failures: string[] = [];
 
-	try {
-		const agent = requireAuthAgent(platform);
-		const response = await agent.fetch(
-			`https://auth-agent/internal/projects/${encodeURIComponent(projectId)}`,
-			{ method: 'DELETE' }
-		);
-		if (!response.ok) throw new Error(`auth agent responded ${response.status}`);
-	} catch (cause) {
-		console.error(`failed to erase project "${projectId}" in the auth agent`, cause);
-		failures.push('auth');
+	for (const entry of Object.values(AGENT_REGISTRY)) {
+		const { manifest } = entry;
+		try {
+			const agent = requireAgent(platform, entry);
+			// Synthetic host: the erase route sits outside /agents/* on purpose,
+			// reachable only over the service binding.
+			const path = manifest.erase.path.replace(':projectId', encodeURIComponent(projectId));
+			const response = await agent.fetch(`https://${manifest.worker}${path}`, {
+				method: manifest.erase.method
+			});
+			if (!response.ok) throw new Error(`${manifest.name} agent responded ${response.status}`);
+		} catch (cause) {
+			console.error(`failed to erase project "${projectId}" in the ${manifest.name} agent`, cause);
+			failures.push(manifest.name);
+		}
 	}
 
 	return failures;

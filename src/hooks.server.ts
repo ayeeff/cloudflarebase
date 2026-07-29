@@ -1,4 +1,6 @@
 import { dev } from '$app/environment';
+import { agentByApiPrefix, agentByWorkerSegment, routeAccess } from '$lib/agent-registry';
+import { agentFetcher } from '$lib/server/agents';
 import { getConsoleSession, isDemoMode, isDemoProjectId } from '$lib/server/console';
 import { handleErrorWithSentry, initCloudflareSentryHandle, sentryHandle } from '@sentry/sveltekit';
 import { redirect } from '@sveltejs/kit';
@@ -33,12 +35,16 @@ const platformHandle: Handle = async ({ event, resolve }) => {
 };
 
 const applicationHandle: Handle = async ({ event, resolve }) => {
-	// Agents SDK traffic (HTTP + WebSocket state sync) goes straight through to
-	// the auth-agent worker. In local dev the dashboard connects directly to the
-	// agent worker on :8788 instead, since Vite's dev server can't proxy
-	// workerd WebSockets.
-	if (event.url.pathname.startsWith('/agents/') && event.platform?.env?.AUTH_AGENT) {
-		return event.platform.env.AUTH_AGENT.fetch(event.request) as unknown as Promise<Response>;
+	// Agent traffic (HTTP + WebSocket state sync) goes straight through to the
+	// agent worker the manifest registry names for the path's worker segment.
+	// In local dev the dashboard connects directly to the agent workers'
+	// ports instead, since Vite's dev server can't proxy workerd WebSockets.
+	if (event.url.pathname.startsWith('/agents/')) {
+		const entry = agentByWorkerSegment(event.url.pathname.split('/')[2] ?? '');
+		const agent = entry && agentFetcher(event.platform, entry);
+		if (agent) {
+			return agent.fetch(event.request) as unknown as Promise<Response>;
+		}
 	}
 
 	return resolve(event);
@@ -72,23 +78,26 @@ type Access =
 /**
  * Splits project-scoped surfaces into public product API and operator console.
  *
- * Two things must stay public because they *are* the product: the Better Auth
- * endpoints a customer's app calls, and the safe client config. Everything
- * else - overview, analytics, chat, admin mutations, and the realtime
- * WebSocket - reads or mutates a project's user data and needs an operator.
+ * Public routes are the ones each agent's manifest declares `public` - the
+ * product API a customer's app calls, and safe client config. Everything else
+ * - overviews, analytics, admin mutations, and the realtime WebSockets -
+ * reads or mutates a project's user data and needs an operator. Undeclared
+ * routes and unknown agents fail closed to operator.
  *
  * This is the single enforcement point for the `/agents/*` passthrough too.
- * The agent worker has no public route (`workers_dev` and `preview_urls` are
- * both false), so every external request to it arrives through here.
+ * The agent workers have no public route (`workers_dev` and `preview_urls`
+ * are both false), so every external request to them arrives through here.
  */
 function classifyAccess(pathname: string): Access {
 	const segments = pathname.split('/').filter(Boolean);
 
-	// /agents/auth-agent/<projectId>/<subPath...>
+	// /agents/<worker>/<projectId>/<subPath...>
 	if (segments[0] === 'agents') {
+		const entry = agentByWorkerSegment(segments[1] ?? '');
 		const subPath = `/${segments.slice(3).join('/')}`;
-		if (subPath === '/config') return { scope: 'open' };
-		if (subPath === '/api/auth' || subPath.startsWith('/api/auth/')) return { scope: 'open' };
+		if (entry && routeAccess(entry.manifest, subPath) === 'public') {
+			return { scope: 'open' };
+		}
 		return { scope: 'operator', projectId: segments[2] ?? null, kind: 'api' };
 	}
 
@@ -97,7 +106,18 @@ function classifyAccess(pathname: string): Access {
 	if (segments[0] === 'api') {
 		if (segments[1] === 'projects') {
 			const rest = segments.slice(3);
-			if (rest[0] === 'auth') return { scope: 'open' };
+			// /api/projects/<id>/<apiPrefix>/... proxies onto an agent; translate
+			// to the agent-relative path and ask its manifest route table.
+			const entry = rest[0] ? agentByApiPrefix(rest[0]) : undefined;
+			if (entry) {
+				const restPath = rest.slice(1).join('/');
+				const agentPath =
+					`${entry.manifest.proxy.agentBasePath}${restPath ? `/${restPath}` : ''}` || '/';
+				if (routeAccess(entry.manifest, agentPath) === 'public') {
+					return { scope: 'open' };
+				}
+				return { scope: 'operator', projectId: segments[2] ?? null, kind: 'api' };
+			}
 			// /config and /openapi.json both describe the public product API and
 			// carry no secrets; being fetchable is the point for API tooling.
 			if (rest.length === 1 && (rest[0] === 'config' || rest[0] === 'openapi.json')) {

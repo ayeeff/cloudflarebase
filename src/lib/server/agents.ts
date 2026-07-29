@@ -1,0 +1,65 @@
+import { error } from '@sveltejs/kit';
+import { projectIdSchema } from '$lib/schemas/auth';
+import type { AppAgentEntry } from '$lib/agent-registry';
+
+/** Project ids become Durable Object names and cookie prefixes - keep them tame. */
+export function assertProjectId(projectId: string | undefined): string {
+	const parsed = projectIdSchema.safeParse(projectId);
+	if (!parsed.success) {
+		error(400, 'invalid project id - use lowercase letters, digits and dashes (max 32 chars)');
+	}
+	return parsed.data;
+}
+
+type AgentEnv = Partial<Record<AppAgentEntry['binding'], Fetcher>>;
+
+/** The entry's service binding, or undefined - for callers that fall through. */
+export function agentFetcher(
+	platform: App.Platform | undefined,
+	entry: AppAgentEntry
+): Fetcher | undefined {
+	return (platform?.env as AgentEnv | undefined)?.[entry.binding];
+}
+
+/** The entry's service binding, or a 500 naming the missing binding. */
+export function requireAgent(platform: App.Platform | undefined, entry: AppAgentEntry): Fetcher {
+	const agent = agentFetcher(platform, entry);
+	if (!agent) {
+		error(500, `${entry.binding} service binding is not available`);
+	}
+	return agent;
+}
+
+/**
+ * Builds the agent-worker URL for a project sub-path, preserving the caller's
+ * origin so the agent resolves cookies/redirects against the dashboard.
+ */
+export function agentUrl(
+	origin: string,
+	entry: AppAgentEntry,
+	projectId: string,
+	subPath: string
+): string {
+	return `${origin}/agents/${entry.manifest.worker}/${projectId}${subPath}`;
+}
+
+/**
+ * Re-wraps a service-binding response into a native Response. In dev the
+ * binding returns miniflare's proxied Response, which fails SvelteKit's
+ * `instanceof Response` check for endpoint handlers. Set-Cookie headers are
+ * copied individually so multiple cookies survive the round trip.
+ */
+export function toNativeResponse(response: Response): Response {
+	const headers = new Headers();
+	response.headers.forEach((value, key) => {
+		if (key.toLowerCase() !== 'set-cookie') headers.set(key, value);
+	});
+	for (const cookie of response.headers.getSetCookie?.() ?? []) {
+		headers.append('set-cookie', cookie);
+	}
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers
+	});
+}

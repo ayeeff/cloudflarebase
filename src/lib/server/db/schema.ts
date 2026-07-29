@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 /**
  * Control-plane schema, held in D1 on the dashboard Worker.
@@ -41,4 +41,22 @@ export const demoProject = sqliteTable(
 			.default(sql`(unixepoch() * 1000)`)
 	},
 	(table) => [index('demo_project_created_at').on(table.createdAt)]
+);
+
+/**
+ * Which agents a project has enabled. Groundwork from the agent contract: v1
+ * default-enables every registry agent and offers no opt-out UI, and deletion
+ * deliberately does NOT read this table - erase fans out to every registry
+ * agent even when a row is missing, so a gap can never strand user data.
+ */
+export const projectAgent = sqliteTable(
+	'project_agent',
+	{
+		projectId: text('project_id').notNull(),
+		agent: text('agent').notNull(),
+		enabledAt: integer('enabled_at', { mode: 'timestamp_ms' })
+			.notNull()
+			.default(sql`(unixepoch() * 1000)`)
+	},
+	(table) => [primaryKey({ columns: [table.projectId, table.agent] })]
 );
