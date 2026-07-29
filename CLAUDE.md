@@ -89,6 +89,6 @@ The root Worker binds `AUTH_AGENT` (agent service) and `DB` (control-plane D1). 
 ## Conventions
 
 - Svelte 5 runes, shadcn-svelte under `$lib/components/ui`, LayerChart, `mode-watcher`, tabs, single quotes.
-- Routes are grouped: `(marketing)` holds the landing page; `(app)` holds `login`, `admin`, `dashboard`. `api/` and the root layout/error stay ungrouped (groups do nothing for `+server.ts` routes but would churn their route ids). Groups appear in `resolve()` route ids (`/(app)/dashboard/[projectId]`), never in URLs.
+- Routes are grouped: `(marketing)` holds the landing page and the `(legal)` subgroup (`/privacy`, `/terms` — prose mapped onto shadcn tokens in the subgroup layout); `(app)` holds `login`, `admin`, `dashboard`. The legal pages describe cloudflarebase.com's actual demo-mode behavior (no accounts, no emails collected, analytics fields, retention) — recheck them when data handling changes. `api/` and the root layout/error stay ungrouped (groups do nothing for `+server.ts` routes but would churn their route ids). Groups appear in `resolve()` route ids (`/(app)/dashboard/[projectId]`), never in URLs.
 - Dynamic segments are named for what they hold: `[projectId]`, `[userId]`, `[sessionId]`, never `[id]`.
 - New primitives follow the auth shape: separate npm project under `agents/<name>`, `Agent<Env, State>` DO, `routeAgentRequest` entrypoint, root service bindings per environment, same-origin dashboard proxies.
