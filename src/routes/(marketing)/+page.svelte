@@ -829,11 +829,18 @@
 				</div>
 			</div>
 			<div
-				class="flex items-center justify-between border-t border-border pt-6 text-xs text-muted-foreground/70"
+				class="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-6 text-xs text-muted-foreground/70"
 			>
 				<span>© 2026 Cloudflarebase</span>
-				<span>Built on Cloudflare</span>
+				<div class="flex gap-4">
+					<a href={resolve('/privacy')} class="hover:text-foreground">Privacy</a>
+					<a href={resolve('/terms')} class="hover:text-foreground">Terms</a>
+				</div>
 			</div>
+			<p class="mt-4 text-xs text-muted-foreground/70">
+				Built on the Cloudflare Developer Platform. Cloudflarebase is an independent open-source
+				project and is not affiliated with, endorsed by, or sponsored by Cloudflare, Inc.
+			</p>
 		</div>
 	</footer>
 </div>
