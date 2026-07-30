@@ -115,9 +115,9 @@
 			"vars": {
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
-				// Create a db-agent Sentry project and put its DSN here; empty
-				// disables reporting, which is the safe default until then.
-				"SENTRY_DSN": "",
+				// Same Sentry project as the rest of the production deployment
+				// (root wrangler.jsonc and the auth agent share it too).
+				"SENTRY_DSN": "https://50ed6e26b886124ac39e983efb72144d@o4510375271530496.ingest.de.sentry.io/4511764380778576",
 				"SENTRY_ENV": "production",
 				"TRUSTED_ORIGINS": "https://cloudflarebase.com",
 			},
@@ -242,8 +242,8 @@
 			"vars": {
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
-				// Create a db-agent Sentry project and put its preview DSN here.
-				"SENTRY_DSN": "",
+				// Same Sentry project as the rest of the preview deployment.
+				"SENTRY_DSN": "https://093f7505d223a871223f9a15130ef116@o4510375271530496.ingest.de.sentry.io/4511764377043024",
 				"SENTRY_ENV": "preview",
 				"TRUSTED_ORIGINS": "https://preview-cloudflarebase-com.cloudflarebase.workers.dev",
 			},

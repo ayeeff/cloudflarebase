@@ -1,5 +1,11 @@
 # DB Agent Implementation Plan — `@cloudflarebase/db`
 
+> Pre-implementation design document, kept for the reasoning. The feature
+> **shipped 2026-07-29**; where this document and the shipped code disagree,
+> the deviation list at the top of [db-agent-plan.md](db-agent-plan.md) is the
+> record (notably: manifests are single-sourced, not copied — §A.2 here was
+> superseded). Current behavior is documented in `agents/db/CLAUDE.md`.
+
 The second backend primitive after auth: a Firestore-style Documents API with full live
 queries (onSnapshot parity), per-collection access modes verified against auth-agent
 project JWTs, a thin client SDK, and the full `cloudflarebase.agent.json` manifest

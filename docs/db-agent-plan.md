@@ -1,5 +1,24 @@
 # DB Agent — `@cloudflarebase/db` (Cloudflarebase's second primitive)
 
+> **Shipped 2026-07-29** — all four phases landed and the full suite is green
+> (105 tests incl. db REST/live-query/guard/demo/OpenAPI/UI coverage).
+> Deviations from this plan, for future readers:
+>
+> - Manifests are **single-sourced** from `agents/<name>/cloudflarebase.agent.json`
+>   (imported directly into `src/lib/agent-registry.ts`); the copied-JSON design
+>   in the companion doc's §A.2 was superseded before implementation.
+> - No separate `live.unit.test.ts`: the live engine lives inside
+>   `collection.ts`; its behavior is pinned by `e2e/db-live.api.spec.ts` while
+>   `query.unit.test.ts` pins compiler/matcher parity.
+> - Document `PUT`/`PATCH` bodies are the raw data record; only create wraps as
+>   `{ id?, data }`. The direct-agent e2e override is `DB_AGENT_URL` (auth owns
+>   `AGENT_URL`). The dashboard create form defaults to read `public` / write
+>   `owner`.
+> - The db workers reuse the deployment-wide Sentry projects (same DSNs as root
+>   `wrangler.jsonc`) instead of dedicated ones.
+> - The copilot follow-up below is now decided: **console-orchestrated** tool
+>   loop in the web worker over the service bindings, not a dedicated agent.
+
 ## Context
 
 Cloudflarebase is an open-source Firebase alternative on Cloudflare; auth is the only primitive today. This adds the **db agent**: a Firestore-style document database with full live queries (onSnapshot parity), per-collection access modes verified against auth-agent project JWTs, a thin client SDK — published as `@cloudflarebase/db`. It is deliberately "agent #2", the moment `docs/agent-contract.md` was written for, so the `cloudflarebase.agent.json` manifest is implemented end-to-end as part of this work and auth is refactored onto the same rails first (zero behavior change).
