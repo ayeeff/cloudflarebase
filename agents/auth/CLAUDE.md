@@ -17,7 +17,7 @@ Schema changes: edit `src/db/schema.ts`, run `npm run migrations`, never hand-ed
 
 ## HTTP surface
 
-The Worker itself: `GET /health`, `GET /fleet/overview`, and `DELETE /internal/projects/:projectId` (erases one project via its agent's `destroy()`). The latter two sit outside `/agents/*`, so they are reachable only over the dashboard's service binding; the worker has no public route. The console owns cross-agent fan-out; this endpoint knows only its own agent. `AuthAgent.getFleetCounts()` serves the per-project half over DO RPC, including the colo resolved once per instance from a cdn-cgi trace.
+The Worker itself: `GET /health`, `GET /fleet/overview`, and `DELETE /internal/projects/:projectId` (erases one project via its agent's `destroy()`). The latter two sit outside `/agents/*`, so they are reachable only over the dashboard's service binding; the worker has no public route. The console owns cross-agent fan-out; this endpoint knows only its own agent. `AuthAgent.getFleetCounts()` serves the per-project half over DO RPC, including the colo resolved once per instance from a cdn-cgi trace. The colo's COUNTRY comes from the static map in `src/colo-countries.ts`, never from the trace's `loc` field - `loc` geolocates the Worker's egress IP, and a re-mapping of Cloudflare's own ranges once flagged the entire fleet as Canada. Unknown colos render without a flag; extend the map when new colos appear.
 
 Agent routes at `/agents/auth-agent/<projectId>/...`:
 
