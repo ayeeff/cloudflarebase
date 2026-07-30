@@ -8,8 +8,12 @@
 			"command": "npm run dev --prefix ./agents/auth"
 		},
 		{
+			"name": "db-agent",
+			"command": "npm run dev --prefix ./agents/db"
+		},
+		{
 			"name": "web",
-			"command": "wait-on tcp:localhost:8788 && vite dev --port 5173 --open --host"
+			"command": "wait-on tcp:localhost:8788 tcp:localhost:8789 && vite dev --port 5173 --open --host"
 		}
 	]
 }

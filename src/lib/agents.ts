@@ -214,6 +214,159 @@ export const projectRegistryStateSchema = z
 	.object({ projects: z.array(registryProjectSchema) })
 	.meta({ id: 'ProjectRegistryState' });
 
+// ---------------------------------------------------------------------------
+// DB agent DTOs. Keep in sync with agents/db/src/schemas.ts and
+// agents/db/src/agent.ts - deliberately copied, never imported (the agent is
+// its own TypeScript project with its own generated Env).
+
+export const dbAccessModeSchema = z.enum(['public', 'auth', 'owner']);
+
+const dbFieldPath = z
+	.string()
+	.max(128)
+	.regex(/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*){0,3}$/);
+const dbScalar = z.union([z.string().max(1024), z.number(), z.boolean(), z.null()]);
+
+export const dbQuerySchema = z
+	.object({
+		where: z
+			.array(
+				z.object({
+					field: dbFieldPath,
+					op: z.enum(['==', '!=', '<', '<=', '>', '>=', 'in', 'array-contains']),
+					value: z.union([dbScalar, z.array(dbScalar).min(1).max(20)])
+				})
+			)
+			.max(10)
+			.optional(),
+		orderBy: z
+			.array(z.object({ field: dbFieldPath, direction: z.enum(['asc', 'desc']) }))
+			.max(2)
+			.optional(),
+		limit: z.number().int().min(1).max(200).optional(),
+		cursor: z.string().optional()
+	})
+	.meta({
+		id: 'DbQuery',
+		description:
+			'Filtered query: AND-combined where clauses over dotted JSON field paths, up to two orderBy fields (document id is always the final tiebreak), a page limit, and an opaque continuation cursor (REST only).'
+	});
+
+export const dbDocumentSchema = z
+	.object({
+		id: z.string(),
+		data: z.record(z.string(), z.unknown()),
+		owner: z.string().nullable(),
+		createdAt: z.iso.datetime(),
+		updatedAt: z.iso.datetime()
+	})
+	.meta({ id: 'DbDocument', description: 'A document: metadata outside data, no collisions.' });
+
+export const dbQueryResultSchema = z
+	.object({ docs: z.array(dbDocumentSchema), nextCursor: z.string().optional() })
+	.meta({ id: 'DbQueryResult' });
+
+export const dbCreateRequestSchema = z
+	.object({ id: z.string().optional(), data: z.record(z.string(), z.unknown()) })
+	.meta({ id: 'DbCreateRequest' });
+
+export const dbWriteRequestSchema = z
+	.record(z.string(), z.unknown())
+	.meta({ id: 'DbWriteRequest', description: 'The document data (PUT replaces, PATCH merges).' });
+
+export const dbCollectionConfigSchema = z
+	.object({ readAccess: dbAccessModeSchema, writeAccess: dbAccessModeSchema })
+	.meta({
+		id: 'DbCollectionConfig',
+		description:
+			'Access modes: public (anyone), auth (any valid project JWT), owner (results and writes scoped to the token subject).'
+	});
+
+export const dbCollectionSummarySchema = z
+	.object({
+		name: z.string(),
+		readAccess: dbAccessModeSchema,
+		writeAccess: dbAccessModeSchema,
+		docs: z.number()
+	})
+	.meta({ id: 'DbCollectionSummary' });
+
+export const dbActivityEventSchema = z
+	.object({
+		id: z.string(),
+		type: z.enum([
+			'project.provisioned',
+			'collection.created',
+			'collection.deleted',
+			'collection.configured',
+			'documents.changed'
+		]),
+		message: z.string(),
+		at: z.iso.datetime()
+	})
+	.meta({ id: 'DbActivityEvent' });
+
+export const dbAgentStateSchema = z
+	.object({
+		projectId: z.string(),
+		provisionedAt: z.iso.datetime().nullable(),
+		allowedOrigins: z.array(z.string()),
+		collections: z.array(dbCollectionSummarySchema),
+		totalDocs: z.number(),
+		rev: z.number(),
+		totalEvents: z.number(),
+		lastEventAt: z.iso.datetime().nullable(),
+		events: z.array(dbActivityEventSchema)
+	})
+	.meta({
+		id: 'DbAgentState',
+		description: 'Live coordinator state synced to dashboards; rev bumps drive refetches.'
+	});
+
+export const dbOverviewSchema = z
+	.object({
+		projectId: z.string(),
+		collections: z.array(dbCollectionSummarySchema),
+		state: dbAgentStateSchema
+	})
+	.meta({ id: 'DbOverview' });
+
+export const dbSubscribeFrameSchema = z
+	.object({
+		type: z.literal('subscribe'),
+		id: z.string(),
+		query: dbQuerySchema,
+		token: z.string().optional()
+	})
+	.meta({
+		id: 'DbSubscribeFrame',
+		description:
+			'Client frame on the live-query WebSocket (GET /collections/{name}/subscribe). The token is the project JWT for auth/owner collections.'
+	});
+
+export const dbServerFrameSchema = z
+	.union([
+		z.object({ type: z.literal('snapshot'), id: z.string(), docs: z.array(dbDocumentSchema) }),
+		z.object({
+			type: z.literal('change'),
+			id: z.string(),
+			kind: z.enum(['added', 'modified', 'removed']),
+			doc: dbDocumentSchema
+		}),
+		z.object({ type: z.literal('unsubscribed'), id: z.string() }),
+		z.object({
+			type: z.literal('error'),
+			id: z.string().optional(),
+			code: z.string(),
+			message: z.string()
+		})
+	])
+	.meta({
+		id: 'DbServerFrame',
+		description:
+			'Server frames on the live-query WebSocket: an initial snapshot in query order, then added/modified/removed deltas as writes happen.'
+	});
+
 export type AuthActivityEvent = z.infer<typeof authActivityEventSchema>;
 export type RoleDefinition = z.infer<typeof roleDefinitionSchema>;
 export type AuthAgentState = z.infer<typeof authAgentStateSchema>;
@@ -229,3 +382,11 @@ export type AgentChatMessage = z.infer<typeof agentChatMessageSchema>;
 export type AgentChatReply = z.infer<typeof agentChatReplySchema>;
 export type RegistryProject = z.infer<typeof registryProjectSchema>;
 export type ProjectRegistryState = z.infer<typeof projectRegistryStateSchema>;
+export type DbAccessMode = z.infer<typeof dbAccessModeSchema>;
+export type DbQuery = z.infer<typeof dbQuerySchema>;
+export type DbDocument = z.infer<typeof dbDocumentSchema>;
+export type DbQueryResult = z.infer<typeof dbQueryResultSchema>;
+export type DbCollectionSummary = z.infer<typeof dbCollectionSummarySchema>;
+export type DbActivityEvent = z.infer<typeof dbActivityEventSchema>;
+export type DbAgentState = z.infer<typeof dbAgentStateSchema>;
+export type DbOverview = z.infer<typeof dbOverviewSchema>;

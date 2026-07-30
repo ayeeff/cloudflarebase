@@ -124,7 +124,7 @@
 
 	const roadmap = [
 		{ icon: KeyRound, name: 'Auth', live: true },
-		{ icon: Database, name: 'Database', live: false },
+		{ icon: Database, name: 'Database', live: true },
 		{ icon: HardDrive, name: 'Storage', live: false },
 		{ icon: Zap, name: 'Functions', live: false },
 		{ icon: Radio, name: 'Realtime', live: false },

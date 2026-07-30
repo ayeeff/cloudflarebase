@@ -21,13 +21,11 @@
 	const authHref = $derived(
 		resolve('/(app)/dashboard/[projectId]/auth', { projectId: data.projectId })
 	);
+	const dbHref = $derived(
+		resolve('/(app)/dashboard/[projectId]/db', { projectId: data.projectId })
+	);
 
 	const comingSoon = [
-		{
-			label: 'Database',
-			icon: Database,
-			desc: 'Document store on Durable Objects + D1, queried through Drizzle.'
-		},
 		{ label: 'Storage', icon: HardDrive, desc: 'R2 object storage with zero egress fees.' },
 		{ label: 'Functions', icon: Zap, desc: 'Workers with microsecond cold starts.' },
 		{ label: 'Realtime', icon: Radio, desc: 'WebSocket channels backed by Durable Objects.' },
@@ -88,10 +86,12 @@
 
 	<div>
 		<h2 class="text-sm font-semibold">Available now</h2>
-		<p class="text-xs text-muted-foreground">The first complete Cloudflarebase primitive.</p>
+		<p class="text-xs text-muted-foreground">
+			Complete Cloudflarebase primitives - each an isolated agent for this project.
+		</p>
 	</div>
 
-	<div class="grid grid-cols-1 gap-4">
+	<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 		<!-- Authentication - live -->
 		<Card.Root class="border-primary/30" data-testid="product-auth">
 			<Card.Header>
@@ -128,6 +128,47 @@
 					</div>
 				</div>
 				<Button href={authHref} size="sm" variant="outline">
+					Open <ArrowRight class="ml-1 h-3.5 w-3.5" />
+				</Button>
+			</Card.Content>
+		</Card.Root>
+
+		<!-- Database - live -->
+		<Card.Root class="border-primary/30" data-testid="product-db">
+			<Card.Header>
+				<div class="flex items-center justify-between">
+					<div
+						class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"
+					>
+						<Database class="h-4.5 w-4.5" strokeWidth={1.8} />
+					</div>
+					<Badge class="gap-1.5" variant="outline">
+						<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500"></span>
+						live
+					</Badge>
+				</div>
+				<Card.Title class="pt-2">Database</Card.Title>
+				<Card.Description>
+					JSON documents with live queries - one isolated Durable Object per collection, pushed to
+					subscribers as writes happen.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content class="flex flex-wrap items-end justify-between gap-4">
+				<div class="flex gap-6">
+					<div>
+						<p class="text-2xl font-semibold tabular-nums" data-testid="overview-collections-count">
+							{data.dbOverview?.collections.length ?? 0}
+						</p>
+						<p class="text-xs text-muted-foreground">collections</p>
+					</div>
+					<div>
+						<p class="text-2xl font-semibold tabular-nums" data-testid="overview-documents-count">
+							{data.dbOverview?.state.totalDocs ?? 0}
+						</p>
+						<p class="text-xs text-muted-foreground">documents</p>
+					</div>
+				</div>
+				<Button href={dbHref} size="sm" variant="outline">
 					Open <ArrowRight class="ml-1 h-3.5 w-3.5" />
 				</Button>
 			</Card.Content>

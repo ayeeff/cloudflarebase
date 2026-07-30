@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import authManifestJson from '../../agents/auth/cloudflarebase.agent.json';
+import dbManifestJson from '../../agents/db/cloudflarebase.agent.json';
 
 /**
  * The agent manifest contract from docs/agent-contract.md.
@@ -94,6 +95,11 @@ export const AGENT_REGISTRY: Record<string, AppAgentEntry> = {
 		manifest: agentManifestSchema.parse(authManifestJson),
 		binding: 'AUTH_AGENT',
 		devHost: 'localhost:8788'
+	},
+	db: {
+		manifest: agentManifestSchema.parse(dbManifestJson),
+		binding: 'DB_AGENT',
+		devHost: 'localhost:8789'
 	}
 };
 

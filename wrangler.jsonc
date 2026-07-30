@@ -54,7 +54,10 @@
 	// unconfigured until you enable it with `wrangler secret put ADMIN_SECRET`.
 	// cloudflarebase.com's own environments below do require it.
 
-	"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent" }],
+	"services": [
+		{ "binding": "AUTH_AGENT", "service": "auth-agent" },
+		{ "binding": "DB_AGENT", "service": "db-agent" }
+	],
 
 	// Control plane: the project registry. `database_id` is deliberately
 	// omitted so `wrangler deploy` provisions the database on first deploy and
@@ -104,7 +107,10 @@
 				}
 			],
 
-			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-local" }],
+			"services": [
+				{ "binding": "AUTH_AGENT", "service": "auth-agent-local" },
+				{ "binding": "DB_AGENT", "service": "db-agent-local" }
+			],
 			"ratelimits": [
 				{
 					"name": "API_RATE_LIMITER",
@@ -140,7 +146,10 @@
 				}
 			],
 
-			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-test" }],
+			"services": [
+				{ "binding": "AUTH_AGENT", "service": "auth-agent-test" },
+				{ "binding": "DB_AGENT", "service": "db-agent-test" }
+			],
 			"ratelimits": [
 				{
 					"name": "API_RATE_LIMITER",
@@ -176,7 +185,10 @@
 					"database_name": "cloudflarebase-control-plane"
 				}
 			],
-			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent" }],
+			"services": [
+				{ "binding": "AUTH_AGENT", "service": "auth-agent" },
+				{ "binding": "DB_AGENT", "service": "db-agent" }
+			],
 			"ratelimits": [
 				{
 					"name": "API_RATE_LIMITER",
@@ -222,7 +234,10 @@
 					"database_name": "cloudflarebase-control-plane-preview"
 				}
 			],
-			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" }],
+			"services": [
+				{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" },
+				{ "binding": "DB_AGENT", "service": "db-agent-preview" }
+			],
 			"secrets": {
 				"required": ["ADMIN_SECRET"]
 			}

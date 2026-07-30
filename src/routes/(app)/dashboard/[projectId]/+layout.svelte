@@ -77,7 +77,6 @@
 	const navActive = (href: string) => page.url.pathname.startsWith(href);
 
 	const comingSoon = [
-		{ label: 'Database', icon: Database },
 		{ label: 'Storage', icon: HardDrive },
 		{ label: 'Functions', icon: Zap },
 		{ label: 'Realtime', icon: Radio },

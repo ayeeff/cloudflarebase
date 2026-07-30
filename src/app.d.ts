@@ -16,6 +16,8 @@ declare global {
 			env: Env & {
 				/** Service binding to the auth-agent worker (fetch-only interface). */
 				AUTH_AGENT: Fetcher;
+				/** Service binding to the db-agent worker (fetch-only interface). */
+				DB_AGENT: Fetcher;
 			};
 			cf: CfProperties;
 			ctx: ExecutionContext;
