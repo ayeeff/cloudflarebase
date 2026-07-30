@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { dev } from '$app/environment';
+	import { browser, dev } from '$app/environment';
+	import { replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import type { AuthAgentState, AuthAnalytics, AuthOverview, RoleDefinition } from '$lib/agents';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -50,11 +52,37 @@
 	let { data } = $props();
 	let hydrated = $state(false);
 
+	const AUTH_TABS = ['users', 'sessions', 'roles', 'settings', 'playground', 'setup'];
+
 	onMount(() => {
 		hydrated = true;
+		// Hash deep-links win (buttons elsewhere target them); otherwise the
+		// ?tab= param restores the last selection across reloads.
 		if (window.location.hash === '#sign-in-methods') activeTab = 'settings';
 		else if (window.location.hash === '#integration') activeTab = 'setup';
+		else {
+			const saved = page.url.searchParams.get('tab');
+			if (saved && AUTH_TABS.includes(saved)) activeTab = saved;
+		}
 	});
+
+	function setActiveTab(tab: string) {
+		activeTab = tab;
+		if (!browser) return;
+		try {
+			// Ephemeral param builder, not component state - reactivity would buy
+			// nothing here.
+			// eslint-disable-next-line svelte/prefer-svelte-reactivity
+			const query = new URLSearchParams(window.location.search);
+			query.set('tab', tab);
+			// A string target drops any deep-link hash, which would otherwise
+			// override the saved tab on the next load.
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- same-page query param, not a route
+			replaceState(`${window.location.pathname}?${query}`, {});
+		} catch {
+			// router not ready - the tab still switches
+		}
+	}
 
 	async function openSignInMethods() {
 		activeTab = 'settings';
@@ -809,7 +837,7 @@
 									? 'text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary'
 									: 'text-muted-foreground hover:text-foreground'
 							]}
-							onclick={() => (activeTab = tab[0])}>{tab[1]}</button
+							onclick={() => setActiveTab(tab[0])}>{tab[1]}</button
 						>
 					{/each}
 				</div>
@@ -827,7 +855,7 @@
 										size="sm"
 										class="gap-1.5"
 										data-testid="add-user-button"
-										onclick={() => (activeTab = 'playground')}
+										onclick={() => setActiveTab('playground')}
 									>
 										<UserPlus class="h-4 w-4" /> Add user
 									</Button>

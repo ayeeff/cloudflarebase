@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { dev } from '$app/environment';
+	import { browser, dev } from '$app/environment';
+	import { replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import type {
 		DbAccessMode,
@@ -9,9 +10,12 @@
 		DbQueryResult
 	} from '$lib/agents';
 	import { dbAccessModeSchema } from '$lib/agents';
+	import CodeExamples from '$lib/components/code-examples.svelte';
+	import type { CodeExample } from '$lib/integration-examples';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
@@ -20,11 +24,10 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
 		Activity,
-		Check,
-		Copy,
 		Database,
 		FileText,
 		FolderPlus,
+		Pencil,
 		Plus,
 		Radio,
 		Rocket,
@@ -40,7 +43,37 @@
 
 	onMount(() => {
 		hydrated = true;
+		// Restore tab and browsed collection from the query string (survives
+		// reloads). No persist on restore: the router may not accept
+		// replaceState yet.
+		const savedTab = page.url.searchParams.get('tab');
+		if (savedTab === 'collections' || savedTab === 'access' || savedTab === 'setup') {
+			activeTab = savedTab;
+		}
+		const initial = page.url.searchParams.get('collection');
+		if (initial && /^[a-z][a-z0-9_-]{0,63}$/.test(initial)) {
+			selectCollection(initial, { persist: false });
+		}
 	});
+
+	/** Mirror UI state into the query string without history spam. */
+	function persistQueryParam(key: string, value: string | null) {
+		if (!browser) return;
+		try {
+			const url = new URL(window.location.href);
+			if (value) url.searchParams.set(key, value);
+			else url.searchParams.delete(key);
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- same-page query param, not a route
+			replaceState(url, {});
+		} catch {
+			// router not ready (first paint) - the selection itself still works
+		}
+	}
+
+	function setActiveTab(tab: string) {
+		activeTab = tab;
+		persistQueryParam('tab', tab === 'collections' ? null : tab);
+	}
 
 	// Initial values from the server load; kept in sync on navigation by the
 	// $effect below and updated live via WebSocket state sync.
@@ -59,11 +92,18 @@
 	let docsError = $state<string | null>(null);
 	let actionError = $state<string | null>(null);
 
-	// Reset local state when navigating between projects.
+	// Keep the snapshot in sync with the load, but only reset the browser when
+	// the PROJECT actually changes - on first mount this effect runs after
+	// onMount, and resetting then would wipe the ?collection= restore.
+	// svelte-ignore state_referenced_locally
+	let lastProject = data.projectId;
 	$effect(() => {
 		overview = data.overview;
 		agentState = data.overview.state;
-		closeBrowser();
+		if (data.projectId !== lastProject) {
+			lastProject = data.projectId;
+			closeBrowser();
+		}
 	});
 
 	// Realtime: connect to this project's DbAgent. In dev the agent worker runs
@@ -139,15 +179,20 @@
 		actionError = null;
 		editorOpen = false;
 		docError = null;
+		deletePanelOpen = false;
+		deleteConfirmInput = '';
+		deleteError = null;
+		persistQueryParam('collection', null);
 	}
 
-	function selectCollection(name: string) {
+	function selectCollection(name: string, options: { persist?: boolean } = {}) {
 		if (selected === name) {
 			closeBrowser();
 			return;
 		}
 		closeBrowser();
 		selected = name;
+		if (options.persist !== false) persistQueryParam('collection', name);
 		void loadDocuments(name);
 	}
 
@@ -254,6 +299,49 @@
 	let docJsonInput = $state('{ "title": "Ship it", "done": false }');
 	let docError = $state<string | null>(null);
 
+	// Collection deletion is destructive enough that confirm() is not enough:
+	// the collection name must be typed back before the button arms.
+	let deletePanelOpen = $state(false);
+	let deleteConfirmInput = $state('');
+	let deleteError = $state<string | null>(null);
+
+	async function deleteCollection() {
+		const name = selected;
+		if (!name || deleteConfirmInput.trim() !== name) return;
+		busy = true;
+		deleteError = null;
+		try {
+			const response = await fetch(
+				`/api/projects/${data.projectId}/db/admin/collections/${encodeURIComponent(name)}`,
+				{ method: 'DELETE' }
+			);
+			if (!response.ok) {
+				const result = (await response.json().catch(() => null)) as { error?: string } | null;
+				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
+			}
+			closeBrowser();
+			await refreshData(data.projectId);
+		} catch (error) {
+			deleteError = error instanceof Error ? error.message : String(error);
+		} finally {
+			busy = false;
+		}
+	}
+
+	/**
+	 * Open the editor prefilled from a row. The id is locked in this mode:
+	 * PUT is an upsert, so saving under a changed id would create a duplicate
+	 * instead of renaming.
+	 */
+	let editingExisting = $state(false);
+	function editDocument(doc: DbDocument) {
+		docIdInput = doc.id;
+		docJsonInput = JSON.stringify(doc.data, null, 2);
+		docError = null;
+		editingExisting = true;
+		editorOpen = true;
+	}
+
 	async function saveDocument(event: SubmitEvent) {
 		event.preventDefault();
 		const collection = selected;
@@ -354,15 +442,15 @@
 	]);
 
 	// Integration snippets. page.url.origin is SSR-safe, so these render
-	// without a hydration flash.
+	// without a hydration flash. CodeExample shape feeds the shared
+	// CodeExamples component (shiki highlighting + copy), same as the auth tab.
 	const origin = $derived(page.url.origin);
 	const dbBase = $derived(`${origin}/api/projects/${data.projectId}/db`);
-	const snippets = $derived([
+	const snippets = $derived<CodeExample[]>([
 		{
 			id: 'rest',
-			title: 'REST',
-			description:
-				'Create a document with curl. Mint a project JWT from the auth agent first - public collections need no token.',
+			label: 'REST',
+			lang: 'bash',
 			code: `# A project JWT for the signed-in user (session cookie or bearer token)
 curl ${origin}/api/projects/${data.projectId}/auth/token
 
@@ -374,9 +462,8 @@ curl -X POST ${dbBase}/collections/posts/documents \\
 		},
 		{
 			id: 'sdk',
-			title: 'Client SDK',
-			description:
-				'The typed isomorphic client: CRUD plus live queries that resubscribe and resnapshot on reconnect.',
+			label: 'Client SDK',
+			lang: 'typescript',
 			code: `import { createDbClient } from '@cloudflarebase/db/client';
 
 const db = createDbClient({
@@ -401,9 +488,8 @@ const unsubscribe = posts.subscribe(
 		},
 		{
 			id: 'ws',
-			title: 'Raw WebSocket',
-			description:
-				'Subscribe without the SDK: one socket per collection, subscriptions multiplexed by id.',
+			label: 'Raw WebSocket',
+			lang: 'javascript',
 			code: `const ws = new WebSocket(
 	'${origin.replace(/^http/, 'ws')}/agents/db-agent/${data.projectId}/collections/posts/subscribe'
 );
@@ -412,20 +498,6 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 // -> { type: 'snapshot', ... } once, then { type: 'change', kind: 'added' | 'modified' | 'removed', ... }`
 		}
 	]);
-
-	let copiedId = $state<string | null>(null);
-	let copyResetTimer: ReturnType<typeof setTimeout> | undefined;
-
-	async function copySnippet(id: string, code: string) {
-		try {
-			await navigator.clipboard.writeText(code);
-			copiedId = id;
-			clearTimeout(copyResetTimer);
-			copyResetTimer = setTimeout(() => (copiedId = null), 1500);
-		} catch {
-			// clipboard unavailable - the code stays selectable
-		}
-	}
 </script>
 
 <svelte:head>
@@ -473,7 +545,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 							? 'text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary'
 							: 'text-muted-foreground hover:text-foreground'
 					]}
-					onclick={() => (activeTab = tab[0])}>{tab[1]}</button
+					onclick={() => setActiveTab(tab[0])}>{tab[1]}</button
 				>
 			{/each}
 		</div>
@@ -679,10 +751,25 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 									data-testid="db-add-document"
 									onclick={() => {
 										editorOpen = !editorOpen;
+										editingExisting = false;
+										docIdInput = '';
 										docError = null;
 									}}
 								>
 									<Plus class="h-4 w-4" /> Add document
+								</Button>
+								<Button
+									size="sm"
+									variant="outline"
+									class="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+									data-testid="db-delete-collection"
+									onclick={() => {
+										deletePanelOpen = !deletePanelOpen;
+										deleteConfirmInput = '';
+										deleteError = null;
+									}}
+								>
+									<Trash2 class="h-4 w-4" /> Delete collection
 								</Button>
 								<Button
 									variant="ghost"
@@ -704,11 +791,18 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 								>
 									<div class="grid gap-3 sm:grid-cols-2">
 										<div class="space-y-2">
-											<Label for="doc-id">Document id (optional)</Label>
+											<Label for="doc-id">
+												{editingExisting
+													? 'Document id (fixed while editing)'
+													: 'Document id (optional)'}
+											</Label>
+											<!-- Locked during edit: PUT is an upsert, so a changed id would
+											     CREATE a second document and leave the original behind. -->
 											<Input
 												id="doc-id"
 												class="font-mono"
 												placeholder="auto-generated"
+												disabled={editingExisting}
 												bind:value={docIdInput}
 											/>
 										</div>
@@ -790,6 +884,17 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 													{timeAgo(doc.updatedAt)}
 												</Table.Cell>
 												<Table.Cell>
+													<Button
+														variant="ghost"
+														size="icon"
+														class="h-8 w-8 text-muted-foreground hover:text-foreground"
+														disabled={busy}
+														aria-label={`Edit document ${doc.id}`}
+														data-testid={`db-edit-${doc.id}`}
+														onclick={() => editDocument(doc)}
+													>
+														<Pencil class="h-4 w-4" />
+													</Button>
 													<Button
 														variant="ghost"
 														size="icon"
@@ -944,32 +1049,9 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 								>{dbBase}</code
 							>
 						</div>
-						{#each snippets as snippet (snippet.id)}
-							<div>
-								<Label>{snippet.title}</Label>
-								<p class="mt-1 text-xs text-muted-foreground">{snippet.description}</p>
-								<div class="relative mt-2">
-									<Button
-										variant="ghost"
-										size="icon"
-										class="absolute top-2 right-2 z-10 h-7 w-7 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-										aria-label={`Copy ${snippet.title} example`}
-										data-testid={`copy-${snippet.id}`}
-										onclick={() => copySnippet(snippet.id, snippet.code)}
-									>
-										{#if copiedId === snippet.id}
-											<Check class="h-3.5 w-3.5" />
-										{:else}
-											<Copy class="h-3.5 w-3.5" />
-										{/if}
-									</Button>
-									<pre
-										class="overflow-x-auto rounded-lg border bg-zinc-950 p-4 text-xs leading-relaxed text-zinc-100"><code
-											>{snippet.code}</code
-										></pre>
-								</div>
-							</div>
-						{/each}
+						<!-- Same component as the auth Integration tab: shiki highlighting,
+						     tab pills, and the built-in copy button. -->
+						<CodeExamples examples={snippets} />
 						<p class="text-xs text-muted-foreground">
 							auth and owner collections need a project JWT from the auth agent; external browser
 							applications must be listed under the project's allowed origins.
@@ -980,3 +1062,44 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 		{/if}
 	</div>
 </div>
+
+<!-- Collection deletion: destructive enough that the name must be typed back. -->
+<Dialog.Root bind:open={deletePanelOpen}>
+	<Dialog.Content data-testid="db-delete-panel">
+		<Dialog.Header>
+			<Dialog.Title>Delete {selected}?</Dialog.Title>
+			<Dialog.Description>
+				This permanently deletes <span class="font-mono font-semibold">{selected}</span> and every document
+				in it - the collection's whole Durable Object is erased. Type the collection name to confirm.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Input
+			class="font-mono"
+			placeholder={selected}
+			data-testid="db-delete-confirm"
+			bind:value={deleteConfirmInput}
+		/>
+		{#if deleteError}
+			<p class="text-sm text-destructive">{deleteError}</p>
+		{/if}
+		<Dialog.Footer>
+			<Button
+				variant="ghost"
+				onclick={() => {
+					deletePanelOpen = false;
+					deleteConfirmInput = '';
+					deleteError = null;
+				}}
+			>
+				Cancel
+			</Button>
+			<Button
+				variant="destructive"
+				disabled={busy || !selected || deleteConfirmInput.trim() !== selected}
+				onclick={deleteCollection}
+			>
+				Delete forever
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

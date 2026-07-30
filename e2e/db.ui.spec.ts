@@ -84,6 +84,42 @@ test.describe('database page (frontend)', () => {
 		await expect(page.getByTestId('db-doc-error')).toBeVisible();
 	});
 
+	test('editing a document updates it in place with the id locked', async ({ page }) => {
+		const collection = uniqueCollection('m');
+		await gotoDbPage(page, DB_UI_PROJECT);
+		await createCollection(page, collection);
+		await page.getByTestId(`db-collection-${collection}`).click();
+
+		await page.getByTestId('db-add-document').click();
+		const editor = page.getByTestId('db-doc-editor');
+		await editor.getByPlaceholder('auto-generated').fill('edit-me');
+		await editor.locator('textarea').fill('{"text":"before"}');
+		await editor.getByRole('button', { name: 'Save document' }).click();
+		await expect(page.getByTestId('db-documents-table').getByText('edit-me')).toBeVisible();
+
+		// PUT is an upsert, so the id is locked while editing - a changed id
+		// would create a duplicate instead of renaming.
+		await page.getByTestId('db-edit-edit-me').click();
+		await expect(editor.getByPlaceholder('auto-generated')).toBeDisabled();
+		await editor.locator('textarea').fill('{"text":"after"}');
+		await editor.getByRole('button', { name: 'Save document' }).click();
+		await expect(page.getByTestId('db-documents-table').getByText(/after/)).toBeVisible();
+	});
+
+	test('deleting a collection requires typing its name back', async ({ page }) => {
+		const collection = uniqueCollection('d');
+		await gotoDbPage(page, DB_UI_PROJECT);
+		await createCollection(page, collection);
+		await page.getByTestId(`db-collection-${collection}`).click();
+
+		await page.getByTestId('db-delete-collection').click();
+		const dialog = page.getByTestId('db-delete-panel');
+		await expect(dialog.getByRole('button', { name: 'Delete forever' })).toBeDisabled();
+		await dialog.getByTestId('db-delete-confirm').fill(collection);
+		await dialog.getByRole('button', { name: 'Delete forever' }).click();
+		await expect(page.getByTestId(`db-collection-${collection}`)).not.toBeVisible();
+	});
+
 	test('access mode changes apply and survive a reload', async ({ page }) => {
 		const collection = uniqueCollection('a');
 		await gotoDbPage(page, DB_UI_PROJECT);
@@ -110,9 +146,13 @@ test.describe('database page (frontend)', () => {
 		await gotoDbPage(page, DB_UI_PROJECT);
 		await page.getByRole('tab', { name: 'Integration' }).click();
 
+		// One snippet renders at a time (shared CodeExamples component), so
+		// assert each behind its own pill.
 		const integration = page.getByTestId('db-integration');
 		await expect(integration).toContainText(`/api/projects/${DB_UI_PROJECT}/db`);
+		await integration.getByRole('tab', { name: 'Client SDK' }).click();
 		await expect(integration).toContainText('@cloudflarebase/db/client');
+		await integration.getByRole('tab', { name: 'Raw WebSocket' }).click();
 		await expect(integration).toContainText(`/agents/db-agent/${DB_UI_PROJECT}/collections`);
 	});
 });

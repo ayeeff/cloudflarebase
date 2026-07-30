@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { browser } from '$app/environment';
+	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { scrollY } from 'svelte/reactivity/window';
 	import { fly } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
@@ -21,12 +24,9 @@
 		Globe,
 		Lock,
 		Radio,
-		Activity,
-		ChartColumn,
 		Bot,
 		Star,
 		UserRound,
-		Fingerprint,
 		Boxes,
 		Zap,
 		HardDrive,
@@ -35,9 +35,9 @@
 
 	type MenuItem = { name: string; href: string };
 	let menuItems: MenuItem[] = [
+		{ name: 'API', href: '#api' },
 		{ name: 'Live today', href: '#live' },
 		{ name: 'Architecture', href: '#architecture' },
-		{ name: 'API', href: '#api' },
 		{ name: 'Roadmap', href: '#roadmap' },
 		{ name: 'FAQ', href: '#faq' }
 	];
@@ -75,27 +75,12 @@
 		{
 			icon: UserRound,
 			title: 'Guest sessions',
-			desc: 'Anonymous sessions so people can try your app before handing over an email.'
-		},
-		{
-			icon: Fingerprint,
-			title: 'Google OAuth',
-			desc: 'Optional social sign-in, configured per project.'
+			desc: 'Anonymous sessions and social sign-in, so people can try your app before handing over an email.'
 		},
 		{
 			icon: Lock,
 			title: 'Access modes & JWTs',
 			desc: 'public, auth, or owner per collection - verified against project-signed JWTs from the auth agent.'
-		},
-		{
-			icon: Activity,
-			title: 'Realtime counters',
-			desc: 'Live user and session counts pushed to the dashboard over WebSockets via Agents SDK state sync.'
-		},
-		{
-			icon: ChartColumn,
-			title: 'Behavioral analytics',
-			desc: 'Near-real-time signup and activity charts in your local timezone, backed by Workers Analytics Engine.'
 		},
 		{
 			icon: Bot,
@@ -157,10 +142,9 @@
 
 	let openFaq = $state<number | null>(0);
 
-	const apiExamples = [
-		...buildIntegrationExamples('/api/projects/PROJECT_ID/auth'),
-		...buildDbIntegrationExamples('/api/projects/PROJECT_ID/db')
-	];
+	const authApiExamples = buildIntegrationExamples('/api/projects/PROJECT_ID/auth');
+	const dbApiExamples = buildDbIntegrationExamples('/api/projects/PROJECT_ID/db');
+	let apiProduct = $state<'auth' | 'db'>(page.url.searchParams.get('api') === 'db' ? 'db' : 'auth');
 
 	// Agent-topology visual: simulated traffic converging on one project agent.
 	const mapW = 480;
@@ -205,7 +189,29 @@
 	// The hero visual is one diagram with two skins: same map, same agent node,
 	// opposite flow. Auth animates requests IN; db animates writes in from two
 	// clients and live-query deltas fanning OUT to the other three.
-	let heroTab = $state<'auth' | 'db'>('db');
+	// Selections survive reloads via query params (?agent= and ?api=) - set
+	// with replaceState so switching never scrolls or adds history entries.
+	let heroTab = $state<'auth' | 'db'>(
+		page.url.searchParams.get('agent') === 'auth' ? 'auth' : 'db'
+	);
+
+	function persistParam(key: string, value: string) {
+		if (!browser) return;
+		const url = new URL(window.location.href);
+		url.searchParams.set(key, value);
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- same-page query param, not a route
+		replaceState(url, {});
+	}
+
+	function setHeroTab(id: 'auth' | 'db') {
+		heroTab = id;
+		persistParam('agent', id);
+	}
+
+	function setApiProduct(id: 'auth' | 'db') {
+		apiProduct = id;
+		persistParam('api', id);
+	}
 	let feed = $state<FeedEvent[]>([]);
 	let feedCursor = 0;
 	let reduceMotion = $state(false);
@@ -369,13 +375,13 @@
 							class="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 font-mono text-xs text-muted-foreground/70"
 						>
 							<span class="flex items-center gap-1.5">
-								<Star class="h-3.5 w-3.5 text-primary" /> 72 stars on GitHub
+								<Star class="h-3.5 w-3.5 text-primary" /> 81 stars on GitHub
 							</span>
 							<span class="flex items-center gap-1.5">
 								<GitFork class="h-3.5 w-3.5" /> 5 forks
 							</span>
 							<span class="flex items-center gap-1.5">
-								<Boxes class="h-3.5 w-3.5" /> 244 demo backends created
+								<Boxes class="h-3.5 w-3.5" /> 254 demo backends created
 							</span>
 						</div>
 						<p class="mt-3 font-mono text-xs text-muted-foreground/70">
@@ -386,8 +392,12 @@
 
 				<!-- Signature visual: one agent per project -->
 				<div class="hero-visual relative mt-8 overflow-hidden px-2 sm:mt-12 md:mt-20">
+					<!-- pointer-events-none: this fade sits over the card, and without it
+					     the hero tabs underneath are unclickable. The fade starts low
+					     (80%) so the chart legend stays readable; only the card's bottom
+					     edge blends into the page. -->
 					<div
-						class="absolute inset-0 z-10 bg-linear-to-b from-transparent from-35% to-background"
+						class="pointer-events-none absolute inset-0 z-10 bg-linear-to-b from-transparent from-80% to-background"
 					></div>
 					<div
 						class="relative mx-auto max-w-6xl overflow-hidden rounded-2xl border bg-background p-4 shadow-lg inset-shadow-2xs shadow-zinc-950/15 ring-background dark:inset-shadow-white/20"
@@ -402,17 +412,23 @@
 										<span class="h-2 w-2 rounded-full bg-border"></span>
 										<span class="h-2 w-2 rounded-full bg-border"></span>
 									</span>
-									<span class="flex items-center gap-1" role="tablist" aria-label="Agent">
+									<span
+										class="flex items-center gap-1 rounded-full border border-border bg-background/60 p-0.5"
+										role="tablist"
+										aria-label="Agent"
+									>
 										{#each [['db', 'db-agent'], ['auth', 'auth-agent']] as const as [id, label] (id)}
 											<button
 												type="button"
 												role="tab"
 												aria-selected={heroTab === id}
 												class={cn(
-													'cursor-pointer rounded-full px-2.5 py-0.5 transition-colors',
-													heroTab === id ? 'bg-primary/15 text-foreground' : 'hover:text-foreground'
+													'cursor-pointer rounded-full px-3 py-1 transition-colors',
+													heroTab === id
+														? 'border border-primary/40 bg-primary/15 font-semibold text-foreground shadow-sm'
+														: 'border border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'
 												)}
-												onclick={() => (heroTab = id)}>{label}</button
+												onclick={() => setHeroTab(id)}>{label}</button
 											>
 										{/each}
 									</span>
@@ -546,7 +562,9 @@
 										</span>
 										<span class="flex items-center gap-1.5">
 											<span class="h-1.5 w-1.5 rounded-full bg-chart-3"></span>
-											{heroTab === 'db' ? 'live-query deltas' : 'WebSocket state sync'}
+											{heroTab === 'db'
+												? 'live-query deltas over hibernated WebSockets'
+												: 'WebSocket state sync'}
 										</span>
 										<span
 											>{heroTab === 'db'
@@ -619,8 +637,92 @@
 			</div>
 		</section>
 
+		<!-- API -->
+		<section id="api" class="border-y border-border bg-card px-4 py-16 sm:px-8 sm:py-24">
+			<div class="mx-auto grid max-w-7xl grid-cols-1 items-center gap-14 md:grid-cols-[2fr_3fr]">
+				<div>
+					<span
+						class="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
+						>API</span
+					>
+					<h2 class="mt-4 text-3xl leading-tight font-bold md:text-4xl">
+						It's just HTTP. SDKs optional.
+					</h2>
+					<p class="mt-4 text-muted-foreground">
+						Point <code class="font-mono">fetch</code> at your project's endpoint and you're
+						integrated - this is the exact API the demo dashboard uses. When you want types, the
+						Better Auth client and <code class="font-mono">@cloudflarebase/db/client</code> wrap the same
+						routes.
+					</p>
+					<ul class="mt-6 space-y-3 text-sm">
+						<li class="flex gap-2.5">
+							<Check class="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+							Cookie sessions for same-origin browser apps
+						</li>
+						<li class="flex gap-2.5">
+							<Check class="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+							<span
+								>Bearer tokens via the <code class="font-mono">set-auth-token</code> header for external
+								and non-browser clients</span
+							>
+						</li>
+						<li class="flex gap-2.5">
+							<Check class="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+							Per-project trusted origins - add yours under Authentication → Settings
+						</li>
+						<li class="flex gap-2.5">
+							<Check class="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
+							<span
+								>Public config endpoint: <code class="font-mono"
+									>GET /api/projects/:projectId/config</code
+								></span
+							>
+						</li>
+					</ul>
+				</div>
+				<div class="overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+					<div class="flex items-center justify-between border-b border-border px-4 py-2.5">
+						<div class="flex items-center gap-1.5">
+							<span class="h-2.5 w-2.5 rounded-full bg-border"></span>
+							<span class="h-2.5 w-2.5 rounded-full bg-border"></span>
+							<span class="h-2.5 w-2.5 rounded-full bg-border"></span>
+						</div>
+						<div
+							class="flex items-center gap-1 rounded-full border border-border bg-background/60 p-0.5 font-mono text-xs"
+							role="tablist"
+							aria-label="Product"
+						>
+							{#each [['auth', 'auth'], ['db', 'db']] as const as [id, label] (id)}
+								<button
+									type="button"
+									role="tab"
+									aria-selected={apiProduct === id}
+									class={cn(
+										'cursor-pointer rounded-full px-3 py-1 transition-colors',
+										apiProduct === id
+											? 'border border-primary/40 bg-primary/15 font-semibold text-foreground'
+											: 'border border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'
+									)}
+									onclick={() => setApiProduct(id)}>{label}</button
+								>
+							{/each}
+						</div>
+					</div>
+					{#key apiProduct}
+						<!-- Fixed geometry: the pill row reserves two lines and the code
+						     block scrolls inside a constant height, so switching between
+						     short and tall examples never shifts the page below. -->
+						<CodeExamples
+							examples={apiProduct === 'db' ? dbApiExamples : authApiExamples}
+							class="p-4 [&_pre]:h-[22.75rem] [&_pre]:overflow-y-auto"
+						/>
+					{/key}
+				</div>
+			</div>
+		</section>
+
 		<!-- LIVE TODAY -->
-		<section id="live" class="border-y border-border bg-card px-4 py-16 sm:px-8 sm:py-24">
+		<section id="live" class="px-4 py-16 sm:px-8 sm:py-24">
 			<div class="mx-auto max-w-6xl">
 				<div class="mb-14 max-w-xl">
 					<span
@@ -656,7 +758,7 @@
 		</section>
 
 		<!-- ARCHITECTURE -->
-		<section id="architecture" class="px-4 py-14 sm:px-8 sm:py-20">
+		<section id="architecture" class="border-y border-border bg-card px-4 py-14 sm:px-8 sm:py-20">
 			<div class="mx-auto max-w-6xl">
 				<div class="mb-10 max-w-xl">
 					<span
@@ -688,59 +790,6 @@
 							<p class="mt-3 text-sm leading-relaxed text-muted-foreground">{s.desc}</p>
 						</div>
 					{/each}
-				</div>
-			</div>
-		</section>
-
-		<!-- API -->
-		<section id="api" class="border-y border-border bg-card px-4 py-16 sm:px-8 sm:py-24">
-			<div class="mx-auto grid max-w-6xl grid-cols-1 items-center gap-14 md:grid-cols-2">
-				<div>
-					<span
-						class="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
-						>API</span
-					>
-					<h2 class="mt-4 text-3xl leading-tight font-bold md:text-4xl">
-						No SDK to install. It's just HTTP.
-					</h2>
-					<p class="mt-4 text-muted-foreground">
-						Point <code class="font-mono">fetch</code> at your project's endpoint and you're integrated.
-						Auth routes are Better Auth's; documents and live queries are one POST and one WebSocket away
-						- this is the exact API the demo dashboard uses.
-					</p>
-					<ul class="mt-6 space-y-3 text-sm">
-						<li class="flex gap-2.5">
-							<Check class="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
-							Cookie sessions for same-origin browser apps
-						</li>
-						<li class="flex gap-2.5">
-							<Check class="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
-							<span
-								>Bearer tokens via the <code class="font-mono">set-auth-token</code> header for external
-								and non-browser clients</span
-							>
-						</li>
-						<li class="flex gap-2.5">
-							<Check class="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
-							Per-project trusted origins - add yours under Authentication → Settings
-						</li>
-						<li class="flex gap-2.5">
-							<Check class="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
-							<span
-								>Public config endpoint: <code class="font-mono"
-									>GET /api/projects/:projectId/config</code
-								></span
-							>
-						</li>
-					</ul>
-				</div>
-				<div class="overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
-					<div class="flex items-center gap-1.5 border-b border-border px-4 py-3">
-						<span class="h-2.5 w-2.5 rounded-full bg-border"></span>
-						<span class="h-2.5 w-2.5 rounded-full bg-border"></span>
-						<span class="h-2.5 w-2.5 rounded-full bg-border"></span>
-					</div>
-					<CodeExamples examples={apiExamples} class="p-4" />
 				</div>
 			</div>
 		</section>
