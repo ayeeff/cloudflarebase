@@ -50,20 +50,17 @@
 	let { data } = $props();
 	let hydrated = $state(false);
 
+	// Tab and browsed collection restore from the query string AT INIT, not in
+	// onMount: page.url is the request URL during SSR, so the server already
+	// renders the right tab and the reload never flashes the default first.
+	const initialTab = page.url.searchParams.get('tab');
+	const initialCollection = page.url.searchParams.get('collection');
+
 	onMount(() => {
 		hydrated = true;
 		void loadPermissions();
-		// Restore tab and browsed collection from the query string (survives
-		// reloads). No persist on restore: the router may not accept
-		// replaceState yet.
-		const savedTab = page.url.searchParams.get('tab');
-		if (savedTab === 'collections' || savedTab === 'access' || savedTab === 'setup') {
-			activeTab = savedTab;
-		}
-		const initial = page.url.searchParams.get('collection');
-		if (initial && /^[a-z][a-z0-9_-]{0,63}$/.test(initial)) {
-			selectCollection(initial, { persist: false });
-		}
+		// Documents can only load client-side; the card itself was SSR'd.
+		if (selected) void loadDocuments(selected);
 	});
 
 	/** Mirror UI state into the query string without history spam. */
@@ -92,11 +89,17 @@
 	// svelte-ignore state_referenced_locally
 	let agentState = $state<DbAgentState>(data.overview.state);
 	let live = $state(false);
-	let activeTab = $state('collections');
+	let activeTab = $state(
+		initialTab === 'access' || initialTab === 'setup' ? initialTab : 'collections'
+	);
 	let busy = $state(false);
 
 	// Document browser: which collection is open, and its latest page of docs.
-	let selected = $state<string | null>(null);
+	let selected = $state<string | null>(
+		initialCollection && /^[a-z][a-z0-9_-]{0,63}$/.test(initialCollection)
+			? initialCollection
+			: null
+	);
 	let documents = $state<DbDocument[]>([]);
 	let docsLoaded = $state(false);
 	let docsError = $state<string | null>(null);
