@@ -112,6 +112,8 @@ test.describe('database page (frontend)', () => {
 		await createCollection(page, collection);
 		await page.getByTestId(`db-collection-${collection}`).click();
 
+		// Destructive/secondary actions live in the three-dots menu.
+		await page.getByTestId('db-actions-menu').click();
 		await page.getByTestId('db-delete-collection').click();
 		const dialog = page.getByTestId('db-delete-panel');
 		await expect(dialog.getByRole('button', { name: 'Delete forever' })).toBeDisabled();
@@ -140,6 +142,73 @@ test.describe('database page (frontend)', () => {
 		await expect(
 			page.getByTestId(`db-access-${collection}`).getByLabel(`Read access for ${collection}`)
 		).toHaveText('auth');
+	});
+
+	test('permission and rules editors round-trip through the access tab', async ({
+		page,
+		request
+	}) => {
+		// The permission dropdowns are fed from the auth roles registry, so a
+		// key must be granted to a role before it can be required here.
+		const defineRole = await request.put(`/api/projects/${DB_UI_PROJECT}/admin/roles`, {
+			data: { roles: [{ name: 'writer', permissions: ['posts:write'] }] }
+		});
+		expect(defineRole.ok(), await defineRole.text()).toBeTruthy();
+
+		const collection = uniqueCollection('r');
+		await gotoDbPage(page, DB_UI_PROJECT);
+		await createCollection(page, collection);
+
+		await page.getByRole('tab', { name: 'Access' }).click();
+		const row = page.getByTestId(`db-access-${collection}`);
+
+		// The create form defaults write access to owner, so the write
+		// permission select is enabled; pick the granted key.
+		await row.getByTestId(`db-perm-write-${collection}`).click();
+		await page.getByRole('option', { name: 'posts:write' }).click();
+		await row.getByRole('button', { name: 'Apply' }).click();
+		await expect(row.getByText('Saved')).toBeVisible();
+
+		// Rules dialog: the collection is empty, so the generic template seeds
+		// the editor (collections with documents get their shape inferred);
+		// save it and see the rule count badge.
+		await row.getByTestId(`db-rules-${collection}`).click();
+		const rules = page.getByTestId('db-rules-panel');
+		await expect(rules.getByTestId('db-rules-json')).toBeVisible();
+		await rules.getByTestId('db-rules-save').click();
+		await expect(page.getByTestId(`db-rules-${collection}`)).toHaveText('1 rule');
+
+		// Both survive a reload - they came back from the agent, not the UI.
+		await page.reload();
+		await expect(page.getByTestId('db-page')).toHaveAttribute('data-hydrated', 'true');
+		await page.getByRole('tab', { name: 'Access' }).click();
+		await expect(page.getByTestId(`db-perm-write-${collection}`)).toHaveText('posts:write');
+		await expect(page.getByTestId(`db-rules-${collection}`)).toHaveText('1 rule');
+	});
+
+	test('the rollback dialog explains unsupported environments up front', async ({ page }) => {
+		const collection = uniqueCollection('t');
+		await gotoDbPage(page, DB_UI_PROJECT);
+		await createCollection(page, collection);
+		await page.getByTestId(`db-collection-${collection}`).click();
+
+		await page.getByTestId('db-rollback').click();
+		const dialog = page.getByTestId('db-rollback-panel');
+		// The submit never arms without a resolved target and the typed name.
+		await expect(dialog.getByTestId('db-rollback-submit')).toBeDisabled();
+
+		if (!process.env.BASE_URL) {
+			// Local dev has no durable change log: the dialog says so instead of
+			// offering a form that would 501 after the fact, and stays disarmed.
+			await expect(dialog.getByTestId('db-rollback-unsupported')).toBeVisible();
+			await expect(dialog.getByTestId('db-rollback-submit')).toBeDisabled();
+		} else {
+			// Deployed stacks get the D1-style flow: Date resolves the closest
+			// available bookmark; Bookmark lists captured points.
+			await expect(dialog.getByTestId('db-rollback-mode-date')).toBeVisible();
+			await dialog.getByTestId('db-rollback-mode-bookmark').click();
+			await expect(dialog.getByTestId('db-capture-point')).toBeVisible();
+		}
 	});
 
 	test('integration snippets address this project', async ({ page }) => {

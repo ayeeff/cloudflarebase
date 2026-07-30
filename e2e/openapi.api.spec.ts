@@ -54,6 +54,23 @@ test.describe('openapi document', () => {
 		expect(tagNames).toContain('Database');
 		expect(doc.paths['/db/collections/{collection}/query']).toBeTruthy();
 		expect(doc.components.schemas.DbQuery).toBeTruthy();
+
+		// Aggregations, rules, export/import, and point-in-time restore.
+		for (const path of [
+			'/db/collections/{collection}/aggregate',
+			'/db/collections/{collection}/export',
+			'/db/admin/aggregate',
+			'/db/admin/collections/{name}/export',
+			'/db/admin/collections/{name}/import',
+			'/db/admin/collections/{name}/restore',
+			'/db/admin/collections/{name}/restore-points',
+			'/db/admin/collections/{name}/checkpoint',
+			'/db/admin/collections/{name}/bookmark'
+		]) {
+			expect(doc.paths[path], `${path} should be documented`).toBeTruthy();
+		}
+		expect(doc.components.schemas.DbValidator).toBeTruthy();
+		expect(doc.components.schemas.DbAggregateRequest).toBeTruthy();
 	});
 
 	test('resolves every schema reference it emits', async ({ request }) => {

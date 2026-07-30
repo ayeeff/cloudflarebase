@@ -6,16 +6,21 @@
 		DbAccessMode,
 		DbAgentState,
 		DbDocument,
+		DbFieldRule,
+		DbImportReport,
 		DbOverview,
-		DbQueryResult
+		DbQueryResult,
+		DbRestorePoints,
+		DbValidator
 	} from '$lib/agents';
-	import { dbAccessModeSchema } from '$lib/agents';
+	import { dbAccessModeSchema, dbValidatorSchema } from '$lib/agents';
 	import CodeExamples from '$lib/components/code-examples.svelte';
 	import type { CodeExample } from '$lib/integration-examples';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
@@ -25,24 +30,29 @@
 	import {
 		Activity,
 		Database,
+		Download,
+		EllipsisVertical,
 		FileText,
 		FolderPlus,
+		History,
 		Pencil,
 		Plus,
 		Radio,
 		Rocket,
 		ShieldCheck,
 		Trash2,
+		Upload,
 		X
 	} from '@lucide/svelte';
 	import { AgentClient } from 'agents/client';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 
 	let { data } = $props();
 	let hydrated = $state(false);
 
 	onMount(() => {
 		hydrated = true;
+		void loadPermissions();
 		// Restore tab and browsed collection from the query string (survives
 		// reloads). No persist on restore: the router may not accept
 		// replaceState yet.
@@ -182,6 +192,9 @@
 		deletePanelOpen = false;
 		deleteConfirmInput = '';
 		deleteError = null;
+		importReport = null;
+		importError = null;
+		rollbackOpen = false;
 		persistQueryParam('collection', null);
 	}
 
@@ -194,11 +207,59 @@
 		selected = name;
 		if (options.persist !== false) persistQueryParam('collection', name);
 		void loadDocuments(name);
+		// The documents card mounts below the collections grid - off-screen on
+		// phones, where a tap would otherwise appear to do nothing. Scroll the
+		// shell's ScrollArea viewport, NEVER the window: the app shell is
+		// viewport-height, and window scrolling shoves the layout past the
+		// mobile tab bar.
+		void tick().then(() => {
+			const card = document.querySelector('[data-testid="db-documents-card"]');
+			if (!(card instanceof HTMLElement)) return;
+			const viewport = card.closest('[data-slot="scroll-area-viewport"]');
+			if (viewport instanceof HTMLElement) {
+				const top =
+					card.getBoundingClientRect().top -
+					viewport.getBoundingClientRect().top +
+					viewport.scrollTop;
+				viewport.scrollTo({ top: Math.max(0, top - 12), behavior: 'smooth' });
+			}
+		});
 	}
 
 	// Collection create / access-mode configuration. Both go through the same
 	// PUT /admin/collections/:name upsert on the agent.
 	const accessModes: DbAccessMode[] = ['public', 'auth', 'owner'];
+
+	// Permission keys actually granted by this project's roles (Auth > Roles):
+	// the permission selects offer real grants instead of free-typed text.
+	// Sentinel because a Select item cannot carry the empty string.
+	const NO_PERMISSION = '__none__';
+	let projectPermissions = $state<string[]>([]);
+
+	async function loadPermissions() {
+		try {
+			const response = await fetch(`/api/projects/${data.projectId}/overview`);
+			if (!response.ok) return;
+			const overview = (await response.json()) as {
+				state?: { roles?: { permissions: string[] }[] };
+			};
+			const keys: Record<string, true> = {};
+			for (const role of overview.state?.roles ?? []) {
+				for (const key of role.permissions) keys[key] = true;
+			}
+			projectPermissions = Object.keys(keys).sort();
+		} catch {
+			// the selects still offer none + whatever is already stored
+		}
+	}
+
+	/** Registry keys plus the stored value (in case its role was deleted). */
+	function permissionOptions(current: string): string[] {
+		const keys: Record<string, true> = {};
+		for (const key of projectPermissions) keys[key] = true;
+		if (current.trim()) keys[current.trim()] = true;
+		return Object.keys(keys).sort();
+	}
 
 	function toAccessMode(value: string): DbAccessMode {
 		const parsed = dbAccessModeSchema.safeParse(value);
@@ -207,7 +268,14 @@
 
 	async function saveCollectionConfig(
 		name: string,
-		config: { readAccess: DbAccessMode; writeAccess: DbAccessMode }
+		config: {
+			readAccess: DbAccessMode;
+			writeAccess: DbAccessMode;
+			// Omitted = unchanged on the agent; explicit null clears.
+			readPermission?: string | null;
+			writePermission?: string | null;
+			validator?: DbValidator | null;
+		}
 	): Promise<string | null> {
 		try {
 			const response = await fetch(
@@ -253,33 +321,64 @@
 	}
 
 	// Access tab: pending edits per collection, applied explicitly per row.
-	let accessEdits = $state<Record<string, { readAccess: DbAccessMode; writeAccess: DbAccessMode }>>(
-		{}
-	);
+	// Permission keys ride along with the modes ('' = none); the validator is
+	// edited in its own dialog and deliberately NOT sent by Apply (omitted =
+	// unchanged on the agent), so the two saves cannot clobber each other.
+	type AccessEdit = {
+		readAccess: DbAccessMode;
+		writeAccess: DbAccessMode;
+		readPermission: string;
+		writePermission: string;
+	};
+	let accessEdits = $state<Record<string, AccessEdit>>({});
 	let accessFeedback = $state<Record<string, { ok: boolean; message: string }>>({});
 
-	function accessValue(name: string, kind: 'readAccess' | 'writeAccess'): DbAccessMode {
+	function currentAccess(name: string): AccessEdit {
+		const summary = agentState.collections.find((collection) => collection.name === name);
 		return (
-			accessEdits[name]?.[kind] ??
-			agentState.collections.find((collection) => collection.name === name)?.[kind] ??
-			'owner'
+			accessEdits[name] ?? {
+				readAccess: summary?.readAccess ?? 'owner',
+				writeAccess: summary?.writeAccess ?? 'owner',
+				readPermission: summary?.readPermission ?? '',
+				writePermission: summary?.writePermission ?? ''
+			}
 		);
 	}
 
-	function setAccessValue(name: string, kind: 'readAccess' | 'writeAccess', value: DbAccessMode) {
-		const pending = {
-			readAccess: accessValue(name, 'readAccess'),
-			writeAccess: accessValue(name, 'writeAccess')
-		};
-		pending[kind] = value;
-		accessEdits[name] = pending;
+	function setAccessField<K extends keyof AccessEdit>(name: string, kind: K, value: AccessEdit[K]) {
+		accessEdits[name] = { ...currentAccess(name), [kind]: value };
+	}
+
+	/**
+	 * The teaching device of the Access tab: the current (possibly pending)
+	 * configuration restated as one plain-English sentence, updated live as
+	 * the selects change - so nobody has to decode mode names.
+	 */
+	function accessSentence(pending: AccessEdit, hasRules: boolean): string {
+		const withKey = (key: string) => (key.trim() ? ` whose role grants ${key.trim()}` : '');
+		const read =
+			pending.readAccess === 'public'
+				? 'anyone can read every document'
+				: pending.readAccess === 'auth'
+					? `any signed-in user${withKey(pending.readPermission)} can read every document`
+					: `signed-in users${withKey(pending.readPermission)} can read only documents they created`;
+		const write =
+			pending.writeAccess === 'public'
+				? 'anyone can create, edit, and delete documents'
+				: pending.writeAccess === 'auth'
+					? `any signed-in user${withKey(pending.writePermission)} can create, edit, and delete any document`
+					: `signed-in users${withKey(pending.writePermission)} can create documents but edit or delete only their own`;
+		return `Read: ${read}. Write: ${write}.${hasRules ? ' New writes must also pass the document rules.' : ''}`;
 	}
 
 	async function applyAccess(name: string) {
 		busy = true;
+		const pending = currentAccess(name);
 		const message = await saveCollectionConfig(name, {
-			readAccess: accessValue(name, 'readAccess'),
-			writeAccess: accessValue(name, 'writeAccess')
+			readAccess: pending.readAccess,
+			writeAccess: pending.writeAccess,
+			readPermission: pending.readPermission.trim() || null,
+			writePermission: pending.writePermission.trim() || null
 		});
 		busy = false;
 		if (message) {
@@ -291,6 +390,291 @@
 		setTimeout(() => {
 			if (accessFeedback[name]?.ok) delete accessFeedback[name];
 		}, 2_000);
+	}
+
+	// Rules-lite validator editor: JSON in a dialog, validated client-side
+	// with the same schema shape the agent enforces.
+	let rulesFor = $state<string | null>(null);
+	let rulesJson = $state('');
+	let rulesError = $state<string | null>(null);
+	/** Only for EMPTY collections; anything with documents gets a template
+	 * inferred from its real shape instead of a puzzling generic example. */
+	const RULES_TEMPLATE = JSON.stringify(
+		{ fields: { title: { type: 'string', required: true } }, additionalFields: 'allow' },
+		null,
+		2
+	);
+
+	function jsonTypeOf(value: unknown): DbFieldRule['type'] {
+		if (value === null) return 'null';
+		if (Array.isArray(value)) return 'array';
+		const kind = typeof value;
+		if (kind === 'string' || kind === 'number' || kind === 'boolean') return kind;
+		return kind === 'object' ? 'object' : 'any';
+	}
+
+	/** Seed a validator from real documents: one rule per top-level field,
+	 * typed when the type is consistent across the sample, required when
+	 * every sampled document carries the field. Plain objects, not Map/Set -
+	 * svelte/prefer-svelte-reactivity flags those even for pure local math. */
+	function inferValidator(docs: DbDocument[]): DbValidator | null {
+		const kindsByField: Record<string, Record<string, true>> = {};
+		const seenIn: Record<string, number> = {};
+		for (const doc of docs) {
+			for (const [key, value] of Object.entries(doc.data)) {
+				if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(key) || value === undefined) continue;
+				(kindsByField[key] ??= {})[jsonTypeOf(value)] = true;
+				seenIn[key] = (seenIn[key] ?? 0) + 1;
+			}
+		}
+		const fields: DbValidator['fields'] = {};
+		for (const [key, kinds] of Object.entries(kindsByField).slice(0, 20)) {
+			const kindNames = Object.keys(kinds);
+			fields[key] = {
+				type: kindNames.length === 1 ? (kindNames[0] as DbFieldRule['type']) : 'any',
+				required: seenIn[key] === docs.length
+			};
+		}
+		return Object.keys(fields).length ? { fields, additionalFields: 'allow' } : null;
+	}
+
+	async function openRules(name: string) {
+		const summary = agentState.collections.find((collection) => collection.name === name);
+		rulesError = null;
+		rulesFor = name;
+		if (summary?.validator) {
+			rulesJson = JSON.stringify(summary.validator, null, 2);
+			return;
+		}
+		// No rules yet: propose a starting point from the live documents.
+		rulesJson = RULES_TEMPLATE;
+		try {
+			const response = await fetch(`/api/projects/${data.projectId}/db/admin/query`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ collection: name, query: { limit: 20 } })
+			});
+			const result = (await response.json().catch(() => null)) as DbQueryResult | null;
+			if (rulesFor !== name || !response.ok || !result?.docs.length) return;
+			const inferred = inferValidator(result.docs);
+			if (inferred) rulesJson = JSON.stringify(inferred, null, 2);
+		} catch {
+			// keep the generic template
+		}
+	}
+
+	async function saveRules(clear: boolean) {
+		const name = rulesFor;
+		if (!name) return;
+		let validator: DbValidator | null = null;
+		if (!clear) {
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(rulesJson);
+			} catch (error) {
+				rulesError = `Invalid JSON: ${error instanceof Error ? error.message : String(error)}`;
+				return;
+			}
+			const checked = dbValidatorSchema.safeParse(parsed);
+			if (!checked.success) {
+				rulesError = checked.error.issues
+					.map((issue) => `${issue.path.join('.') || 'validator'}: ${issue.message}`)
+					.join('; ');
+				return;
+			}
+			validator = checked.data;
+		}
+		busy = true;
+		const current = currentAccess(name);
+		const message = await saveCollectionConfig(name, {
+			readAccess: current.readAccess,
+			writeAccess: current.writeAccess,
+			validator
+		});
+		busy = false;
+		if (message) {
+			rulesError = message;
+			return;
+		}
+		rulesFor = null;
+	}
+
+	// Export / import: operator surfaces over the admin proxy.
+	const adminBase = $derived(`/api/projects/${data.projectId}/db/admin/collections`);
+	let importBusy = $state(false);
+	let importReport = $state<DbImportReport | null>(null);
+	let importError = $state<string | null>(null);
+	let importInput = $state<HTMLInputElement | null>(null);
+
+	async function importFile(event: Event) {
+		const collection = selected;
+		const file = (event.target as HTMLInputElement).files?.[0];
+		if (!collection || !file) return;
+		importBusy = true;
+		importError = null;
+		importReport = null;
+		try {
+			const response = await fetch(`${adminBase}/${encodeURIComponent(collection)}/import`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/x-ndjson' },
+				body: await file.text()
+			});
+			const result = (await response.json().catch(() => null)) as
+				(DbImportReport & { error?: string }) | null;
+			if (!response.ok || !result) {
+				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
+			}
+			importReport = result;
+			await refreshData(data.projectId);
+		} catch (error) {
+			importError = error instanceof Error ? error.message : String(error);
+		} finally {
+			importBusy = false;
+			if (importInput) importInput.value = '';
+		}
+	}
+
+	// Point-in-time rollback, mimicking Cloudflare D1's restore flow: a
+	// Date | Bookmark toggle where a picked time resolves to the CLOSEST
+	// AVAILABLE BOOKMARK before anything is restored, plus captured named
+	// points (checkpoints, before-import, before-rollback) as one-click
+	// fills. Local development has no durable change log; the dialog says so
+	// up front instead of failing after a submit.
+	let rollbackOpen = $state(false);
+	let rollbackInfo = $state<DbRestorePoints | null>(null);
+	let rollbackMode = $state<'date' | 'bookmark'>('date');
+	let rollbackTime = $state('');
+	let rollbackBookmarkInput = $state('');
+	let resolvedBookmark = $state<string | null>(null);
+	let resolveBusy = $state(false);
+	let resolveError = $state<string | null>(null);
+	let rollbackConfirmInput = $state('');
+	let rollbackError = $state<string | null>(null);
+	let rollbackUndo = $state<string | null>(null);
+	let resolveTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/** What a submit would restore to, whichever tab is active. */
+	const rollbackTarget = $derived(
+		rollbackMode === 'date' ? resolvedBookmark : rollbackBookmarkInput.trim() || null
+	);
+
+	function openRollback() {
+		rollbackInfo = null;
+		rollbackMode = 'date';
+		rollbackTime = '';
+		rollbackBookmarkInput = '';
+		resolvedBookmark = null;
+		resolveError = null;
+		rollbackConfirmInput = '';
+		rollbackError = null;
+		rollbackUndo = null;
+		rollbackOpen = true;
+		void refreshRestorePoints();
+	}
+
+	async function refreshRestorePoints() {
+		const name = selected;
+		if (!name) return;
+		try {
+			const response = await fetch(`${adminBase}/${encodeURIComponent(name)}/restore-points`);
+			const result = (await response.json().catch(() => null)) as DbRestorePoints | null;
+			rollbackInfo = response.ok && result ? result : { supported: false, points: [] };
+		} catch {
+			rollbackInfo = { supported: false, points: [] };
+		}
+	}
+
+	/** Debounced D1-style resolution: time in, closest bookmark out. */
+	function scheduleResolve(value: string) {
+		rollbackTime = value;
+		resolvedBookmark = null;
+		resolveError = null;
+		if (resolveTimer) clearTimeout(resolveTimer);
+		if (!value || !selected) return;
+		resolveTimer = setTimeout(() => void resolveBookmark(), 350);
+	}
+
+	async function resolveBookmark() {
+		const name = selected;
+		if (!name || !rollbackTime) return;
+		const at = new Date(rollbackTime);
+		if (Number.isNaN(at.getTime())) {
+			resolveError = 'Pick a valid date and time.';
+			return;
+		}
+		resolveBusy = true;
+		try {
+			const response = await fetch(
+				`${adminBase}/${encodeURIComponent(name)}/bookmark?at=${encodeURIComponent(at.toISOString())}`
+			);
+			const result = (await response.json().catch(() => null)) as {
+				bookmark?: string;
+				error?: string;
+			} | null;
+			if (!response.ok || !result?.bookmark) {
+				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
+			}
+			resolvedBookmark = result.bookmark;
+			resolveError = null;
+		} catch (error) {
+			resolveError = error instanceof Error ? error.message : String(error);
+		} finally {
+			resolveBusy = false;
+		}
+	}
+
+	async function capturePoint() {
+		const name = selected;
+		if (!name) return;
+		busy = true;
+		rollbackError = null;
+		try {
+			const response = await fetch(`${adminBase}/${encodeURIComponent(name)}/checkpoint`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: '{}'
+			});
+			const result = (await response.json().catch(() => null)) as { error?: string } | null;
+			if (!response.ok) {
+				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
+			}
+			await refreshRestorePoints();
+		} catch (error) {
+			rollbackError = error instanceof Error ? error.message : String(error);
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function rollback(body: { bookmark: string }) {
+		const name = selected;
+		if (!name) return;
+		busy = true;
+		rollbackError = null;
+		try {
+			const response = await fetch(`${adminBase}/${encodeURIComponent(name)}/restore`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			const result = (await response.json().catch(() => null)) as {
+				restored?: boolean;
+				undoBookmark?: string;
+				error?: string;
+			} | null;
+			if (!response.ok || !result?.restored) {
+				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
+			}
+			rollbackUndo = result.undoBookmark ?? null;
+			rollbackConfirmInput = '';
+			await refreshData(data.projectId);
+			// The undo bookmark is persisted server-side as "before rollback".
+			await refreshRestorePoints();
+		} catch (error) {
+			rollbackError = error instanceof Error ? error.message : String(error);
+		} finally {
+			busy = false;
+		}
 	}
 
 	// Inline document editor (PUT replaces an existing id, so it doubles as edit).
@@ -422,7 +806,9 @@
 		'collection.created': FolderPlus,
 		'collection.deleted': Trash2,
 		'collection.configured': ShieldCheck,
-		'documents.changed': FileText
+		'collection.restored': History,
+		'documents.changed': FileText,
+		'documents.imported': Upload
 	} as const;
 
 	const stats = $derived([
@@ -476,6 +862,10 @@ const db = createDbClient({
 
 const posts = db.collection('posts');
 await posts.create({ title: 'Show HN: I built a Firebase on Cloudflare', votes: 1 });
+
+// Server-side aggregates and NDJSON export
+const total = await posts.count();
+const { votes } = await posts.aggregate({ aggregates: { votes: { op: 'sum', field: 'votes' } } });
 
 // The front page re-ranks itself on every vote, on every open screen.
 const unsubscribe = posts.subscribe(
@@ -744,11 +1134,17 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 								Up to 50 documents in id order, refetched on every change. Saving to an existing id
 								replaces that document.
 							</Card.Description>
-							<Card.Action class="flex items-center gap-2 self-center">
+							<!-- Desktop: labeled row beside the title; mobile drops the row
+							     UNDER the header full-width with Add document stretched.
+							     Export/import/delete live in the three-dots menu. -->
+							<Card.Action
+								class="flex flex-wrap items-center gap-2 self-center max-md:col-span-2 max-md:col-start-1 max-md:row-span-1 max-md:row-start-auto max-md:mt-2 max-md:w-full max-md:justify-self-stretch"
+							>
 								<Button
 									size="sm"
-									class="gap-1.5"
+									class="gap-1.5 max-md:flex-1"
 									data-testid="db-add-document"
+									aria-label="Add document"
 									onclick={() => {
 										editorOpen = !editorOpen;
 										editingExisting = false;
@@ -756,21 +1152,71 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 										docError = null;
 									}}
 								>
-									<Plus class="h-4 w-4" /> Add document
+									<Plus class="h-4 w-4" />Add document
 								</Button>
+								<input
+									bind:this={importInput}
+									type="file"
+									accept=".ndjson,.jsonl,.txt,application/x-ndjson"
+									class="hidden"
+									onchange={importFile}
+								/>
 								<Button
 									size="sm"
 									variant="outline"
-									class="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-									data-testid="db-delete-collection"
-									onclick={() => {
-										deletePanelOpen = !deletePanelOpen;
-										deleteConfirmInput = '';
-										deleteError = null;
-									}}
+									class="gap-1.5"
+									data-testid="db-rollback"
+									aria-label="Roll back in time"
+									onclick={openRollback}
 								>
-									<Trash2 class="h-4 w-4" /> Delete collection
+									<History class="h-4 w-4" /><span class="max-md:sr-only">Roll back</span>
 								</Button>
+								<DropdownMenu.Root>
+									<DropdownMenu.Trigger>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												size="icon"
+												variant="outline"
+												class="h-8 w-8"
+												aria-label="More collection actions"
+												data-testid="db-actions-menu"
+											>
+												<EllipsisVertical class="h-4 w-4" />
+											</Button>
+										{/snippet}
+									</DropdownMenu.Trigger>
+									<DropdownMenu.Content align="end">
+										<DropdownMenu.Item
+											data-testid="db-export"
+											onclick={() =>
+												selected &&
+												(window.location.href = `${adminBase}/${encodeURIComponent(selected)}/export`)}
+										>
+											<Download class="h-4 w-4" /> Export NDJSON
+										</DropdownMenu.Item>
+										<DropdownMenu.Item
+											data-testid="db-import"
+											disabled={importBusy}
+											onclick={() => importInput?.click()}
+										>
+											<Upload class="h-4 w-4" />
+											{importBusy ? 'Importing…' : 'Import NDJSON'}
+										</DropdownMenu.Item>
+										<DropdownMenu.Separator />
+										<DropdownMenu.Item
+											variant="destructive"
+											data-testid="db-delete-collection"
+											onclick={() => {
+												deletePanelOpen = true;
+												deleteConfirmInput = '';
+												deleteError = null;
+											}}
+										>
+											<Trash2 class="h-4 w-4" /> Delete
+										</DropdownMenu.Item>
+									</DropdownMenu.Content>
+								</DropdownMenu.Root>
 								<Button
 									variant="ghost"
 									size="icon"
@@ -839,6 +1285,19 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 							{/if}
 							{#if docsError}
 								<p class="mb-3 text-sm text-destructive" data-testid="db-docs-error">{docsError}</p>
+							{/if}
+							{#if importError}
+								<p class="mb-3 text-sm text-destructive" data-testid="db-import-error">
+									{importError}
+								</p>
+							{/if}
+							{#if importReport}
+								<p class="mb-3 text-sm text-muted-foreground" data-testid="db-import-result">
+									Imported {importReport.imported} new and replaced {importReport.updated} documents{importReport
+										.errors.length
+										? `; ${importReport.errors.length} lines failed (first: line ${importReport.errors[0].line} - ${importReport.errors[0].error})`
+										: '.'}
+								</p>
 							{/if}
 
 							{#if !docsLoaded}
@@ -923,9 +1382,19 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 				<Card.Root data-testid="db-access-modes">
 					<Card.Header>
 						<Card.Title>Access modes</Card.Title>
-						<Card.Description>
-							public - anyone; auth - any valid project JWT; owner - reads and writes scoped to the
-							token subject.
+						<Card.Description class="space-y-1.5">
+							<span class="block">
+								Every collection has one read rule and one write rule.
+								<span class="font-mono text-foreground">public</span> = no sign-in needed ·
+								<span class="font-mono text-foreground">auth</span> = any signed-in user of this
+								project · <span class="font-mono text-foreground">owner</span> = signed-in, and every
+								document remembers who created it, so users only reach their own.
+							</span>
+							<span class="block">
+								A permission key tightens auth/owner further: the user's role must grant that key.
+								Roles and their permissions live under Auth &gt; Roles; the built-in admin role
+								grants everything. Each row below explains itself in plain words as you change it.
+							</span>
 						</Card.Description>
 					</Card.Header>
 					<Card.Content>
@@ -936,12 +1405,15 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 								No collections yet - create one under Collections.
 							</p>
 						{:else}
-							<Table.Root class="min-w-[36rem]">
+							<Table.Root class="min-w-[54rem]">
 								<Table.Header>
 									<Table.Row>
 										<Table.Head>Collection</Table.Head>
 										<Table.Head>Read</Table.Head>
 										<Table.Head>Write</Table.Head>
+										<Table.Head>Read permission</Table.Head>
+										<Table.Head>Write permission</Table.Head>
+										<Table.Head>Rules</Table.Head>
 										<Table.Head class="w-40 text-right">
 											<span class="sr-only">Actions</span>
 										</Table.Head>
@@ -950,6 +1422,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 								<Table.Body>
 									{#each agentState.collections as collection (collection.name)}
 										{@const feedback = accessFeedback[collection.name]}
+										{@const pending = currentAccess(collection.name)}
 										<Table.Row data-testid={`db-access-${collection.name}`}>
 											<Table.Cell class="font-mono text-sm font-medium">
 												{collection.name}
@@ -957,9 +1430,9 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 											<Table.Cell>
 												<Select.Root
 													type="single"
-													value={accessValue(collection.name, 'readAccess')}
+													value={pending.readAccess}
 													onValueChange={(value) =>
-														setAccessValue(collection.name, 'readAccess', toAccessMode(value))}
+														setAccessField(collection.name, 'readAccess', toAccessMode(value))}
 												>
 													<Select.Trigger
 														class="min-w-24 font-mono"
@@ -967,7 +1440,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 														disabled={busy}
 														aria-label={`Read access for ${collection.name}`}
 													>
-														{accessValue(collection.name, 'readAccess')}
+														{pending.readAccess}
 													</Select.Trigger>
 													<Select.Content>
 														{#each accessModes as mode (mode)}
@@ -979,9 +1452,9 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 											<Table.Cell>
 												<Select.Root
 													type="single"
-													value={accessValue(collection.name, 'writeAccess')}
+													value={pending.writeAccess}
 													onValueChange={(value) =>
-														setAccessValue(collection.name, 'writeAccess', toAccessMode(value))}
+														setAccessField(collection.name, 'writeAccess', toAccessMode(value))}
 												>
 													<Select.Trigger
 														class="min-w-24 font-mono"
@@ -989,7 +1462,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 														disabled={busy}
 														aria-label={`Write access for ${collection.name}`}
 													>
-														{accessValue(collection.name, 'writeAccess')}
+														{pending.writeAccess}
 													</Select.Trigger>
 													<Select.Content>
 														{#each accessModes as mode (mode)}
@@ -997,6 +1470,77 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 														{/each}
 													</Select.Content>
 												</Select.Root>
+											</Table.Cell>
+											<Table.Cell>
+												<Select.Root
+													type="single"
+													value={pending.readPermission || NO_PERMISSION}
+													onValueChange={(value) =>
+														setAccessField(
+															collection.name,
+															'readPermission',
+															value === NO_PERMISSION ? '' : value
+														)}
+												>
+													<Select.Trigger
+														class="min-w-32 font-mono"
+														size="sm"
+														disabled={busy || pending.readAccess === 'public'}
+														aria-label={`Read permission for ${collection.name}`}
+														data-testid={`db-perm-read-${collection.name}`}
+													>
+														{pending.readPermission || 'none'}
+													</Select.Trigger>
+													<Select.Content>
+														<Select.Item value={NO_PERMISSION} label="none" class="font-mono" />
+														{#each permissionOptions(pending.readPermission) as key (key)}
+															<Select.Item value={key} label={key} class="font-mono" />
+														{/each}
+													</Select.Content>
+												</Select.Root>
+											</Table.Cell>
+											<Table.Cell>
+												<Select.Root
+													type="single"
+													value={pending.writePermission || NO_PERMISSION}
+													onValueChange={(value) =>
+														setAccessField(
+															collection.name,
+															'writePermission',
+															value === NO_PERMISSION ? '' : value
+														)}
+												>
+													<Select.Trigger
+														class="min-w-32 font-mono"
+														size="sm"
+														disabled={busy || pending.writeAccess === 'public'}
+														aria-label={`Write permission for ${collection.name}`}
+														data-testid={`db-perm-write-${collection.name}`}
+													>
+														{pending.writePermission || 'none'}
+													</Select.Trigger>
+													<Select.Content>
+														<Select.Item value={NO_PERMISSION} label="none" class="font-mono" />
+														{#each permissionOptions(pending.writePermission) as key (key)}
+															<Select.Item value={key} label={key} class="font-mono" />
+														{/each}
+													</Select.Content>
+												</Select.Root>
+											</Table.Cell>
+											<Table.Cell>
+												{@const ruleCount = Object.keys(collection.validator?.fields ?? {}).length}
+												<Button
+													size="sm"
+													variant={collection.validator ? 'secondary' : 'ghost'}
+													class="font-mono text-xs"
+													disabled={busy}
+													data-testid={`db-rules-${collection.name}`}
+													onclick={() => void openRules(collection.name)}
+												>
+													{collection.validator
+														? `${ruleCount} ${ruleCount === 1 ? 'rule' : 'rules'}`
+														: 'none'}
+												</Button>
 											</Table.Cell>
 											<Table.Cell>
 												<div class="flex items-center justify-end gap-2">
@@ -1021,6 +1565,18 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 														Apply
 													</Button>
 												</div>
+											</Table.Cell>
+										</Table.Row>
+										<!-- The row restated as a sentence, live-updated with pending
+										     edits BEFORE Apply - the tab's teaching device. -->
+										<Table.Row class="border-b hover:bg-transparent">
+											<Table.Cell
+												colspan={7}
+												class="pt-2 pb-3 text-xs whitespace-normal text-muted-foreground"
+												data-testid={`db-access-summary-${collection.name}`}
+											>
+												<span class="font-semibold text-destructive" aria-hidden="true">*</span>
+												{accessSentence(pending, Boolean(collection.validator))}
 											</Table.Cell>
 										</Table.Row>
 									{/each}
@@ -1099,6 +1655,214 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 				onclick={deleteCollection}
 			>
 				Delete forever
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Rules-lite validator editor: the JSON shape the agent enforces on public writes. -->
+<Dialog.Root open={rulesFor !== null} onOpenChange={(open) => !open && (rulesFor = null)}>
+	<Dialog.Content class="sm:max-w-xl" data-testid="db-rules-panel">
+		<Dialog.Header>
+			<Dialog.Title>Document rules for {rulesFor}</Dialog.Title>
+			<Dialog.Description>
+				What documents written through the public API must look like - seeded from the shape of the
+				documents already in this collection, so edit from there. Per top-level field: type,
+				required, maxLength (strings/arrays), min/max (numbers), enum (allowed values); set
+				additionalFields to "reject" to refuse undeclared keys. The dashboard editor and imports
+				bypass these rules.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Textarea
+			class="min-h-56 font-mono text-xs"
+			data-testid="db-rules-json"
+			bind:value={rulesJson}
+		/>
+		{#if rulesError}
+			<p class="text-sm text-destructive" data-testid="db-rules-error">{rulesError}</p>
+		{/if}
+		<Dialog.Footer>
+			<Button variant="ghost" onclick={() => (rulesFor = null)}>Cancel</Button>
+			<Button variant="outline" disabled={busy} onclick={() => saveRules(true)}>Clear rules</Button>
+			<Button disabled={busy} data-testid="db-rules-save" onclick={() => saveRules(false)}>
+				Save rules
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Point-in-time rollback, D1-restore-style: Date resolves to the closest
+     available bookmark before anything is committed; Bookmark takes one
+     directly, with captured points as one-click fills. -->
+<Dialog.Root bind:open={rollbackOpen}>
+	<Dialog.Content class="sm:max-w-lg" data-testid="db-rollback-panel">
+		<Dialog.Header>
+			<Dialog.Title>Roll back {selected}?</Dialog.Title>
+			<Dialog.Description>
+				Restores <span class="font-mono font-semibold">{selected}</span> to an earlier moment - any point
+				in the past 30 days.
+			</Dialog.Description>
+		</Dialog.Header>
+		{#if rollbackInfo && !rollbackInfo.supported}
+			<p
+				class="rounded-lg border border-dashed p-3 text-sm text-muted-foreground"
+				data-testid="db-rollback-unsupported"
+			>
+				Point-in-time recovery is not available in this environment - local development keeps no
+				durable change log. On a deployed stack every collection can roll back to any moment in the
+				past 30 days.
+			</p>
+		{:else}
+			<div class="space-y-3">
+				<div class="flex w-fit gap-1 rounded-lg border p-1" role="tablist">
+					<Button
+						size="sm"
+						variant={rollbackMode === 'date' ? 'secondary' : 'ghost'}
+						data-testid="db-rollback-mode-date"
+						onclick={() => (rollbackMode = 'date')}
+					>
+						Date
+					</Button>
+					<Button
+						size="sm"
+						variant={rollbackMode === 'bookmark' ? 'secondary' : 'ghost'}
+						data-testid="db-rollback-mode-bookmark"
+						onclick={() => (rollbackMode = 'bookmark')}
+					>
+						Bookmark
+					</Button>
+				</div>
+
+				{#if rollbackMode === 'date'}
+					<div class="space-y-2">
+						<Label for="rollback-time">Select a date and time</Label>
+						<Input
+							id="rollback-time"
+							type="datetime-local"
+							data-testid="db-rollback-time"
+							value={rollbackTime}
+							oninput={(event) => scheduleResolve(event.currentTarget.value)}
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label>Closest available bookmark</Label>
+						{#if resolveBusy}
+							<p class="text-xs text-muted-foreground">Resolving…</p>
+						{:else if resolveError}
+							<p class="text-xs text-destructive" data-testid="db-resolve-error">{resolveError}</p>
+						{:else if resolvedBookmark}
+							<code
+								class="block overflow-x-auto rounded border bg-muted/50 p-2 text-xs"
+								data-testid="db-resolved-bookmark"
+							>
+								{resolvedBookmark}
+							</code>
+						{:else}
+							<p class="text-xs text-muted-foreground">Pick a time above to resolve one.</p>
+						{/if}
+					</div>
+				{:else}
+					<div class="space-y-2">
+						<Label for="rollback-bookmark">Bookmark</Label>
+						<Input
+							id="rollback-bookmark"
+							class="font-mono text-xs"
+							placeholder="0000ba73-00000006-…"
+							data-testid="db-rollback-bookmark"
+							bind:value={rollbackBookmarkInput}
+						/>
+					</div>
+					<div class="space-y-2">
+						<div class="flex items-center justify-between">
+							<Label>Captured points</Label>
+							<Button
+								size="sm"
+								variant="ghost"
+								class="h-7 text-xs"
+								data-testid="db-capture-point"
+								disabled={busy}
+								onclick={() => void capturePoint()}
+							>
+								Capture now
+							</Button>
+						</div>
+						{#if rollbackInfo === null}
+							<p class="text-xs text-muted-foreground">Loading captured points…</p>
+						{:else if rollbackInfo.points.length === 0}
+							<p class="text-xs text-muted-foreground">
+								None yet - imports and rollbacks capture one automatically.
+							</p>
+						{:else}
+							<div class="max-h-36 space-y-1 overflow-y-auto rounded-lg border p-1">
+								{#each rollbackInfo.points as point, index (point.bookmark + point.capturedAt)}
+									<button
+										type="button"
+										class={[
+											'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted',
+											rollbackBookmarkInput === point.bookmark && 'bg-muted'
+										]}
+										data-testid={`db-restore-point-${index}`}
+										onclick={() => (rollbackBookmarkInput = point.bookmark)}
+									>
+										<span>{point.reason}</span>
+										<span class="shrink-0 text-muted-foreground">{timeAgo(point.capturedAt)}</span>
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+
+				<div class="space-y-2">
+					<Label for="rollback-confirm">Type the collection name to confirm</Label>
+					<Input
+						id="rollback-confirm"
+						class="font-mono"
+						placeholder={selected}
+						data-testid="db-rollback-confirm"
+						bind:value={rollbackConfirmInput}
+					/>
+				</div>
+				<p class="text-xs text-muted-foreground">
+					Restoring overwrites the collection's current contents; live subscribers reconnect against
+					the restored data. Every restore returns an undo bookmark.
+				</p>
+			</div>
+		{/if}
+		{#if rollbackError}
+			<p class="text-sm text-destructive" data-testid="db-rollback-error">{rollbackError}</p>
+		{/if}
+		{#if rollbackUndo}
+			<div class="space-y-2 rounded-lg border bg-muted/20 p-3" data-testid="db-rollback-done">
+				<p class="text-sm">Rolled back. To reverse it, restore to this bookmark:</p>
+				<code class="block overflow-x-auto rounded border bg-muted/50 p-2 text-xs">
+					{rollbackUndo}
+				</code>
+				<Button
+					size="sm"
+					variant="outline"
+					disabled={busy}
+					onclick={() => rollbackUndo && void rollback({ bookmark: rollbackUndo })}
+				>
+					Undo the rollback
+				</Button>
+			</div>
+		{/if}
+		<Dialog.Footer>
+			<Button variant="ghost" onclick={() => (rollbackOpen = false)}>
+				{rollbackUndo ? 'Close' : 'Cancel'}
+			</Button>
+			<Button
+				variant="destructive"
+				data-testid="db-rollback-submit"
+				disabled={busy ||
+					!selected ||
+					!rollbackInfo?.supported ||
+					!rollbackTarget ||
+					rollbackConfirmInput.trim() !== selected}
+				onclick={() => rollbackTarget && void rollback({ bookmark: rollbackTarget })}
+			>
+				Roll back
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

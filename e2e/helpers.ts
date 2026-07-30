@@ -106,8 +106,32 @@ export function dbQueryPath(projectId: string, collection: string): string {
 	return `/api/projects/${projectId}/db/collections/${collection}/query`;
 }
 
+export function dbAggregatePath(projectId: string, collection: string): string {
+	return `/api/projects/${projectId}/db/collections/${collection}/aggregate`;
+}
+
+export function dbExportPath(projectId: string, collection: string): string {
+	return `/api/projects/${projectId}/db/collections/${collection}/export`;
+}
+
 export function dbAdminQueryPath(projectId: string): string {
 	return `/api/projects/${projectId}/db/admin/query`;
+}
+
+export function dbAdminAggregatePath(projectId: string): string {
+	return `/api/projects/${projectId}/db/admin/aggregate`;
+}
+
+export function dbAdminExportPath(projectId: string, name: string): string {
+	return `${dbAdminCollectionPath(projectId, name)}/export`;
+}
+
+export function dbAdminImportPath(projectId: string, name: string): string {
+	return `${dbAdminCollectionPath(projectId, name)}/import`;
+}
+
+export function dbAdminRestorePath(projectId: string, name: string): string {
+	return `${dbAdminCollectionPath(projectId, name)}/restore`;
 }
 
 export function dbOverviewPath(projectId: string): string {

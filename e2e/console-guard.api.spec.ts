@@ -7,7 +7,9 @@ import {
 	configPath,
 	CONSOLE_OWNER,
 	consoleAuthPath,
+	dbAdminImportPath,
 	dbAdminQueryPath,
+	dbAdminRestorePath,
 	dbOverviewPath,
 	overviewPath,
 	SCRATCH_PROJECT,
@@ -79,6 +81,19 @@ test.describe('console guard', () => {
 			data: { collection: 'x', query: {} }
 		});
 		expect(query.status()).toBe(401);
+
+		// The destructive admin surfaces (restore rolls data back, import
+		// writes it) must never be reachable without a session.
+		const restore = await request.post(dbAdminRestorePath(SEED_PROJECT, 'x'), {
+			data: { timestamp: new Date().toISOString() }
+		});
+		expect(restore.status()).toBe(401);
+
+		const importDocs = await request.post(dbAdminImportPath(SEED_PROJECT, 'x'), {
+			headers: { 'content-type': 'application/x-ndjson' },
+			data: '{"data":{}}'
+		});
+		expect(importDocs.status()).toBe(401);
 	});
 
 	test('the product API stays public', async ({ request }) => {
