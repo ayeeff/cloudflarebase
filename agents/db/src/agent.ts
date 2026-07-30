@@ -50,6 +50,19 @@ const MAX_EVENTS = 50;
 const MAX_COLLECTIONS = 200;
 const DEMO_MAX_COLLECTIONS = 5;
 
+/**
+ * The runtime's "Application called abort() to reset Durable Object" family.
+ * A destroyed/restored instance schedules abort() a tick after replying; in
+ * PRODUCTION that abort can outrace the RPC reply across colos, so a
+ * completed operation surfaces as this error at the caller. Local workerd
+ * always flushes the reply first, which is why only deployed stacks see it.
+ */
+const DO_RESET_PATTERN = /abort\(\) to reset|durable object reset/i;
+
+export function isDurableObjectReset(error: unknown): boolean {
+	return DO_RESET_PATTERN.test(error instanceof Error ? error.message : String(error));
+}
+
 /** Registry rows store the validator as JSON text; unreadable = none. */
 function parseStoredValidator(raw: string | null): CollectionValidator | null {
 	if (!raw) return null;
@@ -233,8 +246,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	async destroy(): Promise<void> {
 		const rows = await this.db.select().from(collections).orderBy(asc(collections.name));
 		for (const row of rows) {
-			const child = this.childStub(row.name);
-			await child.destroy();
+			await this.destroyChild(row.name);
 		}
 
 		await this.ctx.storage.deleteAll();
@@ -652,7 +664,18 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			return Response.json({ error: 'no such collection' }, { status: 404 });
 		}
 
-		const outcome = await this.childStub(name).restoreTo(parsed.data);
+		// Capture the undo point BEFORE the restore: the child aborts a tick
+		// after arming it, and in production that abort can outrace the RPC
+		// reply. With the pre-restore bookmark already persisted, an
+		// abort-reset error still reports success with a working undo.
+		const undoPoint = await this.captureRestorePoint(name, 'before rollback');
+		let outcome: Awaited<ReturnType<DbCollection['restoreTo']>>;
+		try {
+			outcome = await this.childStub(name).restoreTo(parsed.data);
+		} catch (error) {
+			if (!isDurableObjectReset(error)) throw error;
+			outcome = { ok: true, undoBookmark: undoPoint?.bookmark ?? '' };
+		}
 		if (!outcome.ok) {
 			if (outcome.code === 'unsupported') {
 				return Response.json(
@@ -674,13 +697,8 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				? `collection "${name}" rolled back to ${parsed.data.timestamp}`
 				: `collection "${name}" restored to a bookmark`,
 		);
-		// The undo bookmark becomes a listed restore point, so reversing a
-		// rollback is one click even if the response was lost.
-		try {
-			await this.saveRestorePoint(name, outcome.undoBookmark, 'before rollback');
-		} catch {
-			// the response still carries the bookmark
-		}
+		// The undo point was captured before the restore, so it is already in
+		// the list; the response carries whichever undo handle survived.
 		// The child aborts a tick after answering; give the restored session a
 		// moment, then reconcile the count. Best-effort - the count self-heals.
 		try {
@@ -807,8 +825,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 
 		// Child first, registry second - a failure leaves the row so the
 		// operator can retry; the reverse order would orphan the child's data.
-		const child = this.childStub(name);
-		await child.destroy();
+		await this.destroyChild(name);
 		await this.db.delete(collections).where(eq(collections.name, name));
 		// A deliberate erase must stay erased - drop its restore markers too.
 		await this.db.delete(restorePoints).where(eq(restorePoints.collection, name));
@@ -853,6 +870,23 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	private childStub(name: string) {
 		const namespace = this.env.DbCollection as unknown as DurableObjectNamespace<DbCollection>;
 		return namespace.get(namespace.idFromName(`${this.name}:${name}`));
+	}
+
+	/**
+	 * Destroy one child, tolerating the abort-vs-reply race: an abort-reset
+	 * error is verified against a fresh instance instead of failing the
+	 * operation - zero documents means the wipe landed. A genuine failure
+	 * (documents still there) rethrows, and the registry row survives so the
+	 * operator can retry; nothing may orphan a Durable Object holding data.
+	 */
+	private async destroyChild(name: string): Promise<void> {
+		try {
+			await this.childStub(name).destroy();
+		} catch (error) {
+			if (!isDurableObjectReset(error)) throw error;
+			const docs = await this.childStub(name).getDocCount();
+			if (docs > 0) throw error;
+		}
 	}
 
 	private async buildConfig(row: typeof collections.$inferSelect): Promise<CollectionConfig> {

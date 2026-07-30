@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/cloudflare';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { getAgentByName, routeAgentRequest } from 'agents';
-import { DbAgent as DbAgentBase } from './agent';
+import { isDurableObjectReset, DbAgent as DbAgentBase } from './agent';
 import { DbCollection as DbCollectionBase } from './collection';
 import { collectionNameSchema, projectIdSchema } from './schemas';
 
@@ -64,7 +64,13 @@ class DbService extends WorkerEntrypoint<Env> {
 				return Response.json({ error: 'invalid project id' }, { status: 400 });
 			}
 			const agent = await getAgentByName<Env, DbAgentBase>(this.env.DbAgent, projectId);
-			await agent.destroy();
+			try {
+				await agent.destroy();
+			} catch (error) {
+				// The agent's own deferred abort can outrace the RPC reply in
+				// production; children and storage are already gone by then.
+				if (!isDurableObjectReset(error)) throw error;
+			}
 			return Response.json({ erased: true });
 		}
 
