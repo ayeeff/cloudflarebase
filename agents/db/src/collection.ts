@@ -2,11 +2,13 @@ import { DurableObject } from 'cloudflare:workers';
 import { and, count, eq } from 'drizzle-orm';
 import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
+import { z } from 'zod';
 import migrations from './migrations';
 import * as schema from './db/schema';
 import { collectionMeta, documents, subscriptions } from './db/schema';
 import { ProjectJwtVerifier } from './jwt';
 import {
+	compileAggregate,
 	compileQuery,
 	decodeCursor,
 	encodeCursor,
@@ -14,19 +16,30 @@ import {
 	matchesQuery,
 	type DecodedCursor,
 } from './query';
+import { hasPermission, validateDocument } from './rules';
 import {
+	aggregateRequestSchema,
 	clientFrameSchema,
 	collectionConfigSchema,
 	createDocumentSchema,
 	documentDataSchema,
+	importLineSchema,
 	querySchema,
+	restoreRequestSchema,
 	storedConfigSchema,
 	subscribeFrameSchema,
+	EXPORT_CHUNK,
+	IMPORT_RPC_CHUNK,
 	MAX_DOC_BYTES,
 	type AccessMode,
+	type AggregateRequest,
+	type AggregateResult,
+	type BookmarkOutcome,
 	type CollectionConfig,
 	type DbDocument,
+	type ImportReport,
 	type Query,
+	type RestoreOutcome,
 	type ServerFrame,
 } from './schemas';
 import type { DbAgent } from './agent';
@@ -52,11 +65,19 @@ import type { DbAgent } from './agent';
  */
 
 export const MAX_SUBSCRIPTIONS_PER_CONNECTION = 10;
+/** Local dev keeps no durable change log; workerd phrases it several ways. */
+const UNSUPPORTED_PITR_PATTERN = /does not implement|not (yet )?(supported|implemented|available)/i;
 const DEMO_MAX_SUBSCRIPTIONS_PER_CONNECTION = 5;
 const DEMO_MAX_DOCS_PER_COLLECTION = 200;
 const DEMO_MAX_DOC_BYTES = 8 * 1024;
-/** Debounce for absolute-count reports to the parent. */
-const STATS_REPORT_MS = 2_000;
+/**
+ * Debounce for absolute-count reports to the parent. This is the dashboard's
+ * freshness ceiling (write -> child report -> parent rev bump -> console
+ * refetch), kept short enough to feel live while still coalescing write
+ * bursts into one RPC. The PRODUCT live-query socket pushes deltas
+ * immediately and never waits on this.
+ */
+const STATS_REPORT_MS = 500;
 
 type DocumentRow = typeof documents.$inferSelect;
 
@@ -110,6 +131,166 @@ export class DbCollection extends DurableObject<Env> {
 	async adminQuery(input: unknown): Promise<{ docs: DbDocument[]; nextCursor?: string }> {
 		const query = querySchema.parse(input);
 		return this.runQuery(query, null);
+	}
+
+	/** Operator aggregate (parent-forwarded); bypasses access modes. */
+	async adminAggregate(input: unknown): Promise<AggregateResult> {
+		return this.runAggregate(aggregateRequestSchema.parse(input), null);
+	}
+
+	/** Operator export chunk (parent-forwarded; no owner scoping). The
+	 * parameter is an optional string rather than `string | null` because a
+	 * null union breaks the workers-types RPC transform (the stub method
+	 * collapses to `never`). */
+	async exportChunk(afterId?: string): Promise<{ docs: DbDocument[]; nextAfterId: string | null }> {
+		const docs = this.exportRows(afterId ?? null, EXPORT_CHUNK, null);
+		return { docs, nextAfterId: docs.length < EXPORT_CHUNK ? null : docs[docs.length - 1].id };
+	}
+
+	/**
+	 * Operator import chunk (parent-forwarded). Upserts by id, preserving
+	 * owner and timestamps when the line carries them, so round-tripping an
+	 * export restores what was there. Validator rules do NOT apply - this is
+	 * an operator surface, like the dashboard editor - but size and demo caps
+	 * do. Per-line failures are reported rather than fatal: a 900-line dump
+	 * should not be all-or-nothing across RPC chunks that cannot share a
+	 * transaction anyway.
+	 */
+	async importDocs(input: unknown): Promise<ImportReport> {
+		const lines = z.array(importLineSchema).max(IMPORT_RPC_CHUNK).parse(input);
+		const report: ImportReport = { imported: 0, updated: 0, errors: [] };
+
+		for (const [index, line] of lines.entries()) {
+			try {
+				const sizeIssue = this.docSizeIssue(line.data);
+				if (sizeIssue) {
+					report.errors.push({ line: index, error: sizeIssue });
+					continue;
+				}
+				const id = line.id ?? crypto.randomUUID();
+				const [existing] = await this.db
+					.select()
+					.from(documents)
+					.where(eq(documents.id, id))
+					.limit(1);
+				if (
+					!existing &&
+					this.config?.demo &&
+					(await this.getDocCount()) >= DEMO_MAX_DOCS_PER_COLLECTION
+				) {
+					report.errors.push({
+						line: index,
+						error: `demo collections are capped at ${DEMO_MAX_DOCS_PER_COLLECTION} documents`,
+					});
+					continue;
+				}
+				await this.writeDocument(id, line.data, {
+					mode: 'replace',
+					owner: line.owner ?? null,
+					upsert: true,
+					createdAt: line.createdAt ? new Date(line.createdAt) : undefined,
+					updatedAt: line.updatedAt ? new Date(line.updatedAt) : undefined,
+					replaceOwner: line.owner !== undefined,
+				});
+				if (existing) report.updated += 1;
+				else report.imported += 1;
+			} catch (error) {
+				report.errors.push({
+					line: index,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+		}
+		return report;
+	}
+
+	/**
+	 * Point-in-time restore over the platform's SQLite bookmarks. The restore
+	 * takes effect at the START of the next session, so this closes every
+	 * subscriber (reconnects get fresh snapshots against the restored data)
+	 * and aborts a tick later; the returned undo bookmark reverses the whole
+	 * thing via another restore. Local development keeps no durable change
+	 * log, so the API reports unsupported there.
+	 */
+	async restoreTo(input: unknown): Promise<RestoreOutcome> {
+		const parsed = restoreRequestSchema.parse(input);
+		const storage = this.ctx.storage;
+		if (
+			typeof storage.getBookmarkForTime !== 'function' ||
+			typeof storage.onNextSessionRestoreBookmark !== 'function'
+		) {
+			return { ok: false, code: 'unsupported' };
+		}
+
+		try {
+			const bookmark =
+				parsed.bookmark ?? (await storage.getBookmarkForTime(new Date(parsed.timestamp ?? 0)));
+			const undoBookmark = await storage.onNextSessionRestoreBookmark(bookmark);
+			for (const ws of this.ctx.getWebSockets()) {
+				try {
+					ws.close(1012, 'collection restored');
+				} catch {
+					// a half-dead socket must not block the restore
+				}
+			}
+			setTimeout(() => this.ctx.abort(), 0);
+			return { ok: true, undoBookmark };
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			// Miniflare implements the methods but rejects the calls - observed:
+			// "This Durable Object's storage back-end does not implement
+			// point-in-time recovery." A real platform failure (e.g. a bookmark
+			// past the 30-day window) reports as failed with its message.
+			return UNSUPPORTED_PITR_PATTERN.test(message)
+				? { ok: false, code: 'unsupported' }
+				: { ok: false, code: 'failed', message: message.slice(0, 256) };
+		}
+	}
+
+	/**
+	 * The bookmark for this exact moment - the parent persists these as named
+	 * restore points (manual checkpoints, before imports, before rollbacks)
+	 * and doubles this call as the PITR support probe. No side effects.
+	 *
+	 * The probe exercises getBookmarkForTime, not just getCurrentBookmark:
+	 * local workerd serves the latter while refusing the rest of the PITR
+	 * API, and "supported" must mean a restore would actually work.
+	 */
+	async currentBookmark(): Promise<{ ok: true; bookmark: string } | { ok: false }> {
+		const storage = this.ctx.storage;
+		if (
+			typeof storage.getCurrentBookmark !== 'function' ||
+			typeof storage.getBookmarkForTime !== 'function'
+		) {
+			return { ok: false };
+		}
+		try {
+			await storage.getBookmarkForTime(new Date(Date.now() - 1_000));
+			return { ok: true, bookmark: await storage.getCurrentBookmark() };
+		} catch {
+			return { ok: false };
+		}
+	}
+
+	/**
+	 * D1-restore-style resolution: a wall-clock time in, the closest available
+	 * bookmark out - shown to the operator BEFORE anything is restored. No
+	 * side effects.
+	 */
+	async bookmarkForTime(input: unknown): Promise<BookmarkOutcome> {
+		const timestamp = z.iso.datetime().parse(input);
+		const storage = this.ctx.storage;
+		if (typeof storage.getBookmarkForTime !== 'function') {
+			return { ok: false, code: 'unsupported' };
+		}
+		try {
+			return { ok: true, bookmark: await storage.getBookmarkForTime(new Date(timestamp)) };
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			return UNSUPPORTED_PITR_PATTERN.test(message)
+				? { ok: false, code: 'unsupported' }
+				: { ok: false, code: 'failed', message: message.slice(0, 256) };
+		}
 	}
 
 	/** Operator upsert (dashboard document editor). */
@@ -196,12 +377,24 @@ export class DbCollection extends DurableObject<Env> {
 		}
 
 		if (subPath === '/documents' && request.method === 'POST') {
-			return this.guarded(request, config.writeAccess, (owner) =>
+			return this.guarded(request, config.writeAccess, config.writePermission, (owner) =>
 				this.handleCreate(request, owner),
 			);
 		}
 		if (subPath === '/query' && request.method === 'POST') {
-			return this.guarded(request, config.readAccess, (owner) => this.handleQuery(request, owner));
+			return this.guarded(request, config.readAccess, config.readPermission, (owner) =>
+				this.handleQuery(request, owner),
+			);
+		}
+		if (subPath === '/aggregate' && request.method === 'POST') {
+			return this.guarded(request, config.readAccess, config.readPermission, (owner) =>
+				this.handleAggregate(request, owner),
+			);
+		}
+		if (subPath === '/export' && request.method === 'GET') {
+			return this.guarded(request, config.readAccess, config.readPermission, (owner) =>
+				Promise.resolve(this.handleExport(owner)),
+			);
 		}
 
 		const doc = subPath.match(/^\/documents\/([^/]+)$/);
@@ -209,14 +402,16 @@ export class DbCollection extends DurableObject<Env> {
 			const docId = decodeURIComponent(doc[1]);
 			switch (request.method) {
 				case 'GET':
-					return this.guarded(request, config.readAccess, (owner) => this.handleGet(docId, owner));
+					return this.guarded(request, config.readAccess, config.readPermission, (owner) =>
+						this.handleGet(docId, owner),
+					);
 				case 'PUT':
 				case 'PATCH':
-					return this.guarded(request, config.writeAccess, (owner) =>
+					return this.guarded(request, config.writeAccess, config.writePermission, (owner) =>
 						this.handleWrite(request, docId, owner),
 					);
 				case 'DELETE':
-					return this.guarded(request, config.writeAccess, (owner) =>
+					return this.guarded(request, config.writeAccess, config.writePermission, (owner) =>
 						this.handleDelete(docId, owner),
 					);
 			}
@@ -227,11 +422,14 @@ export class DbCollection extends DurableObject<Env> {
 
 	/**
 	 * Access-mode gate. `owner` is null for public/auth requests and the JWT
-	 * subject for owner-mode ones (which scopes every read and write).
+	 * subject for owner-mode ones (which scopes every read and write). A
+	 * required permission is checked against the verified token's claim -
+	 * public mode never sees a token, so permissions only bind auth/owner.
 	 */
 	private async guarded(
 		request: Request,
 		mode: AccessMode,
+		permission: string | null,
 		handler: (owner: string | null) => Promise<Response>,
 	): Promise<Response> {
 		if (mode === 'public') return handler(null);
@@ -251,6 +449,14 @@ export class DbCollection extends DurableObject<Env> {
 			return Response.json({ error: 'invalid or expired token' }, { status: 401 });
 		}
 
+		// 403, not 401: the token is valid, it just lacks the right.
+		if (!hasPermission(permission, result.claims.permissions)) {
+			return Response.json(
+				{ error: 'the token does not carry the required permission' },
+				{ status: 403 },
+			);
+		}
+
 		return handler(mode === 'owner' ? result.claims.sub : null);
 	}
 
@@ -268,6 +474,8 @@ export class DbCollection extends DurableObject<Env> {
 
 		const sizeError = this.checkDocSize(body.data.data);
 		if (sizeError) return sizeError;
+		const rulesError = this.checkRules(body.data.data);
+		if (rulesError) return rulesError;
 
 		if (this.config?.demo) {
 			const total = await this.getDocCount();
@@ -327,6 +535,10 @@ export class DbCollection extends DurableObject<Env> {
 				: body.data;
 		const sizeError = this.checkDocSize(merged);
 		if (sizeError) return sizeError;
+		// PATCH validates the merged result: a merge can never sneak an invalid
+		// document past rules the same body would fail on create.
+		const rulesError = this.checkRules(merged);
+		if (rulesError) return rulesError;
 
 		const written = await this.writeDocument(docId, merged, {
 			mode: 'replace',
@@ -353,18 +565,72 @@ export class DbCollection extends DurableObject<Env> {
 		return Response.json(await this.runQuery(parsed.data, owner));
 	}
 
+	private async handleAggregate(request: Request, owner: string | null): Promise<Response> {
+		const parsed = aggregateRequestSchema.safeParse(await request.json().catch(() => null));
+		if (!parsed.success) {
+			return Response.json(
+				{ error: 'invalid aggregate request', issues: parsed.error.issues },
+				{ status: 400 },
+			);
+		}
+		return Response.json(this.runAggregate(parsed.data, owner));
+	}
+
+	/**
+	 * NDJSON export of every readable document, gated exactly like a query
+	 * (owner mode exports only the caller's documents). Streamed in keyset
+	 * pages so a 10 GB collection never materializes in memory.
+	 */
+	private handleExport(owner: string | null): Response {
+		const collection = this.config?.collection ?? 'collection';
+		const encoder = new TextEncoder();
+		const nextRows = (after: string | null) => this.exportRows(after, EXPORT_CHUNK, owner);
+		let afterId: string | null = null;
+		let done = false;
+
+		const stream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				if (done) return;
+				const rows = nextRows(afterId);
+				for (const doc of rows) controller.enqueue(encoder.encode(`${JSON.stringify(doc)}\n`));
+				if (rows.length < EXPORT_CHUNK) {
+					done = true;
+					controller.close();
+				} else {
+					afterId = rows[rows.length - 1].id;
+				}
+			},
+		});
+
+		return new Response(stream, {
+			headers: {
+				'content-type': 'application/x-ndjson',
+				'content-disposition': `attachment; filename="${collection}.ndjson"`,
+			},
+		});
+	}
+
 	private checkDocSize(data: Record<string, unknown>): Response | null {
+		const issue = this.docSizeIssue(data);
+		return issue ? Response.json({ error: issue }, { status: 413 }) : null;
+	}
+
+	private docSizeIssue(data: Record<string, unknown>): string | null {
 		const bytes = new TextEncoder().encode(JSON.stringify(data)).byteLength;
 		const cap = this.config?.demo ? DEMO_MAX_DOC_BYTES : MAX_DOC_BYTES;
 		if (bytes > cap) {
-			return Response.json(
-				{
-					error: `document data is limited to ${cap} bytes${this.config?.demo ? ' in demo projects' : ''}`,
-				},
-				{ status: 413 },
-			);
+			return `document data is limited to ${cap} bytes${this.config?.demo ? ' in demo projects' : ''}`;
 		}
 		return null;
+	}
+
+	/** Rules-lite enforcement for the public write path; null when it passes. */
+	private checkRules(data: Record<string, unknown>): Response | null {
+		const validator = this.config?.validator;
+		if (!validator) return null;
+		const issues = validateDocument(validator, data);
+		if (!issues.length) return null;
+		return Response.json({ error: 'document failed validation', issues }, { status: 400 });
 	}
 
 	// -------------------------------------------------------------------------
@@ -373,7 +639,16 @@ export class DbCollection extends DurableObject<Env> {
 	private async writeDocument(
 		id: string,
 		data: Record<string, unknown>,
-		options: { mode: 'replace'; owner: string | null | undefined; upsert: boolean },
+		options: {
+			mode: 'replace';
+			owner: string | null | undefined;
+			upsert: boolean;
+			/** Import fidelity: keep the exported timestamps instead of now. */
+			createdAt?: Date;
+			updatedAt?: Date;
+			/** Import fidelity: overwrite the owner column on update too. */
+			replaceOwner?: boolean;
+		},
 	): Promise<DbDocument> {
 		const [before] = await this.db.select().from(documents).where(eq(documents.id, id)).limit(1);
 		const now = new Date();
@@ -383,7 +658,11 @@ export class DbCollection extends DurableObject<Env> {
 		if (before) {
 			[row] = await this.db
 				.update(documents)
-				.set({ data: serialized, updatedAt: now })
+				.set({
+					data: serialized,
+					updatedAt: options.updatedAt ?? now,
+					...(options.replaceOwner ? { owner: options.owner ?? null } : {}),
+				})
 				.where(eq(documents.id, id))
 				.returning();
 		} else {
@@ -393,8 +672,8 @@ export class DbCollection extends DurableObject<Env> {
 					id,
 					data: serialized,
 					owner: options.owner ?? null,
-					createdAt: now,
-					updatedAt: now,
+					createdAt: options.createdAt ?? now,
+					updatedAt: options.updatedAt ?? now,
 				})
 				.returning();
 		}
@@ -444,6 +723,40 @@ export class DbCollection extends DurableObject<Env> {
 			});
 		}
 		return result;
+	}
+
+	private runAggregate(request: AggregateRequest, ownerSub: string | null): AggregateResult {
+		const compiled = compileAggregate(request, { ownerSub });
+		const [row] = this.rawQuery(compiled.sql, compiled.params);
+		const results: Record<string, number | null> = {};
+		compiled.aliases.forEach((alias, index) => {
+			const value = row?.[`agg_${index}`];
+			results[alias] = typeof value === 'number' ? value : null;
+		});
+		return { results };
+	}
+
+	/**
+	 * Keyset page in id order for exports. Not a point-in-time snapshot:
+	 * writes racing the export may or may not appear, but keyset pagination
+	 * guarantees each id shows up at most once.
+	 */
+	private exportRows(afterId: string | null, limit: number, owner: string | null): DbDocument[] {
+		const conditions: string[] = [];
+		const params: unknown[] = [];
+		if (afterId !== null) {
+			conditions.push('id > ?');
+			params.push(afterId);
+		}
+		if (owner) {
+			conditions.push('owner = ?');
+			params.push(owner);
+		}
+		return this.rawQuery(
+			`SELECT id, data, owner, created_at, updated_at FROM documents ` +
+				`WHERE ${conditions.length ? conditions.join(' AND ') : '1=1'} ORDER BY id ASC LIMIT ?`,
+			[...params, limit],
+		).map(rowToDto);
 	}
 
 	private rawQuery(sql: string, params: unknown[]): Record<string, unknown>[] {
@@ -533,6 +846,16 @@ export class DbCollection extends DurableObject<Env> {
 						result.code === 'not-configured'
 							? 'auth verification is not configured'
 							: 'invalid or expired token',
+				});
+				return;
+			}
+			// Mirror the REST guard: a required permission binds subscriptions too.
+			if (!hasPermission(config.readPermission, result.claims.permissions)) {
+				this.send(ws, {
+					type: 'error',
+					id: frame.id,
+					code: 'unauthorized',
+					message: 'the token does not carry the required permission',
 				});
 				return;
 			}

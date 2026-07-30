@@ -14,6 +14,11 @@ export const collections = sqliteTable('collections', {
 	name: text('name').primaryKey(),
 	readAccess: text('read_access').notNull().default('auth'),
 	writeAccess: text('write_access').notNull().default('auth'),
+	/** Permission key the JWT must carry to read/write; null = mode alone. */
+	readPermission: text('read_permission'),
+	writePermission: text('write_permission'),
+	/** JSON CollectionValidator; null = no document rules. */
+	validator: text('validator'),
 	/** Last count reported by the child; the child's own count is exact. */
 	docs: integer('docs').notNull().default(0),
 	createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
@@ -62,6 +67,25 @@ export const subscriptions = sqliteTable(
 		primaryKey({ columns: [table.connId, table.subId] }),
 		index('subscriptions_conn').on(table.connId),
 	],
+);
+
+/**
+ * DbAgent only: captured PITR bookmarks per collection - the D1-Time-Travel
+ * style restore points the dashboard lists. Bookmarks come from the child's
+ * storage back-end; rows older than the platform's 30-day window are pruned
+ * on read, and a collection delete drops its rows.
+ */
+export const restorePoints = sqliteTable(
+	'restore_points',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		collection: text('collection').notNull(),
+		bookmark: text('bookmark').notNull(),
+		/** e.g. manual checkpoint | before import | before rollback */
+		reason: text('reason').notNull(),
+		capturedAt: integer('captured_at', { mode: 'timestamp_ms' }).notNull(),
+	},
+	(table) => [index('restore_points_collection').on(table.collection)],
 );
 
 /** DbCollection only: single-row cached config pushed from the parent. */

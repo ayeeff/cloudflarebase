@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+	aggregateDocs,
+	compileAggregate,
 	compileQuery,
 	decodeCursor,
 	encodeCursor,
@@ -9,7 +11,7 @@ import {
 	matchesQuery,
 	orderComparator,
 } from './query';
-import { querySchema, type Query } from './schemas';
+import { aggregateRequestSchema, querySchema, type AggregateRequest, type Query } from './schemas';
 
 /**
  * The SQL compiler and the JS matcher are derived from one parsed Query and
@@ -175,6 +177,93 @@ test('getPath and isWindowed', () => {
 	assert.equal(isWindowed(q({ limit: 5, orderBy: [{ field: 'a', direction: 'asc' }] })), true);
 	assert.equal(isWindowed(q({ limit: 5 })), false);
 	assert.equal(isWindowed(q({ orderBy: [{ field: 'a', direction: 'asc' }] })), false);
+});
+
+function agg(input: unknown): AggregateRequest {
+	return aggregateRequestSchema.parse(input);
+}
+
+test('aggregate compiler: count, sum, avg with the shared where compilation', () => {
+	const compiled = compileAggregate(
+		agg({
+			where: [{ field: 'status', op: '==', value: 'open' }],
+			aggregates: { total: { op: 'count' }, votes: { op: 'sum', field: 'votes' } },
+		}),
+	);
+	assert.equal(
+		compiled.sql,
+		`SELECT COUNT(*) AS agg_0, ` +
+			`COALESCE(SUM(CASE WHEN json_type(data, '$.votes') IN ('integer', 'real') ` +
+			`THEN json_extract(data, '$.votes') END), 0) AS agg_1 ` +
+			`FROM documents WHERE json_extract(data, '$.status') = ?`,
+	);
+	assert.deepEqual(compiled.params, ['open']);
+	assert.deepEqual(compiled.aliases, ['total', 'votes']);
+
+	const avg = compileAggregate(agg({ aggregates: { mean: { op: 'avg', field: 'age' } } }), {
+		ownerSub: 'user-1',
+	});
+	assert.match(avg.sql, /AVG\(CASE WHEN json_type\(data, '\$\.age'\)/);
+	assert.match(avg.sql, /WHERE owner = \?$/);
+	assert.deepEqual(avg.params, ['user-1']);
+});
+
+test('aggregate JS side: count/sum/avg skip non-numeric values, Firestore-style', () => {
+	const docs = [
+		doc('a', { votes: 3, status: 'open' }),
+		doc('b', { votes: 5, status: 'open' }),
+		doc('c', { votes: 'many', status: 'open' }), // string: skipped by sum/avg
+		doc('d', { votes: true, status: 'open' }), // boolean: skipped too
+		doc('e', { status: 'open' }), // missing: skipped
+		doc('f', { votes: 100, status: 'done' }), // filtered out by where
+	];
+	const request = agg({
+		where: [{ field: 'status', op: '==', value: 'open' }],
+		aggregates: {
+			total: { op: 'count' },
+			votes: { op: 'sum', field: 'votes' },
+			mean: { op: 'avg', field: 'votes' },
+		},
+	});
+	assert.deepEqual(aggregateDocs(request, docs), { total: 5, votes: 8, mean: 4 });
+
+	// Empty matches: count 0, sum 0, avg null - the SQL side's exact shape.
+	const none = agg({
+		where: [{ field: 'status', op: '==', value: 'nope' }],
+		aggregates: {
+			total: { op: 'count' },
+			votes: { op: 'sum', field: 'votes' },
+			mean: { op: 'avg', field: 'votes' },
+		},
+	});
+	assert.deepEqual(aggregateDocs(none, docs), { total: 0, votes: 0, mean: null });
+
+	// Owner scoping applies before aggregation, like every query.
+	const owned = [doc('a', { n: 1 }, 'u1'), doc('b', { n: 2 }, 'u2')];
+	assert.deepEqual(aggregateDocs(agg({ aggregates: { total: { op: 'count' } } }), owned, 'u1'), {
+		total: 1,
+	});
+});
+
+test('aggregate schema: alias grammar, op/field pairing, and the 1-5 window', () => {
+	assert.equal(aggregateRequestSchema.safeParse({ aggregates: {} }).success, false);
+	assert.equal(
+		aggregateRequestSchema.safeParse({ aggregates: { total: { op: 'count', field: 'x' } } })
+			.success,
+		false,
+	);
+	assert.equal(
+		aggregateRequestSchema.safeParse({ aggregates: { votes: { op: 'sum' } } }).success,
+		false,
+	);
+	assert.equal(
+		aggregateRequestSchema.safeParse({ aggregates: { 'bad alias': { op: 'count' } } }).success,
+		false,
+	);
+	const six = Object.fromEntries(
+		['a', 'b', 'c', 'd', 'e', 'f'].map((alias) => [alias, { op: 'count' }]),
+	);
+	assert.equal(aggregateRequestSchema.safeParse({ aggregates: six }).success, false);
 });
 
 test('schema: query validation rejects what the engine cannot honor', () => {

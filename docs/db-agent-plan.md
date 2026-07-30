@@ -2,6 +2,13 @@
 
 > **Shipped 2026-07-29** — all four phases landed and the full suite is green
 > (105 tests incl. db REST/live-query/guard/demo/OpenAPI/UI coverage).
+> **2026-07-30** — the first follow-up narrowed the "Non-goals v1" list:
+> rules-lite (permission keys checked against JWT `permissions` claims, and
+> declarative document validators on public writes), count/sum/avg aggregates,
+> NDJSON export/import, and per-collection 30-day point-in-time restore with
+> D1-style restore points all shipped as `@cloudflarebase/db` 0.2.0. The
+> non-goals below are the v1 snapshot.
+>
 > Deviations from this plan, for future readers:
 >
 > - Manifests are **single-sourced** from `agents/<name>/cloudflarebase.agent.json`

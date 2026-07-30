@@ -15,6 +15,20 @@ const journal = {
 			tag: '0000_swift_lethal_legion',
 			breakpoints: true,
 		},
+		{
+			idx: 1,
+			version: '6',
+			when: 1785425136947,
+			tag: '0001_moaning_beast',
+			breakpoints: true,
+		},
+		{
+			idx: 2,
+			version: '6',
+			when: 1785428742608,
+			tag: '0002_gigantic_sleeper',
+			breakpoints: true,
+		},
 	],
 };
 
@@ -56,9 +70,25 @@ CREATE TABLE \`subscriptions\` (
 --> statement-breakpoint
 CREATE INDEX \`subscriptions_conn\` ON \`subscriptions\` (\`conn_id\`);`;
 
+const m0001 = `ALTER TABLE \`collections\` ADD \`read_permission\` text;--> statement-breakpoint
+ALTER TABLE \`collections\` ADD \`write_permission\` text;--> statement-breakpoint
+ALTER TABLE \`collections\` ADD \`validator\` text;`;
+
+const m0002 = `CREATE TABLE \`restore_points\` (
+	\`id\` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	\`collection\` text NOT NULL,
+	\`bookmark\` text NOT NULL,
+	\`reason\` text NOT NULL,
+	\`captured_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX \`restore_points_collection\` ON \`restore_points\` (\`collection\`);`;
+
 export default {
 	journal,
 	migrations: {
 		m0000,
+		m0001,
+		m0002,
 	},
 };

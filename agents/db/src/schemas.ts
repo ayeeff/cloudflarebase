@@ -71,6 +71,84 @@ export type Query = z.infer<typeof querySchema>;
 export type WhereClause = z.infer<typeof whereClauseSchema>;
 
 // ---------------------------------------------------------------------------
+// Aggregations (REST only)
+
+const aggregateAliasSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,31}$/);
+
+export const aggregateSpecSchema = z
+	.strictObject({
+		op: z.enum(['count', 'sum', 'avg']),
+		field: fieldPathSchema.optional(),
+	})
+	.refine((spec) => (spec.op === 'count' ? spec.field === undefined : spec.field !== undefined), {
+		message: "'count' takes no field; 'sum' and 'avg' require one",
+	});
+
+/** Firestore's aggregate set: count/sum/avg over the same where clauses as a
+ * query. sum and avg consider only numeric field values (booleans and strings
+ * are skipped, matching Firestore); sum of nothing is 0, avg of nothing null. */
+export const aggregateRequestSchema = z
+	.strictObject({
+		where: z.array(whereClauseSchema).max(10).optional(),
+		aggregates: z.record(aggregateAliasSchema, aggregateSpecSchema),
+	})
+	.refine(
+		(request) => {
+			const count = Object.keys(request.aggregates).length;
+			return count >= 1 && count <= 5;
+		},
+		{ message: 'between 1 and 5 aggregates per request' },
+	);
+
+export type AggregateRequest = z.infer<typeof aggregateRequestSchema>;
+
+export interface AggregateResult {
+	results: Record<string, number | null>;
+}
+
+// ---------------------------------------------------------------------------
+// Rules-lite: permission gates and document validators
+
+/** The auth agent's permission-key grammar verbatim: `resource:action`
+ * segments or `*`. Requiring `*` effectively means "admin tokens only". */
+export const permissionKeySchema = z
+	.string()
+	.trim()
+	.max(64)
+	.regex(/^(\*|[a-z][a-z0-9-]*(:[a-z][a-z0-9-]*)*)$/);
+
+/** Validators address top-level fields only - dotted paths would make PATCH
+ * merge semantics ambiguous. */
+const ruleFieldNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/);
+
+export const fieldRuleSchema = z.strictObject({
+	type: z.enum(['string', 'number', 'boolean', 'object', 'array', 'null', 'any']).default('any'),
+	required: z.boolean().default(false),
+	/** Strings and arrays: maximum length. */
+	maxLength: z.number().int().min(0).max(131072).optional(),
+	/** Numbers only. */
+	min: z.number().optional(),
+	max: z.number().optional(),
+	enum: z.array(scalarSchema).min(1).max(20).optional(),
+});
+
+export const validatorSchema = z
+	.strictObject({
+		fields: z.record(ruleFieldNameSchema, fieldRuleSchema),
+		additionalFields: z.enum(['allow', 'reject']).default('allow'),
+	})
+	.refine(
+		(validator) => {
+			const count = Object.keys(validator.fields).length;
+			return count >= 1 && count <= 20;
+		},
+		{ message: 'a validator declares 1 to 20 top-level fields' },
+	);
+
+export type FieldRule = z.infer<typeof fieldRuleSchema>;
+export type CollectionValidator = z.infer<typeof validatorSchema>;
+
+// ---------------------------------------------------------------------------
 // Documents
 
 export const documentIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
@@ -104,9 +182,17 @@ export interface DbDocument {
 export const accessModeSchema = z.enum(['public', 'auth', 'owner']);
 export type AccessMode = z.infer<typeof accessModeSchema>;
 
+/**
+ * The PUT /admin/collections/:name body. Permission gates and the validator
+ * are three-state: omitted = leave unchanged (so a modes-only save can never
+ * clobber rules configured earlier), explicit null = clear.
+ */
 export const collectionModesSchema = z.strictObject({
 	readAccess: accessModeSchema.default('auth'),
 	writeAccess: accessModeSchema.default('auth'),
+	readPermission: permissionKeySchema.nullable().optional(),
+	writePermission: permissionKeySchema.nullable().optional(),
+	validator: validatorSchema.nullable().optional(),
 });
 
 /** Pushed parent -> child on create/config change; cached in collection_meta. */
@@ -115,6 +201,12 @@ export const collectionConfigSchema = z.strictObject({
 	collection: collectionNameSchema,
 	readAccess: accessModeSchema,
 	writeAccess: accessModeSchema,
+	/** Permission the JWT's `permissions` claim must carry (`*` always passes).
+	 * Only meaningful for auth/owner modes - public requests carry no token. */
+	readPermission: z.string().nullable(),
+	writePermission: z.string().nullable(),
+	/** Document rules for the public write path; operator surfaces bypass. */
+	validator: validatorSchema.nullable(),
 	allowedOrigins: z.array(z.string()).max(10),
 	demo: z.boolean(),
 	/** Monotonic; lets a child ignore a stale push after a failed retry. */
@@ -155,6 +247,76 @@ export const settingsRequestSchema = z.strictObject({
 		.max(10)
 		.transform((origins) => [...new Set(origins)]),
 });
+
+// ---------------------------------------------------------------------------
+// Export / import / point-in-time restore
+
+export const MAX_IMPORT_DOCS = 1000;
+export const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
+/** Lines per parent->child RPC call, well under the RPC payload ceiling. */
+export const IMPORT_RPC_CHUNK = 100;
+export const EXPORT_CHUNK = 500;
+
+/**
+ * One NDJSON import line. An exported document round-trips exactly (id,
+ * owner, and timestamps are preserved - import is operator-only, so the
+ * caller is trusted with them); a bare `{ data }` line mints a fresh id.
+ * Unknown keys are stripped rather than refused.
+ */
+export const importLineSchema = z.object({
+	id: documentIdSchema.optional(),
+	data: documentDataSchema,
+	owner: z.string().max(256).nullable().optional(),
+	createdAt: z.iso.datetime().optional(),
+	updatedAt: z.iso.datetime().optional(),
+});
+export type ImportLine = z.infer<typeof importLineSchema>;
+
+export interface ImportReport {
+	imported: number;
+	updated: number;
+	errors: { line: number; error: string }[];
+}
+
+/**
+ * Named PITR bookmarks the parent persists per collection and the dashboard
+ * lists, D1-Time-Travel-style. These are MARKERS, not the recovery window:
+ * restore-by-timestamp reaches any moment in the platform's 30 days
+ * regardless. The cap only stops a scripted importer from growing the marker
+ * list without bound; 30-day pruning is the real limit.
+ */
+export const MAX_RESTORE_POINTS = 200;
+
+export const checkpointRequestSchema = z.strictObject({
+	reason: z.string().trim().min(1).max(80).optional(),
+});
+
+export interface RestorePoint {
+	bookmark: string;
+	reason: string;
+	capturedAt: string;
+}
+
+/** Restore to a wall-clock time (30-day window) or to an exact bookmark - the
+ * undo path: every successful restore returns the bookmark that reverses it. */
+export const restoreRequestSchema = z
+	.strictObject({
+		timestamp: z.iso.datetime().optional(),
+		bookmark: z.string().min(1).max(256).optional(),
+	})
+	.refine((request) => (request.timestamp === undefined) !== (request.bookmark === undefined), {
+		message: 'exactly one of timestamp or bookmark is required',
+	});
+
+export type RestoreRequest = z.infer<typeof restoreRequestSchema>;
+
+export type RestoreOutcome =
+	| { ok: true; undoBookmark: string }
+	| { ok: false; code: 'unsupported' | 'failed'; message?: string };
+
+/** Timestamp -> closest-available-bookmark resolution (D1-restore-style). */
+export type BookmarkOutcome =
+	{ ok: true; bookmark: string } | { ok: false; code: 'unsupported' | 'failed'; message?: string };
 
 // ---------------------------------------------------------------------------
 // Live-query protocol frames (shared verbatim with the client SDK)

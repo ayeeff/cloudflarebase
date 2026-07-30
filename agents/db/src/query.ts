@@ -1,4 +1,4 @@
-import type { Query, WhereClause } from './schemas';
+import type { AggregateRequest, Query, WhereClause } from './schemas';
 
 /**
  * Pure query module: one parsed Query drives BOTH evaluators - the SQL
@@ -134,6 +134,72 @@ function compileClause(clause: WhereClause, conditions: string[], params: unknow
 			params.push(bind(clause.value));
 			return;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Aggregations: the SQL side and the JS side compute from ONE parsed request;
+// their parity is pinned by the unit tests exactly like query/matcher parity.
+
+export interface CompiledAggregate {
+	/** Full SELECT; expressions are aliased agg_0.. in `aliases` order. */
+	sql: string;
+	params: unknown[];
+	aliases: string[];
+}
+
+export function compileAggregate(
+	request: AggregateRequest,
+	options: { ownerSub?: string | null } = {},
+): CompiledAggregate {
+	const compiled = compileQuery({ where: request.where }, { ownerSub: options.ownerSub });
+	const aliases = Object.keys(request.aggregates);
+
+	const expressions = aliases.map((alias, index) => {
+		const spec = request.aggregates[alias];
+		if (spec.op === 'count') return `COUNT(*) AS agg_${index}`;
+		// json_type gates to genuine JSON numbers: booleans are 'true'/'false'
+		// and strings 'text', so sum/avg skip them - Firestore semantics.
+		const numeric =
+			`CASE WHEN json_type(data, ${jsonPath(spec.field ?? '')}) IN ('integer', 'real') ` +
+			`THEN ${extract(spec.field ?? '')} END`;
+		return spec.op === 'sum'
+			? `COALESCE(SUM(${numeric}), 0) AS agg_${index}`
+			: `AVG(${numeric}) AS agg_${index}`;
+	});
+
+	return {
+		sql: `SELECT ${expressions.join(', ')} FROM documents WHERE ${compiled.whereSql}`,
+		params: compiled.params,
+		aliases,
+	};
+}
+
+/** The JS evaluation of the same request, used by the parity tests. */
+export function aggregateDocs(
+	request: AggregateRequest,
+	docs: { data: Record<string, unknown>; owner: string | null }[],
+	ownerSub?: string | null,
+): Record<string, number | null> {
+	const matching = docs.filter((doc) => matchesQuery({ where: request.where }, doc, ownerSub));
+	const results: Record<string, number | null> = {};
+
+	for (const [alias, spec] of Object.entries(request.aggregates)) {
+		if (spec.op === 'count') {
+			results[alias] = matching.length;
+			continue;
+		}
+		const values = matching
+			.map((doc) => getPath(doc.data, spec.field ?? ''))
+			.filter((value): value is number => typeof value === 'number');
+		if (spec.op === 'sum') {
+			results[alias] = values.reduce((sum, value) => sum + value, 0);
+		} else {
+			results[alias] = values.length
+				? values.reduce((sum, value) => sum + value, 0) / values.length
+				: null;
+		}
+	}
+	return results;
 }
 
 // ---------------------------------------------------------------------------

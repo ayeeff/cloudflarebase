@@ -1,20 +1,33 @@
 import { Agent, type AgentContext } from 'agents';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, lt } from 'drizzle-orm';
 import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import migrations from './migrations';
 import * as schema from './db/schema';
-import { collections } from './db/schema';
+import { collections, restorePoints } from './db/schema';
 import {
+	aggregateRequestSchema,
+	checkpointRequestSchema,
 	collectionModesSchema,
 	collectionNameSchema,
 	demoTtlHoursSchema,
+	importLineSchema,
 	projectIdSchema,
 	querySchema,
+	restoreRequestSchema,
 	settingsRequestSchema,
+	validatorSchema,
 	DEMO_PROJECT_PATTERN,
+	IMPORT_RPC_CHUNK,
+	MAX_IMPORT_BYTES,
+	MAX_IMPORT_DOCS,
+	MAX_RESTORE_POINTS,
 	type AccessMode,
 	type CollectionConfig,
+	type CollectionValidator,
+	type ImportLine,
+	type ImportReport,
+	type RestorePoint,
 } from './schemas';
 import type { DbCollection } from './collection';
 
@@ -37,6 +50,16 @@ const MAX_EVENTS = 50;
 const MAX_COLLECTIONS = 200;
 const DEMO_MAX_COLLECTIONS = 5;
 
+/** Registry rows store the validator as JSON text; unreadable = none. */
+function parseStoredValidator(raw: string | null): CollectionValidator | null {
+	if (!raw) return null;
+	try {
+		return validatorSchema.nullable().catch(null).parse(JSON.parse(raw));
+	} catch {
+		return null;
+	}
+}
+
 export interface DbActivityEvent {
 	id: string;
 	type:
@@ -44,7 +67,9 @@ export interface DbActivityEvent {
 		| 'collection.created'
 		| 'collection.deleted'
 		| 'collection.configured'
-		| 'documents.changed';
+		| 'collection.restored'
+		| 'documents.changed'
+		| 'documents.imported';
 	message: string;
 	at: string;
 }
@@ -53,6 +78,9 @@ export interface DbCollectionSummary {
 	name: string;
 	readAccess: AccessMode;
 	writeAccess: AccessMode;
+	readPermission: string | null;
+	writePermission: string | null;
+	validator: CollectionValidator | null;
 	docs: number;
 }
 
@@ -128,6 +156,12 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			});
 			this.writeDbEvent('project.provisioned');
 			this.recordEvent('project.provisioned', `database provisioned for project "${this.name}"`);
+		} else {
+			// Re-derive summaries from the registry on wake: persisted state can
+			// predate newer summary fields (readPermission, validator, ...), and
+			// broadcasting the stale shape would fail the console's overview
+			// parse for exactly the projects that already hold data.
+			await this.syncCollectionsState();
 		}
 
 		if (this.isEphemeral) {
@@ -234,6 +268,10 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			return this.adminQuery(request);
 		}
 
+		if (subPath === '/admin/aggregate' && request.method === 'POST') {
+			return this.adminAggregate(request);
+		}
+
 		if (subPath === '/admin/settings' && request.method === 'PUT') {
 			return this.updateSettings(request);
 		}
@@ -245,6 +283,34 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				decodeURIComponent(collectionDoc[1]),
 				decodeURIComponent(collectionDoc[2]),
 			);
+		}
+
+		const collectionAction = subPath.match(
+			/^\/admin\/collections\/([^/]+)\/(export|import|restore|restore-points|checkpoint|bookmark)$/,
+		);
+		if (collectionAction) {
+			const name = decodeURIComponent(collectionAction[1]);
+			switch (collectionAction[2]) {
+				case 'export':
+					if (request.method === 'GET') return this.adminExport(name);
+					break;
+				case 'import':
+					if (request.method === 'POST') return this.adminImport(request, name);
+					break;
+				case 'restore':
+					if (request.method === 'POST') return this.adminRestore(request, name);
+					break;
+				case 'restore-points':
+					if (request.method === 'GET') return this.adminRestorePoints(name);
+					break;
+				case 'checkpoint':
+					if (request.method === 'POST') return this.adminCheckpoint(request, name);
+					break;
+				case 'bookmark':
+					if (request.method === 'GET') return this.adminBookmarkForTime(url, name);
+					break;
+			}
+			return Response.json({ error: 'not found' }, { status: 404 });
 		}
 
 		const collection = subPath.match(/^\/admin\/collections\/([^/]+)$/);
@@ -285,6 +351,345 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 
 		const child = this.childStub(name.data);
 		return Response.json(await child.adminQuery(query.data));
+	}
+
+	/** The registry row, or null for an invalid/unknown name. */
+	private async collectionRow(name: string): Promise<typeof collections.$inferSelect | null> {
+		if (!collectionNameSchema.safeParse(name).success) return null;
+		const [row] = await this.db
+			.select()
+			.from(collections)
+			.where(eq(collections.name, name))
+			.limit(1);
+		return row ?? null;
+	}
+
+	private async adminAggregate(request: Request): Promise<Response> {
+		const body = (await request.json().catch(() => null)) as {
+			collection?: unknown;
+			aggregate?: unknown;
+		} | null;
+		const name = collectionNameSchema.safeParse(body?.collection);
+		const aggregate = aggregateRequestSchema.safeParse(body?.aggregate);
+		if (!name.success || !aggregate.success) {
+			return Response.json({ error: 'invalid collection or aggregate request' }, { status: 400 });
+		}
+		if (!(await this.collectionRow(name.data))) {
+			return Response.json({ error: 'no such collection' }, { status: 404 });
+		}
+		return Response.json(await this.childStub(name.data).adminAggregate(aggregate.data));
+	}
+
+	/** Operator NDJSON export, streamed chunk by chunk over child RPC. */
+	private async adminExport(name: string): Promise<Response> {
+		if (!(await this.collectionRow(name))) {
+			return Response.json({ error: 'no such collection' }, { status: 404 });
+		}
+		const child = this.childStub(name);
+		const encoder = new TextEncoder();
+		let afterId: string | undefined;
+		let done = false;
+
+		const stream = new ReadableStream<Uint8Array>({
+			async pull(controller) {
+				if (done) return;
+				// The cast mirrors the DurableObjectNamespace<any> gotcha: DbDocument
+				// carries Record<string, unknown>, and `unknown` fails the stub's
+				// Rpc.Serializable transform, collapsing the return type to never.
+				// The value is a plain JSON object; only the type system objects.
+				const chunk = (await child.exportChunk(afterId)) as unknown as Awaited<
+					ReturnType<DbCollection['exportChunk']>
+				>;
+				for (const doc of chunk.docs) {
+					controller.enqueue(encoder.encode(`${JSON.stringify(doc)}\n`));
+				}
+				if (chunk.nextAfterId === null) {
+					done = true;
+					controller.close();
+				} else {
+					afterId = chunk.nextAfterId;
+				}
+			},
+		});
+
+		return new Response(stream, {
+			headers: {
+				'content-type': 'application/x-ndjson',
+				'content-disposition': `attachment; filename="${name}.ndjson"`,
+			},
+		});
+	}
+
+	/** Persist a named PITR bookmark for the dashboard's restore-point list. */
+	private async saveRestorePoint(
+		name: string,
+		bookmark: string,
+		reason: string,
+	): Promise<RestorePoint> {
+		const capturedAt = new Date();
+		await this.db.insert(restorePoints).values({ collection: name, bookmark, reason, capturedAt });
+		// Marker-list cap only - restore-by-timestamp reaches any moment in the
+		// 30-day window regardless of what is listed here.
+		const rows = await this.db
+			.select()
+			.from(restorePoints)
+			.where(eq(restorePoints.collection, name))
+			.orderBy(desc(restorePoints.capturedAt), desc(restorePoints.id));
+		for (const stale of rows.slice(MAX_RESTORE_POINTS)) {
+			await this.db.delete(restorePoints).where(eq(restorePoints.id, stale.id));
+		}
+		return { bookmark, reason, capturedAt: capturedAt.toISOString() };
+	}
+
+	/** Capture the collection's current-moment bookmark; null when the
+	 * environment has no PITR (local dev) - callers degrade gracefully. */
+	private async captureRestorePoint(name: string, reason: string): Promise<RestorePoint | null> {
+		try {
+			const current = await this.childStub(name).currentBookmark();
+			if (!current.ok) return null;
+			return await this.saveRestorePoint(name, current.bookmark, reason);
+		} catch {
+			return null;
+		}
+	}
+
+	/**
+	 * The dashboard's restore-point list: named markers plus whether this
+	 * environment supports PITR at all, so the dialog can explain up front
+	 * instead of failing after a submit.
+	 */
+	private async adminRestorePoints(name: string): Promise<Response> {
+		if (!(await this.collectionRow(name))) {
+			return Response.json({ error: 'no such collection' }, { status: 404 });
+		}
+		const probe = await this.childStub(name).currentBookmark();
+		// The platform window is 30 days; older markers are dead weight.
+		await this.db
+			.delete(restorePoints)
+			.where(
+				and(
+					eq(restorePoints.collection, name),
+					lt(restorePoints.capturedAt, new Date(Date.now() - 30 * 24 * 3600 * 1000)),
+				),
+			);
+		const rows = await this.db
+			.select()
+			.from(restorePoints)
+			.where(eq(restorePoints.collection, name))
+			.orderBy(desc(restorePoints.capturedAt), desc(restorePoints.id));
+		return Response.json({
+			supported: probe.ok,
+			points: rows.map((row) => ({
+				bookmark: row.bookmark,
+				reason: row.reason,
+				capturedAt: row.capturedAt.toISOString(),
+			})),
+		});
+	}
+
+	/**
+	 * D1-restore-style: `?at=<ISO time>` in, the closest available bookmark
+	 * out - the dialog shows it BEFORE the operator commits to a restore.
+	 */
+	private async adminBookmarkForTime(url: URL, name: string): Promise<Response> {
+		const at = url.searchParams.get('at') ?? '';
+		const target = new Date(at).getTime();
+		const now = Date.now();
+		if (!at || Number.isNaN(target) || target > now || now - target > 30 * 24 * 3600 * 1000) {
+			return Response.json(
+				{ error: 'pass ?at=<ISO timestamp> within the past 30 days' },
+				{ status: 400 },
+			);
+		}
+		if (!(await this.collectionRow(name))) {
+			return Response.json({ error: 'no such collection' }, { status: 404 });
+		}
+
+		const outcome = await this.childStub(name).bookmarkForTime(new Date(target).toISOString());
+		if (!outcome.ok) {
+			if (outcome.code === 'unsupported') {
+				return Response.json(
+					{
+						error:
+							'point-in-time recovery is not available in this environment - ' +
+							'local development keeps no durable change log',
+					},
+					{ status: 501 },
+				);
+			}
+			return Response.json({ error: outcome.message ?? 'bookmark lookup failed' }, { status: 400 });
+		}
+		return Response.json({ bookmark: outcome.bookmark, at: new Date(target).toISOString() });
+	}
+
+	/** Manual checkpoint: capture "now" as a named restore point. */
+	private async adminCheckpoint(request: Request, name: string): Promise<Response> {
+		const body = checkpointRequestSchema.safeParse(await request.json().catch(() => ({})));
+		if (!body.success) {
+			return Response.json(
+				{ error: 'invalid checkpoint request', issues: body.error.issues },
+				{ status: 400 },
+			);
+		}
+		if (!(await this.collectionRow(name))) {
+			return Response.json({ error: 'no such collection' }, { status: 404 });
+		}
+		const point = await this.captureRestorePoint(name, body.data.reason ?? 'manual checkpoint');
+		if (!point) {
+			return Response.json(
+				{
+					error:
+						'point-in-time recovery is not available in this environment - ' +
+						'local development keeps no durable change log',
+				},
+				{ status: 501 },
+			);
+		}
+		return Response.json(point);
+	}
+
+	/**
+	 * Operator NDJSON import: parse every line up front (bad lines are
+	 * reported with their 1-based line number, good ones still land), then
+	 * feed the children in RPC-sized chunks and merge their reports.
+	 */
+	private async adminImport(request: Request, name: string): Promise<Response> {
+		if (!(await this.collectionRow(name))) {
+			return Response.json({ error: 'no such collection' }, { status: 404 });
+		}
+		const text = await request.text().catch(() => '');
+		if (new TextEncoder().encode(text).byteLength > MAX_IMPORT_BYTES) {
+			return Response.json(
+				{ error: `imports are limited to ${MAX_IMPORT_BYTES} bytes per request` },
+				{ status: 413 },
+			);
+		}
+
+		const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+		if (lines.length === 0) {
+			return Response.json({ error: 'the import body carried no NDJSON lines' }, { status: 400 });
+		}
+		if (lines.length > MAX_IMPORT_DOCS) {
+			return Response.json(
+				{ error: `imports are limited to ${MAX_IMPORT_DOCS} documents per request` },
+				{ status: 400 },
+			);
+		}
+
+		// A free undo for the whole import (deployed stacks; local has no PITR).
+		await this.captureRestorePoint(name, 'before import');
+
+		const report: ImportReport = { imported: 0, updated: 0, errors: [] };
+		const valid: { line: number; parsed: ImportLine }[] = [];
+		for (const [index, line] of lines.entries()) {
+			let json: unknown;
+			try {
+				json = JSON.parse(line);
+			} catch {
+				report.errors.push({ line: index + 1, error: 'not valid JSON' });
+				continue;
+			}
+			const parsed = importLineSchema.safeParse(json);
+			if (!parsed.success) {
+				report.errors.push({ line: index + 1, error: 'not an importable document line' });
+				continue;
+			}
+			valid.push({ line: index + 1, parsed: parsed.data });
+		}
+
+		const child = this.childStub(name);
+		for (let start = 0; start < valid.length; start += IMPORT_RPC_CHUNK) {
+			const chunk = valid.slice(start, start + IMPORT_RPC_CHUNK);
+			const chunkReport = await child.importDocs(chunk.map((entry) => entry.parsed));
+			report.imported += chunkReport.imported;
+			report.updated += chunkReport.updated;
+			for (const error of chunkReport.errors) {
+				report.errors.push({ line: chunk[error.line]?.line ?? -1, error: error.error });
+			}
+		}
+
+		this.writeDbEvent('documents.imported');
+		this.recordEvent(
+			'documents.imported',
+			`imported ${report.imported + report.updated} documents into "${name}"` +
+				(report.errors.length ? ` (${report.errors.length} lines failed)` : ''),
+		);
+		// Immediate count reconcile so the dashboard reflects the import now
+		// rather than after the next organic write.
+		try {
+			await this.reportCollectionStats(name, { docs: await child.getDocCount() });
+		} catch {
+			// best-effort: the count self-heals on the next write
+		}
+		return Response.json(report);
+	}
+
+	/**
+	 * Point-in-time rollback of ONE collection. The child validates support
+	 * and performs the platform restore; this route owns the 30-day window
+	 * check and the operator-facing error shapes (501 = the environment has
+	 * no durable change log, i.e. local development).
+	 */
+	private async adminRestore(request: Request, name: string): Promise<Response> {
+		const parsed = restoreRequestSchema.safeParse(await request.json().catch(() => null));
+		if (!parsed.success) {
+			return Response.json(
+				{ error: 'invalid restore request', issues: parsed.error.issues },
+				{ status: 400 },
+			);
+		}
+		if (parsed.data.timestamp !== undefined) {
+			const target = new Date(parsed.data.timestamp).getTime();
+			const now = Date.now();
+			if (target > now || now - target > 30 * 24 * 3600 * 1000) {
+				return Response.json(
+					{ error: 'restore timestamps must fall within the past 30 days' },
+					{ status: 400 },
+				);
+			}
+		}
+		if (!(await this.collectionRow(name))) {
+			return Response.json({ error: 'no such collection' }, { status: 404 });
+		}
+
+		const outcome = await this.childStub(name).restoreTo(parsed.data);
+		if (!outcome.ok) {
+			if (outcome.code === 'unsupported') {
+				return Response.json(
+					{
+						error:
+							'point-in-time recovery is not available in this environment - ' +
+							'local development keeps no durable change log',
+					},
+					{ status: 501 },
+				);
+			}
+			return Response.json({ error: outcome.message ?? 'restore failed' }, { status: 400 });
+		}
+
+		this.writeDbEvent('collection.restored');
+		this.recordEvent(
+			'collection.restored',
+			parsed.data.timestamp
+				? `collection "${name}" rolled back to ${parsed.data.timestamp}`
+				: `collection "${name}" restored to a bookmark`,
+		);
+		// The undo bookmark becomes a listed restore point, so reversing a
+		// rollback is one click even if the response was lost.
+		try {
+			await this.saveRestorePoint(name, outcome.undoBookmark, 'before rollback');
+		} catch {
+			// the response still carries the bookmark
+		}
+		// The child aborts a tick after answering; give the restored session a
+		// moment, then reconcile the count. Best-effort - the count self-heals.
+		try {
+			await new Promise((resolve) => setTimeout(resolve, 250));
+			await this.reportCollectionStats(name, { docs: await this.childStub(name).getDocCount() });
+		} catch {
+			// the restored instance reports on its next write
+		}
+		return Response.json({ restored: true, undoBookmark: outcome.undoBookmark });
 	}
 
 	private async adminDocumentWrite(
@@ -344,18 +749,31 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			if (denied) return denied;
 		}
 
+		// Omitted permission/validator fields stay as they are - a modes-only
+		// save from the Access tab can never clobber rules configured earlier.
+		const patch: Partial<typeof collections.$inferInsert> = {
+			readAccess: modes.data.readAccess,
+			writeAccess: modes.data.writeAccess,
+		};
+		if (modes.data.readPermission !== undefined) patch.readPermission = modes.data.readPermission;
+		if (modes.data.writePermission !== undefined) {
+			patch.writePermission = modes.data.writePermission;
+		}
+		if (modes.data.validator !== undefined) {
+			patch.validator = modes.data.validator === null ? null : JSON.stringify(modes.data.validator);
+		}
+
 		const [row] = await this.db
 			.insert(collections)
 			.values({
 				name,
-				readAccess: modes.data.readAccess,
-				writeAccess: modes.data.writeAccess,
+				readPermission: null,
+				writePermission: null,
+				validator: null,
+				...patch,
 				createdAt: new Date(),
 			})
-			.onConflictDoUpdate({
-				target: collections.name,
-				set: { readAccess: modes.data.readAccess, writeAccess: modes.data.writeAccess },
-			})
+			.onConflictDoUpdate({ target: collections.name, set: patch })
 			.returning();
 
 		// Row first, THEN push: if the push fails the child heals via lazy pull.
@@ -371,8 +789,11 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		await this.syncCollectionsState();
 		return Response.json({
 			name,
-			readAccess: modes.data.readAccess,
-			writeAccess: modes.data.writeAccess,
+			readAccess: row.readAccess,
+			writeAccess: row.writeAccess,
+			readPermission: row.readPermission,
+			writePermission: row.writePermission,
+			validator: parseStoredValidator(row.validator),
 		});
 	}
 
@@ -389,6 +810,8 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		const child = this.childStub(name);
 		await child.destroy();
 		await this.db.delete(collections).where(eq(collections.name, name));
+		// A deliberate erase must stay erased - drop its restore markers too.
+		await this.db.delete(restorePoints).where(eq(restorePoints.collection, name));
 
 		this.writeDbEvent('collection.deleted');
 		this.recordEvent('collection.deleted', `collection "${name}" deleted`);
@@ -440,6 +863,9 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			collection: row.name,
 			readAccess: row.readAccess as AccessMode,
 			writeAccess: row.writeAccess as AccessMode,
+			readPermission: row.readPermission,
+			writePermission: row.writePermission,
+			validator: parseStoredValidator(row.validator),
 			allowedOrigins: this.state.allowedOrigins,
 			demo: this.isEphemeral,
 			configVersion: version,
@@ -472,6 +898,9 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			name: row.name,
 			readAccess: row.readAccess as AccessMode,
 			writeAccess: row.writeAccess as AccessMode,
+			readPermission: row.readPermission,
+			writePermission: row.writePermission,
+			validator: parseStoredValidator(row.validator),
 			docs: row.docs,
 		}));
 		this.setState({

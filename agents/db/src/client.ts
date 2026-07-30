@@ -1,6 +1,8 @@
 import {
+	aggregateRequestSchema,
 	querySchema,
 	serverFrameSchema,
+	type AggregateRequest,
 	type DbDocument,
 	type Query,
 	type ServerFrame,
@@ -128,6 +130,50 @@ class CollectionHandle {
 
 	async query(query: Query = {}): Promise<QueryResult> {
 		return this.request('POST', '/query', querySchema.parse(query));
+	}
+
+	/** count/sum/avg over the collection; sum/avg skip non-numeric values. */
+	async aggregate(request: AggregateRequest): Promise<Record<string, number | null>> {
+		const { results } = await this.request<{ results: Record<string, number | null> }>(
+			'POST',
+			'/aggregate',
+			aggregateRequestSchema.parse(request),
+		);
+		return results;
+	}
+
+	/** Matching-document count (all documents when `where` is omitted). */
+	async count(where?: AggregateRequest['where']): Promise<number> {
+		const results = await this.aggregate({ where, aggregates: { total: { op: 'count' } } });
+		return results.total ?? 0;
+	}
+
+	/**
+	 * Stream every readable document (owner-mode collections yield only
+	 * yours). The server sends NDJSON in id order; documents materialize one
+	 * at a time, so a large collection never has to fit in memory.
+	 */
+	async *exportDocuments(): AsyncGenerator<DbDocument, void, undefined> {
+		const response = await fetch(this.url('/export'), { headers: await this.headers() });
+		if (!response.ok || !response.body) {
+			const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+			throw new DbError(response.status, payload?.error ?? `export failed (${response.status})`);
+		}
+
+		const reader = response.body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			buffer = lines.pop() ?? '';
+			for (const line of lines) {
+				if (line.trim()) yield JSON.parse(line) as DbDocument;
+			}
+		}
+		if (buffer.trim()) yield JSON.parse(buffer) as DbDocument;
 	}
 
 	/**

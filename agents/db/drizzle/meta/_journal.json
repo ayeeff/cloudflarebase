@@ -8,6 +8,20 @@
       "when": 1785365009827,
       "tag": "0000_swift_lethal_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1785425136947,
+      "tag": "0001_moaning_beast",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785428742608,
+      "tag": "0002_gigantic_sleeper",
+      "breakpoints": true
     }
   ]
 }

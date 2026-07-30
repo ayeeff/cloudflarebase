@@ -7,7 +7,18 @@ import { collectionNameSchema, projectIdSchema } from './schemas';
 
 export type { DbActivityEvent, DbAgentState, DbCollectionSummary, DbOverview } from './agent';
 export type { AssertDbAgentEnv, DbAgentBindings } from './bindings';
-export type { AccessMode, DbDocument, Query, ServerFrame } from './schemas';
+export type {
+	AccessMode,
+	AggregateRequest,
+	AggregateResult,
+	CollectionValidator,
+	DbDocument,
+	FieldRule,
+	ImportReport,
+	Query,
+	RestoreRequest,
+	ServerFrame,
+} from './schemas';
 
 const sentryOptions = (env: Env) => ({
 	dsn: env.SENTRY_DSN,

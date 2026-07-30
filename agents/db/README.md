@@ -24,9 +24,22 @@ steps; both templates ship in the package.
   survive hibernation; you pay nothing while idle.
 - **Access modes per collection** - `public`, `auth`, or `owner`, verified
   against `@cloudflarebase/auth` project JWTs. `owner` scopes every read and
-  write to the token's subject.
-- **A typed client** - `@cloudflarebase/db/client` wraps REST and the
-  subscribe protocol with the same zod schemas the server validates with.
+  write to the token's subject. Optional permission keys additionally require
+  that claim on the JWT (granted via auth roles; the admin role's `*` always
+  passes).
+- **Document rules** - a per-collection validator (type / required / bounds /
+  enum over top-level fields, `additionalFields: reject`) enforced on public
+  writes; operator surfaces bypass it like the Firestore Admin SDK bypasses
+  security rules.
+- **Aggregates** - `count`, `sum`, and `avg` computed server-side with the
+  same where clauses as a query; `sum`/`avg` skip non-numeric values.
+- **Backup and rollback** - NDJSON export (streamed, also from the client
+  SDK), operator NDJSON import that round-trips exports exactly, and
+  point-in-time restore of a single collection to any moment in the past 30
+  days (deployed stacks; local development has no durable change log).
+- **A typed client** - `@cloudflarebase/db/client` wraps REST, aggregates,
+  export, and the subscribe protocol with the same zod schemas the server
+  validates with.
 
 ```ts
 import { createDbClient } from '@cloudflarebase/db/client';
