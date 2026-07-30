@@ -253,8 +253,11 @@ export class DbCollection extends DurableObject<Env> {
 	 * and doubles this call as the PITR support probe. No side effects.
 	 *
 	 * The probe exercises getBookmarkForTime, not just getCurrentBookmark:
-	 * local workerd serves the latter while refusing the rest of the PITR
-	 * API, and "supported" must mean a restore would actually work.
+	 * local workerd serves the latter while refusing the rest of the PITR API,
+	 * and "supported" must mean a restore would actually work. Only the
+	 * back-end's "does not implement" answer counts as unsupported - a young
+	 * DO can reject a specific timestamp (its change log may postdate it)
+	 * while PITR itself is fully available.
 	 */
 	async currentBookmark(): Promise<{ ok: true; bookmark: string } | { ok: false }> {
 		const storage = this.ctx.storage;
@@ -265,8 +268,14 @@ export class DbCollection extends DurableObject<Env> {
 			return { ok: false };
 		}
 		try {
-			await storage.getBookmarkForTime(new Date(Date.now() - 1_000));
-			return { ok: true, bookmark: await storage.getCurrentBookmark() };
+			const bookmark = await storage.getCurrentBookmark();
+			try {
+				await storage.getBookmarkForTime(new Date());
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				if (UNSUPPORTED_PITR_PATTERN.test(message)) return { ok: false };
+			}
+			return { ok: true, bookmark };
 		} catch {
 			return { ok: false };
 		}
