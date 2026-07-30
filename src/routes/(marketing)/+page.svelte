@@ -144,7 +144,10 @@
 
 	const authApiExamples = buildIntegrationExamples('/api/projects/PROJECT_ID/auth');
 	const dbApiExamples = buildDbIntegrationExamples('/api/projects/PROJECT_ID/db');
-	let apiProduct = $state<'auth' | 'db'>(page.url.searchParams.get('api') === 'db' ? 'db' : 'auth');
+	// Database leads the API section; ?api=auth deep-links the auth examples.
+	let apiProduct = $state<'auth' | 'db'>(
+		page.url.searchParams.get('api') === 'auth' ? 'auth' : 'db'
+	);
 
 	// Agent-topology visual: simulated traffic converging on one project agent.
 	const mapW = 480;
@@ -692,7 +695,7 @@
 							role="tablist"
 							aria-label="Product"
 						>
-							{#each [['auth', 'auth'], ['db', 'db']] as const as [id, label] (id)}
+							{#each [['db', 'db'], ['auth', 'auth']] as const as [id, label] (id)}
 								<button
 									type="button"
 									role="tab"
