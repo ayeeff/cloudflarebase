@@ -123,10 +123,13 @@ const posts = db.collection('posts');
 await posts.create({ title: 'Hello', votes: 1 });
 
 // A snapshot now, then added/modified/removed deltas as writes happen.
-posts.subscribe({ orderBy: [{ field: 'votes', direction: 'desc' }], limit: 25 }, {
-	onSnapshot: (docs) => render(docs),
-	onChange: (change, docs) => render(docs)
-});
+posts.subscribe(
+	{ orderBy: [{ field: 'votes', direction: 'desc' }], limit: 25 },
+	{
+		onSnapshot: (docs) => render(docs),
+		onChange: (change, docs) => render(docs)
+	}
+);
 ```
 
 Each project also serves an OpenAPI 3.1 document at
