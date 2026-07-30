@@ -6,8 +6,9 @@
 > rules-lite (permission keys checked against JWT `permissions` claims, and
 > declarative document validators on public writes), count/sum/avg aggregates,
 > NDJSON export/import, and per-collection 30-day point-in-time restore with
-> D1-style restore points all shipped as `@cloudflarebase/db` 0.2.0. The
-> non-goals below are the v1 snapshot.
+> D1-style restore points all fold into `@cloudflarebase/db` 0.1.0 - the
+> package has never been published, so v1 and the follow-up ship together as
+> the first release. The non-goals below are the v1 snapshot.
 >
 > Deviations from this plan, for future readers:
 >
