@@ -36,12 +36,13 @@ const db = createDbClient({
 	getToken: async () => (await fetch('/api/auth/token')).json().then((t) => t.token),
 });
 
-const todos = db.collection('todos');
-await todos.create({ text: 'ship it', done: false });
-const open = await todos.query({ where: [{ field: 'done', op: '==', value: false }] });
+const posts = db.collection('posts');
+await posts.create({ title: 'Show HN: I built a Firebase on Cloudflare', votes: 1 });
+const top = await posts.query({ orderBy: [{ field: 'votes', direction: 'desc' }], limit: 25 });
 
-const unsubscribe = todos.subscribe(
-	{ where: [{ field: 'done', op: '==', value: false }] },
+// A Reddit-style front page that re-ranks itself on every vote.
+const unsubscribe = posts.subscribe(
+	{ orderBy: [{ field: 'votes', direction: 'desc' }], limit: 25 },
 	{ onSnapshot: (docs) => render(docs), onChange: (change) => apply(change) },
 );
 ```

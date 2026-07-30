@@ -367,10 +367,10 @@
 curl ${origin}/api/projects/${data.projectId}/auth/token
 
 # Create a document (owner comes from the token subject)
-curl -X POST ${dbBase}/collections/todos/documents \\
+curl -X POST ${dbBase}/collections/posts/documents \\
   -H 'authorization: Bearer <token>' \\
   -H 'content-type: application/json' \\
-  -d '{"data":{"title":"Ship it","done":false}}'`
+  -d '{"data":{"title":"Show HN: I built a Firebase on Cloudflare","votes":1}}'`
 		},
 		{
 			id: 'sdk',
@@ -387,11 +387,12 @@ const db = createDbClient({
 	}
 });
 
-const todos = db.collection('todos');
-await todos.create({ title: 'Ship it', done: false });
+const posts = db.collection('posts');
+await posts.create({ title: 'Show HN: I built a Firebase on Cloudflare', votes: 1 });
 
-const unsubscribe = todos.subscribe(
-	{ where: [{ field: 'done', op: '==', value: false }] },
+// The front page re-ranks itself on every vote, on every open screen.
+const unsubscribe = posts.subscribe(
+	{ orderBy: [{ field: 'votes', direction: 'desc' }], limit: 25 },
 	{
 		onSnapshot: (docs) => render(docs),
 		onChange: (change, docs) => render(docs)
@@ -404,7 +405,7 @@ const unsubscribe = todos.subscribe(
 			description:
 				'Subscribe without the SDK: one socket per collection, subscriptions multiplexed by id.',
 			code: `const ws = new WebSocket(
-	'${origin.replace(/^http/, 'ws')}/agents/db-agent/${data.projectId}/collections/todos/subscribe'
+	'${origin.replace(/^http/, 'ws')}/agents/db-agent/${data.projectId}/collections/posts/subscribe'
 );
 ws.onopen = () => ws.send(JSON.stringify({ type: 'subscribe', id: 'q1', query: { limit: 50 } }));
 ws.onmessage = (event) => console.log(JSON.parse(event.data));
@@ -444,8 +445,8 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 		<div>
 			<h1 class="text-2xl font-semibold">Database</h1>
 			<p class="mt-1 text-sm text-muted-foreground">
-				Served by this project's DbAgent - JSON documents with live queries, one Durable Object per
-				collection.
+				Like Firestore, but every collection is its own Durable Object - JSON documents, queries,
+				and onSnapshot-style live subscriptions.
 			</p>
 		</div>
 		<Badge variant="outline" class="gap-1.5" data-testid="connection-status">
@@ -569,7 +570,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 									<Input
 										id="new-collection-name"
 										class="font-mono"
-										placeholder="todos"
+										placeholder="posts"
 										bind:value={newCollectionName}
 									/>
 								</div>
