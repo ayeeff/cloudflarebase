@@ -53,7 +53,14 @@ class AuthService extends WorkerEntrypoint<Env> {
 				return Response.json({ error: 'invalid project id' }, { status: 400 });
 			}
 			const agent = await getAgentByName<Env, AuthAgentBase>(this.env.AuthAgent, projectId);
-			await agent.destroy();
+			try {
+				await agent.destroy();
+			} catch (error) {
+				// The agent's deferred abort() can outrace the RPC reply in
+				// production after a COMPLETED erase - storage is already gone.
+				const message = error instanceof Error ? error.message : String(error);
+				if (!/abort\(\) to reset|durable object reset/i.test(message)) throw error;
+			}
 			return Response.json({ erased: true });
 		}
 
