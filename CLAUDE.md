@@ -8,13 +8,16 @@ Also read [AGENTS.md](AGENTS.md). Cloudflare APIs change frequently; retrieve cu
 
 Separate npm projects with separate Wrangler configs and generated `Env` types. Never import runtime code or generated Worker types across them. Shared DTOs are deliberately copied and must be kept in sync.
 
-| Path          | Worker                                                         | Purpose                                                                                           |
-| ------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `/`           | `cloudflarebase` (`cloudflarebase-com` in `env.production`)    | SvelteKit 2/Svelte 5 dashboard and marketing site, shadcn-svelte, Tailwind v4, Cloudflare adapter |
-| `agents/auth` | `auth-agent` (`-local`, `-test`, or `-preview` by environment) | `AuthAgent` Durable Object, one per project; Better Auth and Drizzle over embedded DO SQLite      |
-| `cli`         | none (Node on the consumer's machine)                          | `@cloudflarebase/cli`, the `cloudflarebase` bin: `init` / `add <agent>` / `deploy`                |
+| Path          | Worker                                                         | Purpose                                                                                                     |
+| ------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `/`           | `cloudflarebase` (`cloudflarebase-com` in `env.production`)    | SvelteKit 2/Svelte 5 dashboard and marketing site, shadcn-svelte, Tailwind v4, Cloudflare adapter           |
+| `agents/auth` | `auth-agent` (`-local`, `-test`, or `-preview` by environment) | `AuthAgent` Durable Object, one per project; Better Auth and Drizzle over embedded DO SQLite                |
+| `agents/db`   | `db-agent` (`-local`, `-test`, or `-preview` by environment)   | `DbAgent` (coordinator, one per project) + `DbCollection` (one per collection): documents with live queries |
+| `cli`         | none (Node on the consumer's machine)                          | `@cloudflarebase/cli`, the `cloudflarebase` bin: `init` / `add <agent>` / `deploy`                          |
 
-The root Worker binds `AUTH_AGENT` (agent service) and `DB` (control-plane D1). Agent instances live at `/agents/auth-agent/<projectId>/...`.
+The root Worker binds `AUTH_AGENT` + `DB_AGENT` (agent services) and `DB` (control-plane D1). Agent instances live at `/agents/<worker>/<projectId>/...`.
+
+**Every agent ships a `cloudflarebase.agent.json` manifest** (`docs/agent-contract.md`, implemented). The app imports those files directly from `agents/<name>/` into `src/lib/agent-registry.ts` - single-sourced on purpose, so the console guard can never drift from what the package declares - and the guard route table, `/agents/*` dispatch, `/api/projects/<id>/<prefix>/*` proxy classification, sidebar navigation, project-delete fan-out, and per-agent OpenAPI modules (`src/lib/openapi/<name>.ts`) are all registry-driven. The CLI reads the manifest from the installed package and derives the entrypoint export lines from it.
 
 **The top level of both Wrangler configs is the self-hosted default, not this project's deployment.** It publishes to workers.dev, claims no custom domain, and leaves `DEMO_MODE` unset so a fresh install is private. cloudflarebase.com lives in `env.production`, deployed with `npm run deploy:production`. The agent's `env.production` name is pinned to `auth-agent` (what the service binding resolves). The web `env.preview` is the **same Worker** as production (`cloudflarebase-com`): previews are versions of it, uploaded by Workers Builds from non-production branches, and the environment exists for its bindings - `AUTH_AGENT` targets `auth-agent-preview` - which versions carry individually.
 
@@ -22,11 +25,11 @@ The root Worker binds `AUTH_AGENT` (agent service) and `DB` (control-plane D1). 
 
 | Location      | Command                               | Purpose                                                                                   |
 | ------------- | ------------------------------------- | ----------------------------------------------------------------------------------------- |
-| root          | `npm run dev`                         | Auth Agent on :8788, then Vite on :5173                                                   |
+| root          | `npm run dev`                         | Auth Agent on :8788, DB Agent on :8789, then Vite on :5173                                |
 | root          | `npm run check` / `npm run lint`      | Svelte diagnostics / Prettier and ESLint                                                  |
 | root          | `npm run demo:video`                  | Self-driving demo tour for screen recording (`--check` for headless validation)           |
 | root          | `npm run build`                       | Production SvelteKit Cloudflare build                                                     |
-| root          | `npm test` / `npm run test:e2e`       | Full Playwright suite against Workers on :8797/:8798 (`test:e2e:ui` for the UI)           |
+| root          | `npm test` / `npm run test:e2e`       | Full Playwright suite against Workers on :8797/:8798/:8799 (`test:e2e:ui` for the UI)     |
 | root          | `npm run cf-typegen`                  | Regenerate `src/worker-configuration.d.ts` after binding changes                          |
 | root          | `npm run deploy`                      | Deploy the self-hosted default (workers.dev, no demo mode)                                |
 | root          | `npm run deploy:all`                  | Deploy agent then dashboard in order (the service binding needs the agent to exist first) |
@@ -35,6 +38,10 @@ The root Worker binds `AUTH_AGENT` (agent service) and `DB` (control-plane D1). 
 | `agents/auth` | `npm run migrations`                  | Generate migrations after schema edits, then inline them into `src/migrations.ts`         |
 | `agents/auth` | `npx wrangler types`                  | Regenerate Auth Agent Worker types                                                        |
 | `agents/auth` | `npm run build`                       | Emit `dist/` for the published `@cloudflarebase/auth` package                             |
+| `agents/db`   | `npx tsc --noEmit`                    | Typecheck the DB Agent (includes the binding-contract test-d negatives)                   |
+| `agents/db`   | `npm run test:unit`                   | Query-engine parity tests (SQL compiler vs JS matcher) under node:test                    |
+| `agents/db`   | `npm run migrations`                  | Generate migrations after schema edits, then inline them into `src/migrations.ts`         |
+| `agents/db`   | `npm run build`                       | Emit `dist/` for the published `@cloudflarebase/db` package (includes `./client`)         |
 | `cli`         | `npm run build` / `npm run typecheck` | Emit / typecheck the published `@cloudflarebase/cli` package                              |
 
 ## Architecture decisions
@@ -58,11 +65,12 @@ The root Worker binds `AUTH_AGENT` (agent service) and `DB` (control-plane D1). 
 - Theme state is owned by root `ModeWatcher`; all theme buttons use `$lib/components/mode-toggle.svelte`. Never touch the root `dark` class or storage directly.
 - The project agent is a docked, resizable right pane (PaneForge via the shadcn `resizable` wrapper), open by default on desktop, collapsible to a rail. Open state and sizes persist in the `cfbase-copilot` cookie, read by `+layout.server.ts` so SSR renders without a resize flash. Below 1024px (shared `IsMobile` hook; the layout's CSS gates use `lg:` to match) a bottom tab bar swaps in a full-screen agent view. The shell is viewport-height; pages and chat scroll inside `ScrollArea` viewports, not the window. Exception: the API reference page opts out (layout branches on `isApi`) because Scalar pins its sidebar with `position: sticky` against its nearest scroll container; the page's own `overflow-auto` wrapper is the scrollport, mirroring Scalar's embedded layout.
 - `/admin` is the fleet dashboard, gated by `ADMIN_SECRET` - optional on purpose: unset (the self-hosted default; no config has required secrets, so a fresh clone deploys with zero configuration), `/admin` reports itself unconfigured and everything else works. Enable it with `wrangler secret put ADMIN_SECRET` (plain var only in local/test); cloudflarebase.com's own `env.production`/`env.preview` declare it required. The cookie stores a SHA-256 digest, so rotating the secret signs admins out. No registry involved: the agent worker's `GET /fleet/overview` lists projects from auth-event analytics, then asks each project DO for counts and colo over RPC (`getFleetCounts`). `/fleet/*` sits outside `/agents/*` so it is service-binding-only.
-- Shared DTOs in `src/lib/agents.ts` mirror `agents/auth/src/agent.ts` and `fleet.ts`. Keep the copies synchronized.
+- Shared DTOs in `src/lib/agents.ts` mirror `agents/auth/src/agent.ts`, `fleet.ts`, and `agents/db/src/{agent,schemas}.ts`. Keep the copies synchronized.
+- **The db agent is collection-per-DO** (`agents/db/CLAUDE.md`, plan in `docs/db-agent-plan.md`): `DbAgent` coordinates a project (registry, state sync, erase fan-out); each collection is its own `DbCollection` Durable Object - plain DO on the raw WebSocket Hibernation API, deliberately not an SDK Agent - holding documents, the zod query DSL (SQL compiler + JS matcher from one parsed query), and per-subscriber live queries whose state lives in SQLite. Per-collection ceilings: 10 GB / ~1k req/s / no read replicas (push-based live queries are the mitigation). Access modes `public|auth|owner` verify auth-agent JWTs via JWKS over the `AUTH_AGENT` service binding (or the co-located `AuthAgent` namespace in single-worker consumer installs); with neither, token-gated collections 503 and public ones work. Cross-collection batches/transactions are deliberately unsupported.
 
 ## Playwright e2e
 
-`npm test` boots a production-mirroring stack: the built SvelteKit Worker on :8797 (`wrangler.e2e.jsonc`) and the agent on :8798 (env `test`), with real workerd, service binding, DO SQLite, and API seeding.
+`npm test` boots a production-mirroring stack: the built SvelteKit Worker on :8797 (`wrangler.e2e.jsonc`), the auth agent on :8798, and the db agent on :8799 (both env `test`), with real workerd, service bindings, DO SQLite, and API seeding.
 
 - The web build sets `E2E_BUILD=true`, sending adapter output to `.svelte-kit-e2e/cloudflare` so a running dev process cannot lock the e2e build on Windows. Keep `wrangler.e2e.jsonc` aligned with root compatibility flags and bindings.
 - State lives in `.wrangler/test-state/`, cleared when Playwright starts a server. Local runs reuse servers, so seeds are idempotent and generated identities must be unique; CI never reuses. Rate limiting is disabled only in `env.test`; the fixed test secret belongs only in `env.test.vars`.
@@ -76,7 +84,8 @@ The root Worker binds `AUTH_AGENT` (agent service) and `DB` (control-plane D1). 
 
 - DO SQLite blocks `pragma_table_info()` and explicit `BEGIN`/`COMMIT` with `SQLITE_AUTH`. No Better Auth Kysely migrations; Drizzle migrations with `transaction: false`.
 - Miniflare service bindings are realm-sensitive: call `binding.fetch(url, init)`, never a Node-realm `Request`, and convert responses with `toNativeResponse` before returning from SvelteKit.
-- Run agent Wrangler commands from `agents/auth` (at the root they target the web Worker). `--env preview` for `auth-agent-preview`.
+- Run agent Wrangler commands from the agent's own directory - `agents/auth` or `agents/db` (at the root they target the web Worker). `--env preview` targets the `-preview` worker.
+- Deploy order is auth → db → web (`deploy:all` encodes it): the db worker's `AUTH_AGENT` service binding and the web worker's agent bindings each need their target to exist first.
 - `BETTER_AUTH_SECRET` is a plain var only in local/test; `wrangler secret put` elsewhere. Analytics writes need no token; SQL reads need `CF_ACCOUNT_ID` + `CF_ANALYTICS_API_TOKEN` (Account Analytics Read).
 - Never hand-edit generated `worker-configuration.d.ts`; regenerate, and put optional-secret augmentations in a separate `.d.ts`. Both generated files are lint-ignored.
 - `checkJs` stays off in the root tsconfig: `wrangler types` emits `GlobalProps.mainModule` as `typeof import()` of the **built** bundle, so with `checkJs` on any tree that has run a build gets thousands of junk errors from type-checking `.svelte-kit/cloudflare/_worker.js`.
@@ -91,4 +100,4 @@ The root Worker binds `AUTH_AGENT` (agent service) and `DB` (control-plane D1). 
 - Svelte 5 runes, shadcn-svelte under `$lib/components/ui`, LayerChart, `mode-watcher`, tabs, single quotes.
 - Routes are grouped: `(marketing)` holds the landing page and the `(legal)` subgroup (`/privacy`, `/terms` — prose mapped onto shadcn tokens in the subgroup layout); `(app)` holds `login`, `admin`, `dashboard`. The legal pages describe cloudflarebase.com's actual demo-mode behavior (no accounts, no emails collected, analytics fields, retention) — recheck them when data handling changes. `api/` and the root layout/error stay ungrouped (groups do nothing for `+server.ts` routes but would churn their route ids). Groups appear in `resolve()` route ids (`/(app)/dashboard/[projectId]`), never in URLs.
 - Dynamic segments are named for what they hold: `[projectId]`, `[userId]`, `[sessionId]`, never `[id]`.
-- New primitives follow the auth shape: separate npm project under `agents/<name>`, `Agent<Env, State>` DO, `routeAgentRequest` entrypoint, root service bindings per environment, same-origin dashboard proxies.
+- New primitives follow the agent contract (`docs/agent-contract.md`): separate npm project under `agents/<name>` shipping a `cloudflarebase.agent.json`, DO classes with `routeAgentRequest` entrypoint, root service bindings per environment, one entry in `src/lib/agent-registry.ts` (which drives guard, dispatch, proxies classification, sidebar, fan-out) plus an `src/lib/openapi/<name>.ts` module, proxy routes under `api/projects/[projectId]/<prefix>/`, and one `AGENTS` record entry in `cli/src/lib/agents.ts`.

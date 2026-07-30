@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test';
-import { authPath, configPath, overviewPath, settingsPath, uniqueEmail } from './helpers';
+import {
+	authPath,
+	configPath,
+	dbAdminCollectionPath,
+	dbDocumentsPath,
+	dbQueryPath,
+	overviewPath,
+	settingsPath,
+	uniqueEmail
+} from './helpers';
 
 /**
  * A demo project has to be a real, working backend - everything the dashboard's
@@ -71,6 +80,32 @@ test.describe('demo project', () => {
 			data: { allowedOrigins: ['https://demo-visitor.example.com'] }
 		});
 		expect(settings.ok(), await settings.text()).toBeTruthy();
+	});
+
+	test('serves the demo database flow without an operator', async ({ request }) => {
+		// The Database snippets must run for the anonymous visitor too: the demo
+		// bypass covers the admin surface (creating the collection), and the
+		// collection then serves plain unauthenticated CRUD through the proxy.
+		const provision = await request.put(dbAdminCollectionPath(DEMO_PROJECT, 'notes'), {
+			data: { readAccess: 'public', writeAccess: 'public' }
+		});
+		expect(provision.ok(), await provision.text()).toBeTruthy();
+
+		// The demo project id is fixed, so a unique marker keeps documents from
+		// earlier reused-stack runs out of the assertion.
+		const marker = `demo-db-${Date.now()}`;
+		const created = await request.post(dbDocumentsPath(DEMO_PROJECT, 'notes'), {
+			data: { data: { title: 'hello from the demo', marker } }
+		});
+		expect(created.status(), await created.text()).toBe(201);
+		const doc = await created.json();
+
+		const queried = await request.post(dbQueryPath(DEMO_PROJECT, 'notes'), {
+			data: { where: [{ field: 'marker', op: '==', value: marker }] }
+		});
+		expect(queried.ok(), await queried.text()).toBeTruthy();
+		const { docs } = await queried.json();
+		expect(docs.map((entry: { id: string }) => entry.id)).toEqual([doc.id]);
 	});
 
 	test('demo limits do not reach named projects', async ({ request }) => {

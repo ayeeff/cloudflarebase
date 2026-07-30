@@ -82,3 +82,34 @@ export function configPath(projectId: string): string {
 export function authPage(projectId: string): string {
 	return `/dashboard/${projectId}/auth`;
 }
+
+/**
+ * Project the db agent specs self-seed. Collections are idempotent upserts or
+ * carry a per-run suffix so reused local stacks never collide, and nothing
+ * else asserts on this project's contents.
+ */
+export const DB_PROJECT = 'e2e-db';
+
+export function dbAdminCollectionPath(projectId: string, name: string): string {
+	return `/api/projects/${projectId}/db/admin/collections/${encodeURIComponent(name)}`;
+}
+
+export function dbDocumentsPath(projectId: string, collection: string): string {
+	return `/api/projects/${projectId}/db/collections/${collection}/documents`;
+}
+
+export function dbDocumentPath(projectId: string, collection: string, docId: string): string {
+	return `/api/projects/${projectId}/db/collections/${collection}/documents/${encodeURIComponent(docId)}`;
+}
+
+export function dbQueryPath(projectId: string, collection: string): string {
+	return `/api/projects/${projectId}/db/collections/${collection}/query`;
+}
+
+export function dbAdminQueryPath(projectId: string): string {
+	return `/api/projects/${projectId}/db/admin/query`;
+}
+
+export function dbOverviewPath(projectId: string): string {
+	return `/api/projects/${projectId}/db/overview`;
+}

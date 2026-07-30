@@ -28,6 +28,7 @@ on:
   push:
     tags:
       - 'auth-v*.*.*'
+      - 'db-v*.*.*'
       - 'cli-v*.*.*'
 
 permissions:
@@ -55,6 +56,7 @@ jobs:
           TAG='${{ github.ref_name }}'
           case "$TAG" in
             auth-v*) echo "dir=agents/auth" >> "$GITHUB_OUTPUT"; echo "version=${TAG#auth-v}" >> "$GITHUB_OUTPUT" ;;
+            db-v*)   echo "dir=agents/db"   >> "$GITHUB_OUTPUT"; echo "version=${TAG#db-v}"   >> "$GITHUB_OUTPUT" ;;
             cli-v*)  echo "dir=cli"         >> "$GITHUB_OUTPUT"; echo "version=${TAG#cli-v}"  >> "$GITHUB_OUTPUT" ;;
             *) echo "unrecognized tag $TAG" >&2; exit 1 ;;
           esac

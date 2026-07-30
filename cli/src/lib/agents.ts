@@ -16,22 +16,22 @@ export interface AgentSpec {
 	packageName: string;
 	/** One-line description for `cloudflarebase add` with no arguments. */
 	description: string;
-	/** Line prepended to the user's entrypoint; must re-export the DO class. */
-	exportLine: string;
 }
 
+/**
+ * Everything beyond the package name - Durable Object classes, the entrypoint
+ * export lines, the binding contract - comes from the package's own
+ * cloudflarebase.agent.json at add time (see manifest.ts), so a registry
+ * entry is genuinely just a name.
+ */
 export const AGENTS: Record<string, AgentSpec> = {
 	auth: {
 		packageName: '@cloudflarebase/auth',
-		description: 'Better Auth on a Durable Object - one isolated instance per project',
-		// The type assertion travels with the wiring on purpose: it is what
-		// turns a missing binding into a named compile-time error instead of a
-		// runtime failure on the first request.
-		exportLine: [
-			"export { AuthAgent, default } from '@cloudflarebase/auth';",
-			"import type { AssertAuthAgentEnv } from '@cloudflarebase/auth';",
-			'export type _AuthAgentBindings = AssertAuthAgentEnv<Env>;'
-		].join('\n')
+		description: 'Better Auth on a Durable Object - one isolated instance per project'
+	},
+	db: {
+		packageName: '@cloudflarebase/db',
+		description: 'Firestore-style documents with live queries - one Durable Object per collection'
 	}
 };
 

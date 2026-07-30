@@ -45,6 +45,17 @@ test.describe('openapi document', () => {
 		}
 	});
 
+	test('covers the db agent surface', async ({ request }) => {
+		const doc = await (await request.get(`/api/projects/${SEED_PROJECT}/openapi.json`)).json();
+
+		// The db agent's registry-driven OpenAPI module contributes its tag, the
+		// query route, and the query DSL component.
+		const tagNames = doc.tags.map((tag: { name: string }) => tag.name);
+		expect(tagNames).toContain('Database');
+		expect(doc.paths['/db/collections/{collection}/query']).toBeTruthy();
+		expect(doc.components.schemas.DbQuery).toBeTruthy();
+	});
+
 	test('resolves every schema reference it emits', async ({ request }) => {
 		const doc = await (await request.get(`/api/projects/${SEED_PROJECT}/openapi.json`)).json();
 		const components = doc.components.schemas;
