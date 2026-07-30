@@ -1,7 +1,9 @@
 /**
  * Records-ready product demo: seeds demo data, backfills 90 days of local
  * analytics, generates live auth traffic, and drives a choreographed browser
- * tour of the dashboard with an on-screen cursor. You only record the screen.
+ * tour of the dashboard - auth, roles, the Workers AI copilot, and the
+ * database with live queries - with an on-screen cursor. You only record the
+ * screen.
  *
  *   node scripts/demo-video.mjs            # full recording run (fullscreen)
  *   node scripts/demo-video.mjs --check    # fast headless validation run
@@ -703,7 +705,12 @@ async function runTour() {
 	// it in a throwaway page keeps compile hitches off camera.
 	log('warming routes so nothing compiles on camera...');
 	const warm = await context.newPage();
-	for (const route of ['/', `/dashboard/${PROJECT}`, `/dashboard/${PROJECT}/auth`]) {
+	for (const route of [
+		'/',
+		`/dashboard/${PROJECT}`,
+		`/dashboard/${PROJECT}/auth`,
+		`/dashboard/${PROJECT}/db`
+	]) {
 		await warm.goto(`${BASE}${route}`, { waitUntil: 'load', timeout: 120_000 }).catch(() => {});
 		await sleep(3000);
 	}
@@ -949,18 +956,124 @@ async function runTour() {
 		await screenshot(page, '11-copilot-suggestion');
 	}
 
+	// --- Scene 10: database - a Reddit-style front page on live queries --------
+	// The pitch beat: every vote re-ranks the front page live on every open
+	// screen - that's a live query pushing deltas, not a refresh.
+	await clickEl(page, page.getByTestId('nav-db'));
+	await page.waitForURL('**/db', { timeout: 15_000 }).catch(() =>
+		page.goto(`${BASE}/dashboard/${PROJECT}/db`, {
+			waitUntil: 'domcontentloaded',
+			timeout: 60_000
+		})
+	);
+	await page.getByTestId('db-page').waitFor({ timeout: 20_000 });
+	await page
+		.waitForFunction(
+			() => document.querySelector('[data-testid="db-page"]')?.dataset.hydrated === 'true'
+		)
+		.catch(() => {});
+	await pace(1200);
+
+	// Create the posts collection on camera. Demo projects are fresh DOs, and
+	// the create is an idempotent upsert on reused stacks - never a collision.
+	await clickEl(page, page.locator('#new-collection-name'));
+	await page.keyboard.type('posts', { delay: 45 });
+	await pace(250);
+	await clickEl(page, page.getByRole('button', { name: 'Create', exact: true }));
+	const postsRow = page.getByTestId('db-collection-posts');
+	await postsRow.waitFor({ timeout: 10_000 });
+	await pace(700);
+	await screenshot(page, '12-db-collection');
+
+	// Open the collection and submit posts through the inline editor. Fixed
+	// ids keep reruns idempotent (saving to an existing id replaces it, so
+	// the count stays at three) and reset post-1 to 42 votes for every take.
+	await clickEl(page, postsRow);
+	await page.getByTestId('db-add-document').waitFor({ timeout: 10_000 });
+	const posts = [
+		['post-1', '{ "title": "Show HN: I built a Firebase on Cloudflare", "votes": 42 }'],
+		['post-2', '{ "title": "Why we moved our backend to Durable Objects", "votes": 17 }'],
+		['post-3', '{ "title": "Live queries are criminally underrated", "votes": 8 }']
+	];
+	for (const [postId, json] of posts) {
+		await clickEl(page, page.getByTestId('db-add-document'));
+		const editor = page.getByTestId('db-doc-editor');
+		await editor.waitFor({ timeout: 5000 });
+		await clickEl(page, editor.getByLabel('Document id (optional)'));
+		await page.keyboard.type(postId, { delay: 40 });
+		const textarea = editor.getByLabel('Data (JSON object)');
+		await clickEl(page, textarea);
+		await textarea.fill('');
+		await page.keyboard.type(json, { delay: 22 });
+		await pace(300);
+		await clickEl(page, editor.getByRole('button', { name: 'Save document' }));
+		// The editor closes on a successful write; the table refetches live.
+		await editor.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => {});
+		await pace(400);
+	}
+	await page
+		.getByTestId('db-documents-table')
+		.getByText('Live queries are criminally underrated')
+		.first()
+		.waitFor({ timeout: 10_000 });
+	await pace(500);
+
+	// The doc-count stat and activity feed moved with each write - linger so
+	// the recording catches the live numbers.
+	await glideTo(page, page.getByTestId('db-stat-documents'), { settle: 150 });
+	await pace(900);
+	await screenshot(page, '13-db-documents');
+
+	// The money shot: someone upvotes post-1 out of band (the admin surface
+	// is PUT-replace, so this is the merged document with the vote bumped)
+	// and the count moves in the open table with no click and no refresh -
+	// the dashboard is itself a live-query subscriber.
+	await glideTo(page, page.getByTestId('db-documents-table'), { settle: 150 });
+	const upvote = await fetch(api('db/admin/collections/posts/documents/post-1'), {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json', origin: BASE },
+		body: JSON.stringify({
+			data: { title: 'Show HN: I built a Firebase on Cloudflare', votes: 43 }
+		}),
+		signal: AbortSignal.timeout(10_000)
+	}).catch(() => null);
+	if (!upvote?.ok) {
+		log(`WARNING: out-of-band upvote failed (${upvote?.status ?? 'network'})`);
+	}
+	await page
+		.getByTestId('db-documents-table')
+		.getByText('"votes":43')
+		.first()
+		.waitFor({ timeout: 15_000 });
+	await pace(1400);
+	await screenshot(page, '14-db-live-update');
+
+	// Flash the live-query snippet: subscribe once, get a snapshot, then every
+	// change as a delta.
+	await clickEl(page, page.getByRole('tab', { name: 'Integration' }));
+	await pace(900);
+	await glideTo(page, page.getByTestId('db-integration').locator('pre').nth(1), { settle: 200 });
+	await pace(1300);
+	await screenshot(page, '15-db-integration');
+
+	// End the chapter on the collections view so the finale holds on live data.
+	await clickEl(page, page.getByRole('tab', { name: 'Collections' }));
+	await pace(800);
+
 	// --- Finale: hold on the live dashboard -----------------------------------
 	await pace(400);
 	await glide(page, 760, 420);
 	await pace(2500);
-	await screenshot(page, '12-finale');
+	await screenshot(page, '16-finale');
 	log(`tour ran ${Math.round((Date.now() - tourStart) / 1000)}s (excluding the countdown)`);
 
 	if (CHECK) {
 		await browser.close();
 		return null;
 	}
-	log('tour complete - the feed keeps pulsing. Stop your recording, then Ctrl+C here.');
+	log(
+		'tour complete - background auth traffic keeps flowing. Stop your recording, then Ctrl+C here.'
+	);
 	return browser;
 }
 
