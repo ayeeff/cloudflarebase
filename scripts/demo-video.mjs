@@ -816,9 +816,14 @@ async function runTour() {
 	await screenshot(page, '04-db-live-update');
 
 	// A few lines of SDK: subscribe once, get a snapshot, then deltas forever.
+	// CodeExamples renders ONE pre (the active pill), so switch to the SDK
+	// snippet and glide to first() - nth(1) never exists.
 	await clickEl(page, page.getByRole('tab', { name: 'Integration' }));
-	await pace(900);
-	await glideTo(page, page.getByTestId('db-integration').locator('pre').nth(1), { settle: 150 });
+	await pace(700);
+	const sdkPill = page.getByTestId('db-integration').getByRole('tab', { name: 'Client SDK' });
+	if (await sdkPill.count()) await clickEl(page, sdkPill.first());
+	await pace(400);
+	await glideTo(page, page.getByTestId('db-integration').locator('pre').first(), { settle: 150 });
 	await pace(2200);
 	await screenshot(page, '05-db-integration');
 
