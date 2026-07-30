@@ -8,11 +8,20 @@ test.describe('landing page (frontend)', () => {
 			'The open-source Firebase for Cloudflare'
 		);
 		await expect(
-			page.getByRole('heading', { name: "Auth shipped first. It's live right now." })
+			page.getByRole('heading', { name: 'Auth shipped first. Database just followed.' })
 		).toBeVisible();
 		await expect(
 			page.getByRole('heading', { name: 'Every Firebase primitive. One agent at a time.' })
 		).toBeVisible();
+
+		// The hero visual opens on the db agent and the tabs are real controls.
+		const heroTabs = page.getByRole('tablist', { name: 'Agent' });
+		await expect(heroTabs.getByRole('tab', { name: 'db-agent' })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		await heroTabs.getByRole('tab', { name: 'auth-agent' }).click();
+		await expect(page.getByText('AuthAgent · DO SQLite')).toBeVisible();
 	});
 
 	test('"Open the live demo" leads to the demo project dashboard', async ({ page }) => {
