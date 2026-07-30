@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare';
 import { Agent, type AgentContext } from 'agents';
 import { and, asc, desc, eq, lt } from 'drizzle-orm';
 import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
@@ -262,6 +263,19 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	// /config is declared public in the manifest)
 
 	async onRequest(request: Request): Promise<Response> {
+		try {
+			return await this.routeRequest(request);
+		} catch (error) {
+			// The Agents SDK's own _tryCatch converts handler exceptions into a
+			// bare 500 BEFORE Sentry's DO instrumentation (which only sees
+			// uncaught errors) gets a look - capture the real stack first, then
+			// let the SDK answer. A no-op without a DSN, so consumers unaffected.
+			Sentry.captureException(error);
+			throw error;
+		}
+	}
+
+	private async routeRequest(request: Request): Promise<Response> {
 		const url = new URL(request.url);
 		if (!projectIdSchema.safeParse(this.name).success) {
 			return Response.json({ error: 'invalid project id' }, { status: 400 });
