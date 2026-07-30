@@ -2,6 +2,7 @@ import { Agent, type AgentContext } from 'agents';
 import { count, desc, eq, gt } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/durable-sqlite';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
+import * as Sentry from '@sentry/cloudflare';
 import migrations from './migrations';
 import { createProjectAuth, type AuthDatabase, type ProjectAuth } from './auth';
 import { coloCountry } from './colo-countries';
@@ -641,6 +642,19 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 	}
 
 	async onRequest(request: Request): Promise<Response> {
+		try {
+			return await this.routeRequest(request);
+		} catch (error) {
+			// The Agents SDK's own _tryCatch converts handler exceptions into a
+			// bare 500 BEFORE Sentry's DO instrumentation (which only sees
+			// uncaught errors) gets a look - capture the real stack first, then
+			// let the SDK answer. A no-op without a DSN, so consumers unaffected.
+			Sentry.captureException(error);
+			throw error;
+		}
+	}
+
+	private async routeRequest(request: Request): Promise<Response> {
 		const url = new URL(request.url);
 		if (!projectIdSchema.safeParse(this.name).success) {
 			return Response.json({ error: 'invalid project id' }, { status: 400 });

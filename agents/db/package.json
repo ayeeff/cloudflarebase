@@ -1,6 +1,6 @@
 {
 	"name": "@cloudflarebase/db",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"description": "Firestore-style JSON documents with live queries on Cloudflare Durable Objects, one isolated instance per collection - the database primitive behind Cloudflarebase.",
 	"license": "Apache-2.0",
 	"type": "module",
