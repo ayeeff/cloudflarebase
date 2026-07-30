@@ -1,33 +1,42 @@
 name: Release
 
-# Publishing is tag-driven: pushing auth-v1.2.3 or cli-v1.2.3 releases that
-# one package at that exact version. The workflow refuses a tag whose version
-# does not match the package.json it points at, so a stale tag cannot publish
-# the wrong build.
+# Publishing is merge-driven: every push to main publishes each package whose
+# package.json version is not on the npm registry yet. Bump a version on
+# preview, merge to main, and the new version ships - no tag ceremony. The
+# registry itself is the ledger, which makes runs idempotent: an unchanged
+# version publishes nothing, a failed publish retries on the next push, and a
+# never-published package ships on its first merge.
+#
+# The detect job is deliberately OUTSIDE the release environment, so merges
+# that bump nothing never ping the environment's required reviewers. Only
+# when something actually needs publishing does the gated job start and wait
+# for an approval click.
+#
+# Tags remain the manual escape hatch: pushing auth-v1.2.3, db-v1.2.3, or
+# cli-v1.2.3 publishes that one package, refusing a tag whose version does
+# not match the package.json it points at.
 #
 # Publishing uses npm trusted publishing (OIDC): npmjs.com is configured to
 # accept publishes from exactly this repository, this workflow file, and the
 # `release` environment - no npm token exists anywhere, so there is nothing to
 # steal or rotate. After this repository's supply-chain incident, that is the
-# point. Required reviewers on the `release` environment make every publish
-# wait for an approval click on the exact ref being released.
-#
-# One-time setup per package on npmjs.com (package settings → Trusted
-# Publisher): repository cloudflarebase/cloudflarebase, workflow
-# release.yaml, environment release. If npm will not accept a trusted
-# publisher for a package that has never been published, publish the first
-# version locally with `npm publish --access public`, configure the trusted
-# publisher, and use this workflow from then on.
+# point. One-time setup per package on npmjs.com (package settings → Trusted
+# Publisher): repository cloudflarebase/cloudflarebase, workflow release.yaml,
+# environment release. If npm will not accept a trusted publisher for a
+# package that has never been published, publish the first version locally
+# with `npm publish` and configure it after.
 #
 # Publishes carry npm provenance, attesting the exact commit and workflow that
 # built the artifact - verifiable by consumers with `npm audit signatures`.
-# Provenance requires the repository to be public; push release tags only
-# after open-sourcing.
+# Provenance requires the repository to be public.
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'auth-v*.*.*'
+      - 'db-v*.*.*'
       - 'cli-v*.*.*'
 
 permissions:
@@ -36,10 +45,76 @@ permissions:
   id-token: write
 
 jobs:
-  publish:
+  detect:
     runs-on: ubuntu-latest
-    name: Publish to npm
+    name: Detect unpublished versions
+    outputs:
+      packages: ${{ steps.decide.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ vars.NODE_VERSION || '22' }}
+
+      - name: Decide what to publish
+        id: decide
+        run: |
+          node <<'EOF' >> "$GITHUB_OUTPUT"
+          const { execSync } = require('child_process');
+          const packages = [
+            { name: '@cloudflarebase/auth', dir: 'agents/auth', prefix: 'auth-v' },
+            { name: '@cloudflarebase/db', dir: 'agents/db', prefix: 'db-v' },
+            { name: '@cloudflarebase/cli', dir: 'cli', prefix: 'cli-v' },
+          ];
+          const refType = process.env.GITHUB_REF_TYPE;
+          const refName = process.env.GITHUB_REF_NAME;
+          const out = [];
+          for (const pkg of packages) {
+            const version = require(`${process.cwd()}/${pkg.dir}/package.json`).version;
+            if (refType === 'tag') {
+              if (!refName.startsWith(pkg.prefix)) continue;
+              const tagged = refName.slice(pkg.prefix.length);
+              if (tagged !== version) {
+                console.error(`tag says ${tagged} but ${pkg.dir}/package.json says ${version}`);
+                process.exit(1);
+              }
+              out.push(pkg);
+              continue;
+            }
+            // Main push: the registry is the ledger. Publish iff this exact
+            // version has never been published (404 = brand-new package).
+            let published = [];
+            try {
+              const raw = execSync(`npm view ${pkg.name} versions --json`, {
+                stdio: ['ignore', 'pipe', 'ignore'],
+              }).toString();
+              published = JSON.parse(raw);
+              if (!Array.isArray(published)) published = [published];
+            } catch {
+              console.error(`${pkg.name}: not on the registry yet`);
+            }
+            if (published.includes(version)) {
+              console.error(`${pkg.name}@${version}: already published, skipping`);
+            } else {
+              console.error(`${pkg.name}@${version}: will publish`);
+              out.push(pkg);
+            }
+          }
+          console.log(`packages=${JSON.stringify(out)}`);
+          EOF
+
+  publish:
+    needs: detect
+    if: needs.detect.outputs.packages != '[]'
+    runs-on: ubuntu-latest
+    name: Publish ${{ matrix.pkg.name }}
     environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: ${{ fromJSON(needs.detect.outputs.packages) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -49,35 +124,16 @@ jobs:
           node-version: ${{ vars.NODE_VERSION || '22' }}
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Resolve package from tag
-        id: pkg
-        run: |
-          TAG='${{ github.ref_name }}'
-          case "$TAG" in
-            auth-v*) echo "dir=agents/auth" >> "$GITHUB_OUTPUT"; echo "version=${TAG#auth-v}" >> "$GITHUB_OUTPUT" ;;
-            cli-v*)  echo "dir=cli"         >> "$GITHUB_OUTPUT"; echo "version=${TAG#cli-v}"  >> "$GITHUB_OUTPUT" ;;
-            *) echo "unrecognized tag $TAG" >&2; exit 1 ;;
-          esac
-
       - name: Install dependencies
         run: npm ci
-        working-directory: ${{ steps.pkg.outputs.dir }}
+        working-directory: ${{ matrix.pkg.dir }}
 
-      - name: Verify the tag matches package.json
-        run: |
-          ACTUAL="$(node -p "require('./package.json').version")"
-          if [ "$ACTUAL" != '${{ steps.pkg.outputs.version }}' ]; then
-            echo "tag says ${{ steps.pkg.outputs.version }} but package.json says $ACTUAL" >&2
-            exit 1
-          fi
-        working-directory: ${{ steps.pkg.outputs.dir }}
-
-      # The full typecheck, not just the publish build: agents/auth's
+      # The full typecheck, not just the publish build: the agents'
       # bindings.test-d.ts (the consumer-contract tests) is excluded from the
       # build tsconfig on purpose, so only this step runs it.
       - name: Typecheck
         run: npm run typecheck
-        working-directory: ${{ steps.pkg.outputs.dir }}
+        working-directory: ${{ matrix.pkg.dir }}
 
       # Trusted publishing needs a newer npm CLI than Node 22 bundles.
       - name: Update npm
@@ -87,4 +143,4 @@ jobs:
       # No token: npm exchanges this workflow's OIDC identity with npmjs.com.
       - name: Publish
         run: npm publish --provenance --access public
-        working-directory: ${{ steps.pkg.outputs.dir }}
+        working-directory: ${{ matrix.pkg.dir }}

@@ -31,18 +31,19 @@
 			"default": "./dist/index.js"
 		},
 		"./wrangler-fragment.jsonc": "./template/wrangler-fragment.jsonc",
+		"./cloudflarebase.agent.json": "./cloudflarebase.agent.json",
 		"./package.json": "./package.json"
 	},
 	"files": [
 		"dist",
 		"template",
-		"NOTICE"
+		"NOTICE",
+		"cloudflarebase.agent.json"
 	],
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
 		"typecheck": "tsc --noEmit",
 		"prepublishOnly": "npm run build",
-		"typecheck": "tsc --noEmit",
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev --env local --persist-to=../../.wrangler/state/ --ip 0.0.0.0 --port 8788",
 		"start": "wrangler dev",

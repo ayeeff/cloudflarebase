@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/durable-sqlite';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import migrations from './migrations';
 import { createProjectAuth, type AuthDatabase, type ProjectAuth } from './auth';
+import { coloCountry } from './colo-countries';
 import * as schema from './db/schema';
 import {
 	analyticsApiResponseSchema,
@@ -1313,10 +1314,13 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 
 	/**
 	 * Where this Durable Object physically runs. A cdn-cgi trace subrequest
-	 * egresses at the DO's own data center, so `colo`/`loc` reveal its location
+	 * egresses at the DO's own data center, so `colo` reveals its location
 	 * (DOs are created near their first requester, approximating the visitor's
-	 * region). Failures return nulls and are not cached, so a network hiccup
-	 * does not pin "unknown" for the instance's lifetime.
+	 * region). The country comes from a static colo map, NOT the trace's
+	 * `loc` field: `loc` geolocates the Worker's egress IP, and a re-mapping
+	 * of Cloudflare's own ranges once turned the entire fleet Canadian
+	 * overnight. Failures return nulls and are not cached, so a network
+	 * hiccup does not pin "unknown" for the instance's lifetime.
 	 */
 	private async resolveColo(): Promise<{ colo: string | null; coloCountry: string | null }> {
 		if (this.coloCache) return this.coloCache;
@@ -1328,10 +1332,8 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			const fields = new Map(
 				(await response.text()).split('\n').map((line) => line.split('=', 2) as [string, string]),
 			);
-			this.coloCache = {
-				colo: fields.get('colo') ?? null,
-				coloCountry: fields.get('loc') ?? null,
-			};
+			const colo = fields.get('colo') ?? null;
+			this.coloCache = { colo, coloCountry: coloCountry(colo) };
 			return this.coloCache;
 		} catch {
 			return { colo: null, coloCountry: null };

@@ -1,0 +1,46 @@
+{
+	"manifestVersion": 1,
+	"name": "auth",
+	"title": "Authentication",
+	"description": "Users, sessions, and RBAC on Durable Object SQLite.",
+	"packageName": "@cloudflarebase/auth",
+	"worker": "auth-agent",
+	"durableObjects": [{ "class": "AuthAgent", "scope": "perProject" }],
+	"entrypoint": { "assertEnvType": "AssertAuthAgentEnv" },
+	"erase": { "method": "DELETE", "path": "/internal/projects/:projectId" },
+	"bindings": {
+		"ai": true,
+		"sendEmail": ["EMAIL"],
+		"analyticsEngine": [{ "binding": "AUTH_EVENTS", "dataset": "cloudflarebase_auth_events" }]
+	},
+	"secrets": {
+		"generated": ["BETTER_AUTH_SECRET"],
+		"optional": [
+			"GOOGLE_CLIENT_ID",
+			"GOOGLE_CLIENT_SECRET",
+			"CF_ACCOUNT_ID",
+			"CF_ANALYTICS_API_TOKEN",
+			"SENTRY_DSN"
+		]
+	},
+	"vars": {
+		"TRUSTED_ORIGINS": { "default": "", "hint": "Extra origins beyond the deployment's own." },
+		"WAE_DATASET": { "default": "cloudflarebase_auth_events" },
+		"CHAT_MODEL": { "default": "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }
+	},
+	"routes": [
+		{ "path": "/api/auth/*", "access": "public" },
+		{ "path": "/config", "access": "public" },
+		{ "path": "/overview", "access": "operator" },
+		{ "path": "/analytics", "access": "operator" },
+		{ "path": "/chat", "access": "operator" },
+		{ "path": "/admin/*", "access": "operator" }
+	],
+	"proxy": { "apiPrefix": "auth", "agentBasePath": "/api/auth" },
+	"permissions": ["users:read", "users:write", "sessions:revoke", "roles:write"],
+	"console": {
+		"section": "Build",
+		"icon": "key-round",
+		"pages": [{ "path": "/auth", "title": "Authentication", "testId": "nav-auth" }]
+	}
+}

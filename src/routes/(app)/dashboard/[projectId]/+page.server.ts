@@ -1,4 +1,6 @@
-import type { AuthOverview } from '$lib/agents';
+import { AGENT_REGISTRY } from '$lib/agent-registry';
+import type { AuthOverview, DbOverview } from '$lib/agents';
+import { agentUrl as genericAgentUrl, agentFetcher } from '$lib/server/agents';
 import { agentUrl, assertProjectId, requireAuthAgent } from '$lib/server/auth-agent';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -14,5 +16,20 @@ export const load: PageServerLoad = async ({ params, url, platform }) => {
 	}
 	const overview = (await response.json()) as AuthOverview;
 
-	return { projectId, overview };
+	// The db card degrades to null rather than failing the page: auth is the
+	// primary surface here, and a fork may not have deployed the db agent yet.
+	let dbOverview: DbOverview | null = null;
+	try {
+		const db = agentFetcher(platform, AGENT_REGISTRY.db);
+		if (db) {
+			const dbResponse = await db.fetch(
+				genericAgentUrl(url.origin, AGENT_REGISTRY.db, projectId, '/overview')
+			);
+			if (dbResponse.ok) dbOverview = (await dbResponse.json()) as DbOverview;
+		}
+	} catch {
+		// card renders without live counts
+	}
+
+	return { projectId, overview, dbOverview };
 };

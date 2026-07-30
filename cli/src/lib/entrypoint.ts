@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { UserError } from './log.js';
+import type { ExportLines } from './manifest.js';
 
 /**
  * A Durable Object class must be exported from the Worker's own entrypoint for
@@ -18,7 +19,7 @@ export interface EntrypointPatch {
 export async function patchEntrypoint(
 	entrypointPath: string,
 	packageName: string,
-	exportLine: string
+	lines: ExportLines
 ): Promise<EntrypointPatch> {
 	let source: string;
 	try {
@@ -38,17 +39,25 @@ export async function patchEntrypoint(
 	}
 
 	/*
-	 * A Worker can only have one default export. If the user already has one,
-	 * re-exporting ours would not compile; they need to route to the agent from
-	 * their own fetch handler instead, which is a decision, not a patch.
+	 * A Worker can only have one default export. When the existing one came
+	 * from another cloudflarebase agent, its handler routes to ANY Durable
+	 * Object binding in Env by kebab-cased name (routeAgentRequest), so
+	 * re-exporting just the classes is enough - this is how the second `add`
+	 * composes instead of failing. A default export the user wrote themselves
+	 * is different: routing to the agent from their own fetch handler is a
+	 * decision, not a patch.
 	 */
+	let exportLine = lines.full;
 	if (/export\s+default|export\s*\{[^}]*\bdefault\b/.test(source)) {
-		throw new UserError(
-			`${entrypointPath} already has a default export.`,
-			`Export the agent class yourself and route to it from your fetch handler:\n` +
-				`  ${exportLine.replace(', default', '')}\n` +
-				`  // inside fetch: return (await import('agents')).routeAgentRequest(request, env);`
-		);
+		if (!source.includes('@cloudflarebase/')) {
+			throw new UserError(
+				`${entrypointPath} already has a default export.`,
+				`Export the agent classes yourself and route to them from your fetch handler:\n` +
+					`  ${lines.classOnly.split('\n')[0]}\n` +
+					`  // inside fetch: return (await import('agents')).routeAgentRequest(request, env);`
+			);
+		}
+		exportLine = lines.classOnly;
 	}
 
 	const eol = source.includes('\r\n') ? '\r\n' : '\n';

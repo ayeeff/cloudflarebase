@@ -3,6 +3,7 @@ import path from 'node:path';
 import { installSpec, readFragment, resolveAgent, AGENTS } from '../lib/agents.js';
 import { patchEntrypoint } from '../lib/entrypoint.js';
 import { blank, dim, info, step, success, UserError, warn } from '../lib/log.js';
+import { deriveExportLines, readManifest } from '../lib/manifest.js';
 import { assertSafeArg, run, runOrFail } from '../lib/run.js';
 import { mergeWranglerConfig, parseJsonc, type WranglerFragment } from '../lib/wrangler-config.js';
 
@@ -36,6 +37,10 @@ export async function addCommand(projectDir: string, args: string[]): Promise<vo
 		failure: `npm install ${packageSpec} failed.`
 	});
 
+	// Validate the manifest BEFORE any file edits: a broken or too-new package
+	// should fail here, not halfway through rewriting the user's config.
+	const manifest = await readManifest(projectDir, spec.packageName);
+
 	step('Merging wrangler configuration');
 	const { fragment } = await readFragment(projectDir, spec);
 	const configText = await readFile(configPath, 'utf8');
@@ -60,7 +65,7 @@ export async function addCommand(projectDir: string, args: string[]): Promise<vo
 	const patched = await patchEntrypoint(
 		path.resolve(projectDir, mainField),
 		spec.packageName,
-		spec.exportLine
+		deriveExportLines(manifest)
 	);
 	info(
 		`  ${dim(patched.changed ? `· exported ${agentName} agent from ${mainField}` : '· already wired')}`
@@ -75,7 +80,7 @@ export async function addCommand(projectDir: string, args: string[]): Promise<vo
 
 	blank();
 	success(`${spec.packageName} is installed.`);
-	info(`  Deploy with ${dim('cloudflarebase deploy')} - sign-in works right after.`);
+	info(`  Deploy with ${dim('cloudflarebase deploy')} - it works right after.`);
 }
 
 /**

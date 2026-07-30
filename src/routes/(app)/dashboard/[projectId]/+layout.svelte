@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { buildConsoleNav } from '$lib/agent-registry';
 	import type { AgentChatMessage, AgentChatReply } from '$lib/agents';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -60,22 +61,30 @@
 	let copilotHistoryLoading = $state(true);
 
 	const overviewHref = $derived(resolve('/(app)/dashboard/[projectId]', { projectId }));
-	const authHref = $derived(resolve('/(app)/dashboard/[projectId]/auth', { projectId }));
 	const apiHref = $derived(resolve('/(app)/dashboard/[projectId]/api', { projectId }));
 	const isApi = $derived(page.url.pathname.startsWith(apiHref));
 
 	const isOverview = $derived(page.url.pathname === overviewHref);
-	const isAuth = $derived(page.url.pathname.startsWith(authHref));
+
+	// Agent-contributed navigation, built from the manifest registry: each
+	// agent's console.pages become sidebar and mobile links. Icon names are
+	// manifest strings mapped to lucide components here.
+	const agentNav = $derived(buildConsoleNav(projectId));
+	const navIcons: Record<string, typeof KeyRound> = {
+		'key-round': KeyRound,
+		database: Database
+	};
+	const navActive = (href: string) => page.url.pathname.startsWith(href);
 
 	const comingSoon = [
-		{ label: 'Database', icon: Database },
 		{ label: 'Storage', icon: HardDrive },
 		{ label: 'Functions', icon: Zap },
 		{ label: 'Realtime', icon: Radio },
 		{ label: 'Cron & Queues', icon: Clock }
 	];
 
-	// Grounded in the aggregated auth data the agent can actually answer from.
+	// Grounded in what the copilot's tools can actually read: auth overview and
+	// analytics, database collections, and real documents.
 	const copilotSuggestionPool = [
 		'Summarize this project',
 		'What should I investigate?',
@@ -89,7 +98,11 @@
 		'Are sign-ups trending up this week?',
 		'Compare guest and registered sign-ups',
 		'Which auth events fired in the last day?',
-		'Is anything unusual in the auth activity?'
+		'Is anything unusual in the auth activity?',
+		'What collections do we have?',
+		'How many documents are in each collection?',
+		'Show me the latest documents',
+		'Which collections are public?'
 	];
 
 	function pickSuggestions(): string[] {
@@ -328,8 +341,8 @@
 							<Bot class="h-4 w-4 text-primary" /> What can I help with?
 						</div>
 						<p class="text-xs leading-relaxed text-muted-foreground">
-							I can explain usage, compare activity, and surface authentication issues from this
-							project's aggregated data.
+							I can explain usage, compare activity, surface authentication issues, and look through
+							this project's database collections and documents.
 						</p>
 					</div>
 				{/if}
@@ -391,7 +404,7 @@
 				>
 			</div>
 			<p class="mt-2 text-center text-[10px] text-muted-foreground">
-				Uses aggregated metrics only. Verify important decisions.
+				Answers from live project data. Verify important decisions.
 			</p>
 		</form>
 	</section>
@@ -425,37 +438,46 @@
 				</a>
 			</div>
 
-			<div>
-				<p
-					class="px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase"
-				>
-					Build
-				</p>
-				<a
-					href={authHref}
-					data-testid="nav-auth"
-					class={[
-						'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-						isAuth
-							? 'bg-primary/10 text-primary'
-							: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-					]}
-				>
-					<KeyRound class="h-4 w-4" />
-					Authentication
-				</a>
-				{#each comingSoon as item (item.label)}
-					<span
-						class="flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
+			{#each agentNav as navSection (navSection.section)}
+				<div>
+					<p
+						class="px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase"
 					>
-						<item.icon class="h-4 w-4" />
-						{item.label}
-						<Badge variant="outline" class="ml-auto text-[10px] text-muted-foreground/60"
-							>soon</Badge
+						{navSection.section}
+					</p>
+					<!-- eslint-disable svelte/no-navigation-without-resolve -- manifest-driven hrefs are prebuilt project-relative paths -->
+					{#each navSection.items as item (item.testId)}
+						{@const NavIcon = navIcons[item.icon] ?? KeyRound}
+						<a
+							href={item.href}
+							data-testid={item.testId}
+							class={[
+								'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+								navActive(item.href)
+									? 'bg-primary/10 text-primary'
+									: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+							]}
 						>
-					</span>
-				{/each}
-			</div>
+							<NavIcon class="h-4 w-4" />
+							{item.title}
+						</a>
+					{/each}
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+					{#if navSection.section === 'Build'}
+						{#each comingSoon as item (item.label)}
+							<span
+								class="flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
+							>
+								<item.icon class="h-4 w-4" />
+								{item.label}
+								<Badge variant="outline" class="ml-auto text-[10px] text-muted-foreground/60"
+									>soon</Badge
+								>
+							</span>
+						{/each}
+					{/if}
+				</div>
+			{/each}
 
 			<div>
 				<p
@@ -563,13 +585,19 @@
 							isOverview ? 'bg-primary/10 text-primary' : 'text-muted-foreground'
 						]}>Overview</a
 					>
-					<a
-						href={authHref}
-						class={[
-							'rounded-md px-3 py-1.5 text-sm',
-							isAuth ? 'bg-primary/10 text-primary' : 'text-muted-foreground'
-						]}>Authentication</a
-					>
+					<!-- eslint-disable svelte/no-navigation-without-resolve -- manifest-driven hrefs are prebuilt project-relative paths -->
+					{#each agentNav as navSection (navSection.section)}
+						{#each navSection.items as item (item.testId)}
+							<a
+								href={item.href}
+								class={[
+									'rounded-md px-3 py-1.5 text-sm',
+									navActive(item.href) ? 'bg-primary/10 text-primary' : 'text-muted-foreground'
+								]}>{item.title}</a
+							>
+						{/each}
+					{/each}
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				</nav>
 			{/if}
 

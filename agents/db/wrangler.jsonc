@@ -1,0 +1,266 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "db-agent",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-07-10",
+	"migrations": [
+		{
+			"new_sqlite_classes": ["DbAgent", "DbCollection"],
+			"tag": "v1",
+		},
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"class_name": "DbAgent",
+				"name": "DbAgent",
+			},
+			{
+				"class_name": "DbCollection",
+				"name": "DbCollection",
+			},
+		],
+	},
+	"observability": {
+		"logs": {
+			"enabled": true,
+			"invocation_logs": true,
+		},
+		"traces": {
+			"enabled": true,
+		},
+	},
+	"upload_source_maps": true,
+	"compatibility_flags": ["nodejs_compat", "nodejs_als"],
+	"workers_dev": false,
+	"preview_urls": false,
+
+	/**
+	 * AUTH_AGENT lets collections in `auth`/`owner` access mode fetch the auth
+	 * agent's JWKS to verify project JWTs. Deploy the auth agent first (the
+	 * repo's `deploy:all` orders this); without the binding - or in a
+	 * single-worker install where the AuthAgent Durable Object namespace exists
+	 * instead - public-mode collections still work and token-gated ones fail
+	 * closed with 503.
+	 */
+	"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent" }],
+
+	/**
+	 * No secret has to be set for this Worker to work.
+	 *
+	 * Self-hosted defaults. cloudflarebase.com's own values are in
+	 * env.production - the top level must be deployable by someone who does
+	 * not own this project's domain.
+	 *
+	 * TRUSTED_ORIGINS is the CSRF/CORS allowlist for EXTRA origins. A
+	 * deployment trusts its own origin automatically. Add origins here (comma
+	 * separated, no trailing slash) only when another domain serves the
+	 * console or calls the API with credentials.
+	 *
+	 * DEMO_MODE is absent on purpose. It makes demo-<hex> projects throwaway -
+	 * capped collections/documents and self-erasing after DEMO_TTL_HOURS -
+	 * which is only wanted on a public demo.
+	 */
+	"vars": {
+		// Empty on purpose: a committed DSN would collect every fork's errors.
+		// Set your own with `wrangler secret put SENTRY_DSN` to turn it on.
+		"SENTRY_DSN": "",
+		"SENTRY_ENV": "production",
+		"TRUSTED_ORIGINS": "",
+	},
+
+	"secrets": {
+		"required": [],
+	},
+
+	// Metrics pipeline: document and collection events write a data point
+	// (event type, collection, country) indexed by project id. Dataset
+	// auto-creates on first write; local dev/test writes are no-ops.
+	"analytics_engine_datasets": [
+		{
+			"binding": "DB_EVENTS",
+			"dataset": "cloudflarebase_db_events",
+		},
+	],
+
+	"env": {
+		/**
+		 * cloudflarebase.com's own agent. The name is pinned rather than derived
+		 * so it stays `db-agent`, which is what the dashboard Worker's DB_AGENT
+		 * service binding resolves. Wrangler does not inherit top-level
+		 * configuration into an environment, so this repeats it.
+		 */
+		"production": {
+			"name": "db-agent",
+
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "DbAgent",
+						"name": "DbAgent",
+					},
+					{
+						"class_name": "DbCollection",
+						"name": "DbCollection",
+					},
+				],
+			},
+
+			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent" }],
+
+			"vars": {
+				"DEMO_MODE": "true",
+				"DEMO_TTL_HOURS": "720",
+				// Same Sentry project as the rest of the production deployment
+				// (root wrangler.jsonc and the auth agent share it too).
+				"SENTRY_DSN": "https://50ed6e26b886124ac39e983efb72144d@o4510375271530496.ingest.de.sentry.io/4511764380778576",
+				"SENTRY_ENV": "production",
+				"TRUSTED_ORIGINS": "https://cloudflarebase.com",
+			},
+
+			"analytics_engine_datasets": [
+				{
+					"binding": "DB_EVENTS",
+					"dataset": "cloudflarebase_db_events",
+				},
+			],
+
+			"workers_dev": false,
+			"preview_urls": false,
+
+			"secrets": {
+				"required": [],
+			},
+		},
+
+		"local": {
+			"name": "db-agent-local",
+
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "DbAgent",
+						"name": "DbAgent",
+					},
+					{
+						"class_name": "DbCollection",
+						"name": "DbCollection",
+					},
+				],
+			},
+
+			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-local" }],
+
+			"vars": {
+				"DEMO_MODE": "true",
+				"DEMO_TTL_HOURS": "720",
+				"TRUSTED_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8789",
+			},
+
+			"analytics_engine_datasets": [
+				{
+					"binding": "DB_EVENTS",
+					"dataset": "cloudflarebase_db_events_local",
+				},
+			],
+			"d1_databases": [
+				{
+					"binding": "LOCAL_ANALYTICS",
+					"database_name": "cloudflarebase-db-analytics-local",
+					"database_id": "33333333-3333-4333-8333-333333333333",
+				},
+			],
+		},
+
+		// Isolated environment for Playwright e2e runs (fresh state dir, own
+		// dev-registry name so it can coexist with a running `npm run dev`).
+		"test": {
+			"name": "db-agent-test",
+
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "DbAgent",
+						"name": "DbAgent",
+					},
+					{
+						"class_name": "DbCollection",
+						"name": "DbCollection",
+					},
+				],
+			},
+
+			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-test" }],
+
+			"vars": {
+				// DEMO_MODE is deliberately NOT set on the agent here, while the web
+				// Worker does set it - mirroring the auth agent's env.test reasoning:
+				// the web flag lets anonymous demo traffic past the console guard,
+				// which the demo specs need, without making the agent treat every
+				// demo-named test project as throwaway. A real demo deployment sets
+				// both.
+				"TRUSTED_ORIGINS": "http://localhost:8797,http://127.0.0.1:8797",
+			},
+
+			"analytics_engine_datasets": [
+				{
+					"binding": "DB_EVENTS",
+					"dataset": "cloudflarebase_db_events_test",
+				},
+			],
+			"d1_databases": [
+				{
+					"binding": "LOCAL_ANALYTICS",
+					"database_name": "cloudflarebase-db-analytics-test",
+					"database_id": "44444444-4444-4444-8444-444444444444",
+				},
+			],
+		},
+
+		"preview": {
+			"name": "db-agent-preview",
+
+			"durable_objects": {
+				"bindings": [
+					{
+						"class_name": "DbAgent",
+						"name": "DbAgent",
+					},
+					{
+						"class_name": "DbCollection",
+						"name": "DbCollection",
+					},
+				],
+			},
+
+			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" }],
+
+			"vars": {
+				"DEMO_MODE": "true",
+				"DEMO_TTL_HOURS": "720",
+				// Same Sentry project as the rest of the preview deployment.
+				"SENTRY_DSN": "https://093f7505d223a871223f9a15130ef116@o4510375271530496.ingest.de.sentry.io/4511764377043024",
+				"SENTRY_ENV": "preview",
+				"TRUSTED_ORIGINS": "https://preview-cloudflarebase-com.cloudflarebase.workers.dev",
+			},
+
+			"analytics_engine_datasets": [
+				{
+					"binding": "DB_EVENTS",
+					"dataset": "cloudflarebase_db_events_preview",
+				},
+			],
+
+			"workers_dev": false,
+			"preview_urls": false,
+
+			"secrets": {
+				"required": [],
+			},
+		},
+	},
+}

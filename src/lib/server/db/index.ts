@@ -25,7 +25,22 @@ const SCHEMA_STATEMENTS = [
 		id text PRIMARY KEY NOT NULL,
 		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL
 	)`,
-	`CREATE INDEX IF NOT EXISTS demo_project_created_at ON demo_project (created_at)`
+	`CREATE INDEX IF NOT EXISTS demo_project_created_at ON demo_project (created_at)`,
+	`CREATE TABLE IF NOT EXISTS project_agent (
+		project_id text NOT NULL,
+		agent text NOT NULL,
+		enabled_at integer DEFAULT (unixepoch() * 1000) NOT NULL,
+		PRIMARY KEY (project_id, agent)
+	)`,
+	`CREATE TABLE IF NOT EXISTS chat_message (
+		id text PRIMARY KEY NOT NULL,
+		project_id text NOT NULL,
+		client_key text NOT NULL,
+		role text NOT NULL,
+		content text NOT NULL,
+		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS chat_message_thread ON chat_message (project_id, client_key, created_at)`
 ];
 
 /**

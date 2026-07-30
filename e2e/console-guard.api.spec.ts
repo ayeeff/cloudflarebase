@@ -7,6 +7,10 @@ import {
 	configPath,
 	CONSOLE_OWNER,
 	consoleAuthPath,
+	dbAdminImportPath,
+	dbAdminQueryPath,
+	dbAdminRestorePath,
+	dbOverviewPath,
 	overviewPath,
 	SCRATCH_PROJECT,
 	SEED_PROJECT,
@@ -53,6 +57,43 @@ test.describe('console guard', () => {
 		// dashboard proxy - the guard has to cover both or it covers neither.
 		const response = await request.get(`/agents/auth-agent/${SEED_PROJECT}/overview`);
 		expect(response.status()).toBe(401);
+	});
+
+	test('the db agent passthrough is guarded too', async ({ request }) => {
+		// The db manifest declares only /collections/* and /config public; the
+		// overview and every admin route stay operator-only on the passthrough.
+		const overview = await request.get(`/agents/db-agent/${SEED_PROJECT}/overview`);
+		expect(overview.status()).toBe(401);
+
+		const configure = await request.put(`/agents/db-agent/${SEED_PROJECT}/admin/collections/x`, {
+			data: { readAccess: 'public', writeAccess: 'public' }
+		});
+		expect(configure.status()).toBe(401);
+	});
+
+	test('the db console proxy rejects anonymous callers', async ({ request }) => {
+		// The same operator surface, reached over the dashboard proxy instead of
+		// the passthrough - the guard has to cover both or it covers neither.
+		const overview = await request.get(dbOverviewPath(SEED_PROJECT));
+		expect(overview.status()).toBe(401);
+
+		const query = await request.post(dbAdminQueryPath(SEED_PROJECT), {
+			data: { collection: 'x', query: {} }
+		});
+		expect(query.status()).toBe(401);
+
+		// The destructive admin surfaces (restore rolls data back, import
+		// writes it) must never be reachable without a session.
+		const restore = await request.post(dbAdminRestorePath(SEED_PROJECT, 'x'), {
+			data: { timestamp: new Date().toISOString() }
+		});
+		expect(restore.status()).toBe(401);
+
+		const importDocs = await request.post(dbAdminImportPath(SEED_PROJECT, 'x'), {
+			headers: { 'content-type': 'application/x-ndjson' },
+			data: '{"data":{}}'
+		});
+		expect(importDocs.status()).toBe(401);
 	});
 
 	test('the product API stays public', async ({ request }) => {

@@ -1,13 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { browser } from '$app/environment';
+	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { scrollY } from 'svelte/reactivity/window';
 	import { fly } from 'svelte/transition';
 	import { flip } from 'svelte/animate';
 	import { Button } from '$lib/components/ui/button';
 	import CodeExamples from '$lib/components/code-examples.svelte';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
-	import { buildIntegrationExamples } from '$lib/integration-examples';
+	import { buildDbIntegrationExamples, buildIntegrationExamples } from '$lib/integration-examples';
 	import { cn } from '$lib/utils';
 	import {
 		Menu,
@@ -16,16 +19,14 @@
 		Check,
 		ChevronDown,
 		Database,
+		GitFork,
 		KeyRound,
-		Cookie,
 		Globe,
+		Lock,
 		Radio,
-		Activity,
-		ChartColumn,
 		Bot,
+		Star,
 		UserRound,
-		UserX,
-		Fingerprint,
 		Boxes,
 		Zap,
 		HardDrive,
@@ -34,9 +35,9 @@
 
 	type MenuItem = { name: string; href: string };
 	let menuItems: MenuItem[] = [
+		{ name: 'API', href: '#api' },
 		{ name: 'Live today', href: '#live' },
 		{ name: 'Architecture', href: '#architecture' },
-		{ name: 'API', href: '#api' },
 		{ name: 'Roadmap', href: '#roadmap' },
 		{ name: 'FAQ', href: '#faq' }
 	];
@@ -54,7 +55,7 @@
 		'Analytics Engine'
 	];
 
-	// Everything in this grid ships in the Auth Agent MVP today.
+	// Everything in this grid is live in the demo today - auth and database both.
 	const liveFeatures = [
 		{
 			icon: KeyRound,
@@ -62,44 +63,29 @@
 			desc: 'Signup, signin, signout, and session lookup through Better Auth routes.'
 		},
 		{
+			icon: Database,
+			title: 'JSON documents',
+			desc: 'Firestore-style collections - and every collection is its own Durable Object with 10 GB of SQLite.'
+		},
+		{
+			icon: Radio,
+			title: 'Live queries',
+			desc: 'Subscribe to a filtered query; added, modified, and removed deltas push to every open screen as writes happen.'
+		},
+		{
 			icon: UserRound,
 			title: 'Guest sessions',
-			desc: 'Anonymous sessions so people can try your app before handing over an email.'
+			desc: 'Anonymous sessions and social sign-in, so people can try your app before handing over an email.'
 		},
 		{
-			icon: Fingerprint,
-			title: 'Google OAuth',
-			desc: 'Optional social sign-in, configured per project.'
-		},
-		{
-			icon: Cookie,
-			title: 'Cookies & bearer tokens',
-			desc: 'Project-scoped cookies for browsers; a set-auth-token bearer token for everything else.'
-		},
-		{
-			icon: Globe,
-			title: 'Trusted origins & CORS',
-			desc: 'Per-project allowed origins. The agent echoes the exact trusted origin - no wildcards.'
-		},
-		{
-			icon: UserX,
-			title: 'Admin controls',
-			desc: 'Delete users and revoke individual sessions straight from the dashboard.'
-		},
-		{
-			icon: Activity,
-			title: 'Realtime counters',
-			desc: 'Live user and session counts pushed to the dashboard over WebSockets via Agents SDK state sync.'
-		},
-		{
-			icon: ChartColumn,
-			title: 'Behavioral analytics',
-			desc: 'Near-real-time signup and activity charts in your local timezone, backed by Workers Analytics Engine.'
+			icon: Lock,
+			title: 'Access modes & JWTs',
+			desc: 'public, auth, or owner per collection - verified against project-signed JWTs from the auth agent.'
 		},
 		{
 			icon: Bot,
 			title: 'AI copilot',
-			desc: "Workers AI chat grounded in your project's operational and aggregate auth data."
+			desc: "Workers AI chat that reads your project's auth and database state through tools - ask it anything about your backend."
 		}
 	];
 
@@ -112,8 +98,8 @@
 		},
 		{
 			icon: Boxes,
-			title: 'One agent per project',
-			desc: 'Your project maps to a single AuthAgent Durable Object - Better Auth and Drizzle on embedded SQLite. Strongly consistent, no connection pool, no separate database to run.'
+			title: 'One agent per primitive',
+			desc: "Auth lives in your project's AuthAgent Durable Object; every database collection gets a Durable Object of its own - embedded SQLite, strongly consistent, no connection pool, no separate database to run."
 		},
 		{
 			icon: Radio,
@@ -124,7 +110,7 @@
 
 	const roadmap = [
 		{ icon: KeyRound, name: 'Auth', live: true },
-		{ icon: Database, name: 'Database', live: false },
+		{ icon: Database, name: 'Database', live: true },
 		{ icon: HardDrive, name: 'Storage', live: false },
 		{ icon: Zap, name: 'Functions', live: false },
 		{ icon: Radio, name: 'Realtime', live: false },
@@ -137,8 +123,12 @@
 			a: 'It runs as a Cloudflare Agent on top of Better Auth. Each project maps to one Durable Object with embedded SQLite, giving identities and sessions a strongly consistent home while Workers provide global ingress. Drizzle handles the schema and migrations.'
 		},
 		{
+			q: 'How does the Database primitive scale?',
+			a: 'The API is Firestore-style - collections of JSON documents with onSnapshot-like live queries - but every collection is its own Durable Object. Think of it as every subreddit getting its own database: 10 GB of SQLite, its own compute, and its own pool of live-query subscribers, fully isolated from the rest. A project scales collection by collection instead of hitting one shared ceiling, and because there are no cross-collection queries, a hot collection never slows a quiet one.'
+		},
+		{
 			q: 'Can I run it on my own Cloudflare account?',
-			a: 'Yes - it is open source under Apache-2.0 at github.com/cloudflarebase/cloudflarebase. It is two Workers deployed with Wrangler, and the README walks through the deploy order for your own account. No secrets are required: each project generates its own signing key.'
+			a: 'Yes - it is open source under Apache-2.0 at github.com/cloudflarebase/cloudflarebase. It is three Workers deployed in order with one command (npm run deploy:all), and the README walks through it for your own account. No secrets are required: each project generates its own signing key.'
 		},
 		{
 			q: 'Is this production-ready?',
@@ -146,13 +136,18 @@
 		},
 		{
 			q: 'What does the AI copilot see?',
-			a: "Chat is grounded in the project's operational and aggregate auth data. Conversations are stored under a project-scoped hash of the connecting IP - raw IPs and user IDs are never written to chat rows. If inference fails you get a 502 on chat, and auth keeps working."
+			a: "It answers through read-only tools over your project's own agents - auth overview and analytics, database collections and documents - so replies come from your real backend state, not guesses. Conversations are stored under a project-scoped hash of the connecting IP; raw IPs are never written. If inference fails you get a 502 on chat, and everything else keeps working."
 		}
 	];
 
 	let openFaq = $state<number | null>(0);
 
-	const apiExamples = buildIntegrationExamples('/api/projects/PROJECT_ID/auth');
+	const authApiExamples = buildIntegrationExamples('/api/projects/PROJECT_ID/auth');
+	const dbApiExamples = buildDbIntegrationExamples('/api/projects/PROJECT_ID/db');
+	// Database leads the API section; ?api=auth deep-links the auth examples.
+	let apiProduct = $state<'auth' | 'db'>(
+		page.url.searchParams.get('api') === 'auth' ? 'auth' : 'db'
+	);
 
 	// Agent-topology visual: simulated traffic converging on one project agent.
 	const mapW = 480;
@@ -174,7 +169,7 @@
 	];
 
 	type FeedEvent = { id: number; time: string; label: string; detail: string; sync: boolean };
-	const eventPool: Omit<FeedEvent, 'id' | 'time'>[] = [
+	const authEventPool: Omit<FeedEvent, 'id' | 'time'>[] = [
 		{ label: 'POST /auth/sign-up/email', detail: 'user created', sync: false },
 		{ label: 'state sync', detail: '→ dashboard', sync: true },
 		{ label: 'GET /auth/get-session', detail: 'bearer token', sync: false },
@@ -184,12 +179,61 @@
 		{ label: 'state sync', detail: '→ 2 dashboards', sync: true },
 		{ label: 'DELETE /admin/sessions/:id', detail: 'revoked', sync: false }
 	];
+	const dbEventPool: Omit<FeedEvent, 'id' | 'time'>[] = [
+		{ label: 'POST /documents', detail: 'post submitted', sync: false },
+		{ label: 'live query', detail: '→ 4 front pages', sync: true },
+		{ label: 'PATCH /documents/:id', detail: 'votes: 128 → 129', sync: false },
+		{ label: 'change · modified', detail: 'front page re-ranks', sync: true },
+		{ label: 'POST /query', detail: 'orderBy votes desc', sync: false },
+		{ label: 'subscribe', detail: 'top 25, live', sync: true },
+		{ label: 'POST /documents', detail: 'comment added', sync: false },
+		{ label: 'live query', detail: '→ 5 subscribers', sync: true }
+	];
+	// The hero visual is one diagram with two skins: same map, same agent node,
+	// opposite flow. Auth animates requests IN; db animates writes in from two
+	// clients and live-query deltas fanning OUT to the other three.
+	// Selections survive reloads via query params (?agent= and ?api=) - set
+	// with replaceState so switching never scrolls or adds history entries.
+	let heroTab = $state<'auth' | 'db'>(
+		page.url.searchParams.get('agent') === 'auth' ? 'auth' : 'db'
+	);
+
+	function persistParam(key: string, value: string) {
+		if (!browser) return;
+		const url = new URL(window.location.href);
+		url.searchParams.set(key, value);
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- same-page query param, not a route
+		replaceState(url, {});
+	}
+
+	function setHeroTab(id: 'auth' | 'db') {
+		heroTab = id;
+		persistParam('agent', id);
+	}
+
+	function setApiProduct(id: 'auth' | 'db') {
+		apiProduct = id;
+		persistParam('api', id);
+	}
 	let feed = $state<FeedEvent[]>([]);
+	let feedCursor = 0;
 	let reduceMotion = $state(false);
 
 	function stamp() {
 		return new Date().toTimeString().slice(0, 8);
 	}
+
+	// Seeds on mount and reseeds on every tab switch, so the feed always shows
+	// the active agent's vocabulary immediately instead of draining over.
+	$effect(() => {
+		const pool = heroTab === 'db' ? dbEventPool : authEventPool;
+		feed = pool.slice(0, 5).map((event, index) => ({
+			...event,
+			id: feedCursor + index,
+			time: stamp()
+		}));
+		feedCursor += 5;
+	});
 
 	onMount(() => {
 		reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -215,17 +259,17 @@
 		if (observer) sections.forEach((section) => observer.observe(section));
 		else sections.forEach((section) => section.classList.add('is-visible'));
 
-		let cursor = 0;
-		feed = eventPool.slice(0, 5).map((e, i) => ({ ...e, id: i, time: stamp() }));
-		cursor = 5;
+		// Seeding lives in the heroTab $effect; this only appends from whichever
+		// pool the active tab reads.
 		const interval = reduceMotion
 			? null
 			: setInterval(() => {
+					const pool = heroTab === 'db' ? dbEventPool : authEventPool;
 					feed = [
-						{ ...eventPool[cursor % eventPool.length], id: cursor, time: stamp() },
+						{ ...pool[feedCursor % pool.length], id: feedCursor, time: stamp() },
 						...feed
 					].slice(0, 6);
-					cursor += 1;
+					feedCursor += 1;
 				}, 1700);
 
 		return () => {
@@ -239,17 +283,17 @@
 	<title>Cloudflarebase - The open-source Firebase for Cloudflare</title>
 	<meta
 		name="description"
-		content="The open-source Firebase for Cloudflare. Every backend primitive is a Cloudflare Agent - one Durable Object per project. Auth is live today with realtime sync, analytics, and an AI copilot."
+		content="The open-source Firebase for Cloudflare. Every backend primitive is a Cloudflare Agent on isolated Durable Objects. Auth and a live-query document database are live today, with an AI copilot that reads your backend."
 	/>
 	<meta property="og:title" content="Cloudflarebase - The open-source Firebase for Cloudflare" />
 	<meta
 		property="og:description"
-		content="Ship authentication on Cloudflare with isolated Durable Objects, realtime analytics, and an AI copilot."
+		content="Ship auth and a live-query document database on Cloudflare - isolated Durable Objects, realtime sync, and an AI copilot that reads your backend."
 	/>
 	<meta name="twitter:title" content="Cloudflarebase - The open-source Firebase for Cloudflare" />
 	<meta
 		name="twitter:description"
-		content="Ship authentication on Cloudflare with isolated Durable Objects, realtime analytics, and an AI copilot."
+		content="Ship auth and a live-query document database on Cloudflare - isolated Durable Objects, realtime sync, and an AI copilot that reads your backend."
 	/>
 </svelte:head>
 
@@ -285,7 +329,7 @@
 								class="mx-auto flex w-fit items-center gap-4 rounded-full border bg-muted p-1 pl-4 shadow-md shadow-zinc-950/5 transition-colors hover:bg-muted/70 dark:border-t-white/5 dark:shadow-zinc-950"
 							>
 								<span class="text-sm text-foreground"
-									>Auth Agent is live · open source on GitHub</span
+									>Auth + Database are live · open source on GitHub</span
 								>
 								<span
 									class="block h-4 w-0.5 border-l bg-background dark:border-background dark:bg-zinc-700"
@@ -304,9 +348,9 @@
 						<p
 							class="mx-auto mt-6 max-w-2xl text-base text-balance text-muted-foreground sm:mt-8 sm:text-lg"
 						>
-							Every backend primitive is a Cloudflare Agent - one Durable Object per project, zero
-							servers, no regions to pick. Auth is live today, with realtime sync, analytics, and an
-							AI copilot built in.
+							Every backend primitive is a Cloudflare Agent - isolated Durable Objects, zero
+							servers, no regions to pick. Auth and a Firestore-style database with live queries are
+							live today, with an AI copilot that reads your backend built in.
 						</p>
 
 						<div class="mt-12 flex flex-col items-center justify-center gap-2 md:flex-row">
@@ -330,16 +374,33 @@
 								Star on GitHub
 							</Button>
 						</div>
-						<p class="mt-4 font-mono text-xs text-muted-foreground/70">
-							POST /api/projects/:projectId/auth/sign-up/email · it's just HTTP
+						<div
+							class="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 font-mono text-xs text-muted-foreground/70"
+						>
+							<span class="flex items-center gap-1.5">
+								<Star class="h-3.5 w-3.5 text-primary" /> 128 stars on GitHub
+							</span>
+							<span class="flex items-center gap-1.5">
+								<GitFork class="h-3.5 w-3.5" /> 8 forks
+							</span>
+							<span class="flex items-center gap-1.5">
+								<Boxes class="h-3.5 w-3.5" /> 351 demo backends created
+							</span>
+						</div>
+						<p class="mt-3 font-mono text-xs text-muted-foreground/70">
+							POST /db/collections/posts/documents · GET /auth/token · it's just HTTP
 						</p>
 					</div>
 				</div>
 
 				<!-- Signature visual: one agent per project -->
 				<div class="hero-visual relative mt-8 overflow-hidden px-2 sm:mt-12 md:mt-20">
+					<!-- pointer-events-none: this fade sits over the card, and without it
+					     the hero tabs underneath are unclickable. The fade starts low
+					     (80%) so the chart legend stays readable; only the card's bottom
+					     edge blends into the page. -->
 					<div
-						class="absolute inset-0 z-10 bg-linear-to-b from-transparent from-35% to-background"
+						class="pointer-events-none absolute inset-0 z-10 bg-linear-to-b from-transparent from-80% to-background"
 					></div>
 					<div
 						class="relative mx-auto max-w-6xl overflow-hidden rounded-2xl border bg-background p-4 shadow-lg inset-shadow-2xs shadow-zinc-950/15 ring-background dark:inset-shadow-white/20"
@@ -354,127 +415,165 @@
 										<span class="h-2 w-2 rounded-full bg-border"></span>
 										<span class="h-2 w-2 rounded-full bg-border"></span>
 									</span>
-									auth-agent · project: demo
+									<span
+										class="flex items-center gap-1 rounded-full border border-border bg-background/60 p-0.5"
+										role="tablist"
+										aria-label="Agent"
+									>
+										{#each [['db', 'db-agent'], ['auth', 'auth-agent']] as const as [id, label] (id)}
+											<button
+												type="button"
+												role="tab"
+												aria-selected={heroTab === id}
+												class={cn(
+													'cursor-pointer rounded-full px-3 py-1 transition-colors',
+													heroTab === id
+														? 'border border-primary/40 bg-primary/15 font-semibold text-foreground shadow-sm'
+														: 'border border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'
+												)}
+												onclick={() => setHeroTab(id)}>{label}</button
+											>
+										{/each}
+									</span>
+									<span class="hidden truncate md:inline"
+										>· {heroTab === 'db' ? 'collection: posts' : 'project: demo'}</span
+									>
 								</span>
 								<span class="hidden shrink-0 sm:inline">simulated traffic</span>
 							</div>
 							<div class="grid grid-cols-1 md:grid-cols-[1fr_280px]">
 								<div class="border-b border-border p-6 md:border-r md:border-b-0">
-									<svg viewBox="0 0 {mapW} {mapH}" class="w-full">
-										{#each dots as d (`${d.x}-${d.y}`)}
-											<circle cx={d.x} cy={d.y} r="1.1" class="fill-muted-foreground/20" />
-										{/each}
+									{#key heroTab}
+										<svg viewBox="0 0 {mapW} {mapH}" class="w-full">
+											{#each dots as d (`${d.x}-${d.y}`)}
+												<circle cx={d.x} cy={d.y} r="1.1" class="fill-muted-foreground/20" />
+											{/each}
 
-										{#each clients as c (c.x)}
+											{#each clients as c, clientIndex (c.x)}
+												{@const outbound = heroTab === 'db' && clientIndex >= 2}
+												<line
+													x1={c.x}
+													y1={c.y}
+													x2={agent.x}
+													y2={agent.y}
+													class="stroke-muted-foreground"
+													stroke-width="1"
+													stroke-dasharray="3 3"
+													opacity="0.3"
+												/>
+												<circle cx={c.x} cy={c.y} r="3" class="fill-foreground" />
+												{#if !reduceMotion}
+													<!-- Auth: requests flow in. DB: two clients write in, the other
+												     three receive live-query deltas fanning out. -->
+													<circle r="2.2" class={outbound ? 'fill-chart-3' : 'fill-primary'}>
+														<animateMotion
+															dur="{c.dur}s"
+															begin="{c.begin}s"
+															repeatCount="indefinite"
+															calcMode="spline"
+															keyPoints="0;1"
+															keyTimes="0;1"
+															keySplines="0.42 0 1 1"
+															path={outbound
+																? `M${agent.x},${agent.y} L${c.x},${c.y}`
+																: `M${c.x},${c.y} L${agent.x},${agent.y}`}
+														/>
+													</circle>
+												{/if}
+											{/each}
+
 											<line
-												x1={c.x}
-												y1={c.y}
-												x2={agent.x}
-												y2={agent.y}
-												class="stroke-muted-foreground"
+												x1={agent.x}
+												y1={agent.y}
+												x2={dashboard.x}
+												y2={dashboard.y}
+												class="stroke-chart-3"
 												stroke-width="1"
 												stroke-dasharray="3 3"
-												opacity="0.3"
+												opacity="0.45"
 											/>
-											<circle cx={c.x} cy={c.y} r="3" class="fill-foreground" />
+											<rect
+												x={dashboard.x - 5}
+												y={dashboard.y - 4}
+												width="10"
+												height="8"
+												rx="1.5"
+												class="fill-chart-3"
+											/>
 											{#if !reduceMotion}
-												<circle r="2.2" class="fill-primary">
+												<circle r="2.2" class="fill-chart-3">
 													<animateMotion
-														dur="{c.dur}s"
-														begin="{c.begin}s"
+														dur="1.8s"
+														begin="0.4s"
 														repeatCount="indefinite"
-														calcMode="spline"
-														keyPoints="0;1"
-														keyTimes="0;1"
-														keySplines="0.42 0 1 1"
-														path="M{c.x},{c.y} L{agent.x},{agent.y}"
+														path="M{agent.x},{agent.y} L{dashboard.x},{dashboard.y}"
 													/>
 												</circle>
 											{/if}
-										{/each}
 
-										<line
-											x1={agent.x}
-											y1={agent.y}
-											x2={dashboard.x}
-											y2={dashboard.y}
-											class="stroke-chart-3"
-											stroke-width="1"
-											stroke-dasharray="3 3"
-											opacity="0.45"
-										/>
-										<rect
-											x={dashboard.x - 5}
-											y={dashboard.y - 4}
-											width="10"
-											height="8"
-											rx="1.5"
-											class="fill-chart-3"
-										/>
-										{#if !reduceMotion}
-											<circle r="2.2" class="fill-chart-3">
-												<animateMotion
-													dur="1.8s"
-													begin="0.4s"
-													repeatCount="indefinite"
-													path="M{agent.x},{agent.y} L{dashboard.x},{dashboard.y}"
-												/>
-											</circle>
-										{/if}
+											<circle cx={agent.x} cy={agent.y} r="14" class="fill-primary/15" />
+											<circle cx={agent.x} cy={agent.y} r="6" class="fill-primary" />
+											{#if !reduceMotion}
+												{#each [0, 1.2] as ringDelay (ringDelay)}
+													<circle
+														cx={agent.x}
+														cy={agent.y}
+														r="10"
+														opacity="0"
+														class="fill-none stroke-primary"
+														stroke-width="1"
+													>
+														<animate
+															attributeName="r"
+															values="10;26"
+															dur="2.4s"
+															begin="{ringDelay}s"
+															repeatCount="indefinite"
+														/>
+														<animate
+															attributeName="opacity"
+															values="0.5;0"
+															dur="2.4s"
+															begin="{ringDelay}s"
+															repeatCount="indefinite"
+														/>
+													</circle>
+												{/each}
+											{/if}
 
-										<circle cx={agent.x} cy={agent.y} r="14" class="fill-primary/15" />
-										<circle cx={agent.x} cy={agent.y} r="6" class="fill-primary" />
-										{#if !reduceMotion}
-											{#each [0, 1.2] as ringDelay (ringDelay)}
-												<circle
-													cx={agent.x}
-													cy={agent.y}
-													r="10"
-													opacity="0"
-													class="fill-none stroke-primary"
-													stroke-width="1"
-												>
-													<animate
-														attributeName="r"
-														values="10;26"
-														dur="2.4s"
-														begin="{ringDelay}s"
-														repeatCount="indefinite"
-													/>
-													<animate
-														attributeName="opacity"
-														values="0.5;0"
-														dur="2.4s"
-														begin="{ringDelay}s"
-														repeatCount="indefinite"
-													/>
-												</circle>
-											{/each}
-										{/if}
-
-										<text
-											x={agent.x}
-											y={agent.y + 32}
-											text-anchor="middle"
-											class="fill-muted-foreground font-mono text-[9px]">AuthAgent · DO SQLite</text
-										>
-										<text
-											x={dashboard.x}
-											y={dashboard.y + 18}
-											text-anchor="middle"
-											class="fill-muted-foreground font-mono text-[9px]">dashboard</text
-										>
-									</svg>
+											<text
+												x={agent.x}
+												y={agent.y + 32}
+												text-anchor="middle"
+												class="fill-muted-foreground font-mono text-[9px]"
+												>{heroTab === 'db' ? 'DbCollection · posts' : 'AuthAgent · DO SQLite'}</text
+											>
+											<text
+												x={dashboard.x}
+												y={dashboard.y + 18}
+												text-anchor="middle"
+												class="fill-muted-foreground font-mono text-[9px]">dashboard</text
+											>
+										</svg>
+									{/key}
 									<div
 										class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 font-mono text-[11px] text-muted-foreground/70"
 									>
 										<span class="flex items-center gap-1.5">
-											<span class="h-1.5 w-1.5 rounded-full bg-primary"></span> auth requests
+											<span class="h-1.5 w-1.5 rounded-full bg-primary"></span>
+											{heroTab === 'db' ? 'document writes' : 'auth requests'}
 										</span>
 										<span class="flex items-center gap-1.5">
-											<span class="h-1.5 w-1.5 rounded-full bg-chart-3"></span> WebSocket state sync
+											<span class="h-1.5 w-1.5 rounded-full bg-chart-3"></span>
+											{heroTab === 'db'
+												? 'live-query deltas over hibernated WebSockets'
+												: 'WebSocket state sync'}
 										</span>
-										<span>one Durable Object per project</span>
+										<span
+											>{heroTab === 'db'
+												? 'one Durable Object per collection'
+												: 'one Durable Object per project'}</span
+										>
 									</div>
 								</div>
 								<div class="min-h-[220px] p-5">
@@ -541,92 +640,22 @@
 			</div>
 		</section>
 
-		<!-- LIVE TODAY -->
-		<section id="live" class="border-y border-border bg-card px-4 py-16 sm:px-8 sm:py-24">
-			<div class="mx-auto max-w-6xl">
-				<div class="mb-14 max-w-xl">
-					<span
-						class="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
-					>
-						<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-primary"></span>
-						Live today
-					</span>
-					<h2 class="mt-4 text-3xl font-bold md:text-4xl">
-						Auth shipped first. It's live right now.
-					</h2>
-					<p class="mt-3 text-muted-foreground">
-						Not a waitlist, not a mockup. Open the demo and a real, isolated project - with its own
-						Durable Object - spins up for your browser.
-					</p>
-				</div>
-				<div
-					class="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border bg-border md:grid-cols-3"
-				>
-					{#each liveFeatures as f (f.title)}
-						<div class="bg-card p-7 transition-colors hover:bg-accent/40">
-							<div
-								class="mb-4 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"
-							>
-								<f.icon class="h-[18px] w-[18px]" strokeWidth={1.8} />
-							</div>
-							<h3 class="mb-1.5 font-semibold">{f.title}</h3>
-							<p class="text-sm leading-relaxed text-muted-foreground">{f.desc}</p>
-						</div>
-					{/each}
-				</div>
-			</div>
-		</section>
-
-		<!-- ARCHITECTURE -->
-		<section id="architecture" class="px-4 py-16 sm:px-8 sm:py-24">
-			<div class="mx-auto max-w-6xl">
-				<div class="mb-14 max-w-xl">
-					<span
-						class="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
-						>Architecture</span
-					>
-					<h2 class="mt-4 text-3xl font-bold md:text-4xl">
-						Two Workers. One Durable Object per project.
-					</h2>
-					<p class="mt-3 text-muted-foreground">
-						That's the whole diagram. No origin fleet, no connection pools - your backend state
-						lives with the compute that serves it.
-					</p>
-				</div>
-				<div class="grid grid-cols-1 gap-8 md:grid-cols-3">
-					{#each steps as s, i (s.title)}
-						<div
-							class="relative rounded-2xl border border-border bg-card p-7 transition-colors hover:border-primary/40"
-						>
-							<span class="font-mono text-xs text-muted-foreground/60">0{i + 1}</span>
-							<div
-								class="mt-4 flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary"
-							>
-								<s.icon class="h-5 w-5" strokeWidth={1.8} />
-							</div>
-							<h3 class="mt-4 font-semibold">{s.title}</h3>
-							<p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{s.desc}</p>
-						</div>
-					{/each}
-				</div>
-			</div>
-		</section>
-
 		<!-- API -->
 		<section id="api" class="border-y border-border bg-card px-4 py-16 sm:px-8 sm:py-24">
-			<div class="mx-auto grid max-w-6xl grid-cols-1 items-center gap-14 md:grid-cols-2">
+			<div class="mx-auto grid max-w-7xl grid-cols-1 items-center gap-14 md:grid-cols-[2fr_3fr]">
 				<div>
 					<span
 						class="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
 						>API</span
 					>
 					<h2 class="mt-4 text-3xl leading-tight font-bold md:text-4xl">
-						No SDK to install. It's just HTTP.
+						It's just HTTP. SDKs optional.
 					</h2>
 					<p class="mt-4 text-muted-foreground">
-						Point <code class="font-mono">fetch</code> at your project's endpoint and you're integrated.
-						The routes are Better Auth's, scoped to your project - this is the exact API the demo dashboard
-						uses.
+						Point <code class="font-mono">fetch</code> at your project's endpoint and you're
+						integrated - this is the exact API the demo dashboard uses. When you want types, the
+						Better Auth client and <code class="font-mono">@cloudflarebase/db/client</code> wrap the same
+						routes.
 					</p>
 					<ul class="mt-6 space-y-3 text-sm">
 						<li class="flex gap-2.5">
@@ -655,12 +684,115 @@
 					</ul>
 				</div>
 				<div class="overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
-					<div class="flex items-center gap-1.5 border-b border-border px-4 py-3">
-						<span class="h-2.5 w-2.5 rounded-full bg-border"></span>
-						<span class="h-2.5 w-2.5 rounded-full bg-border"></span>
-						<span class="h-2.5 w-2.5 rounded-full bg-border"></span>
+					<div class="flex items-center justify-between border-b border-border px-4 py-2.5">
+						<div class="flex items-center gap-1.5">
+							<span class="h-2.5 w-2.5 rounded-full bg-border"></span>
+							<span class="h-2.5 w-2.5 rounded-full bg-border"></span>
+							<span class="h-2.5 w-2.5 rounded-full bg-border"></span>
+						</div>
+						<div
+							class="flex items-center gap-1 rounded-full border border-border bg-background/60 p-0.5 font-mono text-xs"
+							role="tablist"
+							aria-label="Product"
+						>
+							{#each [['db', 'db'], ['auth', 'auth']] as const as [id, label] (id)}
+								<button
+									type="button"
+									role="tab"
+									aria-selected={apiProduct === id}
+									class={cn(
+										'cursor-pointer rounded-full px-3 py-1 transition-colors',
+										apiProduct === id
+											? 'border border-primary/40 bg-primary/15 font-semibold text-foreground'
+											: 'border border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'
+									)}
+									onclick={() => setApiProduct(id)}>{label}</button
+								>
+							{/each}
+						</div>
 					</div>
-					<CodeExamples examples={apiExamples} class="p-4" />
+					{#key apiProduct}
+						<!-- Fixed geometry: the pill row reserves two lines and the code
+						     block scrolls inside a constant height, so switching between
+						     short and tall examples never shifts the page below. -->
+						<CodeExamples
+							examples={apiProduct === 'db' ? dbApiExamples : authApiExamples}
+							class="p-4 [&_pre]:h-[22.75rem] [&_pre]:overflow-y-auto"
+						/>
+					{/key}
+				</div>
+			</div>
+		</section>
+
+		<!-- LIVE TODAY -->
+		<section id="live" class="px-4 py-16 sm:px-8 sm:py-24">
+			<div class="mx-auto max-w-6xl">
+				<div class="mb-14 max-w-xl">
+					<span
+						class="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
+					>
+						<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-primary"></span>
+						Live today
+					</span>
+					<h2 class="mt-4 text-3xl font-bold md:text-4xl">
+						Auth shipped first. Database just followed.
+					</h2>
+					<p class="mt-3 text-muted-foreground">
+						Not a waitlist, not a mockup. Open the demo and a real, isolated project - with its own
+						Durable Object - spins up for your browser.
+					</p>
+				</div>
+				<div
+					class="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border bg-border md:grid-cols-3"
+				>
+					{#each liveFeatures as f (f.title)}
+						<div class="bg-card p-7 transition-colors hover:bg-accent/40">
+							<div
+								class="mb-4 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"
+							>
+								<f.icon class="h-[18px] w-[18px]" strokeWidth={1.8} />
+							</div>
+							<h3 class="mb-1.5 font-semibold">{f.title}</h3>
+							<p class="text-sm leading-relaxed text-muted-foreground">{f.desc}</p>
+						</div>
+					{/each}
+				</div>
+			</div>
+		</section>
+
+		<!-- ARCHITECTURE -->
+		<section id="architecture" class="border-y border-border bg-card px-4 py-14 sm:px-8 sm:py-20">
+			<div class="mx-auto max-w-6xl">
+				<div class="mb-10 max-w-xl">
+					<span
+						class="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
+						>Architecture</span
+					>
+					<h2 class="mt-4 text-3xl font-bold md:text-4xl">
+						Three Workers. A Durable Object per primitive.
+					</h2>
+					<p class="mt-3 text-muted-foreground">
+						That's the whole diagram. No origin fleet, no connection pools - your backend state
+						lives with the compute that serves it.
+					</p>
+				</div>
+				<div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+					{#each steps as s, i (s.title)}
+						<div
+							class="relative rounded-2xl border border-border bg-card p-5 transition-colors hover:border-primary/40"
+						>
+							<div class="flex items-center gap-3">
+								<div
+									class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary"
+								>
+									<s.icon class="h-4.5 w-4.5" strokeWidth={1.8} />
+								</div>
+								<span class="font-mono text-xs text-muted-foreground/60">0{i + 1}</span>
+								<h3 class="font-semibold">{s.title}</h3>
+							</div>
+							<p class="mt-3 text-sm leading-relaxed text-muted-foreground">{s.desc}</p>
+						</div>
+					{/each}
 				</div>
 			</div>
 		</section>

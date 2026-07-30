@@ -116,3 +116,69 @@ curl ${url}/get-session \\
 		}
 	];
 }
+
+/**
+ * Database snippets targeting `url` (a project's db base, e.g.
+ * `https://host/api/projects/<id>/db`). Rendered beside the auth examples in
+ * the landing page's API section.
+ */
+export function buildDbIntegrationExamples(url: string): CodeExample[] {
+	return [
+		{
+			id: 'db-rest',
+			label: 'REST',
+			lang: 'javascript',
+			code: `// Create a post (public collection: no token needed)
+await fetch('${url}/collections/posts/documents', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ data: { title: 'Show HN: my launch', votes: 1 } })
+});
+
+// The front page: top 25 by votes
+const { docs } = await (await fetch('${url}/collections/posts/query', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ orderBy: [{ field: 'votes', direction: 'desc' }], limit: 25 })
+})).json();`
+		},
+		{
+			id: 'db-sdk',
+			label: 'Client SDK',
+			lang: 'typescript',
+			code: `import { createDbClient } from '@cloudflarebase/db/client';
+
+const db = createDbClient({
+  baseUrl: '${url}',
+  // auth/owner collections: mint a project JWT from the auth agent
+  getToken: async () =>
+    (await (await fetch('${url.replace(/\/db$/, '/auth')}/token')).json()).token
+});
+
+const posts = db.collection('posts');
+await posts.create({ title: 'Show HN: my launch', votes: 1 });
+
+// The front page re-ranks itself on every vote, on every open screen.
+const unsubscribe = posts.subscribe(
+  { orderBy: [{ field: 'votes', direction: 'desc' }], limit: 25 },
+  { onSnapshot: (docs) => render(docs), onChange: (change, docs) => render(docs) }
+);`
+		},
+		{
+			id: 'db-ws',
+			label: 'Raw WebSocket',
+			lang: 'javascript',
+			code: `// No SDK: one socket per collection, subscriptions multiplexed by id
+const ws = new WebSocket(
+  'wss://YOUR_HOST/agents/db-agent/PROJECT_ID/collections/posts/subscribe'
+);
+ws.onopen = () => ws.send(JSON.stringify({
+  type: 'subscribe', id: 'q1',
+  query: { orderBy: [{ field: 'votes', direction: 'desc' }], limit: 25 }
+}));
+ws.onmessage = (event) => console.log(JSON.parse(event.data));
+// -> { type: 'snapshot', ... } once, then
+// -> { type: 'change', kind: 'added' | 'modified' | 'removed', ... }`
+		}
+	];
+}

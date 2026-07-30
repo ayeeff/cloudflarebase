@@ -15,12 +15,13 @@
 </p>
 
 An open-source Firebase alternative that runs entirely on your Cloudflare
-account. Each project gets its own Durable Object running Better Auth on
-embedded SQLite, plus a dashboard with live counters, analytics, an AI copilot,
-and a generated API reference.
+account. Each project gets isolated Durable Objects - Better Auth on embedded
+SQLite, and a document database with Firestore-style live queries where every
+collection is its own DO - plus a dashboard with live counters, analytics, an
+AI copilot, and a generated API reference.
 
-Auth is the first primitive. Database, storage, and the rest will follow the
-same shape.
+Auth and Database are live. Storage, functions, and the rest will follow the
+same agent shape.
 
 ## Run it locally
 
@@ -36,13 +37,28 @@ dev runs in demo mode, so you get a throwaway project without signing in.
 
 ## Deploy your own
 
-Two Workers. The agent goes first because the dashboard binds to it by name
-(Cloudflare's deploy button does one Worker per click).
+One command from a clone deploys the whole stack - both agents, then the
+dashboard, in dependency order:
 
-1. Agent: [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflarebase/cloudflarebase/tree/main/agents/auth)
-2. Dashboard: [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflarebase/cloudflarebase)
+```bash
+git clone https://github.com/cloudflarebase/cloudflarebase.git
+cd cloudflarebase
+npm install
+npx wrangler login
+npm run deploy:all
+```
 
-Or from a clone: `npm run deploy:all`.
+That's three Workers on your account (`auth-agent`, `db-agent`,
+`cloudflarebase`), a D1 control plane provisioned automatically, and no
+secrets to set. The order matters - the db worker binds the auth worker, the
+dashboard binds both - and `deploy:all` encodes it so you don't have to.
+
+Prefer not to clone? The Deploy to Cloudflare buttons do one Worker per
+click, in the same order:
+
+1. Auth agent: [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflarebase/cloudflarebase/tree/main/agents/auth)
+2. DB agent: [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflarebase/cloudflarebase/tree/main/agents/db)
+3. Dashboard: [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflarebase/cloudflarebase)
 
 Then open the dashboard and create the first account. That account owns the
 console and sign-up closes behind it. Your install is private by default.
@@ -56,23 +72,26 @@ Optional extras, all off until configured: Google/GitHub sign-in, email
 delivery, Sentry, and analytics SQL reads (`CF_ACCOUNT_ID` +
 `CF_ANALYTICS_API_TOKEN` with Account Analytics Read).
 
-## Add auth to a Worker you already have
+## Add the agents to a Worker you already have
 
-The console is optional. The agent is a normal npm package, and the CLI wires
-it into an existing Worker project:
+The console is optional. Each agent is a normal npm package, and the CLI
+wires it into an existing Worker project - one `add` per primitive:
 
 ```bash
 npm install -g @cloudflarebase/cli
 
-cloudflarebase init my-backend   # or `cloudflarebase add auth` in an existing project
+cloudflarebase init my-backend   # scaffolds a Worker with auth
 cd my-backend
+cloudflarebase add db            # Firestore-style documents + live queries
 npx wrangler login
-cloudflarebase deploy            # sign-in works right away
+cloudflarebase deploy            # sign-in and live queries work right away
 ```
 
-`add` merges the agent's wrangler config into yours without overwriting
-anything you set, exports the Durable Object class from your entrypoint, and
-adds a type assertion so a missing binding fails at compile time with its name.
+In an existing project, `cloudflarebase add auth` and `cloudflarebase add db`
+do the same individually. `add` merges the agent's wrangler config into yours
+without overwriting anything you set, exports the Durable Object classes from
+your entrypoint, and adds a type assertion so a missing binding fails at
+compile time with its name.
 
 ## Use it from your app
 
@@ -89,9 +108,33 @@ await authClient.signUp.email({ name, email, password });
 ```
 
 Browsers get a cookie; everything else uses the `set-auth-token` bearer token.
-Add your app's origin under the project's Settings tab first. Each project also
-serves an OpenAPI 3.1 document at `/api/projects/<id>/openapi.json`, rendered
-in the dashboard under API Reference.
+Add your app's origin under the project's Settings tab first.
+
+The database has a typed client with Firestore-style live queries:
+
+```ts
+import { createDbClient } from '@cloudflarebase/db/client';
+
+const db = createDbClient({
+	baseUrl: 'https://your-dashboard.workers.dev/api/projects/my-app/db'
+});
+
+const posts = db.collection('posts');
+await posts.create({ title: 'Hello', votes: 1 });
+
+// A snapshot now, then added/modified/removed deltas as writes happen.
+posts.subscribe(
+	{ orderBy: [{ field: 'votes', direction: 'desc' }], limit: 25 },
+	{
+		onSnapshot: (docs) => render(docs),
+		onChange: (change, docs) => render(docs)
+	}
+);
+```
+
+Each project also serves an OpenAPI 3.1 document at
+`/api/projects/<id>/openapi.json`, rendered in the dashboard under API
+Reference.
 
 ## Checks
 

@@ -1,8 +1,17 @@
 # The agent contract
 
-> Design document. The manifest described here is not implemented yet - it is
-> written down now, while exactly one agent exists, so the second one is built
-> to a shape rather than copied from the first.
+> **Implemented** as of the db agent (2026-07, see `docs/db-agent-plan.md`).
+> Both agents ship `cloudflarebase.agent.json`; the app's
+> `src/lib/agent-registry.ts` imports them single-source and drives the guard,
+> `/agents/*` dispatch, proxy classification, sidebar, delete fan-out, and
+> OpenAPI composition; the CLI validates the manifest at `add` time and
+> derives entrypoint export lines from it. Deltas from the sketch below:
+> `manifestVersion` (integer, readers refuse unknown), `packageName`, `worker`
+> (URL segment), `proxy { apiPrefix, agentBasePath }`, `entrypoint
+{ assertEnvType }`, a `perCollection` scope for Durable Object classes,
+> `${prefix}` dataset templating dropped (concrete self-hosted defaults), and
+> the `client` array deferred. The wrangler fragment stays a separately
+> authored file. Console pages carry a `testId`. The original sketch follows.
 
 Cloudflarebase is agent-first: every backend capability is a Cloudflare Agent
 with one Durable Object instance per project. `agents/auth` is the only one

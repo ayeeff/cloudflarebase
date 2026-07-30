@@ -11,12 +11,13 @@ One `AuthAgent` Durable Object per Cloudflarebase project; the instance name is 
 - `src/db/schema.ts`: Better Auth tables. Property names must match Better Auth field names.
 - `drizzle/`: drizzle-kit output. `src/migrations.ts` inlines that SQL as string literals (via `scripts/generate-migrations.mjs`, never hand-edited) and is what `onStart` applies. Inlining means no Wrangler Text-module rule, so the agent works as a plain npm dependency.
 - `src/env.d.ts`: optional secrets not in generated Wrangler types.
+- `cloudflarebase.agent.json`: the agent manifest (`docs/agent-contract.md`), shipped in the package (`files` + `exports`). The dashboard imports it directly from this directory into `src/lib/agent-registry.ts` (single-sourced - a stale copy would misconfigure the console guard), and the CLI reads it from the installed package to derive the entrypoint export lines. Editing `routes` changes what the console exposes publicly; treat it as security-sensitive.
 
 Schema changes: edit `src/db/schema.ts`, run `npm run migrations`, never hand-edit the output. Migrations apply idempotently on agent wake. If a Better Auth upgrade shifts fields, compare against `getAuthTables({})` from `@better-auth/core/db`.
 
 ## HTTP surface
 
-The Worker itself: `GET /health`, `GET /fleet/overview`, and `DELETE /internal/projects/:projectId` (erases one project via its agent's `destroy()`). The latter two sit outside `/agents/*`, so they are reachable only over the dashboard's service binding; the worker has no public route. The console owns cross-agent fan-out; this endpoint knows only its own agent. `AuthAgent.getFleetCounts()` serves the per-project half over DO RPC, including the colo resolved once per instance from a cdn-cgi trace.
+The Worker itself: `GET /health`, `GET /fleet/overview`, and `DELETE /internal/projects/:projectId` (erases one project via its agent's `destroy()`). The latter two sit outside `/agents/*`, so they are reachable only over the dashboard's service binding; the worker has no public route. The console owns cross-agent fan-out; this endpoint knows only its own agent. `AuthAgent.getFleetCounts()` serves the per-project half over DO RPC, including the colo resolved once per instance from a cdn-cgi trace. The colo's COUNTRY comes from the static map in `src/colo-countries.ts`, never from the trace's `loc` field - `loc` geolocates the Worker's egress IP, and a re-mapping of Cloudflare's own ranges once flagged the entire fleet as Canada. Unknown colos render without a flag; extend the map when new colos appear.
 
 Agent routes at `/agents/auth-agent/<projectId>/...`:
 

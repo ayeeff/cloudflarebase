@@ -37,6 +37,9 @@
 				hideDarkModeToggle: true,
 				hideClientButton: true,
 				showSidebar: true,
+				// Authentication and Database both open on load (tag order comes
+				// from the OpenAPI document) instead of only the first section.
+				defaultOpenAllTags: true,
 				mcp: undefined,
 				agent: {
 					disabled: true

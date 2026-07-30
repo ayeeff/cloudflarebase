@@ -45,8 +45,15 @@
 	// not a secret; it ships in the client bundle by design). Empty because a
 	// committed DSN would make this project the sink for every fork's errors.
 	"vars": {
+		"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 		"PUBLIC_SENTRY_DSN": "",
 		"PUBLIC_SENTRY_ENV": "production"
+	},
+
+	// The project copilot: the tool-calling loop runs in this Worker's chat
+	// route and reads both agents over the service bindings below.
+	"ai": {
+		"binding": "AI"
 	},
 
 	// No required secrets: a fresh clone deploys with zero configuration.
@@ -54,7 +61,10 @@
 	// unconfigured until you enable it with `wrangler secret put ADMIN_SECRET`.
 	// cloudflarebase.com's own environments below do require it.
 
-	"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent" }],
+	"services": [
+		{ "binding": "AUTH_AGENT", "service": "auth-agent" },
+		{ "binding": "DB_AGENT", "service": "db-agent" }
+	],
 
 	// Control plane: the project registry. `database_id` is deliberately
 	// omitted so `wrangler deploy` provisions the database on first deploy and
@@ -86,7 +96,15 @@
 			// `--env preview`) for deployed environments.
 			"vars": {
 				"ADMIN_SECRET": "local-admin-secret",
+				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 				"DEMO_MODE": "true"
+			},
+
+			// Workers AI has no local simulator; local dev runs inference against
+			// the real account (mirrors agents/auth env.local).
+			"ai": {
+				"binding": "AI",
+				"remote": true
 			},
 
 			"d1_databases": [
@@ -104,7 +122,10 @@
 				}
 			],
 
-			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-local" }],
+			"services": [
+				{ "binding": "AUTH_AGENT", "service": "auth-agent-local" },
+				{ "binding": "DB_AGENT", "service": "db-agent-local" }
+			],
 			"ratelimits": [
 				{
 					"name": "API_RATE_LIMITER",
@@ -120,8 +141,11 @@
 			"routes": [],
 
 			// Fixed test-only admin password; keep aligned with wrangler.e2e.jsonc.
+			// No `ai` binding on purpose: e2e chat requests take the 502 path
+			// deterministically, exactly like the test auth agent before it.
 			"vars": {
 				"ADMIN_SECRET": "e2e-admin-secret",
+				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 				"DEMO_MODE": "true"
 			},
 
@@ -140,7 +164,10 @@
 				}
 			],
 
-			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-test" }],
+			"services": [
+				{ "binding": "AUTH_AGENT", "service": "auth-agent-test" },
+				{ "binding": "DB_AGENT", "service": "db-agent-test" }
+			],
 			"ratelimits": [
 				{
 					"name": "API_RATE_LIMITER",
@@ -163,6 +190,7 @@
 				}
 			],
 			"vars": {
+				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 				"DEMO_MODE": "true",
 				// Committed on purpose: env.production is cloudflarebase.com's own
 				// block (forks deploy the top level, whose DSN stays empty), and a
@@ -170,13 +198,19 @@
 				"PUBLIC_SENTRY_DSN": "https://50ed6e26b886124ac39e983efb72144d@o4510375271530496.ingest.de.sentry.io/4511764380778576",
 				"PUBLIC_SENTRY_ENV": "production"
 			},
+			"ai": {
+				"binding": "AI"
+			},
 			"d1_databases": [
 				{
 					"binding": "DB",
 					"database_name": "cloudflarebase-control-plane"
 				}
 			],
-			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent" }],
+			"services": [
+				{ "binding": "AUTH_AGENT", "service": "auth-agent" },
+				{ "binding": "DB_AGENT", "service": "db-agent" }
+			],
 			"ratelimits": [
 				{
 					"name": "API_RATE_LIMITER",
@@ -200,9 +234,13 @@
 			"workers_dev": false,
 			"routes": [],
 			"vars": {
+				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 				"DEMO_MODE": "true",
 				"PUBLIC_SENTRY_DSN": "https://093f7505d223a871223f9a15130ef116@o4510375271530496.ingest.de.sentry.io/4511764377043024",
 				"PUBLIC_SENTRY_ENV": "preview"
+			},
+			"ai": {
+				"binding": "AI"
 			},
 			"ratelimits": [
 				{
@@ -222,7 +260,10 @@
 					"database_name": "cloudflarebase-control-plane-preview"
 				}
 			],
-			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" }],
+			"services": [
+				{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" },
+				{ "binding": "DB_AGENT", "service": "db-agent-preview" }
+			],
 			"secrets": {
 				"required": ["ADMIN_SECRET"]
 			}

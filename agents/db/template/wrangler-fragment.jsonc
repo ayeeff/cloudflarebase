@@ -1,0 +1,84 @@
+/**
+ * Wrangler configuration for a Worker that hosts `@cloudflarebase/db`.
+ *
+ * Merge this into your own `wrangler.jsonc`, then run `npx wrangler types` so
+ * the generated `Env` carries these bindings. The agent reads `Env` from your
+ * configuration, not from the package - see `AssertDbAgentEnv` for a
+ * compile-time check that you declared everything it needs.
+ *
+ * The `migrations` block below is a FRESH v1 declaring BOTH Durable Object
+ * classes. Do not copy the tag history from the Cloudflarebase repository.
+ */
+{
+	"main": "src/index.ts",
+
+	// `nodejs_als` backs the async local storage the Agents SDK uses for
+	// request context.
+	"compatibility_date": "2026-07-10",
+	"compatibility_flags": ["nodejs_compat", "nodejs_als"],
+
+	// Two SQLite-backed Durable Object classes: DbAgent is the per-project
+	// coordinator; DbCollection holds one collection's documents and live
+	// queries, named `<projectId>:<collection>`. `new_sqlite_classes` is
+	// required - the classic key-value backend cannot run the embedded
+	// database.
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["DbAgent", "DbCollection"],
+		},
+	],
+
+	"durable_objects": {
+		"bindings": [
+			{
+				"class_name": "DbAgent",
+				"name": "DbAgent",
+			},
+			{
+				"class_name": "DbCollection",
+				"name": "DbCollection",
+			},
+		],
+	},
+
+	// Required. Document and collection events are written here; the dataset
+	// auto-creates on first write and writes need no API credentials.
+	"analytics_engine_datasets": [
+		{
+			"binding": "DB_EVENTS",
+			"dataset": "cloudflarebase_db_events",
+		},
+	],
+
+	/**
+	 * NOT included: an AUTH_AGENT service binding. If `@cloudflarebase/auth`
+	 * lives in this same Worker (the normal `cloudflarebase add auth` setup),
+	 * the db agent finds its AuthAgent Durable Object binding automatically
+	 * and token-verified collections just work. A service binding is only for
+	 * multi-worker deployments where auth runs as a separate Worker:
+	 *
+	 *   "services": [{ "binding": "AUTH_AGENT", "service": "your-auth-worker" }]
+	 *
+	 * With neither present, `public` collections work and token-gated ones
+	 * fail closed with 503.
+	 */
+
+	"vars": {
+		/**
+		 * CSRF/CORS allowlist for EXTRA origins. Your deployment trusts its own
+		 * origin automatically. Add origins (comma separated, no trailing
+		 * slash) when another domain calls the API with credentials.
+		 */
+		"TRUSTED_ORIGINS": "",
+
+		// Empty disables error reporting, which is the default. Set your own
+		// with `wrangler secret put SENTRY_DSN` to turn it on.
+		"SENTRY_DSN": "",
+	},
+
+	// No secret has to be set for this Worker to work.
+	"secrets": {
+		"required": [],
+	},
+}

@@ -1,7 +1,13 @@
 /**
- * Records-ready product demo: seeds demo data, backfills 90 days of local
- * analytics, generates live auth traffic, and drives a choreographed browser
- * tour of the dashboard with an on-screen cursor. You only record the screen.
+ * Records-ready product demo, cut for a ~90-second take: seeds demo data,
+ * backfills 90 days of local analytics, generates live auth traffic, and
+ * drives a choreographed browser tour with an on-screen cursor. DATABASE
+ * leads - create a collection, type one post, watch out-of-band writes pop
+ * into the open table and an upvote re-rank it live (the dashboard is itself
+ * a live-query subscriber) - then AUTH: stats and the 90-day chart moving
+ * under real traffic, and a working playground sign-up. Ease and realtime,
+ * nothing else; the copilot and roles scenes were cut for the short format.
+ * You only record the screen.
  *
  *   node scripts/demo-video.mjs            # full recording run (fullscreen)
  *   node scripts/demo-video.mjs --check    # fast headless validation run
@@ -15,8 +21,6 @@
  *                      clamp it) - set the OBS canvas to 1920x1080 and
  *                      stretch the window capture. On a 1080p display,
  *                      default fullscreen is a pixel-perfect 1920x1080.
- *   --no-chat          skip the Workers AI copilot scenes
- *   --chat             include the AI scenes during --check (full rehearsal)
  *   --skip-backfill / --force-backfill   control the D1 analytics backfill
  *   --shots <dir>      save a screenshot after each scene
  *
@@ -43,8 +47,6 @@ const PROJECT = opt('--project', 'demo-a3f8c2d4e5b6a7f80912');
 const CHECK = flag('--check');
 const SPEED = Number(opt('--speed', CHECK ? '0.12' : '1'));
 const SHOTS = opt('--shots', '');
-// --check skips the AI scenes unless --chat is added for a full rehearsal.
-const NO_CHAT = flag('--no-chat') || (CHECK && !flag('--chat'));
 const IS_LOCAL = /^http:\/\/(localhost|127\.0\.0\.1):5173$/.test(BASE);
 /** Only ids matching the /dashboard cookie pattern survive the CTA redirect. */
 const DEMO_PATTERN = /^demo-[a-f0-9]{20}$/;
@@ -457,61 +459,6 @@ async function seedRoster() {
 	log('seeding done');
 }
 
-/**
- * Reset the role registry to a curated baseline (built-ins + one extra) so
- * every take can create the same 'editor' role live on camera.
- */
-async function resetRoles() {
-	try {
-		const res = await fetch(api('admin/roles'), {
-			method: 'PUT',
-			headers: { 'content-type': 'application/json', origin: BASE },
-			body: JSON.stringify({
-				roles: [{ name: 'support', permissions: ['tickets:read', 'users:read'] }]
-			}),
-			signal: AbortSignal.timeout(10_000)
-		});
-		if (!res.ok) log(`WARNING: role registry reset failed (${res.status})`);
-	} catch {
-		log('WARNING: role registry reset failed');
-	}
-}
-
-let chatWorks = false;
-
-/**
- * Workers AI in dev is a remote binding (needs a logged-in wrangler). Probe it
- * before recording so the copilot scene is skipped instead of stalling on
- * camera. The probe question reads naturally if it shows up in chat history.
- */
-async function preflightChat() {
-	if (NO_CHAT) return;
-	// Rotating questions: the probe lands in the copilot's visible history, so
-	// across takes it reads like a natural ongoing conversation.
-	const probes = [
-		"How's my project doing today?",
-		"What's our DAU right now?",
-		'Any unusual auth activity this week?',
-		'Which sign-in providers are most used?'
-	];
-	try {
-		const res = await fetch(api('chat'), {
-			method: 'POST',
-			headers: { 'content-type': 'application/json', origin: BASE },
-			body: JSON.stringify({ question: probes[Math.floor(Math.random() * probes.length)] }),
-			signal: AbortSignal.timeout(60_000)
-		});
-		chatWorks = res.ok;
-	} catch {
-		chatWorks = false;
-	}
-	log(
-		chatWorks
-			? 'Workers AI reachable - copilot scene enabled'
-			: 'Workers AI not reachable - skipping the copilot scene'
-	);
-}
-
 let trafficTimer = null;
 let freshCounter = 0;
 /**
@@ -620,15 +567,6 @@ async function clickEl(page, locator) {
 	if (box) cursorAt = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
-async function smoothScroll(page, deltaY) {
-	const chunks = CHECK ? 2 : 8;
-	for (let i = 0; i < chunks; i++) {
-		await page.mouse.wheel(0, deltaY / chunks);
-		await sleep(CHECK ? 20 : 35);
-	}
-	await pace(350);
-}
-
 async function screenshot(page, name) {
 	if (!SHOTS) return;
 	fs.mkdirSync(SHOTS, { recursive: true });
@@ -703,7 +641,12 @@ async function runTour() {
 	// it in a throwaway page keeps compile hitches off camera.
 	log('warming routes so nothing compiles on camera...');
 	const warm = await context.newPage();
-	for (const route of ['/', `/dashboard/${PROJECT}`, `/dashboard/${PROJECT}/auth`]) {
+	for (const route of [
+		'/',
+		`/dashboard/${PROJECT}`,
+		`/dashboard/${PROJECT}/auth`,
+		`/dashboard/${PROJECT}/db`
+	]) {
 		await warm.goto(`${BASE}${route}`, { waitUntil: 'load', timeout: 120_000 }).catch(() => {});
 		await sleep(3000);
 	}
@@ -743,26 +686,25 @@ async function runTour() {
 		);
 	}
 
-	// --- Scene 1: landing -----------------------------------------------
+	// --- Scene 1: landing - one beat, then straight into the product ----------
 	await page.goto(`${BASE}/`, { waitUntil: 'load' });
-	await pace(1000);
+	await pace(800);
 	await ensureDark(page, 'landing-theme-toggle');
 	await glide(page, 960, 400);
 	await countdown(page, 5);
 	const tourStart = Date.now();
 
-	await pace(1000);
+	await pace(900);
+	// One glance at the live-demo section before diving in.
 	await page.evaluate(() =>
 		document.getElementById('live')?.scrollIntoView({ behavior: 'smooth' })
 	);
-	await pace(1400);
-	await page.evaluate(() => document.getElementById('api')?.scrollIntoView({ behavior: 'smooth' }));
-	await pace(1400);
-	await screenshot(page, '01-landing-api');
+	await pace(1600);
+	await screenshot(page, '01-landing');
 
-	const cta = page.getByRole('link', { name: 'Open the live demo' }).last();
+	const cta = page.getByRole('link', { name: 'Open the live demo' }).first();
 	await cta.scrollIntoViewIfNeeded();
-	await pace(600);
+	await pace(300);
 	if (DEMO_PATTERN.test(PROJECT)) {
 		await clickEl(page, cta);
 		await page.waitForURL('**/dashboard/**', { timeout: 15_000 }).catch(() =>
@@ -775,14 +717,117 @@ async function runTour() {
 		await page.goto(`${BASE}/dashboard/${PROJECT}`);
 	}
 
-	// --- Scene 2: project overview ---------------------------------------
+	// --- Scene 2: the database leads - Firebase-style sidebar, straight in ----
 	await page.getByRole('heading', { name: 'Project Overview' }).waitFor({ timeout: 20_000 });
-	await pace(1000);
-	await screenshot(page, '02-overview');
-	// Glance at the Authentication card, then enter via the sidebar so the
-	// tour shows off the Firebase-style navigation.
-	await glideTo(page, page.getByTestId('product-auth'), { settle: 200 });
-	await pace(500);
+	await pace(600);
+	await clickEl(page, page.getByTestId('nav-db'));
+	await page.waitForURL('**/db', { timeout: 15_000 }).catch(() =>
+		page.goto(`${BASE}/dashboard/${PROJECT}/db`, {
+			waitUntil: 'domcontentloaded',
+			timeout: 60_000
+		})
+	);
+	await page.getByTestId('db-page').waitFor({ timeout: 20_000 });
+	await page
+		.waitForFunction(
+			() => document.querySelector('[data-testid="db-page"]')?.dataset.hydrated === 'true'
+		)
+		.catch(() => {});
+	await pace(700);
+
+	// Create the posts collection on camera. Demo projects are fresh DOs, and
+	// the create is an idempotent upsert on reused stacks - never a collision.
+	await clickEl(page, page.locator('#new-collection-name'));
+	await page.keyboard.type('posts', { delay: 40 });
+	await pace(200);
+	await clickEl(page, page.getByRole('button', { name: 'Create', exact: true }));
+	const postsRow = page.getByTestId('db-collection-posts');
+	await postsRow.waitFor({ timeout: 10_000 });
+	await pace(400);
+	await screenshot(page, '02-db-collection');
+
+	// ONE post typed on camera - the inline editor is the ease pitch. The
+	// fixed id keeps reruns idempotent (saving an existing id replaces it) and
+	// resets the vote count for every take.
+	await clickEl(page, postsRow);
+	await page.getByTestId('db-add-document').waitFor({ timeout: 10_000 });
+	await clickEl(page, page.getByTestId('db-add-document'));
+	const editor = page.getByTestId('db-doc-editor');
+	await editor.waitFor({ timeout: 5000 });
+	await clickEl(page, editor.getByLabel('Document id (optional)'));
+	await page.keyboard.type('post-1', { delay: 35 });
+	const textarea = editor.getByLabel('Data (JSON object)');
+	await clickEl(page, textarea);
+	await textarea.fill('');
+	await page.keyboard.type(
+		'{ "title": "Show HN: I built a Firebase on Cloudflare", "votes": 42 }',
+		{ delay: 18 }
+	);
+	await pace(250);
+	await clickEl(page, editor.getByRole('button', { name: 'Save document' }));
+	await editor.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => {});
+
+	// Two more posts land OUT OF BAND and pop into the open table without a
+	// click or refresh - the dashboard is itself a live-query subscriber.
+	for (const [postId, title, votes] of [
+		['post-2', 'Why we moved our backend to Durable Objects', 17],
+		['post-3', 'Live queries are criminally underrated', 8]
+	]) {
+		await fetch(api(`db/admin/collections/posts/documents/${postId}`), {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json', origin: BASE },
+			body: JSON.stringify({ data: { title, votes } }),
+			signal: AbortSignal.timeout(10_000)
+		}).catch(() => null);
+	}
+	await glideTo(page, page.getByTestId('db-documents-table'), { settle: 150 });
+	await page
+		.getByTestId('db-documents-table')
+		.getByText('Live queries are criminally underrated')
+		.first()
+		.waitFor({ timeout: 15_000 });
+	await pace(1200);
+	await screenshot(page, '03-db-documents');
+
+	// The doc-count stat moved with every write - glance at it, then back.
+	await glideTo(page, page.getByTestId('db-stat-documents'), { settle: 150 });
+	await pace(900);
+	await glideTo(page, page.getByTestId('db-documents-table'), { settle: 100 });
+
+	// The money shot: someone upvotes post-1 out of band and the count moves
+	// in the open table with no interaction at all.
+	const upvote = await fetch(api('db/admin/collections/posts/documents/post-1'), {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json', origin: BASE },
+		body: JSON.stringify({
+			data: { title: 'Show HN: I built a Firebase on Cloudflare', votes: 43 }
+		}),
+		signal: AbortSignal.timeout(10_000)
+	}).catch(() => null);
+	if (!upvote?.ok) {
+		log(`WARNING: out-of-band upvote failed (${upvote?.status ?? 'network'})`);
+	}
+	await page
+		.getByTestId('db-documents-table')
+		.getByText('"votes":43')
+		.first()
+		.waitFor({ timeout: 15_000 });
+	await pace(1800);
+	await screenshot(page, '04-db-live-update');
+
+	// A few lines of SDK: subscribe once, get a snapshot, then deltas forever.
+	// CodeExamples renders ONE pre (the active pill), so switch to the SDK
+	// snippet and glide to first() - nth(1) never exists.
+	await clickEl(page, page.getByRole('tab', { name: 'Integration' }));
+	await pace(700);
+	const sdkPill = page.getByTestId('db-integration').getByRole('tab', { name: 'Client SDK' });
+	if (await sdkPill.count()) await clickEl(page, sdkPill.first());
+	await pace(400);
+	await glideTo(page, page.getByTestId('db-integration').locator('pre').first(), { settle: 150 });
+	await pace(2200);
+	await screenshot(page, '05-db-integration');
+
+	// --- Scene 3: auth - live stats, then a real sign-up ----------------------
 	await clickEl(page, page.getByTestId('nav-auth'));
 	await page.waitForURL('**/auth', { timeout: 15_000 }).catch(() =>
 		page.goto(`${BASE}/dashboard/${PROJECT}/auth`, {
@@ -791,7 +836,7 @@ async function runTour() {
 		})
 	);
 
-	// --- Scene 3: auth dashboard ------------------------------------------
+	// --- Scene 3: auth - stats moving under real traffic ----------------------
 	const authPage = page.getByTestId('auth-page');
 	await authPage.waitFor({ timeout: 20_000 });
 	await page
@@ -799,56 +844,32 @@ async function runTour() {
 			() => document.querySelector('[data-testid="auth-page"]')?.dataset.hydrated === 'true'
 		)
 		.catch(() => {});
-	await pace(1500);
-	await screenshot(page, '03-auth-dashboard');
+	await pace(1100);
+	await screenshot(page, '06-auth-dashboard');
 
-	// Ask the copilot right away so Workers AI answers while the tour
-	// continues - the reply scrolls into view live in the corner instead of
-	// stalling the finale.
-	let askedCopilot = false;
-	let repliesBefore = 0;
-	const copilotReplies = page.getByTestId('copilot-messages').getByText('Generated by Workers AI');
-	if (!NO_CHAT && chatWorks) {
-		const input = page.getByLabel('Ask project agent');
-		if (await input.count()) {
-			repliesBefore = await copilotReplies.count();
-			await glideTo(page, input.first());
-			await input.first().click();
-			await page.keyboard.type('Which countries are my users signing in from?', { delay: 32 });
-			await pace(300);
-			await clickEl(page, page.getByRole('button', { name: 'Send to project agent' }));
-			askedCopilot = true;
-			log('copilot question sent - the answer will arrive during the tour');
-			await pace(500);
-		}
-	}
-
+	// The background traffic generator keeps these numbers moving on camera.
 	for (const stat of ['users', 'sessions', 'dau', 'mau']) {
 		const tile = page.getByTestId(`stat-${stat}`);
 		if (await tile.count()) await glideTo(page, tile.first(), { settle: 80 });
 		await pace(250);
 	}
 
+	// The 90-day chart: three months of history in one click.
 	const range = page.getByTestId('activity-range');
 	if (await range.count()) {
 		await clickEl(page, range.first());
 		const option = page.getByRole('option', { name: 'Last 90 days' });
 		await option.waitFor({ timeout: 5000 }).catch(() => {});
 		if (await option.count()) await clickEl(page, option.first());
-		await pace(1500);
-		await screenshot(page, '04-activity-90d');
+		await pace(1800);
+		await screenshot(page, '07-activity-90d');
 	}
 
-	await smoothScroll(page, 700);
-	await pace(1200);
-	await screenshot(page, '05-countries-providers');
-	await smoothScroll(page, -700);
-
-	// --- Scene 4: playground sign-up (punch in on the form) -------------------
+	// --- Scene 4: a real sign-up with zero code --------------------------------
 	await clickEl(page, page.getByRole('tab', { name: 'Try auth' }));
 	await pace(600);
 	await clickEl(page, page.getByTestId('randomize-identity'));
-	await pace(800);
+	await pace(700);
 	const sessionPanel = page.getByTestId('session-panel');
 	const trySignUp = async () => {
 		await clickEl(page, page.getByRole('button', { name: 'Create account' }));
@@ -866,101 +887,28 @@ async function runTour() {
 		await trySignUp();
 	}
 	quietSignups = false;
-	await pace(1500);
-	await screenshot(page, '06-playground-signup');
-	// The freshly created identity gets a role assigned later in the tour.
-	const sessionText = await sessionPanel.innerText().catch(() => '');
-	const demoEmail = sessionText.match(/[a-z0-9][a-z0-9.+_-]*@[a-z0-9.-]+/i)?.[0] ?? '';
+	await pace(1400);
+	await screenshot(page, '08-playground-signup');
 
-	// --- Scene 5: roles & permissions ------------------------------------------
-	await clickEl(page, page.getByRole('tab', { name: 'Roles' }));
-	await pace(1000);
-	await clickEl(page, page.getByLabel('New role name'));
-	await page.keyboard.type('editor', { delay: 45 });
-	await pace(250);
-	await clickEl(page, page.getByRole('button', { name: 'Add role' }));
-	const editorCard = page.getByTestId('role-editor');
-	await editorCard.waitFor({ timeout: 10_000 }).catch(() => {});
-	if (await editorCard.count()) {
-		await pace(500);
-		await clickEl(page, editorCard.getByLabel('New permission for editor'));
-		await page.keyboard.type('posts:write', { delay: 40 });
-		await pace(250);
-		await clickEl(page, editorCard.getByRole('button', { name: 'Grant' }));
-		await pace(1300);
-		await screenshot(page, '07-roles');
-	}
-
-	// --- Scene 6: users table + live role assignment ----------------------------
+	// Land on the users table: the account just created is already in it and
+	// the live traffic keeps writing rows behind it.
 	await clickEl(page, page.getByRole('tab', { name: 'Users' }));
-	await pace(1200);
-	if (demoEmail) {
-		const roleSelect = page.getByLabel(`Role for ${demoEmail}`);
-		if (await roleSelect.count()) {
-			await clickEl(page, roleSelect.first());
-			await clickEl(page, page.getByRole('option', { name: 'editor' }));
-			await pace(1100);
-		}
-	}
-	await screenshot(page, '08-users-role');
-
-	// --- Scene 7: first answer, then fire a suggestion - its reply computes
-	// during the integration scene, so there is no dead air ---------------------
-	const copilotPanel = page.getByTestId('copilot-messages');
-	let repliesAfterFirst = 0;
-	let suggestionClicked = false;
-	if (askedCopilot) {
-		const deadline = Date.now() + 30_000;
-		while (Date.now() < deadline && (await copilotReplies.count()) <= repliesBefore) {
-			await sleep(600);
-		}
-		if ((await copilotReplies.count()) > repliesBefore) {
-			await glideTo(page, copilotPanel, { settle: 150 });
-			await pace(2200);
-			await screenshot(page, '10-copilot');
-			const suggestion = page.getByTestId('copilot-suggestions').getByRole('button').first();
-			if (await suggestion.count()) {
-				repliesAfterFirst = await copilotReplies.count();
-				await clickEl(page, suggestion);
-				suggestionClicked = true;
-				log('suggestion question sent - its answer lands during the next scene');
-			}
-		} else {
-			log('AI reply did not arrive in time - continuing');
-		}
-	}
-
-	// --- Scene 8: integration snippet (plays while the model thinks) ------------
-	await clickEl(page, page.getByRole('tab', { name: 'Integration' }));
-	await pace(900);
-	const python = page.getByRole('tab', { name: 'Python' });
-	if (await python.count()) await clickEl(page, python.first());
-	await pace(1100);
-	await screenshot(page, '09-integration');
-
-	// --- Scene 9: the suggestion's answer ----------------------------------------
-	if (suggestionClicked) {
-		const deadline = Date.now() + 40_000;
-		while (Date.now() < deadline && (await copilotReplies.count()) <= repliesAfterFirst) {
-			await sleep(600);
-		}
-		await glideTo(page, copilotPanel, { settle: 150 });
-		await pace(2600);
-		await screenshot(page, '11-copilot-suggestion');
-	}
+	await pace(1500);
 
 	// --- Finale: hold on the live dashboard -----------------------------------
 	await pace(400);
 	await glide(page, 760, 420);
-	await pace(2500);
-	await screenshot(page, '12-finale');
+	await pace(3000);
+	await screenshot(page, '09-finale');
 	log(`tour ran ${Math.round((Date.now() - tourStart) / 1000)}s (excluding the countdown)`);
 
 	if (CHECK) {
 		await browser.close();
 		return null;
 	}
-	log('tour complete - the feed keeps pulsing. Stop your recording, then Ctrl+C here.');
+	log(
+		'tour complete - background auth traffic keeps flowing. Stop your recording, then Ctrl+C here.'
+	);
 	return browser;
 }
 
@@ -973,8 +921,6 @@ async function main() {
 	await ensureStack();
 	if (stackWasUp) await backfillAnalytics();
 	await seedRoster();
-	await resetRoles();
-	await preflightChat();
 	startTraffic();
 	const browser = await runTour();
 
