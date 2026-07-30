@@ -44,6 +44,28 @@ export const demoProject = sqliteTable(
 );
 
 /**
+ * Copilot conversation history. The tool-calling loop runs in this Worker (it
+ * reads BOTH agents over the service bindings), so its transcript is
+ * control-plane state, not any one agent's. `client_key` is the operator's
+ * user id, or a project-scoped SHA-256 of the connecting IP for anonymous
+ * demo visitors - raw IPs are never stored.
+ */
+export const chatMessage = sqliteTable(
+	'chat_message',
+	{
+		id: text('id').primaryKey(),
+		projectId: text('project_id').notNull(),
+		clientKey: text('client_key').notNull(),
+		role: text('role').$type<'user' | 'agent'>().notNull(),
+		content: text('content').notNull(),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' })
+			.notNull()
+			.default(sql`(unixepoch() * 1000)`)
+	},
+	(table) => [index('chat_message_thread').on(table.projectId, table.clientKey, table.createdAt)]
+);
+
+/**
  * Which agents a project has enabled. Groundwork from the agent contract: v1
  * default-enables every registry agent and offers no opt-out UI, and deletion
  * deliberately does NOT read this table - erase fans out to every registry

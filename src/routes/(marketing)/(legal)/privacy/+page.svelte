@@ -43,8 +43,9 @@
 
 <p>
 	<strong>Copilot chat.</strong> Messages you send to the project copilot are stored under a project-scoped,
-	one-way hash of your IP address; raw IP addresses and user identities are never stored with chat messages.
-	Inference runs on Cloudflare Workers AI.
+	one-way hash of your IP address (signed-in operators: an internal account identifier); raw IP addresses
+	are never stored with chat messages. Demo-project chat history is deleted after 30 days. Inference runs
+	on Cloudflare Workers AI.
 </p>
 
 <p>

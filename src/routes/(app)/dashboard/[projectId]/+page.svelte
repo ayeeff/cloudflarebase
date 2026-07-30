@@ -72,8 +72,8 @@
 				><Card.Title class="flex items-center gap-2"
 					><Bot class="h-5 w-5 text-primary" /> Project agent</Card.Title
 				><Card.Description
-					>Ask the Workers AI copilot about users, activity, providers, and auth health from any
-					page.</Card.Description
+					>Ask the Workers AI copilot about users, activity, providers, auth health, and the data in
+					your collections from any page.</Card.Description
 				></Card.Header
 			>
 			<Card.Content

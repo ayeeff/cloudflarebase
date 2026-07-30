@@ -83,7 +83,8 @@
 		{ label: 'Cron & Queues', icon: Clock }
 	];
 
-	// Grounded in the aggregated auth data the agent can actually answer from.
+	// Grounded in what the copilot's tools can actually read: auth overview and
+	// analytics, database collections, and real documents.
 	const copilotSuggestionPool = [
 		'Summarize this project',
 		'What should I investigate?',
@@ -97,7 +98,11 @@
 		'Are sign-ups trending up this week?',
 		'Compare guest and registered sign-ups',
 		'Which auth events fired in the last day?',
-		'Is anything unusual in the auth activity?'
+		'Is anything unusual in the auth activity?',
+		'What collections do we have?',
+		'How many documents are in each collection?',
+		'Show me the latest documents',
+		'Which collections are public?'
 	];
 
 	function pickSuggestions(): string[] {
@@ -336,8 +341,8 @@
 							<Bot class="h-4 w-4 text-primary" /> What can I help with?
 						</div>
 						<p class="text-xs leading-relaxed text-muted-foreground">
-							I can explain usage, compare activity, and surface authentication issues from this
-							project's aggregated data.
+							I can explain usage, compare activity, surface authentication issues, and look through
+							this project's database collections and documents.
 						</p>
 					</div>
 				{/if}
@@ -399,7 +404,7 @@
 				>
 			</div>
 			<p class="mt-2 text-center text-[10px] text-muted-foreground">
-				Uses aggregated metrics only. Verify important decisions.
+				Answers from live project data. Verify important decisions.
 			</p>
 		</form>
 	</section>

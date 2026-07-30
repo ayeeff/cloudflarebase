@@ -164,7 +164,8 @@ export const authOpenApi: AgentOpenApiModule = {
 			post: {
 				tags: [CONSOLE_TAG],
 				summary: 'Ask the project agent a question',
-				description: "Workers AI answer grounded in this project's own auth data.",
+				description:
+					"Workers AI answer grounded in this project's live auth and database data via a console-side tool loop.",
 				security: [{ sessionCookie: [] }],
 				requestBody: jsonBody(chatRequestSchema, 'The question.'),
 				responses: {
