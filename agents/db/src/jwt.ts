@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare';
 import { importJWK, jwtVerify, type JWK } from 'jose';
 import { jwksResponseSchema, jwtClaimsSchema, type JwtClaims } from './schemas';
 
@@ -124,16 +125,47 @@ export class ProjectJwtVerifier {
 
 		try {
 			const response = await this.fetchJwksResponse();
-			if (!response?.ok) return stale;
+			if (!response?.ok) {
+				// CANNOT VERIFY is not the same as "bad token", but both end up as
+				// 401 at the caller - so without this every authenticated read and
+				// write on every token-gated collection fails silently when the
+				// auth agent is down or the binding is broken.
+				this.reportJwksFailure(
+					new Error(`JWKS request responded ${response?.status ?? 'without a binding'}`),
+				);
+				return stale;
+			}
 			const parsed = jwksResponseSchema.safeParse(await response.json());
-			if (!parsed.success) return stale;
+			if (!parsed.success) {
+				this.reportJwksFailure(new Error('JWKS response did not match the expected shape'));
+				return stale;
+			}
 
 			const fresh: CachedJwks = { keys: parsed.data.keys as JWK[], fetchedAt: Date.now() };
 			await this.storage.put(JWKS_CACHE_KEY, fresh);
 			this.imported.clear();
 			return fresh;
-		} catch {
+		} catch (error) {
+			this.reportJwksFailure(error);
 			return stale;
+		}
+	}
+
+	/**
+	 * A key-acquisition failure means tokens cannot be verified at all, which
+	 * the caller can only express as 401. Rate-limited by the same refetch
+	 * window above, so a storm of requests reports once a minute, not once per
+	 * request.
+	 */
+	private reportJwksFailure(error: unknown): void {
+		try {
+			Sentry.captureException(error, {
+				level: 'error',
+				tags: { projectId: this.projectId, operation: 'jwks-fetch' },
+				extra: { note: 'token verification is failing closed - every gated request 401s' },
+			});
+		} catch {
+			// reporting must never break verification
 		}
 	}
 

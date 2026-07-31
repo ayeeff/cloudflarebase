@@ -8,12 +8,15 @@ npm install -g @cloudflarebase/cli
 
 cloudflarebase init my-backend
 cd my-backend
+cloudflarebase add db          # optional: documents with live queries
 npx wrangler login
 cloudflarebase deploy
 ```
 
-That gets you a working auth backend: one Durable Object per project running
-Better Auth on its own SQLite database, with no secrets to configure.
+That gets you a working backend on your own account, with no secrets to
+configure: auth as one Durable Object per project running Better Auth on its
+own SQLite database, and - if you add it - a Firestore-style document
+database where every collection is its own Durable Object, with live queries.
 
 ## Commands
 
@@ -32,8 +35,10 @@ CSRF allowlist) is only for extra origins, like another domain serving your
 UI; cross-origin requests from unlisted origins get an explicit 403
 `INVALID_ORIGIN`.
 
-To pin a version: `CLOUDFLAREBASE_AUTH_SPEC=@cloudflarebase/auth@0.2.0-beta.1
-cloudflarebase add auth`.
+Available agents today: `auth` and `db`.
+
+To pin a version: `CLOUDFLAREBASE_DB_SPEC=@cloudflarebase/db@0.1.3
+cloudflarebase add db` (and `CLOUDFLAREBASE_AUTH_SPEC` for auth).
 
 ## Notes
 

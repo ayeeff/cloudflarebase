@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/sveltekit';
 import { CONSOLE_PROJECT_ID } from '$lib/console';
 import { agentUrl, requireAuthAgent } from '$lib/server/auth-agent';
 import { z } from 'zod';
@@ -90,13 +91,40 @@ export async function getConsoleSession(
 				['origin', origin]
 			]
 		})
-		.catch(() => null);
+		.catch((cause: unknown) => {
+			// Failing closed is right, but silence is not: an unreachable auth
+			// agent logs EVERY operator out, and that must not look like a
+			// pile of expired cookies.
+			Sentry.captureException(cause, {
+				level: 'error',
+				tags: { operation: 'console-session' },
+				extra: { note: 'operators are being signed out - the console guard cannot verify' }
+			});
+			return null;
+		});
 
-	if (!response || !response.ok) return null;
+	if (!response) return null;
+	// 401/403 is the ordinary "not signed in" answer; anything else is broken.
+	if (!response.ok) {
+		if (response.status !== 401 && response.status !== 403) {
+			Sentry.captureMessage(`console session lookup responded ${response.status}`, {
+				level: 'error',
+				tags: { operation: 'console-session' }
+			});
+		}
+		return null;
+	}
 
 	const body = await (response as unknown as Response).json().catch(() => null);
 	const parsed = consoleSessionSchema.safeParse(body);
-	if (!parsed.success) return null;
+	if (!parsed.success) {
+		// A valid 200 the guard cannot read means the session contract drifted.
+		Sentry.captureMessage('console session response did not match the expected shape', {
+			level: 'error',
+			tags: { operation: 'console-session' }
+		});
+		return null;
+	}
 
 	const { user } = parsed.data;
 	return { ...user, name: user.name || user.email };

@@ -1,6 +1,24 @@
 import { error } from '@sveltejs/kit';
+import * as Sentry from '@sentry/sveltekit';
 import { projectIdSchema } from '$lib/schemas/auth';
 import type { AppAgentEntry } from '$lib/agent-registry';
+
+/**
+ * Throw a 5xx that Sentry actually sees.
+ *
+ * SvelteKit's `error()` produces an `HttpError`, and the framework returns it
+ * to the client WITHOUT passing it to the `handleError` hook - so
+ * `handleErrorWithSentry` never fires for any deliberate 500/502. Every
+ * server-side failure the operator is shown should go through here instead.
+ */
+export function serverError(status: number, message: string, cause?: unknown): never {
+	if (cause === undefined) {
+		Sentry.captureMessage(message, { level: 'error', tags: { 'http.status_code': status } });
+	} else {
+		Sentry.captureException(cause, { level: 'error', tags: { 'http.status_code': status } });
+	}
+	error(status, message);
+}
 
 /** Project ids become Durable Object names and cookie prefixes - keep them tame. */
 export function assertProjectId(projectId: string | undefined): string {
@@ -25,7 +43,9 @@ export function agentFetcher(
 export function requireAgent(platform: App.Platform | undefined, entry: AppAgentEntry): Fetcher {
 	const agent = agentFetcher(platform, entry);
 	if (!agent) {
-		error(500, `${entry.binding} service binding is not available`);
+		// One misdeployed binding 500s most of the console, so this is the
+		// single highest-value capture in the app.
+		serverError(500, `${entry.binding} service binding is not available`);
 	}
 	return agent;
 }

@@ -86,33 +86,43 @@ class DbService extends WorkerEntrypoint<Env> {
 			}
 			const namespace = this.env.DbCollection;
 			const stub = namespace.get(namespace.idFromName(`${projectId}:${collection}`));
-			return stub.fetch(request) as unknown as Promise<Response>;
+			// The hot path is the whole customer-facing data API, so it gets the
+			// same 5xx reporting as everything else - it used to return here,
+			// outside the net below, which made a 500 on a document read or a
+			// live-query upgrade invisible in every deployable.
+			const hotResponse = (await stub.fetch(request)) as unknown as Response;
+			await this.reportServerError(request, url, hotResponse);
+			return hotResponse;
 		}
 
 		const response =
 			(await routeAgentRequest(request, this.env)) ??
 			Response.json({ error: 'not found' }, { status: 404 });
 
-		if (response.status >= 500) {
-			try {
-				const clone = response.clone();
-				const body = (await clone.text()).slice(0, 2048);
-				Sentry.captureMessage(`Db agent returned HTTP ${response.status}`, {
-					level: 'error',
-					tags: {
-						'http.method': request.method,
-						'http.status_code': response.status,
-					},
-					contexts: {
-						response: { body, contentType: response.headers.get('content-type') ?? '' },
-					},
-					extra: { pathname: url.pathname },
-				});
-			} catch {
-				// reporting must never replace the response
-			}
-		}
+		await this.reportServerError(request, url, response);
 		return response;
+	}
+
+	/** Records any 5xx leaving this worker. Never replaces the response. */
+	private async reportServerError(request: Request, url: URL, response: Response): Promise<void> {
+		if (response.status < 500) return;
+		try {
+			// A 101 upgrade has no body to clone; only real responses get here.
+			const body = (await response.clone().text()).slice(0, 2048);
+			Sentry.captureMessage(`Db agent returned HTTP ${response.status}`, {
+				level: 'error',
+				tags: {
+					'http.method': request.method,
+					'http.status_code': response.status,
+				},
+				contexts: {
+					response: { body, contentType: response.headers.get('content-type') ?? '' },
+				},
+				extra: { pathname: url.pathname },
+			});
+		} catch {
+			// reporting must never replace the response
+		}
 	}
 }
 

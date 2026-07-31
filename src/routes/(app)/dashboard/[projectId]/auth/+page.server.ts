@@ -1,7 +1,7 @@
 import type { AuthAnalytics, AuthOverview } from '$lib/agents';
 import { signInSchema, signUpSchema } from '$lib/schemas/auth';
+import { serverError } from '$lib/server/agents';
 import { agentUrl, assertProjectId, requireAuthAgent } from '$lib/server/auth-agent';
-import { error } from '@sveltejs/kit';
 import { superValidate } from 'sveltekit-superforms';
 import { zod4 } from 'sveltekit-superforms/adapters';
 import type { PageServerLoad } from './$types';
@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ params, url, platform }) => {
 		agent.fetch(agentUrl(url.origin, projectId, '/analytics'))
 	]);
 	if (!overviewRes.ok || !analyticsRes.ok) {
-		error(502, `auth agent responded with ${overviewRes.status}/${analyticsRes.status}`);
+		serverError(502, `auth agent responded with ${overviewRes.status}/${analyticsRes.status}`);
 	}
 
 	return {

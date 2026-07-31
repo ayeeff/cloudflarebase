@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/sveltekit';
 import { RESERVED_PROJECT_IDS } from '$lib/console';
 import { AGENT_REGISTRY } from '$lib/agent-registry';
 import type { RegistryProject } from '$lib/agents';
@@ -45,7 +46,14 @@ export async function listProjects(platform: App.Platform | undefined): Promise<
 		const rows = await db.select().from(project).orderBy(asc(project.createdAt));
 		return rows.map(toDto);
 	} catch (cause) {
+		// Degrading to "no projects" is right for a first run but wrong to do
+		// silently: on a real installation it means the control plane is
+		// unreachable, and the console looks empty rather than broken.
 		console.error('listing projects failed', cause);
+		Sentry.captureException(cause, {
+			level: 'error',
+			tags: { operation: 'list-projects' }
+		});
 		return [];
 	}
 }
@@ -152,7 +160,14 @@ async function eraseProjectData(
 			});
 			if (!response.ok) throw new Error(`${manifest.name} agent responded ${response.status}`);
 		} catch (cause) {
+			// A failed erase leaves a project's data behind after the operator
+			// deleted it - a retention problem, not a cosmetic one. The caller
+			// only surfaces a warning string, so capture it or nobody finds out.
 			console.error(`failed to erase project "${projectId}" in the ${manifest.name} agent`, cause);
+			Sentry.captureException(cause, {
+				level: 'error',
+				tags: { projectId, agent: manifest.name, operation: 'erase-project' }
+			});
 			failures.push(manifest.name);
 		}
 	}

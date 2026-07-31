@@ -28,6 +28,11 @@ In scope:
 - cross-project isolation - one project reading or mutating another
 - CORS and trusted-origin handling
 - privilege escalation through the role registry or the admin routes
+- database access control: reading or writing a collection past its
+  `public`/`auth`/`owner` mode, its required permission key, or its document
+  validator - including over the live-query WebSocket
+- cross-collection or cross-owner leakage, in queries, aggregates, exports, or
+  live-query deltas
 
 Out of scope:
 
@@ -45,10 +50,12 @@ directly rather than assuming:
 - **`DEMO_MODE` must be unset** on any deployment holding real users. Setting it
   opens ephemeral `demo-<hex>` projects to anonymous visitors. It is unset by
   default; a self-hosted install is private unless you turn it on.
-- **`BETTER_AUTH_SECRET` must be a real secret**, set with
-  `wrangler secret put`, and different in every environment. The value committed
-  in `env.test.vars` exists so the e2e suite is deterministic and is worthless
-  anywhere else - never reuse it.
+- **`BETTER_AUTH_SECRET` is optional, but never reuse the test one.** Left
+  unset, every project generates its own 32-byte key on first start, which is
+  the recommended setup. If you do set it - it overrides every project - use
+  `wrangler secret put` and a different value per environment. The value
+  committed in `env.test.vars` exists so the e2e suite is deterministic and is
+  worthless anywhere else.
 
 `ADMIN_SECRET` gates the fleet page at `/admin`; rotating it signs every admin
 out, because the cookie stores a digest of the secret rather than a session.

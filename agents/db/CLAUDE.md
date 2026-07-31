@@ -45,7 +45,11 @@ Collection config carries three optional extras beyond the access modes, all edi
 
 ## Registry consistency (parent <-> children)
 
-Row first, then push: `PUT /admin/collections/:name` upserts the parent row, then RPCs `configure()` to the child. A child with no cached config pulls once via `getCollectionConfig({ autoCreate: true })` - the healing path, and how first-write auto-creation stays parent-mediated. Config carries a monotonic `configVersion` so a stale push cannot regress a child. The hot data path NEVER consults the parent. Counters: children report debounced ABSOLUTE counts (self-healing, best-effort). Erase: children destroyed FIRST, registry kept until every child confirms, so a failed fan-out can be retried by id - nothing may orphan a DO holding user data.
+Row first, then push: `PUT /admin/collections/:name` upserts the parent row, then RPCs `configure()` to the child. A child with no cached config pulls once via `getCollectionConfig({ autoCreate: true })` - the healing path, and how first-write auto-creation stays parent-mediated. Config carries a monotonic `configVersion` so a stale push cannot regress a child. The hot data path NEVER consults the parent. Erase: children destroyed FIRST, registry kept until every child confirms, so a failed fan-out can be retried by id - nothing may orphan a DO holding user data.
+
+**Counters** are debounced ABSOLUTE counts reported by the child (self-healing, best-effort). They are reported on every wake as well as after writes, because a write is not the only thing that changes the document set: a point-in-time restore rewrites the whole table without passing through the write path, and documents predating count reporting would otherwise read 0 forever. So a stale count fixes itself the first time anything touches that collection.
+
+**Operator writes are upserts by design** (the Access tab and the document editor both replace), which makes the dashboard's ADD flow the odd one out: it sends `?ifAbsent=1` to `PUT /admin/collections/:name/documents/:id` and gets **409** on a taken id, so a typo cannot silently overwrite a document. The create-collection form guards the same way client-side (the route itself must stay an upsert - configuring an existing collection reuses it).
 
 ## Demo caps
 

@@ -76,7 +76,9 @@ fully independent - there are no cross-collection queries or transactions,
 which is exactly what lets a project scale collection by collection.
 Documents are capped at 128 KB of JSON; queries return at most 200 documents
 per page. Comparisons are defined between same-typed values; a missing field
-is indistinguishable from `null`.
+is indistinguishable from `null`. Auto-generated document ids are ULIDs, so
+the default id order is chronological - exports, cursor pages, and the
+dashboard browser all read oldest-first without an `orderBy`.
 
 ## Requirements
 
