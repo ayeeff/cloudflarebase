@@ -302,9 +302,26 @@ export class DbCollection extends DurableObject<Env> {
 		}
 	}
 
-	/** Operator upsert (dashboard document editor). */
-	async adminPut(id: string, data: unknown): Promise<DbDocument> {
+	/**
+	 * Operator upsert (dashboard document editor). With `ifAbsent`, an
+	 * existing id reports a conflict instead of replacing - the dashboard's
+	 * ADD flow uses it so a typo cannot silently overwrite a document, while
+	 * edit/import keep their deliberate replace semantics.
+	 */
+	async adminPut(
+		id: string,
+		data: unknown,
+		ifAbsent = false,
+	): Promise<DbDocument | { conflict: true }> {
 		const parsed = documentDataSchema.parse(data);
+		if (ifAbsent) {
+			const [existing] = await this.db
+				.select()
+				.from(documents)
+				.where(eq(documents.id, id))
+				.limit(1);
+			if (existing) return { conflict: true };
+		}
 		return this.writeDocument(id, parsed, { mode: 'replace', owner: undefined, upsert: true });
 	}
 

@@ -688,7 +688,17 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			outcome = await this.childStub(name).restoreTo(parsed.data);
 		} catch (error) {
 			if (!isDurableObjectReset(error)) throw error;
-			outcome = { ok: true, undoBookmark: undoPoint?.bookmark ?? '' };
+			// An abort-reset here is ambiguous: THIS restore's abort raced its
+			// reply (armed - success), or the call landed in the teardown of the
+			// PREVIOUS restore (rapid undo chains) and never ran. Retry once
+			// against the fresh instance - re-arming the same bookmark is
+			// idempotent - and only a second race counts as armed-and-raced.
+			try {
+				outcome = await this.childStub(name).restoreTo(parsed.data);
+			} catch (retryError) {
+				if (!isDurableObjectReset(retryError)) throw retryError;
+				outcome = { ok: true, undoBookmark: undoPoint?.bookmark ?? '' };
+			}
 		}
 		if (!outcome.ok) {
 			if (outcome.code === 'unsupported') {
@@ -745,7 +755,18 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			if (!data || typeof data.data !== 'object' || data.data === null) {
 				return Response.json({ error: 'invalid document body' }, { status: 400 });
 			}
-			return Response.json(await child.adminPut(docId, data.data));
+			// ?ifAbsent=1: the dashboard's ADD flow refuses taken ids with 409;
+			// a plain PUT keeps the editor's deliberate replace semantics. The
+			// cast mirrors adminExport: DbDocument in an RPC return collapses
+			// the stub's type to never.
+			const ifAbsent = new URL(request.url).searchParams.get('ifAbsent') === '1';
+			const result = (await child.adminPut(docId, data.data, ifAbsent)) as unknown as Awaited<
+				ReturnType<DbCollection['adminPut']>
+			>;
+			if (typeof result === 'object' && result !== null && 'conflict' in result) {
+				return Response.json({ error: 'a document with that id already exists' }, { status: 409 });
+			}
+			return Response.json(result);
 		}
 		if (request.method === 'DELETE') {
 			const deleted = await child.adminDelete(docId);

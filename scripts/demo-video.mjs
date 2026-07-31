@@ -1,13 +1,14 @@
 /**
- * Records-ready product demo, cut for a ~90-second take: seeds demo data,
- * backfills 90 days of local analytics, generates live auth traffic, and
- * drives a choreographed browser tour with an on-screen cursor. DATABASE
- * leads - create a collection, type one post, watch out-of-band writes pop
- * into the open table and an upvote re-rank it live (the dashboard is itself
- * a live-query subscriber) - then AUTH: stats and the 90-day chart moving
- * under real traffic, and a working playground sign-up. Ease and realtime,
- * nothing else; the copilot and roles scenes were cut for the short format.
- * You only record the screen.
+ * Records-ready product demo, the "Agentic Firebase alternative" cut: seeds
+ * demo data, backfills 90 days of local analytics, generates live auth
+ * traffic, and drives a choreographed browser tour with an on-screen cursor.
+ * AUTH opens - the copilot is asked an analytics question immediately
+ * (Workers AI reasons while the stats and a real playground sign-up play),
+ * and its answer closes the chapter - then the DATABASE: create a
+ * collection, type a post, watch out-of-band writes and an upvote re-rank
+ * the open table live, then ask the copilot about the posts collection and
+ * end on ONE assistant that just orchestrated BOTH agents. You only record
+ * the screen.
  *
  *   node scripts/demo-video.mjs            # full recording run (fullscreen)
  *   node scripts/demo-video.mjs --check    # fast headless validation run
@@ -21,6 +22,8 @@
  *                      clamp it) - set the OBS canvas to 1920x1080 and
  *                      stretch the window capture. On a 1080p display,
  *                      default fullscreen is a pixel-perfect 1920x1080.
+ *   --no-chat          skip the Workers AI copilot scenes
+ *   --chat             include the AI scenes during --check (full rehearsal)
  *   --skip-backfill / --force-backfill   control the D1 analytics backfill
  *   --shots <dir>      save a screenshot after each scene
  *
@@ -47,6 +50,8 @@ const PROJECT = opt('--project', 'demo-a3f8c2d4e5b6a7f80912');
 const CHECK = flag('--check');
 const SPEED = Number(opt('--speed', CHECK ? '0.12' : '1'));
 const SHOTS = opt('--shots', '');
+// --check skips the AI scenes unless --chat is added for a full rehearsal.
+const NO_CHAT = flag('--no-chat') || (CHECK && !flag('--chat'));
 const IS_LOCAL = /^http:\/\/(localhost|127\.0\.0\.1):5173$/.test(BASE);
 /** Only ids matching the /dashboard cookie pattern survive the CTA redirect. */
 const DEMO_PATTERN = /^demo-[a-f0-9]{20}$/;
@@ -459,6 +464,39 @@ async function seedRoster() {
 	log('seeding done');
 }
 
+let chatWorks = false;
+
+/**
+ * Workers AI in dev is a remote binding (needs a logged-in wrangler). Probe it
+ * before recording so the copilot scenes are skipped instead of stalling on
+ * camera. The probe question reads naturally if it shows up in chat history.
+ */
+async function preflightChat() {
+	if (NO_CHAT) return;
+	const probes = [
+		"How's my project doing today?",
+		"What's our DAU right now?",
+		'Any unusual auth activity this week?',
+		'Which sign-in providers are most used?'
+	];
+	try {
+		const res = await fetch(api('chat'), {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', origin: BASE },
+			body: JSON.stringify({ question: probes[Math.floor(Math.random() * probes.length)] }),
+			signal: AbortSignal.timeout(60_000)
+		});
+		chatWorks = res.ok;
+	} catch {
+		chatWorks = false;
+	}
+	log(
+		chatWorks
+			? 'Workers AI reachable - copilot scenes enabled'
+			: 'Workers AI not reachable - skipping the copilot scenes'
+	);
+}
+
 let trafficTimer = null;
 let freshCounter = 0;
 /**
@@ -717,9 +755,117 @@ async function runTour() {
 		await page.goto(`${BASE}/dashboard/${PROJECT}`);
 	}
 
-	// --- Scene 2: the database leads - Firebase-style sidebar, straight in ----
+	// --- Scene 2: project overview, then auth via the Firebase-style sidebar --
 	await page.getByRole('heading', { name: 'Project Overview' }).waitFor({ timeout: 20_000 });
+	await pace(800);
+	await glideTo(page, page.getByTestId('product-auth'), { settle: 200 });
+	await pace(400);
+	await clickEl(page, page.getByTestId('nav-auth'));
+	await page.waitForURL('**/auth', { timeout: 15_000 }).catch(() =>
+		page.goto(`${BASE}/dashboard/${PROJECT}/auth`, {
+			waitUntil: 'domcontentloaded',
+			timeout: 60_000
+		})
+	);
+
+	// --- Scene 3: auth - the copilot is asked FIRST, stats play while it thinks
+	const authPage = page.getByTestId('auth-page');
+	await authPage.waitFor({ timeout: 20_000 });
+	await page
+		.waitForFunction(
+			() => document.querySelector('[data-testid="auth-page"]')?.dataset.hydrated === 'true'
+		)
+		.catch(() => {});
+	await pace(1200);
+	await screenshot(page, '02-auth-dashboard');
+
+	// The agentic beat opens immediately: Workers AI reasons over the project
+	// while the stats scenes play, so the answer scrolls in live instead of
+	// the tour ever waiting on inference.
+	const copilotPanel = page.getByTestId('copilot-messages');
+	const copilotReplies = copilotPanel.getByText('Generated by Workers AI');
+	const askCopilot = async (question) => {
+		const input = page.getByLabel('Ask project agent');
+		if (!(await input.count())) return false;
+		await glideTo(page, input.first());
+		await input.first().click();
+		await page.keyboard.type(question, { delay: 30 });
+		await pace(300);
+		await clickEl(page, page.getByRole('button', { name: 'Send to project agent' }));
+		await pace(400);
+		return true;
+	};
+	const waitForReply = async (repliesBefore, timeoutMs) => {
+		const deadline = Date.now() + timeoutMs;
+		while (Date.now() < deadline && (await copilotReplies.count()) <= repliesBefore) {
+			await sleep(600);
+		}
+		return (await copilotReplies.count()) > repliesBefore;
+	};
+
+	let authQuestionAsked = false;
+	let repliesBeforeAuth = 0;
+	if (!NO_CHAT && chatWorks) {
+		repliesBeforeAuth = await copilotReplies.count();
+		authQuestionAsked = await askCopilot('Which countries are my users signing in from?');
+		if (authQuestionAsked) log('copilot asked about auth - the answer lands during the stats');
+	}
+
+	// Live stats moving under the background traffic generator.
+	for (const stat of ['users', 'sessions', 'dau', 'mau']) {
+		const tile = page.getByTestId(`stat-${stat}`);
+		if (await tile.count()) await glideTo(page, tile.first(), { settle: 80 });
+		await pace(250);
+	}
+
+	// The 90-day chart: three months of history in one click.
+	const range = page.getByTestId('activity-range');
+	if (await range.count()) {
+		await clickEl(page, range.first());
+		const option = page.getByRole('option', { name: 'Last 90 days' });
+		await option.waitFor({ timeout: 5000 }).catch(() => {});
+		if (await option.count()) await clickEl(page, option.first());
+		await pace(1600);
+		await screenshot(page, '03-activity-90d');
+	}
+
+	// --- Scene 4: a real sign-up with zero code --------------------------------
+	await clickEl(page, page.getByRole('tab', { name: 'Try auth' }));
 	await pace(600);
+	await clickEl(page, page.getByTestId('randomize-identity'));
+	await pace(700);
+	const sessionPanel = page.getByTestId('session-panel');
+	const trySignUp = async () => {
+		await clickEl(page, page.getByRole('button', { name: 'Create account' }));
+		return sessionPanel
+			.getByText('@', { exact: false })
+			.first()
+			.waitFor({ timeout: 12_000 })
+			.then(() => true)
+			.catch(() => false);
+	};
+	if (!(await trySignUp())) {
+		// Shared sign-up window still saturated - wait it out and retry once.
+		log('playground sign-up throttled - retrying in 15s');
+		await sleep(15_000);
+		await trySignUp();
+	}
+	quietSignups = false;
+	await pace(1200);
+	await screenshot(page, '04-playground-signup');
+
+	// --- Scene 5: the copilot's answer closes the auth chapter -----------------
+	if (authQuestionAsked) {
+		if (await waitForReply(repliesBeforeAuth, 30_000)) {
+			await glideTo(page, copilotPanel, { settle: 150 });
+			await pace(2600);
+			await screenshot(page, '05-copilot-auth');
+		} else {
+			log('AI reply did not arrive in time - continuing');
+		}
+	}
+
+	// --- Scene 6: the database - a Reddit front page on live queries -----------
 	await clickEl(page, page.getByTestId('nav-db'));
 	await page.waitForURL('**/db', { timeout: 15_000 }).catch(() =>
 		page.goto(`${BASE}/dashboard/${PROJECT}/db`, {
@@ -744,11 +890,19 @@ async function runTour() {
 	const postsRow = page.getByTestId('db-collection-posts');
 	await postsRow.waitFor({ timeout: 10_000 });
 	await pace(400);
-	await screenshot(page, '02-db-collection');
+	await screenshot(page, '06-db-collection');
 
-	// ONE post typed on camera - the inline editor is the ease pitch. The
-	// fixed id keeps reruns idempotent (saving an existing id replaces it) and
-	// resets the vote count for every take.
+	// ONE post typed on camera - the inline editor is the ease pitch. The ADD
+	// flow now refuses a taken id, so reruns wipe the collection's documents
+	// through the operator API first: every take starts from the same clean
+	// three posts with post-1 back at 42 votes.
+	for (const postId of ['post-1', 'post-2', 'post-3']) {
+		await fetch(api(`db/admin/collections/posts/documents/${postId}`), {
+			method: 'DELETE',
+			headers: { origin: BASE },
+			signal: AbortSignal.timeout(10_000)
+		}).catch(() => null);
+	}
 	await clickEl(page, postsRow);
 	await page.getByTestId('db-add-document').waitFor({ timeout: 10_000 });
 	await clickEl(page, page.getByTestId('db-add-document'));
@@ -787,12 +941,7 @@ async function runTour() {
 		.first()
 		.waitFor({ timeout: 15_000 });
 	await pace(1200);
-	await screenshot(page, '03-db-documents');
-
-	// The doc-count stat moved with every write - glance at it, then back.
-	await glideTo(page, page.getByTestId('db-stat-documents'), { settle: 150 });
-	await pace(900);
-	await glideTo(page, page.getByTestId('db-documents-table'), { settle: 100 });
+	await screenshot(page, '07-db-documents');
 
 	// The money shot: someone upvotes post-1 out of band and the count moves
 	// in the open table with no interaction at all.
@@ -813,9 +962,21 @@ async function runTour() {
 		.first()
 		.waitFor({ timeout: 15_000 });
 	await pace(1800);
-	await screenshot(page, '04-db-live-update');
+	await screenshot(page, '08-db-live-update');
 
-	// A few lines of SDK: subscribe once, get a snapshot, then deltas forever.
+	// --- Scene 7: ask the copilot about the DATABASE - one assistant that
+	// orchestrates both agents is the "Agentic Firebase alternative" pitch.
+	let dbQuestionAsked = false;
+	let repliesBeforeDb = 0;
+	if (!NO_CHAT && chatWorks) {
+		repliesBeforeDb = await copilotReplies.count();
+		dbQuestionAsked = await askCopilot(
+			'Look at the posts collection - which post is winning, and how many documents are there?'
+		);
+		if (dbQuestionAsked) log('copilot asked about the db - it queries the collection live');
+	}
+
+	// --- Scene 8: the SDK snippet while the model works ------------------------
 	// CodeExamples renders ONE pre (the active pill), so switch to the SDK
 	// snippet and glide to first() - nth(1) never exists.
 	await clickEl(page, page.getByRole('tab', { name: 'Integration' }));
@@ -824,82 +985,23 @@ async function runTour() {
 	if (await sdkPill.count()) await clickEl(page, sdkPill.first());
 	await pace(400);
 	await glideTo(page, page.getByTestId('db-integration').locator('pre').first(), { settle: 150 });
-	await pace(2200);
-	await screenshot(page, '05-db-integration');
+	await pace(2000);
+	await screenshot(page, '09-db-integration');
 
-	// --- Scene 3: auth - live stats, then a real sign-up ----------------------
-	await clickEl(page, page.getByTestId('nav-auth'));
-	await page.waitForURL('**/auth', { timeout: 15_000 }).catch(() =>
-		page.goto(`${BASE}/dashboard/${PROJECT}/auth`, {
-			waitUntil: 'domcontentloaded',
-			timeout: 60_000
-		})
-	);
-
-	// --- Scene 3: auth - stats moving under real traffic ----------------------
-	const authPage = page.getByTestId('auth-page');
-	await authPage.waitFor({ timeout: 20_000 });
-	await page
-		.waitForFunction(
-			() => document.querySelector('[data-testid="auth-page"]')?.dataset.hydrated === 'true'
-		)
-		.catch(() => {});
-	await pace(1100);
-	await screenshot(page, '06-auth-dashboard');
-
-	// The background traffic generator keeps these numbers moving on camera.
-	for (const stat of ['users', 'sessions', 'dau', 'mau']) {
-		const tile = page.getByTestId(`stat-${stat}`);
-		if (await tile.count()) await glideTo(page, tile.first(), { settle: 80 });
-		await pace(250);
+	// --- Finale: the copilot answers from the database it just queried ---------
+	if (dbQuestionAsked && (await waitForReply(repliesBeforeDb, 40_000))) {
+		await glideTo(page, copilotPanel, { settle: 150 });
+		await pace(3200);
+		await screenshot(page, '10-copilot-db');
+	} else {
+		// No AI available: end on the live collections view instead.
+		await clickEl(page, page.getByRole('tab', { name: 'Collections' }));
+		await pace(1000);
 	}
-
-	// The 90-day chart: three months of history in one click.
-	const range = page.getByTestId('activity-range');
-	if (await range.count()) {
-		await clickEl(page, range.first());
-		const option = page.getByRole('option', { name: 'Last 90 days' });
-		await option.waitFor({ timeout: 5000 }).catch(() => {});
-		if (await option.count()) await clickEl(page, option.first());
-		await pace(1800);
-		await screenshot(page, '07-activity-90d');
-	}
-
-	// --- Scene 4: a real sign-up with zero code --------------------------------
-	await clickEl(page, page.getByRole('tab', { name: 'Try auth' }));
-	await pace(600);
-	await clickEl(page, page.getByTestId('randomize-identity'));
-	await pace(700);
-	const sessionPanel = page.getByTestId('session-panel');
-	const trySignUp = async () => {
-		await clickEl(page, page.getByRole('button', { name: 'Create account' }));
-		return sessionPanel
-			.getByText('@', { exact: false })
-			.first()
-			.waitFor({ timeout: 12_000 })
-			.then(() => true)
-			.catch(() => false);
-	};
-	if (!(await trySignUp())) {
-		// Shared sign-up window still saturated - wait it out and retry once.
-		log('playground sign-up throttled - retrying in 15s');
-		await sleep(15_000);
-		await trySignUp();
-	}
-	quietSignups = false;
-	await pace(1400);
-	await screenshot(page, '08-playground-signup');
-
-	// Land on the users table: the account just created is already in it and
-	// the live traffic keeps writing rows behind it.
-	await clickEl(page, page.getByRole('tab', { name: 'Users' }));
-	await pace(1500);
-
-	// --- Finale: hold on the live dashboard -----------------------------------
-	await pace(400);
 	await glide(page, 760, 420);
-	await pace(3000);
-	await screenshot(page, '09-finale');
+	await pace(2000);
+	await screenshot(page, '11-finale');
+
 	log(`tour ran ${Math.round((Date.now() - tourStart) / 1000)}s (excluding the countdown)`);
 
 	if (CHECK) {
@@ -921,6 +1023,7 @@ async function main() {
 	await ensureStack();
 	if (stackWasUp) await backfillAnalytics();
 	await seedRoster();
+	await preflightChat();
 	startTraffic();
 	const browser = await runTour();
 
