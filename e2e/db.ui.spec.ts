@@ -68,6 +68,36 @@ test.describe('database page (frontend)', () => {
 		);
 	});
 
+	test('creating over an existing collection or document is refused', async ({ page }) => {
+		const collection = uniqueCollection('g');
+		await gotoDbPage(page, DB_UI_PROJECT);
+		await createCollection(page, collection);
+
+		// The agent route is an upsert (the Access tab reuses it), so the CREATE
+		// form guards locally - re-creating must not silently reconfigure.
+		await page.locator('#new-collection-name').fill(collection);
+		await page.getByTestId('db-create-collection').getByRole('button', { name: 'Create' }).click();
+		await expect(page.getByTestId('db-create-error')).toContainText('already exists');
+
+		// Same for documents: ADD refuses a taken id, EDIT still replaces.
+		await page.getByTestId(`db-collection-${collection}`).click();
+		await page.getByTestId('db-add-document').click();
+		const editor = page.getByTestId('db-doc-editor');
+		await editor.getByPlaceholder('auto-generated').fill('dup-doc');
+		await editor.locator('textarea').fill('{"text":"first"}');
+		await editor.getByRole('button', { name: 'Save document' }).click();
+		await expect(page.getByTestId('db-documents-table').getByText('dup-doc')).toBeVisible();
+
+		await page.getByTestId('db-add-document').click();
+		await editor.getByPlaceholder('auto-generated').fill('dup-doc');
+		await editor.locator('textarea').fill('{"text":"second"}');
+		await editor.getByRole('button', { name: 'Save document' }).click();
+		await expect(page.getByTestId('db-doc-error')).toContainText('already exists');
+
+		// The original survived the refused overwrite.
+		await expect(page.getByTestId('db-documents-table').getByText(/first/)).toBeVisible();
+	});
+
 	test('malformed JSON in the document editor surfaces inline, not as a crash', async ({
 		page
 	}) => {

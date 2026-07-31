@@ -10,17 +10,22 @@
 		DbImportReport,
 		DbOverview,
 		DbQueryResult,
+		DbRestorePoint,
 		DbRestorePoints,
 		DbValidator
 	} from '$lib/agents';
 	import { dbAccessModeSchema, dbValidatorSchema } from '$lib/agents';
 	import CodeExamples from '$lib/components/code-examples.svelte';
+	import { ulid } from '$lib/ulid';
 	import type { CodeExample } from '$lib/integration-examples';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import { Calendar } from '$lib/components/ui/calendar';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import * as Popover from '$lib/components/ui/popover';
+	import { getLocalTimeZone, parseDate, today } from '@internationalized/date';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
@@ -29,6 +34,8 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
 		Activity,
+		BookmarkPlus,
+		Calendar as CalendarIcon,
 		Database,
 		Download,
 		EllipsisVertical,
@@ -314,6 +321,12 @@
 			createError = 'Collection names are lowercase letters, digits, _ and - (max 64 chars).';
 			return;
 		}
+		// The agent route is an upsert on purpose (the Access tab reuses it);
+		// the CREATE form must not silently reconfigure an existing collection.
+		if (agentState.collections.some((collection) => collection.name === name)) {
+			createError = `Collection "${name}" already exists - click its row to browse it, or change its rules under Access.`;
+			return;
+		}
 		busy = true;
 		createError = await saveCollectionConfig(name, {
 			readAccess: newReadAccess,
@@ -546,7 +559,10 @@
 	let rollbackOpen = $state(false);
 	let rollbackInfo = $state<DbRestorePoints | null>(null);
 	let rollbackMode = $state<'date' | 'bookmark'>('date');
-	let rollbackTime = $state('');
+	// Date and clock are separate fields (Firefox has no datetime-local
+	// picker); they combine into one local Date at resolve time.
+	let rollbackDate = $state('');
+	let rollbackClock = $state('');
 	let rollbackBookmarkInput = $state('');
 	let resolvedBookmark = $state<string | null>(null);
 	let resolveBusy = $state(false);
@@ -554,6 +570,8 @@
 	let rollbackConfirmInput = $state('');
 	let rollbackError = $state<string | null>(null);
 	let rollbackUndo = $state<string | null>(null);
+	/** The most recent manual save, surfaced so the bookmark can be copied. */
+	let lastCaptured = $state<DbRestorePoint | null>(null);
 	let resolveTimer: ReturnType<typeof setTimeout> | null = null;
 
 	/** What a submit would restore to, whichever tab is active. */
@@ -564,13 +582,15 @@
 	function openRollback() {
 		rollbackInfo = null;
 		rollbackMode = 'date';
-		rollbackTime = '';
+		rollbackDate = '';
+		rollbackClock = '';
 		rollbackBookmarkInput = '';
 		resolvedBookmark = null;
 		resolveError = null;
 		rollbackConfirmInput = '';
 		rollbackError = null;
 		rollbackUndo = null;
+		lastCaptured = null;
 		rollbackOpen = true;
 		void refreshRestorePoints();
 	}
@@ -588,21 +608,35 @@
 	}
 
 	/** Debounced D1-style resolution: time in, closest bookmark out. */
-	function scheduleResolve(value: string) {
-		rollbackTime = value;
+	function scheduleResolve(date: string, clock: string) {
+		rollbackDate = date;
+		rollbackClock = clock;
 		resolvedBookmark = null;
 		resolveError = null;
 		if (resolveTimer) clearTimeout(resolveTimer);
-		if (!value || !selected) return;
+		// A date alone resolves against midnight; the clock refines it.
+		if (!date || !selected) return;
 		resolveTimer = setTimeout(() => void resolveBookmark(), 350);
+	}
+
+	let datePickerOpen = $state(false);
+	const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' });
+	/** The picked day as the Calendar's DateValue, or undefined when unset. */
+	const calendarValue = $derived(rollbackDate ? parseDate(rollbackDate) : undefined);
+
+	/** The two fields as one local Date, or null when unusable. */
+	function rollbackMoment(): Date | null {
+		if (!rollbackDate) return null;
+		const at = new Date(`${rollbackDate}T${rollbackClock || '00:00:00'}`);
+		return Number.isNaN(at.getTime()) ? null : at;
 	}
 
 	async function resolveBookmark() {
 		const name = selected;
-		if (!name || !rollbackTime) return;
-		const at = new Date(rollbackTime);
-		if (Number.isNaN(at.getTime())) {
-			resolveError = 'Pick a valid date and time.';
+		const at = rollbackMoment();
+		if (!name || !at) return;
+		if (at.getTime() > Date.now()) {
+			resolveError = 'Pick a moment in the past.';
 			return;
 		}
 		resolveBusy = true;
@@ -626,6 +660,7 @@
 		}
 	}
 
+	/** Bookmark this exact moment so it can be rolled back to later. */
 	async function capturePoint() {
 		const name = selected;
 		if (!name) return;
@@ -635,12 +670,14 @@
 			const response = await fetch(`${adminBase}/${encodeURIComponent(name)}/checkpoint`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: '{}'
+				body: JSON.stringify({ reason: 'saved by operator' })
 			});
-			const result = (await response.json().catch(() => null)) as { error?: string } | null;
-			if (!response.ok) {
+			const result = (await response.json().catch(() => null)) as
+				(DbRestorePoint & { error?: string }) | null;
+			if (!response.ok || !result?.bookmark) {
 				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
 			}
+			lastCaptured = result;
 			await refreshRestorePoints();
 		} catch (error) {
 			rollbackError = error instanceof Error ? error.message : String(error);
@@ -747,9 +784,12 @@
 		}
 		busy = true;
 		try {
-			const id = docIdInput.trim() || crypto.randomUUID();
+			const id = docIdInput.trim() || ulid();
+			// ADD refuses a taken id (409) so a typo cannot silently overwrite;
+			// EDIT keeps the deliberate replace semantics.
+			const guard = editingExisting ? '' : '?ifAbsent=1';
 			const response = await fetch(
-				`/api/projects/${data.projectId}/db/admin/collections/${encodeURIComponent(collection)}/documents/${encodeURIComponent(id)}`,
+				`/api/projects/${data.projectId}/db/admin/collections/${encodeURIComponent(collection)}/documents/${encodeURIComponent(id)}${guard}`,
 				{
 					method: 'PUT',
 					headers: { 'content-type': 'application/json' },
@@ -1035,7 +1075,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 									<Input
 										id="new-collection-name"
 										class="font-mono"
-										placeholder="posts"
+										placeholder="collection name…"
 										bind:value={newCollectionName}
 									/>
 								</div>
@@ -1134,8 +1174,8 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 						<Card.Header>
 							<Card.Title class="font-mono">{selected}</Card.Title>
 							<Card.Description>
-								Up to 50 documents in id order, refetched on every change. Saving to an existing id
-								replaces that document.
+								Up to 50 documents in id order, refetched on every change. Adding refuses an id that
+								already exists; editing a row replaces it.
 							</Card.Description>
 							<!-- Desktop: labeled row beside the title; mobile drops the row
 							     UNDER the header full-width with Add document stretched.
@@ -1717,6 +1757,35 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 			</p>
 		{:else}
 			<div class="space-y-3">
+				<!-- Saving the current state is useful in BOTH modes (and before
+				     anything risky), so it sits above the Date|Bookmark toggle
+				     rather than inside one tab. -->
+				<div
+					class="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3"
+				>
+					<div class="min-w-0">
+						<p class="text-sm font-medium">Save this moment</p>
+						<p class="text-xs text-muted-foreground">
+							Bookmark the collection as it is right now, so you can roll back to it later.
+						</p>
+					</div>
+					<Button
+						size="sm"
+						variant="outline"
+						class="gap-1.5"
+						data-testid="db-capture-point"
+						disabled={busy}
+						onclick={() => void capturePoint()}
+					>
+						<BookmarkPlus class="h-4 w-4" /> Save bookmark
+					</Button>
+					{#if lastCaptured}
+						<code
+							class="block w-full overflow-x-auto rounded border bg-muted/50 p-2 text-xs"
+							data-testid="db-captured-bookmark">{lastCaptured.bookmark}</code
+						>
+					{/if}
+				</div>
 				<div class="flex w-fit gap-1 rounded-lg border p-1" role="tablist">
 					<Button
 						size="sm"
@@ -1738,14 +1807,52 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 
 				{#if rollbackMode === 'date'}
 					<div class="space-y-2">
-						<Label for="rollback-time">Select a date and time</Label>
-						<Input
-							id="rollback-time"
-							type="datetime-local"
-							data-testid="db-rollback-time"
-							value={rollbackTime}
-							oninput={(event) => scheduleResolve(event.currentTarget.value)}
-						/>
+						<Label for="rollback-date">Select a date and time</Label>
+						<!-- shadcn date-picker (Popover + Calendar) rather than a bare
+						     datetime-local: Firefox renders no picker for that type, so
+						     the field degrades to a text box. The clock stays a native
+						     time input, which every browser does support. -->
+						<div class="flex gap-2">
+							<Popover.Root bind:open={datePickerOpen}>
+								<Popover.Trigger id="rollback-date" data-testid="db-rollback-date">
+									{#snippet child({ props })}
+										<Button
+											{...props}
+											variant="outline"
+											class={[
+												'flex-1 justify-start text-left font-normal',
+												!rollbackDate && 'text-muted-foreground'
+											]}
+										>
+											<CalendarIcon class="mr-2 h-4 w-4" />
+											{rollbackDate
+												? dateFormatter.format(new Date(`${rollbackDate}T00:00:00`))
+												: 'Pick a date'}
+										</Button>
+									{/snippet}
+								</Popover.Trigger>
+								<Popover.Content class="w-auto p-0">
+									<Calendar
+										type="single"
+										value={calendarValue}
+										maxValue={today(getLocalTimeZone())}
+										onValueChange={(value) => {
+											datePickerOpen = false;
+											scheduleResolve(value ? value.toString() : '', rollbackClock);
+										}}
+									/>
+								</Popover.Content>
+							</Popover.Root>
+							<Input
+								id="rollback-clock"
+								type="time"
+								step="1"
+								class="w-36"
+								data-testid="db-rollback-time"
+								value={rollbackClock}
+								oninput={(event) => scheduleResolve(rollbackDate, event.currentTarget.value)}
+							/>
+						</div>
 					</div>
 					<div class="space-y-2">
 						<Label>Closest available bookmark</Label>
@@ -1776,19 +1883,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 						/>
 					</div>
 					<div class="space-y-2">
-						<div class="flex items-center justify-between">
-							<Label>Captured points</Label>
-							<Button
-								size="sm"
-								variant="ghost"
-								class="h-7 text-xs"
-								data-testid="db-capture-point"
-								disabled={busy}
-								onclick={() => void capturePoint()}
-							>
-								Capture now
-							</Button>
-						</div>
+						<Label>Captured points</Label>
 						{#if rollbackInfo === null}
 							<p class="text-xs text-muted-foreground">Loading captured points…</p>
 						{:else if rollbackInfo.points.length === 0}

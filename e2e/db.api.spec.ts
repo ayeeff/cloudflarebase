@@ -369,6 +369,19 @@ test.describe('db agent (documents API)', () => {
 		);
 		expect(upsert.ok(), await upsert.text()).toBeTruthy();
 
+		// A plain PUT replaces (the editor's semantics); ?ifAbsent=1 refuses a
+		// taken id, which is what makes the dashboard's ADD flow safe.
+		const replaced = await request.put(
+			`${dbAdminCollectionPath(DB_PROJECT, 'admin_probe')}/documents/${docId}`,
+			{ data: { data: { run, via: 'replaced' } } }
+		);
+		expect(replaced.ok(), await replaced.text()).toBeTruthy();
+		const guarded = await request.put(
+			`${dbAdminCollectionPath(DB_PROJECT, 'admin_probe')}/documents/${docId}?ifAbsent=1`,
+			{ data: { data: { run, via: 'should not land' } } }
+		);
+		expect(guarded.status(), await guarded.text()).toBe(409);
+
 		const queried = await request.post(dbAdminQueryPath(DB_PROJECT), {
 			data: {
 				collection: 'admin_probe',
