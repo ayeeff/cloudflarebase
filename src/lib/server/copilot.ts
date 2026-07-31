@@ -273,6 +273,58 @@ interface AiRunner {
 	run(model: string, input: Record<string, unknown>): Promise<unknown>;
 }
 
+/**
+ * Workers AI accepts tool definitions in two shapes: the flat one its
+ * function-calling docs show, and the OpenAI-compatible wrapper. Which one a
+ * given inference backend ACCEPTS is not stable - instances rolling out a
+ * stricter validator reject the flat shape with an 8007 "validation errors"
+ * body naming `body.tools.N.function`, which is why the copilot could answer
+ * one question and fail the next.
+ *
+ * So: try one shape, and on a validation error retry with the other and
+ * remember it for the rest of this isolate. Nothing else in the loop cares.
+ */
+type ToolShape = 'openai' | 'flat';
+let preferredToolShape: ToolShape = 'openai';
+
+interface ToolDefinition {
+	name: string;
+	description: string;
+	parameters: Record<string, unknown>;
+}
+
+function shapeTools(tools: ToolDefinition[], shape: ToolShape): unknown[] {
+	return shape === 'openai' ? tools.map((tool) => ({ type: 'function', function: tool })) : tools;
+}
+
+function isToolSchemaRejection(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /validation error|8007|'tools'|"tools"/i.test(message);
+}
+
+/**
+ * One inference call, tolerant of the tool-shape disagreement above. Without
+ * tools (the forcing call) there is nothing to disagree about.
+ */
+async function runInference(
+	runner: AiRunner,
+	model: string,
+	input: Record<string, unknown>,
+	tools?: ToolDefinition[]
+): Promise<unknown> {
+	if (!tools) return runner.run(model, input);
+	try {
+		return await runner.run(model, { ...input, tools: shapeTools(tools, preferredToolShape) });
+	} catch (error) {
+		if (!isToolSchemaRejection(error)) throw error;
+		const fallback: ToolShape = preferredToolShape === 'openai' ? 'flat' : 'openai';
+		const result = await runner.run(model, { ...input, tools: shapeTools(tools, fallback) });
+		// Only switch after the other shape actually worked.
+		preferredToolShape = fallback;
+		return result;
+	}
+}
+
 const aiResultSchema = z.object({
 	response: z.string().nullish(),
 	tool_calls: z.array(z.unknown()).nullish()
@@ -365,7 +417,7 @@ export async function runCopilot(options: {
 		})),
 		{ role: 'user', content: question }
 	];
-	const tools = COPILOT_TOOLS.map(({ name, description, parameters }) => ({
+	const tools: ToolDefinition[] = COPILOT_TOOLS.map(({ name, description, parameters }) => ({
 		name,
 		description,
 		parameters
@@ -373,7 +425,7 @@ export async function runCopilot(options: {
 
 	for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
 		const result = aiResultSchema.parse(
-			await runner.run(model, { messages, tools, max_tokens: 600, temperature: 0.2 })
+			await runInference(runner, model, { messages, max_tokens: 600, temperature: 0.2 }, tools)
 		);
 		const calls = normalizeToolCalls(result.tool_calls);
 		if (calls.length === 0) {
@@ -407,7 +459,7 @@ export async function runCopilot(options: {
 	});
 	for (const temperature of [0.2, 0.5]) {
 		const final = aiResultSchema.parse(
-			await runner.run(model, { messages, max_tokens: 600, temperature })
+			await runInference(runner, model, { messages, max_tokens: 600, temperature })
 		);
 		const answer = final.response?.trim();
 		if (answer) return { answer, model };
