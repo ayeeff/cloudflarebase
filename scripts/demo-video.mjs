@@ -508,6 +508,32 @@ async function resetDemoData() {
 			// A 404 (never created) is the normal case on a fresh demo project.
 		}
 	}
+
+	// Demo projects cap chat at 50 questions/day, and rehearsals burn through
+	// that fast - once capped, the preflight fails and every copilot scene is
+	// silently skipped. Clearing this project's transcript locally resets the
+	// counter (it is also a cleaner history to have on camera).
+	if (IS_LOCAL) {
+		try {
+			await runWrangler(
+				[
+					'wrangler',
+					'd1',
+					'execute',
+					'cloudflarebase-control-plane',
+					'--env',
+					'local',
+					'--local',
+					'--persist-to=.wrangler/state/',
+					'--command',
+					`DELETE FROM chat_message WHERE project_id = '${PROJECT}'`
+				],
+				path.resolve(import.meta.dirname, '..')
+			);
+		} catch {
+			// No table yet (nobody has chatted) - nothing to reset.
+		}
+	}
 }
 
 /** A registered user to assign the new role to on camera. */
@@ -543,6 +569,7 @@ async function preflightChat() {
 		'Any unusual auth activity this week?',
 		'Which sign-in providers are most used?'
 	];
+	let detail = '';
 	try {
 		const res = await fetch(api('chat'), {
 			method: 'POST',
@@ -551,14 +578,23 @@ async function preflightChat() {
 			signal: AbortSignal.timeout(60_000)
 		});
 		chatWorks = res.ok;
-	} catch {
+		if (!res.ok) {
+			// WHY it failed decides what to do about it, so never swallow this:
+			// 429 = the demo project hit its daily question cap (resetDemoData
+			// clears it locally), 502 = Workers AI unreachable (`wrangler login`).
+			const body = await res.text().catch(() => '');
+			detail = ` (HTTP ${res.status}${body ? `: ${body.slice(0, 160)}` : ''})`;
+		}
+	} catch (error) {
 		chatWorks = false;
+		detail = ` (${error instanceof Error ? error.message : String(error)})`;
 	}
-	log(
-		chatWorks
-			? 'Workers AI reachable - copilot scenes enabled'
-			: 'Workers AI not reachable - skipping the copilot scenes'
-	);
+	if (chatWorks) {
+		log('Workers AI reachable - copilot scenes enabled');
+	} else {
+		log(`WARNING: copilot scenes will be SKIPPED - the chat probe failed${detail}`);
+		log('         429 = daily demo cap, 502 = Workers AI unreachable (run `npx wrangler login`)');
+	}
 }
 
 let trafficTimer = null;
