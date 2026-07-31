@@ -378,13 +378,13 @@
 							class="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 font-mono text-xs text-muted-foreground/70"
 						>
 							<span class="flex items-center gap-1.5">
-								<Star class="h-3.5 w-3.5 text-primary" /> 141 stars on GitHub
+								<Star class="h-3.5 w-3.5 text-primary" /> 151 stars on GitHub
 							</span>
 							<span class="flex items-center gap-1.5">
-								<GitFork class="h-3.5 w-3.5" /> 8 forks
+								<GitFork class="h-3.5 w-3.5" /> 9 forks
 							</span>
 							<span class="flex items-center gap-1.5">
-								<Boxes class="h-3.5 w-3.5" /> 382 demo backends created
+								<Boxes class="h-3.5 w-3.5" /> 415 demo backends created
 							</span>
 						</div>
 						<p class="mt-3 font-mono text-xs text-muted-foreground/70">

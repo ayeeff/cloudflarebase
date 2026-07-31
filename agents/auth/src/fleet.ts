@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare';
 import { getAgentByName } from 'agents';
 import type { AuthAgent, FleetProjectCounts } from './agent';
 import { analyticsApiResponseSchema, DEMO_PROJECT_PATTERN, projectIdSchema } from './schemas';
@@ -166,8 +167,11 @@ export async function getFleetOverview(
 			listings = await listFromLocalAnalytics(env.LOCAL_ANALYTICS);
 		}
 	} catch (cause) {
+		// Answered as a 200 with an empty fleet, so nothing else reports it -
+		// and an empty /admin looks identical to a fresh installation.
 		error = cause instanceof Error ? cause.message : 'fleet listing failed';
 		console.error('fleet listing failed', cause);
+		Sentry.captureException(cause, { level: 'error', tags: { operation: 'fleet-listing' } });
 	}
 
 	listings = listings

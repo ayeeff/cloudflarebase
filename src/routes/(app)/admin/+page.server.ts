@@ -1,7 +1,8 @@
 import type { FleetOverview } from '$lib/agents';
 import { requireAuthAgent } from '$lib/server/auth-agent';
+import { serverError } from '$lib/server/agents';
 import { absorbFleetDemos, countDemoProjectsAllTime } from '$lib/server/demo-log';
-import { error, fail } from '@sveltejs/kit';
+import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -31,7 +32,7 @@ export const load: PageServerLoad = async ({ cookies, platform, url }) => {
 	const agent = requireAuthAgent(platform);
 	const response = await agent.fetch(`${url.origin}/fleet/overview`);
 	if (!response.ok) {
-		error(502, `auth agent fleet endpoint responded with ${response.status}`);
+		serverError(502, `auth agent fleet endpoint responded with ${response.status}`);
 	}
 	const fleet = (await response.json()) as FleetOverview;
 

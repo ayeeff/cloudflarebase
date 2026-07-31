@@ -999,8 +999,15 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		try {
 			behavioral = await this.queryBehavioralAnalytics(timeZone);
 		} catch (error) {
+			// The route still answers 200 with zeroed charts, so the worker's
+			// 5xx net never fires: without this, a broken analytics token or a
+			// WAE SQL change shows up as "all charts read zero" forever.
 			analyticsError = error instanceof Error ? error.message : 'Analytics Engine query failed';
 			console.error(analyticsError);
+			Sentry.captureException(error, {
+				level: 'error',
+				tags: { projectId: this.name, operation: 'analytics-query' },
+			});
 			behavioral = this.emptyBehavioralAnalytics();
 		}
 

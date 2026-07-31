@@ -1,8 +1,7 @@
 import { AGENT_REGISTRY } from '$lib/agent-registry';
 import type { AuthOverview, DbOverview } from '$lib/agents';
-import { agentUrl as genericAgentUrl, agentFetcher } from '$lib/server/agents';
+import { agentUrl as genericAgentUrl, agentFetcher, serverError } from '$lib/server/agents';
 import { agentUrl, assertProjectId, requireAuthAgent } from '$lib/server/auth-agent';
-import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
 /** Project Overview - a light snapshot for the product cards. */
@@ -12,7 +11,7 @@ export const load: PageServerLoad = async ({ params, url, platform }) => {
 
 	const response = await agent.fetch(agentUrl(url.origin, projectId, '/overview'));
 	if (!response.ok) {
-		error(502, `auth agent responded with ${response.status}`);
+		serverError(502, `auth agent responded with ${response.status}`);
 	}
 	const overview = (await response.json()) as AuthOverview;
 

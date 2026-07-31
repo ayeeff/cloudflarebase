@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { serverError } from '$lib/server/agents';
 import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
 import * as schema from './schema';
 
@@ -73,7 +73,7 @@ function ensureSchema(d1: D1Database): Promise<void> {
 export async function getDb(platform: App.Platform | undefined): Promise<ControlPlaneDatabase> {
 	const d1 = platform?.env?.DB;
 	if (!d1) {
-		error(500, 'the DB binding is not available - add a d1_databases entry named DB');
+		serverError(500, 'the DB binding is not available - add a d1_databases entry named DB');
 	}
 
 	await ensureSchema(d1);

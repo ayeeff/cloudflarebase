@@ -79,28 +79,34 @@ class AuthService extends WorkerEntrypoint<Env> {
 			Response.json({ error: 'not found' }, { status: 404 });
 
 		if (response.status >= 500) {
-			const body = await response
-				.clone()
-				.text()
-				.then((value) => value.slice(0, 2048))
-				.catch(() => '<unavailable>');
+			// Wrapped: reporting a failure must never turn into a second one
+			// that replaces the user's response (mirrors the db agent).
+			try {
+				const body = await response
+					.clone()
+					.text()
+					.then((value) => value.slice(0, 2048))
+					.catch(() => '<unavailable>');
 
-			Sentry.captureMessage(`Auth agent returned HTTP ${response.status}`, {
-				level: 'error',
-				tags: {
-					'http.method': request.method,
-					'http.status_code': response.status,
-				},
-				contexts: {
-					response: {
-						body,
-						contentType: response.headers.get('content-type'),
+				Sentry.captureMessage(`Auth agent returned HTTP ${response.status}`, {
+					level: 'error',
+					tags: {
+						'http.method': request.method,
+						'http.status_code': response.status,
 					},
-				},
-				extra: {
-					pathname: url.pathname,
-				},
-			});
+					contexts: {
+						response: {
+							body,
+							contentType: response.headers.get('content-type'),
+						},
+					},
+					extra: {
+						pathname: url.pathname,
+					},
+				});
+			} catch {
+				// reporting must never replace the response
+			}
 		}
 
 		return response;

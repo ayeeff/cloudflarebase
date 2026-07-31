@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare';
 import { DurableObject } from 'cloudflare:workers';
 import { and, count, eq } from 'drizzle-orm';
 import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
@@ -250,9 +251,18 @@ export class DbCollection extends DurableObject<Env> {
 			// "This Durable Object's storage back-end does not implement
 			// point-in-time recovery." A real platform failure (e.g. a bookmark
 			// past the 30-day window) reports as failed with its message.
-			return UNSUPPORTED_PITR_PATTERN.test(message)
-				? { ok: false, code: 'unsupported' }
-				: { ok: false, code: 'failed', message: message.slice(0, 256) };
+			if (UNSUPPORTED_PITR_PATTERN.test(message)) return { ok: false, code: 'unsupported' };
+			// Restore is the last-resort recovery path; a genuine failure here
+			// must not look like local dev's missing change log.
+			try {
+				Sentry.captureException(error, {
+					level: 'error',
+					tags: { collection: this.config?.collection ?? 'unknown', operation: 'pitr-restore' },
+				});
+			} catch {
+				// reporting must never replace the outcome
+			}
+			return { ok: false, code: 'failed', message: message.slice(0, 256) };
 		}
 	}
 
@@ -1104,7 +1114,18 @@ export class DbCollection extends DurableObject<Env> {
 			const config = await parent.getCollectionConfig(collection, { autoCreate: true });
 			if (config) await this.configure(config);
 			return this.config;
-		} catch {
+		} catch (error) {
+			// Null here becomes a 503 for the whole collection, so a broken
+			// parent<->child link is an outage, not a hiccup - report it.
+			try {
+				Sentry.captureException(error, {
+					level: 'error',
+					tags: { projectId, collection, operation: 'ensure-config' },
+					extra: { note: 'collection is answering 503 - config pull from the parent failed' },
+				});
+			} catch {
+				// reporting must never break the request path
+			}
 			return null;
 		}
 	}
