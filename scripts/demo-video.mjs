@@ -4,23 +4,28 @@
  * traffic, and drives a choreographed browser tour with an on-screen cursor.
  * You only record the screen.
  *
- * The beats, in order:
- *   1. Landing -> one click -> a real backend, no signup (live demo).
- *   2. AUTH: live counters and the 90-day chart, with the copilot asked a
- *      question up front so Workers AI reasons while the stats play, then a
- *      follow-up question from its own suggestions.
- *   3. Roles: create `editor` live, grant it a permission, assign it to a
- *      real user - the answer to question 2 lands during this.
- *   4. Integration: it is just HTTP.
- *   5. DATABASE: create a collection, type a document, watch out-of-band
- *      writes and an upvote move the open table with no refresh.
- *   6. Finale: ask the copilot about the collection just built - ONE
- *      assistant that orchestrates BOTH agents.
+ * The beats, in order - the whole product, told as one story:
+ *   1. Landing -> one click -> a real backend, no signup.
+ *   2. AUTH: the copilot is asked up front (Workers AI reasons while the rest
+ *      plays), live counters, the 90-day chart.
+ *   3. A real account created on camera in the playground - zero code, real
+ *      session and token. Answer 1 lands; its suggestion fires question 2.
+ *   4. Roles: create `editor`, grant a permission, assign it to THAT user, so
+ *      the permission rides into their JWT. Answer 2 lands.
+ *   5. DATABASE: create a collection, then set who may read and write it -
+ *      per-collection security that reads as a plain-English sentence.
+ *   6. Documents: type one, watch two more land out of band and an upvote
+ *      re-rank the open table with no refresh (live queries), then the SDK
+ *      snippet that does the same in five lines.
+ *   7. Point-in-time recovery: 30 days, per collection.
+ *   8. A second collection, then the finale: ask the copilot about the
+ *      database just built - ONE assistant orchestrating BOTH agents - with
+ *      the generated API reference playing while it reads.
  *
  * Every take starts from the same state (`resetDemoData`): the role registry
- * returns to its baseline and the posts collection is dropped, so the create
- * flows - which now refuse existing names and ids - always take the clean
- * path on camera.
+ * returns to its baseline, both demo collections are dropped, and the demo
+ * chat cap is cleared, so the create flows - which refuse existing names and
+ * ids - always take the clean path on camera.
  *
  *   node scripts/demo-video.mjs            # full recording run (fullscreen)
  *   node scripts/demo-video.mjs --check    # fast headless validation run
@@ -34,6 +39,7 @@
  *                      clamp it) - set the OBS canvas to 1920x1080 and
  *                      stretch the window capture. On a 1080p display,
  *                      default fullscreen is a pixel-perfect 1920x1080.
+ *   --dark             record in dark mode (default is light)
  *   --no-chat          skip the Workers AI copilot scenes
  *   --chat             include the AI scenes during --check (full rehearsal)
  *   --skip-backfill / --force-backfill   control the D1 analytics backfill
@@ -62,6 +68,8 @@ const PROJECT = opt('--project', 'demo-a3f8c2d4e5b6a7f80912');
 const CHECK = flag('--check');
 const SPEED = Number(opt('--speed', CHECK ? '0.12' : '1'));
 const SHOTS = opt('--shots', '');
+/** Recorded theme; light by default, `--dark` for the old look. */
+const THEME = flag('--dark') ? 'dark' : 'light';
 // --check skips the AI scenes unless --chat is added for a full rehearsal.
 const NO_CHAT = flag('--no-chat') || (CHECK && !flag('--chat'));
 const IS_LOCAL = /^http:\/\/(localhost|127\.0\.0\.1):5173$/.test(BASE);
@@ -183,11 +191,19 @@ async function ensureStack() {
 		return;
 	}
 	if (!IS_LOCAL) throw new Error(`${BASE} is not reachable`);
-	log('dev stack not running - starting `npm run dev` (leave it running for the recording)');
+	const root = path.resolve(import.meta.dirname, '..');
+	// Capture the stack's output instead of discarding it: worker-side
+	// failures (a copilot 502, an agent error) print there, and a stack we
+	// started with stdio 'ignore' makes them unrecoverable - the logs exist
+	// nowhere else, since local dev has no Sentry DSN by design.
+	const logPath = path.join(root, '.wrangler', 'demo-dev.log');
+	fs.mkdirSync(path.dirname(logPath), { recursive: true });
+	const devLog = fs.openSync(logPath, 'a');
+	log(`dev stack not running - starting \`npm run dev\` (output: ${logPath})`);
 	devProcess = spawn('npm', ['run', 'dev'], {
-		cwd: path.resolve(import.meta.dirname, '..'),
+		cwd: root,
 		shell: true,
-		stdio: 'ignore',
+		stdio: ['ignore', devLog, devLog],
 		detached: false
 	});
 	for (let i = 0; i < 120; i++) {
@@ -735,14 +751,45 @@ async function countdown(page, seconds) {
 	await sleep(400);
 }
 
-async function ensureDark(page, toggleTestId) {
+/**
+ * Force the recorded theme. The context already seeds mode-watcher and the
+ * OS preference, so this only catches a stale persisted choice - one click on
+ * the page's own toggle, before the countdown, never on camera.
+ */
+async function ensureTheme(page, toggleTestId) {
+	const wantsDark = THEME === 'dark';
 	const isDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
-	if (isDark) return;
+	if (isDark === wantsDark) return;
 	const toggle = page.getByTestId(toggleTestId);
 	if (await toggle.count()) {
 		await toggle.first().click();
 		await pace(300);
 	}
+}
+
+/**
+ * Type a collection name and create it, on camera.
+ *
+ * Waits for the form to CLEAR, not just for the row to appear: the row lands
+ * mid-save (the refetch inside it) while the input is cleared only once the
+ * whole save settles, so typing the next name too early gets it wiped
+ * halfway through - a mangled name is exactly the kind of thing a viewer
+ * notices.
+ */
+async function createCollectionOnCamera(page, name) {
+	const input = page.locator('#new-collection-name');
+	await clickEl(page, input);
+	await page.keyboard.type(name, { delay: 38 });
+	await pace(200);
+	await clickEl(page, page.getByRole('button', { name: 'Create', exact: true }));
+	await page.getByTestId(`db-collection-${name}`).waitFor({ timeout: 15_000 });
+	await page
+		.waitForFunction(
+			() => document.querySelector('#new-collection-name')?.value === '',
+			undefined,
+			{ timeout: 15_000 }
+		)
+		.catch(() => {});
 }
 
 async function runTour() {
@@ -767,9 +814,11 @@ async function runTour() {
 	const context = await browser.newContext({
 		viewport: CHECK || windowed ? { width: 1920, height: 1080 } : null,
 		deviceScaleFactor: CHECK || windowed ? 1 : undefined,
-		colorScheme: 'dark'
+		colorScheme: THEME
 	});
-	await context.addInitScript("localStorage.setItem('mode-watcher-mode', 'dark');");
+	// Seed mode-watcher's own storage key too: the OS preference alone loses
+	// to a persisted choice, and a theme flip mid-take looks like a bug.
+	await context.addInitScript(`localStorage.setItem('mode-watcher-mode', '${THEME}');`);
 	await context.addInitScript(CURSOR_SCRIPT);
 	if (DEMO_PATTERN.test(PROJECT)) {
 		await context.addCookies([{ name: 'cfb-demo-project', value: PROJECT, url: BASE }]);
@@ -824,10 +873,10 @@ async function runTour() {
 		);
 	}
 
-	// --- Scene 1: landing - straight to the live demo ------------------------
+	// --- Scene 1: landing - one beat, then straight to the live demo ---------
 	await page.goto(`${BASE}/`, { waitUntil: 'load' });
 	await pace(800);
-	await ensureDark(page, 'landing-theme-toggle');
+	await ensureTheme(page, 'landing-theme-toggle');
 	await glide(page, 960, 400);
 	await countdown(page, 5);
 	const tourStart = Date.now();
@@ -850,13 +899,14 @@ async function runTour() {
 		await page.goto(`${BASE}/dashboard/${PROJECT}`);
 	}
 
-	// A real backend exists seconds after clicking a link - no signup, no
-	// project wizard. Beat on the overview, then into auth.
+	// --- Scene 2: a real backend exists, seconds after one click -------------
 	await page.getByRole('heading', { name: 'Project Overview' }).waitFor({ timeout: 20_000 });
 	await pace(1400);
 	await screenshot(page, '02-overview');
 	await glideTo(page, page.getByTestId('product-auth'), { settle: 200 });
-	await pace(400);
+	await pace(500);
+	await glideTo(page, page.getByTestId('product-db'), { settle: 200 });
+	await pace(500);
 	await clickEl(page, page.getByTestId('nav-auth'));
 	await page.waitForURL('**/auth', { timeout: 15_000 }).catch(() =>
 		page.goto(`${BASE}/dashboard/${PROJECT}/auth`, {
@@ -865,7 +915,7 @@ async function runTour() {
 		})
 	);
 
-	// --- Scene 2: auth, and the copilot answering real questions --------------
+	// --- Scene 3: auth - the copilot is asked first, stats play meanwhile ----
 	const authPage = page.getByTestId('auth-page');
 	await authPage.waitFor({ timeout: 20_000 });
 	await page
@@ -883,7 +933,7 @@ async function runTour() {
 		if (!(await input.count())) return false;
 		await glideTo(page, input.first());
 		await input.first().click();
-		await page.keyboard.type(question, { delay: 28 });
+		await page.keyboard.type(question, { delay: 26 });
 		await pace(250);
 		await clickEl(page, page.getByRole('button', { name: 'Send to project agent' }));
 		await pace(300);
@@ -898,8 +948,6 @@ async function runTour() {
 	};
 	const aiOn = !NO_CHAT && chatWorks;
 
-	// Question 1 goes in immediately, so Workers AI reasons while the stats
-	// scenes play - the tour never sits waiting on inference.
 	let repliesSoFar = await copilotReplies.count();
 	let askedFirst = false;
 	if (aiOn) {
@@ -907,14 +955,12 @@ async function runTour() {
 		if (askedFirst) log('copilot question 1 sent - the answer lands during the stats');
 	}
 
-	// Live counters, moving under the background traffic generator.
 	for (const stat of ['users', 'sessions', 'dau', 'mau']) {
 		const tile = page.getByTestId(`stat-${stat}`);
 		if (await tile.count()) await glideTo(page, tile.first(), { settle: 80 });
-		await pace(220);
+		await pace(200);
 	}
 
-	// Three months of history in one click.
 	const range = page.getByTestId('activity-range');
 	if (await range.count()) {
 		await clickEl(page, range.first());
@@ -925,29 +971,54 @@ async function runTour() {
 		await screenshot(page, '04-activity-90d');
 	}
 
-	// The first answer, then a follow-up whose reply computes during the roles
-	// scene - two questions, no dead air.
-	if (askedFirst && (await waitForReply(repliesSoFar, 35_000))) {
+	// --- Scene 4: a real account, created on camera with zero code -----------
+	await clickEl(page, page.getByRole('tab', { name: 'Try auth' }));
+	await pace(600);
+	await clickEl(page, page.getByTestId('randomize-identity'));
+	await pace(600);
+	const sessionPanel = page.getByTestId('session-panel');
+	const trySignUp = async () => {
+		await clickEl(page, page.getByRole('button', { name: 'Create account' }));
+		return sessionPanel
+			.getByText('@', { exact: false })
+			.first()
+			.waitFor({ timeout: 12_000 })
+			.then(() => true)
+			.catch(() => false);
+	};
+	if (!(await trySignUp())) {
+		log('playground sign-up throttled - retrying in 15s');
+		await sleep(15_000);
+		await trySignUp();
+	}
+	quietSignups = false;
+	// The session panel now holds a real user and a real token.
+	await glideTo(page, sessionPanel, { settle: 150 });
+	await pace(1600);
+	await screenshot(page, '05-playground-signup');
+	const sessionText = await sessionPanel.innerText().catch(() => '');
+	const demoEmail = sessionText.match(/[a-z0-9][a-z0-9.+_-]*@[a-z0-9.-]+/i)?.[0] ?? '';
+
+	// The first answer landed while that happened.
+	if (askedFirst && (await waitForReply(repliesSoFar, 30_000))) {
 		await glideTo(page, copilotPanel, { settle: 150 });
-		await pace(3000);
-		await screenshot(page, '05-copilot-answer-1');
+		await pace(2800);
+		await screenshot(page, '06-copilot-answer-1');
 		repliesSoFar = await copilotReplies.count();
 		const suggestion = page.getByTestId('copilot-suggestions').getByRole('button').first();
 		if (await suggestion.count()) {
 			await clickEl(page, suggestion);
 			log('copilot question 2 sent - it answers during roles');
-		} else {
-			await askCopilot('Where are my users signing in from?');
 		}
 	} else if (askedFirst) {
 		log('AI reply did not arrive in time - continuing');
 	}
 
-	// --- Scene 3: roles and permissions, then assign one to a real user -------
+	// --- Scene 5: roles and permissions, assigned to that very user ----------
 	await clickEl(page, page.getByRole('tab', { name: 'Roles' }));
 	await pace(900);
 	await clickEl(page, page.getByLabel('New role name'));
-	await page.keyboard.type('editor', { delay: 42 });
+	await page.keyboard.type('editor', { delay: 40 });
 	await pace(200);
 	await clickEl(page, page.getByRole('button', { name: 'Add role' }));
 	const editorCard = page.getByTestId('role-editor');
@@ -955,17 +1026,17 @@ async function runTour() {
 	if (await editorCard.count()) {
 		await pace(400);
 		await clickEl(page, editorCard.getByLabel('New permission for editor'));
-		await page.keyboard.type('posts:write', { delay: 38 });
+		await page.keyboard.type('posts:write', { delay: 36 });
 		await pace(200);
 		await clickEl(page, editorCard.getByRole('button', { name: 'Grant' }));
 		await pace(1200);
-		await screenshot(page, '06-roles');
+		await screenshot(page, '07-roles');
 	}
 
-	// The role becomes real on a user - and rides into their JWT claims.
+	// The permission is real the moment it rides into that user's JWT.
 	await clickEl(page, page.getByRole('tab', { name: 'Users' }));
-	await pace(1000);
-	const roleTarget = await pickRoleTarget();
+	await pace(900);
+	const roleTarget = demoEmail || (await pickRoleTarget());
 	if (roleTarget) {
 		const roleSelect = page.getByLabel(`Role for ${roleTarget}`);
 		if (await roleSelect.count()) {
@@ -974,26 +1045,18 @@ async function runTour() {
 			await editorOption.waitFor({ timeout: 5000 }).catch(() => {});
 			if (await editorOption.count()) await clickEl(page, editorOption.first());
 			await pace(1400);
-			await screenshot(page, '07-role-assigned');
+			await screenshot(page, '08-role-assigned');
 		}
 	}
 
 	// The second answer landed while roles happened.
 	if (aiOn && (await copilotReplies.count()) > repliesSoFar) {
 		await glideTo(page, copilotPanel, { settle: 150 });
-		await pace(2800);
-		await screenshot(page, '08-copilot-answer-2');
+		await pace(2600);
+		await screenshot(page, '09-copilot-answer-2');
 	}
 
-	// --- Scene 4: integration - it is just HTTP --------------------------------
-	await clickEl(page, page.getByRole('tab', { name: 'Integration' }));
-	await pace(900);
-	const pythonPill = page.getByRole('tab', { name: 'Python' });
-	if (await pythonPill.count()) await clickEl(page, pythonPill.first());
-	await pace(1800);
-	await screenshot(page, '09-auth-integration');
-
-	// --- Scene 5: the database - collection, documents, live updates ----------
+	// --- Scene 6: the database - a collection, and who may touch it ----------
 	await clickEl(page, page.getByTestId('nav-db'));
 	await page.waitForURL('**/db', { timeout: 15_000 }).catch(() =>
 		page.goto(`${BASE}/dashboard/${PROJECT}/db`, {
@@ -1009,40 +1072,69 @@ async function runTour() {
 		.catch(() => {});
 	await pace(800);
 
-	// resetDemoData() dropped this collection before the tour, so the create
-	// is always the fresh, guard-passing path every take.
-	await clickEl(page, page.locator('#new-collection-name'));
-	await page.keyboard.type('posts', { delay: 40 });
-	await pace(200);
-	await clickEl(page, page.getByRole('button', { name: 'Create', exact: true }));
+	// resetDemoData() dropped these before the tour, so create is always the
+	// clean, guard-passing path on camera.
+	await createCollectionOnCamera(page, 'posts');
 	const postsRow = page.getByTestId('db-collection-posts');
-	await postsRow.waitFor({ timeout: 10_000 });
-	await pace(600);
+	await pace(500);
 	await screenshot(page, '10-db-collection');
 
-	// One document typed on camera - the inline editor is the ease pitch.
+	// Security is per collection and reads as a sentence - the Firestore-rules
+	// story without the rules language.
+	await clickEl(page, page.getByRole('tab', { name: 'Access' }));
+	await pace(700);
+	const accessRow = page.getByTestId('db-access-posts');
+	if (await accessRow.count()) {
+		// Require the permission the roles scene just created - the two
+		// chapters click together: that role is what lets a user write here.
+		// (Modes are left at the create form's defaults, read public / write
+		// owner; re-picking a default arms no edit, so Apply would stay
+		// disabled.)
+		await clickEl(page, accessRow.getByTestId('db-perm-write-posts'));
+		const permOption = page.getByRole('option', { name: 'posts:write' });
+		await permOption.waitFor({ timeout: 5000 }).catch(() => {});
+		if (await permOption.count()) {
+			await clickEl(page, permOption.first());
+			await pace(400);
+			await clickEl(page, accessRow.getByRole('button', { name: 'Apply' }));
+			await pace(600);
+		} else {
+			// No role registry (AI-less or reset run): close the menu and just
+			// show the sentence, which is the point of the scene either way.
+			await page.keyboard.press('Escape');
+		}
+		// The plain-English summary under the row is what makes per-collection
+		// security legible at a glance.
+		await glideTo(page, page.getByTestId('db-access-summary-posts'), { settle: 150 });
+		await pace(2200);
+		await screenshot(page, '11-db-access');
+	}
+	await clickEl(page, page.getByRole('tab', { name: 'Collections' }));
+	await pace(600);
+
+	// --- Scene 7: documents, and the live-query money shot -------------------
 	await clickEl(page, postsRow);
 	await page.getByTestId('db-add-document').waitFor({ timeout: 10_000 });
 	await clickEl(page, page.getByTestId('db-add-document'));
 	const editor = page.getByTestId('db-doc-editor');
 	await editor.waitFor({ timeout: 5000 });
 	await clickEl(page, editor.getByLabel('Document id (optional)'));
-	await page.keyboard.type('post-1', { delay: 35 });
+	await page.keyboard.type('post-1', { delay: 34 });
 	const textarea = editor.getByLabel('Data (JSON object)');
 	await clickEl(page, textarea);
 	await textarea.fill('');
 	await page.keyboard.type(
 		'{ "title": "Show HN: I built a Firebase on Cloudflare", "votes": 42 }',
 		{
-			delay: 18
+			delay: 17
 		}
 	);
 	await pace(250);
 	await clickEl(page, editor.getByRole('button', { name: 'Save document' }));
 	await editor.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => {});
 
-	// Two more posts land OUT OF BAND and pop into the open table with no
-	// click and no refresh - the dashboard is itself a live-query subscriber.
+	// Two posts land OUT OF BAND - as another app's users would write them -
+	// and appear in the open table with no click and no refresh.
 	for (const [postId, title, votes] of [
 		['post-2', 'Why we moved our backend to Durable Objects', 17],
 		['post-3', 'Live queries are criminally underrated', 8]
@@ -1061,9 +1153,9 @@ async function runTour() {
 		.first()
 		.waitFor({ timeout: 15_000 });
 	await pace(1400);
-	await screenshot(page, '11-db-documents');
+	await screenshot(page, '12-db-documents');
 
-	// The money shot: an upvote out of band moves the count in the open table.
+	// An upvote from "somewhere else" moves the number in the open table.
 	const upvote = await fetch(api('db/admin/collections/posts/documents/post-1'), {
 		method: 'PUT',
 		headers: { 'content-type': 'application/json', origin: BASE },
@@ -1080,18 +1172,38 @@ async function runTour() {
 		.getByText('"votes":43')
 		.first()
 		.waitFor({ timeout: 15_000 });
-	await pace(1800);
-	await screenshot(page, '12-db-live-update');
+	await pace(1900);
+	await screenshot(page, '13-db-live-update');
 
-	// A second collection, so the finale shows the copilot reading a database
-	// with real structure - and collection-per-DO in the sidebar count.
+	// --- Scene 8: the code behind that - subscribe once, get deltas forever --
+	await clickEl(page, page.getByRole('tab', { name: 'Integration' }));
+	await pace(700);
+	const sdkPill = page.getByTestId('db-integration').getByRole('tab', { name: 'Client SDK' });
+	if (await sdkPill.count()) await clickEl(page, sdkPill.first());
+	await pace(400);
+	await glideTo(page, page.getByTestId('db-integration').locator('pre').first(), { settle: 150 });
+	await pace(2400);
+	await screenshot(page, '14-db-sdk');
+
+	// --- Scene 9: 30-day point-in-time recovery, per collection --------------
 	await clickEl(page, page.getByRole('tab', { name: 'Collections' }));
 	await pace(500);
-	await clickEl(page, page.locator('#new-collection-name'));
-	await page.keyboard.type('comments', { delay: 40 });
-	await pace(200);
-	await clickEl(page, page.getByRole('button', { name: 'Create', exact: true }));
-	await page.getByTestId('db-collection-comments').waitFor({ timeout: 10_000 });
+	if (!(await page.getByTestId('db-documents-card').count())) {
+		await clickEl(page, postsRow);
+		await page.getByTestId('db-add-document').waitFor({ timeout: 10_000 });
+	}
+	await clickEl(page, page.getByTestId('db-rollback'));
+	const rollbackPanel = page.getByTestId('db-rollback-panel');
+	await rollbackPanel.waitFor({ timeout: 10_000 }).catch(() => {});
+	if (await rollbackPanel.count()) {
+		await pace(2200);
+		await screenshot(page, '15-db-rollback');
+		await clickEl(page, rollbackPanel.getByRole('button', { name: 'Cancel' }));
+		await pace(400);
+	}
+
+	// --- Scene 10: a second collection, so the finale reads a real database --
+	await createCollectionOnCamera(page, 'comments');
 	for (const [id, body] of [
 		['comment-1', 'Durable Objects make this so much simpler.'],
 		['comment-2', 'Wait, the dashboard updates itself?']
@@ -1104,12 +1216,12 @@ async function runTour() {
 		}).catch(() => null);
 	}
 	await pace(1200);
-	await screenshot(page, '13-db-second-collection');
+	await screenshot(page, '16-db-second-collection');
 
-	// --- Finale: the copilot answers from the database we just built ----------
+	// --- Scene 11: the agentic finale ----------------------------------------
 	// Asked LAST, once both collections and every document exist, and phrased
-	// as one concrete request: small models answer a single clear question far
-	// more reliably than a compound one.
+	// as one concrete request - small models answer a single clear question
+	// far more reliably than a compound one.
 	let askedDb = false;
 	if (aiOn) {
 		repliesSoFar = await copilotReplies.count();
@@ -1117,38 +1229,30 @@ async function runTour() {
 		if (askedDb) log('copilot asked about the db - it queries the collections live');
 	}
 
-	if (askedDb) {
-		// The SDK snippet plays while the model reads the collection.
-		await clickEl(page, page.getByRole('tab', { name: 'Integration' }));
-		await pace(700);
-		const sdkPill = page.getByTestId('db-integration').getByRole('tab', { name: 'Client SDK' });
-		if (await sdkPill.count()) await clickEl(page, sdkPill.first());
-		await pace(400);
-		await glideTo(page, page.getByTestId('db-integration').locator('pre').first(), {
-			settle: 150
-		});
-		await pace(2000);
-		await screenshot(page, '14-db-integration');
+	// The generated API reference plays while the model reads the database:
+	// every route, from the same schemas the agents validate with.
+	await clickEl(page, page.getByTestId('nav-api'));
+	await page.waitForURL('**/api', { timeout: 15_000 }).catch(() => {});
+	await page
+		.getByTestId('api-reference')
+		.waitFor({ timeout: 20_000 })
+		.catch(() => {});
+	await pace(2600);
+	await screenshot(page, '17-api-reference');
 
+	if (askedDb) {
 		if (await waitForReply(repliesSoFar, 45_000)) {
 			await glideTo(page, copilotPanel, { settle: 150 });
 			await pace(3400);
-			await screenshot(page, '15-copilot-db');
+			await screenshot(page, '18-copilot-db');
 		} else {
 			log('WARNING: the db answer did not arrive - re-take, or check Workers AI');
 		}
-	} else {
-		await clickEl(page, page.getByRole('tab', { name: 'Integration' }));
-		await pace(700);
-		const sdkPill = page.getByTestId('db-integration').getByRole('tab', { name: 'Client SDK' });
-		if (await sdkPill.count()) await clickEl(page, sdkPill.first());
-		await pace(2200);
-		await screenshot(page, '14-db-integration');
 	}
 
 	await glide(page, 760, 420);
-	await pace(2200);
-	await screenshot(page, '15-finale');
+	await pace(2000);
+	await screenshot(page, '19-finale');
 
 	log(`tour ran ${Math.round((Date.now() - tourStart) / 1000)}s (excluding the countdown)`);
 

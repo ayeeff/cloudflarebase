@@ -17,9 +17,14 @@ async function gotoDbPage(page: Page, projectId: string) {
 }
 
 async function createCollection(page: Page, name: string) {
-	await page.locator('#new-collection-name').fill(name);
+	const input = page.locator('#new-collection-name');
+	await input.fill(name);
 	await page.getByTestId('db-create-collection').getByRole('button', { name: 'Create' }).click();
 	await expect(page.getByTestId(`db-collection-${name}`)).toBeVisible();
+	// The row appears mid-flight (the refetch inside the save), but the form
+	// clears itself only once the whole save settles. Without waiting for
+	// that, the next thing typed here is wiped by the late clear.
+	await expect(input).toHaveValue('');
 }
 
 test.describe('database page (frontend)', () => {
