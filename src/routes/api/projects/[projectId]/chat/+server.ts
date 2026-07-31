@@ -1,4 +1,6 @@
 import { json } from '@sveltejs/kit';
+import * as Sentry from '@sentry/sveltekit';
+import { dev } from '$app/environment';
 import { isDemoProjectId } from '$lib/console';
 import { chatRequestSchema } from '$lib/schemas/auth';
 import { assertProjectId } from '$lib/server/agents';
@@ -52,6 +54,14 @@ export const POST: RequestHandler = async (event) => {
 	// Inference is mandatory and failure touches nothing else: no message is
 	// persisted unless the model produced an answer.
 	if (!event.platform?.env?.AI) {
+		// Reported, not silent: this branch answers EVERY question with the
+		// same 502, so without a signal a missing binding is indistinguishable
+		// from a flaky model.
+		Sentry.captureMessage('copilot: the AI binding is not available', {
+			level: 'error',
+			tags: { projectId },
+			extra: { hasPlatform: Boolean(event.platform), hasEnv: Boolean(event.platform?.env) }
+		});
 		return json({ error: 'Workers AI could not answer this request' }, { status: 502 });
 	}
 
@@ -68,8 +78,24 @@ export const POST: RequestHandler = async (event) => {
 			history
 		});
 	} catch (cause) {
+		// The handler swallows this to keep the 502 contract, so Sentry's
+		// handleError hook never sees it - capture explicitly or the failure is
+		// invisible everywhere but `wrangler tail`.
 		console.error('copilot inference failed', cause);
-		return json({ error: 'Workers AI could not answer this request' }, { status: 502 });
+		Sentry.captureException(cause, {
+			tags: { projectId, model: event.platform?.env?.CHAT_MODEL ?? 'default' },
+			extra: { question: body.data.question.slice(0, 200), historyLength: history.length }
+		});
+		// `error` keeps the published contract; `detail` is additive and only
+		// in dev, where there is no Sentry DSN and the stack's logs may be
+		// captured somewhere the operator is not watching.
+		return json(
+			{
+				error: 'Workers AI could not answer this request',
+				...(dev ? { detail: cause instanceof Error ? cause.message : String(cause) } : {})
+			},
+			{ status: 502 }
+		);
 	}
 
 	const createdAt = Date.now();

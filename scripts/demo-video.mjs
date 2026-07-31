@@ -191,11 +191,19 @@ async function ensureStack() {
 		return;
 	}
 	if (!IS_LOCAL) throw new Error(`${BASE} is not reachable`);
-	log('dev stack not running - starting `npm run dev` (leave it running for the recording)');
+	const root = path.resolve(import.meta.dirname, '..');
+	// Capture the stack's output instead of discarding it: worker-side
+	// failures (a copilot 502, an agent error) print there, and a stack we
+	// started with stdio 'ignore' makes them unrecoverable - the logs exist
+	// nowhere else, since local dev has no Sentry DSN by design.
+	const logPath = path.join(root, '.wrangler', 'demo-dev.log');
+	fs.mkdirSync(path.dirname(logPath), { recursive: true });
+	const devLog = fs.openSync(logPath, 'a');
+	log(`dev stack not running - starting \`npm run dev\` (output: ${logPath})`);
 	devProcess = spawn('npm', ['run', 'dev'], {
-		cwd: path.resolve(import.meta.dirname, '..'),
+		cwd: root,
 		shell: true,
-		stdio: 'ignore',
+		stdio: ['ignore', devLog, devLog],
 		detached: false
 	});
 	for (let i = 0; i < 120; i++) {
@@ -759,6 +767,31 @@ async function ensureTheme(page, toggleTestId) {
 	}
 }
 
+/**
+ * Type a collection name and create it, on camera.
+ *
+ * Waits for the form to CLEAR, not just for the row to appear: the row lands
+ * mid-save (the refetch inside it) while the input is cleared only once the
+ * whole save settles, so typing the next name too early gets it wiped
+ * halfway through - a mangled name is exactly the kind of thing a viewer
+ * notices.
+ */
+async function createCollectionOnCamera(page, name) {
+	const input = page.locator('#new-collection-name');
+	await clickEl(page, input);
+	await page.keyboard.type(name, { delay: 38 });
+	await pace(200);
+	await clickEl(page, page.getByRole('button', { name: 'Create', exact: true }));
+	await page.getByTestId(`db-collection-${name}`).waitFor({ timeout: 15_000 });
+	await page
+		.waitForFunction(
+			() => document.querySelector('#new-collection-name')?.value === '',
+			undefined,
+			{ timeout: 15_000 }
+		)
+		.catch(() => {});
+}
+
 async function runTour() {
 	const { chromium } = await import('@playwright/test');
 	// Hold generator sign-ups from the very start so the rate window has
@@ -1041,12 +1074,8 @@ async function runTour() {
 
 	// resetDemoData() dropped these before the tour, so create is always the
 	// clean, guard-passing path on camera.
-	await clickEl(page, page.locator('#new-collection-name'));
-	await page.keyboard.type('posts', { delay: 38 });
-	await pace(200);
-	await clickEl(page, page.getByRole('button', { name: 'Create', exact: true }));
+	await createCollectionOnCamera(page, 'posts');
 	const postsRow = page.getByTestId('db-collection-posts');
-	await postsRow.waitFor({ timeout: 10_000 });
 	await pace(500);
 	await screenshot(page, '10-db-collection');
 
@@ -1174,11 +1203,7 @@ async function runTour() {
 	}
 
 	// --- Scene 10: a second collection, so the finale reads a real database --
-	await clickEl(page, page.locator('#new-collection-name'));
-	await page.keyboard.type('comments', { delay: 38 });
-	await pace(200);
-	await clickEl(page, page.getByRole('button', { name: 'Create', exact: true }));
-	await page.getByTestId('db-collection-comments').waitFor({ timeout: 10_000 });
+	await createCollectionOnCamera(page, 'comments');
 	for (const [id, body] of [
 		['comment-1', 'Durable Objects make this so much simpler.'],
 		['comment-2', 'Wait, the dashboard updates itself?']
