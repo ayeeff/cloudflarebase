@@ -497,14 +497,16 @@ async function resetDemoData() {
 		log('WARNING: role registry reset failed');
 	}
 
-	try {
-		await fetch(api('db/admin/collections/posts'), {
-			method: 'DELETE',
-			headers: { origin: BASE },
-			signal: AbortSignal.timeout(15_000)
-		});
-	} catch {
-		// A 404 (never created) is the normal case on a fresh demo project.
+	for (const collection of ['posts', 'comments']) {
+		try {
+			await fetch(api(`db/admin/collections/${collection}`), {
+				method: 'DELETE',
+				headers: { origin: BASE },
+				signal: AbortSignal.timeout(15_000)
+			});
+		} catch {
+			// A 404 (never created) is the normal case on a fresh demo project.
+		}
 	}
 }
 
@@ -865,7 +867,7 @@ async function runTour() {
 	let repliesSoFar = await copilotReplies.count();
 	let askedFirst = false;
 	if (aiOn) {
-		askedFirst = await askCopilot('How is my project doing today?');
+		askedFirst = await askCopilot('How many users do I have, and where are they signing in from?');
 		if (askedFirst) log('copilot question 1 sent - the answer lands during the stats');
 	}
 
@@ -1045,12 +1047,38 @@ async function runTour() {
 	await pace(1800);
 	await screenshot(page, '12-db-live-update');
 
-	// --- Finale: the copilot answers from the collection we just built --------
+	// A second collection, so the finale shows the copilot reading a database
+	// with real structure - and collection-per-DO in the sidebar count.
+	await clickEl(page, page.getByRole('tab', { name: 'Collections' }));
+	await pace(500);
+	await clickEl(page, page.locator('#new-collection-name'));
+	await page.keyboard.type('comments', { delay: 40 });
+	await pace(200);
+	await clickEl(page, page.getByRole('button', { name: 'Create', exact: true }));
+	await page.getByTestId('db-collection-comments').waitFor({ timeout: 10_000 });
+	for (const [id, body] of [
+		['comment-1', 'Durable Objects make this so much simpler.'],
+		['comment-2', 'Wait, the dashboard updates itself?']
+	]) {
+		await fetch(api(`db/admin/collections/comments/documents/${id}`), {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json', origin: BASE },
+			body: JSON.stringify({ data: { body, post: 'post-1' } }),
+			signal: AbortSignal.timeout(10_000)
+		}).catch(() => null);
+	}
+	await pace(1200);
+	await screenshot(page, '13-db-second-collection');
+
+	// --- Finale: the copilot answers from the database we just built ----------
+	// Asked LAST, once both collections and every document exist, and phrased
+	// as one concrete request: small models answer a single clear question far
+	// more reliably than a compound one.
 	let askedDb = false;
 	if (aiOn) {
 		repliesSoFar = await copilotReplies.count();
-		askedDb = await askCopilot('What is in my posts collection, and which post is winning?');
-		if (askedDb) log('copilot asked about the db - it queries the collection live');
+		askedDb = await askCopilot('List my collections and the posts with their vote counts.');
+		if (askedDb) log('copilot asked about the db - it queries the collections live');
 	}
 
 	if (askedDb) {
@@ -1064,12 +1092,14 @@ async function runTour() {
 			settle: 150
 		});
 		await pace(2000);
-		await screenshot(page, '13-db-integration');
+		await screenshot(page, '14-db-integration');
 
 		if (await waitForReply(repliesSoFar, 45_000)) {
 			await glideTo(page, copilotPanel, { settle: 150 });
 			await pace(3400);
-			await screenshot(page, '14-copilot-db');
+			await screenshot(page, '15-copilot-db');
+		} else {
+			log('WARNING: the db answer did not arrive - re-take, or check Workers AI');
 		}
 	} else {
 		await clickEl(page, page.getByRole('tab', { name: 'Integration' }));
@@ -1077,7 +1107,7 @@ async function runTour() {
 		const sdkPill = page.getByTestId('db-integration').getByRole('tab', { name: 'Client SDK' });
 		if (await sdkPill.count()) await clickEl(page, sdkPill.first());
 		await pace(2200);
-		await screenshot(page, '13-db-integration');
+		await screenshot(page, '14-db-integration');
 	}
 
 	await glide(page, 760, 420);

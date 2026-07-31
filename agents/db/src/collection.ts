@@ -98,6 +98,14 @@ export class DbCollection extends DurableObject<Env> {
 			await migrate(this.db, migrations);
 			this.config = storedConfigSchema.parse(await this.loadStoredConfig());
 		});
+		// Counts are otherwise only reported after a WRITE, so the parent's
+		// number goes stale whenever documents change without one: a
+		// point-in-time restore (which rewrites the whole table), a collection
+		// whose documents predate count reporting, or a failed report. Sending
+		// the absolute count on every wake makes it self-heal on first touch -
+		// the report is debounced and best-effort, so a cold start pays one
+		// cheap RPC and nothing depends on it succeeding.
+		this.scheduleStatsReport();
 	}
 
 	private async loadStoredConfig(): Promise<unknown> {

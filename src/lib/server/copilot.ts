@@ -378,8 +378,11 @@ export async function runCopilot(options: {
 		const calls = normalizeToolCalls(result.tool_calls);
 		if (calls.length === 0) {
 			const answer = result.response?.trim();
-			if (!answer) throw new Error('Workers AI returned an empty response');
-			return { answer, model };
+			if (answer) return { answer, model };
+			// Neither tool calls nor text: small models do this on multi-part
+			// questions. The forcing call below is exactly the recovery for it,
+			// so break to it instead of failing the request outright.
+			break;
 		}
 		messages.push({
 			role: 'assistant',
@@ -390,7 +393,13 @@ export async function runCopilot(options: {
 		}
 	}
 
-	// Tool budget spent - one last tool-less call forces a text answer.
+	// Tool budget spent (or the model went quiet): one last tool-less call,
+	// nudged to answer in prose, forces a text response out of what it has.
+	messages.push({
+		role: 'user',
+		content:
+			'Answer now, in plain text, using the information gathered above. Do not call any more tools.'
+	});
 	const final = aiResultSchema.parse(
 		await runner.run(model, { messages, max_tokens: 600, temperature: 0.2 })
 	);
