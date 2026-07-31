@@ -10,11 +10,13 @@
 		DbImportReport,
 		DbOverview,
 		DbQueryResult,
+		DbRestorePoint,
 		DbRestorePoints,
 		DbValidator
 	} from '$lib/agents';
 	import { dbAccessModeSchema, dbValidatorSchema } from '$lib/agents';
 	import CodeExamples from '$lib/components/code-examples.svelte';
+	import { ulid } from '$lib/ulid';
 	import type { CodeExample } from '$lib/integration-examples';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -32,6 +34,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
 		Activity,
+		BookmarkPlus,
 		Calendar as CalendarIcon,
 		Database,
 		Download,
@@ -567,6 +570,8 @@
 	let rollbackConfirmInput = $state('');
 	let rollbackError = $state<string | null>(null);
 	let rollbackUndo = $state<string | null>(null);
+	/** The most recent manual save, surfaced so the bookmark can be copied. */
+	let lastCaptured = $state<DbRestorePoint | null>(null);
 	let resolveTimer: ReturnType<typeof setTimeout> | null = null;
 
 	/** What a submit would restore to, whichever tab is active. */
@@ -585,6 +590,7 @@
 		rollbackConfirmInput = '';
 		rollbackError = null;
 		rollbackUndo = null;
+		lastCaptured = null;
 		rollbackOpen = true;
 		void refreshRestorePoints();
 	}
@@ -654,6 +660,7 @@
 		}
 	}
 
+	/** Bookmark this exact moment so it can be rolled back to later. */
 	async function capturePoint() {
 		const name = selected;
 		if (!name) return;
@@ -663,12 +670,14 @@
 			const response = await fetch(`${adminBase}/${encodeURIComponent(name)}/checkpoint`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: '{}'
+				body: JSON.stringify({ reason: 'saved by operator' })
 			});
-			const result = (await response.json().catch(() => null)) as { error?: string } | null;
-			if (!response.ok) {
+			const result = (await response.json().catch(() => null)) as
+				(DbRestorePoint & { error?: string }) | null;
+			if (!response.ok || !result?.bookmark) {
 				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
 			}
+			lastCaptured = result;
 			await refreshRestorePoints();
 		} catch (error) {
 			rollbackError = error instanceof Error ? error.message : String(error);
@@ -775,7 +784,7 @@
 		}
 		busy = true;
 		try {
-			const id = docIdInput.trim() || crypto.randomUUID();
+			const id = docIdInput.trim() || ulid();
 			// ADD refuses a taken id (409) so a typo cannot silently overwrite;
 			// EDIT keeps the deliberate replace semantics.
 			const guard = editingExisting ? '' : '?ifAbsent=1';
@@ -1066,6 +1075,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 									<Input
 										id="new-collection-name"
 										class="font-mono"
+										placeholder="collection name…"
 										bind:value={newCollectionName}
 									/>
 								</div>
@@ -1747,6 +1757,35 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 			</p>
 		{:else}
 			<div class="space-y-3">
+				<!-- Saving the current state is useful in BOTH modes (and before
+				     anything risky), so it sits above the Date|Bookmark toggle
+				     rather than inside one tab. -->
+				<div
+					class="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3"
+				>
+					<div class="min-w-0">
+						<p class="text-sm font-medium">Save this moment</p>
+						<p class="text-xs text-muted-foreground">
+							Bookmark the collection as it is right now, so you can roll back to it later.
+						</p>
+					</div>
+					<Button
+						size="sm"
+						variant="outline"
+						class="gap-1.5"
+						data-testid="db-capture-point"
+						disabled={busy}
+						onclick={() => void capturePoint()}
+					>
+						<BookmarkPlus class="h-4 w-4" /> Save bookmark
+					</Button>
+					{#if lastCaptured}
+						<code
+							class="block w-full overflow-x-auto rounded border bg-muted/50 p-2 text-xs"
+							data-testid="db-captured-bookmark">{lastCaptured.bookmark}</code
+						>
+					{/if}
+				</div>
 				<div class="flex w-fit gap-1 rounded-lg border p-1" role="tablist">
 					<Button
 						size="sm"
@@ -1844,19 +1883,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 						/>
 					</div>
 					<div class="space-y-2">
-						<div class="flex items-center justify-between">
-							<Label>Captured points</Label>
-							<Button
-								size="sm"
-								variant="ghost"
-								class="h-7 text-xs"
-								data-testid="db-capture-point"
-								disabled={busy}
-								onclick={() => void capturePoint()}
-							>
-								Capture now
-							</Button>
-						</div>
+						<Label>Captured points</Label>
 						{#if rollbackInfo === null}
 							<p class="text-xs text-muted-foreground">Loading captured points…</p>
 						{:else if rollbackInfo.points.length === 0}

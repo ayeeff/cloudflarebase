@@ -17,6 +17,7 @@ import {
 	type DecodedCursor,
 } from './query';
 import { hasPermission, validateDocument } from './rules';
+import { ulid } from './ulid';
 import {
 	aggregateRequestSchema,
 	clientFrameSchema,
@@ -167,7 +168,7 @@ export class DbCollection extends DurableObject<Env> {
 					report.errors.push({ line: index, error: sizeIssue });
 					continue;
 				}
-				const id = line.id ?? crypto.randomUUID();
+				const id = line.id ?? ulid();
 				const [existing] = await this.db
 					.select()
 					.from(documents)
@@ -513,7 +514,10 @@ export class DbCollection extends DurableObject<Env> {
 			}
 		}
 
-		const id = body.data.id ?? crypto.randomUUID();
+		// ULID, not UUID: ids sort chronologically, so id order - the default
+		// for exports, cursor pages, and the dashboard browser - reads oldest
+		// first with no orderBy.
+		const id = body.data.id ?? ulid();
 		const [existing] = await this.db.select().from(documents).where(eq(documents.id, id)).limit(1);
 		if (existing) {
 			return Response.json({ error: 'a document with that id already exists' }, { status: 409 });

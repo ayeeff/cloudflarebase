@@ -471,11 +471,28 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	 * environment has no PITR (local dev) - callers degrade gracefully. */
 	private async captureRestorePoint(name: string, reason: string): Promise<RestorePoint | null> {
 		try {
-			const current = await this.childStub(name).currentBookmark();
+			const current = await this.probeBookmark(name);
 			if (!current.ok) return null;
 			return await this.saveRestorePoint(name, current.bookmark, reason);
 		} catch {
 			return null;
+		}
+	}
+
+	/**
+	 * The child's current bookmark, retried once on an abort-reset: a restore
+	 * leaves that instance resetting for a tick, and without the retry a
+	 * capture or a support probe in that window reports "unsupported" for a
+	 * collection whose PITR is perfectly fine. The async wrapper is also what
+	 * collapses the RPC stub's union return type for inference.
+	 */
+	private async probeBookmark(name: string) {
+		const probe = async () => this.childStub(name).currentBookmark();
+		try {
+			return await probe();
+		} catch (error) {
+			if (!isDurableObjectReset(error)) throw error;
+			return await probe();
 		}
 	}
 
@@ -488,7 +505,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		if (!(await this.collectionRow(name))) {
 			return Response.json({ error: 'no such collection' }, { status: 404 });
 		}
-		const probe = await this.childStub(name).currentBookmark();
+		const probe = await this.probeBookmark(name);
 		// The platform window is 30 days; older markers are dead weight.
 		await this.db
 			.delete(restorePoints)
@@ -531,7 +548,16 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			return Response.json({ error: 'no such collection' }, { status: 404 });
 		}
 
-		const outcome = await this.childStub(name).bookmarkForTime(new Date(target).toISOString());
+		const resolve = async () =>
+			this.childStub(name).bookmarkForTime(new Date(target).toISOString());
+		let outcome;
+		try {
+			outcome = await resolve();
+		} catch (error) {
+			// Same reset window as probeBookmark: retry once on the fresh instance.
+			if (!isDurableObjectReset(error)) throw error;
+			outcome = await resolve();
+		}
 		if (!outcome.ok) {
 			if (outcome.code === 'unsupported') {
 				return Response.json(
