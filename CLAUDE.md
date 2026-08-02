@@ -28,6 +28,7 @@ The root Worker binds `AUTH_AGENT` + `DB_AGENT` (agent services) and `DB` (contr
 | root          | `npm run dev`                         | Auth Agent on :8788, DB Agent on :8789, then Vite on :5173                                |
 | root          | `npm run check` / `npm run lint`      | Svelte diagnostics / Prettier and ESLint                                                  |
 | root          | `npm run demo:video`                  | Self-driving demo tour for screen recording (`--check` for headless validation)           |
+| root          | `npm run demo:live`                   | Same seeding + live traffic, no choreography: opens a browser you drive yourself          |
 | root          | `npm run build`                       | Production SvelteKit Cloudflare build                                                     |
 | root          | `npm test` / `npm run test:e2e`       | Full Playwright suite against Workers on :8797/:8798/:8799 (`test:e2e:ui` for the UI)     |
 | root          | `npm run cf-typegen`                  | Regenerate `src/worker-configuration.d.ts` after binding changes                          |
