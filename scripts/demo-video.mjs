@@ -771,10 +771,12 @@ function startTraffic() {
 }
 
 /**
- * Database activity to match, for --live only. Mostly upvotes: they re-rank an
- * open documents table through the live-query engine without growing the demo
- * project's 200-doc-per-collection ceiling. New posts land occasionally, and
- * are capped for the same reason.
+ * Database activity to match, for --live only. Mostly upvotes, because a vote
+ * count changing in an open table is the live-query engine proving itself
+ * without growing the demo project's 200-doc-per-collection ceiling. (The
+ * dashboard browser reads in document-id order - re-ranking is what a SUBSCRIBED
+ * client with `orderBy votes desc` sees, which is the Integration tab's snippet,
+ * not this table.) New posts land occasionally, capped for the same reason.
  */
 function startDbTraffic() {
 	const rand = mulberry32((Date.now() >>> 3) % 2 ** 31);
@@ -794,7 +796,7 @@ function startDbTraffic() {
 		trafficLog('upvote', `${post.id} -> ${post.votes} votes`, res);
 	};
 	dbTimer = setInterval(() => void tick().catch(() => {}), 7300);
-	log('database activity running (upvotes re-rank open tables live)');
+	log('database activity running (upvotes land in an open documents table, no refresh)');
 }
 
 // ---------------------------------------------------------------------------
