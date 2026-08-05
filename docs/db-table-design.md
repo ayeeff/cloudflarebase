@@ -20,25 +20,37 @@ and the dashboard's change handling are reused verbatim rather than forked.
 What makes a table a table:
 
 - **Declared columns, real DDL.** The operator declares typed columns; the
-  instance holds one physical SQLite table `rows` with real columns and real
+  instance holds one physical SQLite table with real columns and real
   indexes. Queries hit typed columns directly instead of `json_extract` over
   a JSON blob.
+- **ORM-compatible storage, by construction (user decision).** The physical
+  table is named after the declared table and the system columns are plain
+  reserved names - `id`, `owner`, `created_at`, `updated_at`, refused as
+  user column names - so ORM-generated SQL (`select "id", "title" from
+  "todos"`) reads and writes the real schema unmodified. Naming lands in S1
+  because renaming later is a data migration; the SQL execution surface
+  itself is S2 (§13).
 - **Schema-first, never auto-created.** Unlike collections (first write
   auto-creates), a table must be declared via `PUT /admin/tables/:name`
   before any data traffic; an unregistered table 404s. SQL means schema.
 - **Single-table by construction.** No joins, no cross-shard anything - the
   same v1 stance as collections, and the property that makes live SQL queries
   tractable.
+- **Two views, one storage.** The ORM/SQL view is the flat row; the
+  realtime/SDK view is the document envelope (`data` = column map). Same
+  bytes, two read shapes.
 
 ## 2. Column DSL (`schemas.ts` additions)
 
 ```
-tableNameSchema   = collectionNameSchema (same grammar; it is only a DO name
-                    suffix - the physical table is always `rows`)
-columnNameSchema  = /^[a-z][a-z0-9_]{0,63}$/   // no leading underscore: the
-                    system columns _id/_owner/_created_at/_updated_at are
-                    reserved; no hyphens: column names appear in dotted
-                    query field paths
+tableNameSchema   = collectionNameSchema (same grammar; also the physical
+                    SQLite table's name, quoted in all generated SQL)
+columnNameSchema  = /^[a-z][a-z0-9_]{0,63}$/   // no leading underscore
+                    (reserved for future system use); no hyphens: column
+                    names appear in dotted query field paths. The system
+                    columns are PLAIN reserved names - id, owner,
+                    created_at, updated_at - refused as user columns, so
+                    the SQL view reads like a normal table
 tableColumnSchema = strictObject({
   name: columnNameSchema,
   type: enum(['text','integer','real','boolean','json']),
@@ -73,12 +85,14 @@ introspection, because `pragma_table_info()` is blocked (`SQLITE_AUTH`)**.
 
 ## 3. DDL apply (pure module `table-schema.ts`)
 
-`planDdl(applied, declared)` returns either `{ statements: string[] }` or a
-refusal, and is unit-tested exhaustively:
+`planDdl(table, applied, declared)` returns either `{ statements: string[] }`
+or a refusal, and is unit-tested exhaustively:
 
-- New column → `ALTER TABLE "rows" ADD COLUMN "name" TYPE [NOT NULL DEFAULT ?]`.
-  SQLite requires a default for NOT NULL adds; the zod layer enforces that
-  pairing so the child never discovers it mid-DDL.
+- New column → `ALTER TABLE "<table>" ADD COLUMN "name" TYPE [NOT NULL
+  DEFAULT lit]`. SQLite requires a default to backfill NOT NULL adds; the
+  PLANNER refuses that pairing's absence (the zod layer deliberately allows
+  NOT-NULL-without-default - it is the "required on write" declaration for
+  columns present since creation).
 - New `index`/`unique` → `CREATE [UNIQUE] INDEX`. Uniquifying an existing
   column may genuinely fail on duplicate data: the child reports the SQLite
   error and the parent answers 409 with it - the operator resolves the dupes.
@@ -88,7 +102,7 @@ refusal, and is unit-tested exhaustively:
   territory (S3 tooling; until then, recreate).
 - Bounds/enum rule changes are metadata-only - no DDL, config push alone.
 
-All generated SQL quotes identifiers; values are always bound. The `rows`
+All generated SQL quotes identifiers; values are always bound. The physical
 table lives entirely outside drizzle (dynamic columns cannot be modeled);
 drizzle still runs the shared migrations in `DbTable`, where `subscriptions`
 and `collection_meta` are used and every other table stays empty - the
@@ -109,7 +123,7 @@ resolution against the declared schema at compile time:
 `compileTableQuery(query, columns, options)` mirrors `compileQuery` clause
 for clause (including the `IS NULL` / Firestore `!=` / `array-contains`-on-
 json semantics, cursor keyset continuation, and owner scoping via the real
-`_owner` column). **The JS matcher and order comparator are not duplicated**:
+`owner` column). **The JS matcher and order comparator are not duplicated**:
 `matchesQuery`/`orderComparator`/`getPath` from `query.ts` already operate on
 the DTO's data map and apply as-is, because json columns arrive parsed and
 booleans normalize identically. The new unit suite `table-query.unit.test.ts`
@@ -124,10 +138,11 @@ compiled queries, not on document specifics.
 
 Structurally `DbCollection` with the document specifics swapped out:
 
-- **Physical schema**: `rows(_id TEXT PRIMARY KEY, _owner TEXT, _created_at
-  INTEGER, _updated_at INTEGER, ...declared columns)` created on first
-  `configure()`; `_owner` gets its index at creation. Ids are ULIDs from the
-  existing `ulid.ts` (chronological default order).
+- **Physical schema**: `"<table>"(id TEXT PRIMARY KEY, owner TEXT,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, ...declared
+  columns)` created on first `configure()`; `owner` and `updated_at` get
+  their indexes at creation. Ids are ULIDs from the existing `ulid.ts`
+  (chronological default order).
 - **HTTP surface** (hot path `/agents/db-agent/<pid>/tables/<t>/**`):
   `POST /rows` (`{id?, data}`, 201/409), `GET|PUT|PATCH|DELETE /rows/:id`,
   `POST /query`, `GET /subscribe` (WS upgrade, same frame schemas). PATCH is
@@ -235,7 +250,37 @@ query/subscribe` in S1 (aggregate arrives with S2, export with S3). Optional
 compile-time typing: `table<T extends Record<string, unknown>>(name)` types
 `data` as `T` through the handle - zero runtime cost, real DX.
 
-## 10. e2e
+## 10. ORM compatibility (user decision)
+
+The SQL layer must be drivable by ORMs - drizzle and prisma named
+explicitly. What that means concretely, and when each piece lands:
+
+- **S1 (this phase): the storage is the contract.** Physical table named
+  after the declared table, plain reserved system columns, real types and
+  indexes - ORM-generated SQL matches the schema on disk. This is why the
+  naming ships now: it is the only part that would be a data migration
+  later.
+- **S2: a D1-shaped execution surface.** The per-table SQL endpoint takes
+  D1's request/response contract (`{sql, params}` in, D1-style results out)
+  rather than a protocol of our own, because `drizzle-orm/d1` and prisma's
+  D1 driver-adapter pattern already speak it - official adapters become
+  thin shims (`@cloudflarebase/db/drizzle` first, prisma adapter after).
+  Single-table SQL only; statements are classified (SELECT vs DML), DML
+  runs `RETURNING` capture so live queries (and later the replication log)
+  fire identically to typed CRUD, and every write funnels through the same
+  `table-schema.ts` validation. Reads route to replicas once R1 lands.
+- **The column DSL stays the schema source of truth.** ORMs are runtime
+  clients; drizzle-kit/prisma-migrate DDL is not accepted (the endpoint
+  refuses DDL statements). The inverse direction ships instead: schema
+  codegen from declared columns (`cloudflarebase pull` emitting a drizzle
+  schema, prisma models later) so the ORM's types always mirror the
+  declared truth.
+- **Transactions**: single-statement atomicity is native; a D1-style
+  `batch` (one table, one implicit transaction via `transactionSync`) is
+  the S2 shape. Cross-table transactions remain out of scope - shard
+  independence is the topology.
+
+## 11. e2e
 
 Same self-seeding regime (`DB_PROJECT`/`SCRATCH_PROJECT`, seed counts never
 touched): `db-tables.api.spec.ts` (declare, additive alter, destructive-alter
@@ -249,16 +294,18 @@ Tables tab behind `gotoAuthPage`-style hydration gates, and the OpenAPI spec
 asserting the new paths. Unit: `table-schema` DDL planner + `table-query`
 parity suites run in the same node:test pipeline.
 
-## 11. Non-goals (S1)
+## 12. Non-goals (S1)
 
-Joins and cross-shard reads/writes; aggregates and raw SQL (S2); export/
-import/PITR/checkpoints for tables (S3); replication (R1+); composite
-indexes; column drop/rename/retype tooling; CHECK constraints, foreign keys,
-generated columns; table-level validators beyond per-column bounds (the
-column DSL is the validator); collation/non-ASCII ordering guarantees beyond
-v1's documented "unspecified".
+Joins and cross-shard reads/writes; aggregates and the SQL execution
+surface (S2, §10); export/import/PITR/checkpoints for tables (S3);
+replication (R1+); composite indexes; column drop/rename/retype tooling;
+CHECK constraints, foreign keys, generated columns; ORM-authored migrations
+(drizzle-kit/prisma-migrate emit DDL we refuse - the column DSL is the
+schema source of truth); table-level validators beyond per-column bounds
+(the column DSL is the validator); collation/non-ASCII ordering guarantees
+beyond v1's documented "unspecified".
 
-## 12. Risks
+## 13. Risks
 
 1. **Affinity looseness** - typed columns only mean something because the JS
    write path enforces them; any write path that skips validation (a future

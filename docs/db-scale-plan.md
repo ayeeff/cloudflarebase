@@ -65,6 +65,14 @@ in every region and live queries on both models, out of the box.
 7. **Marketing pages**: `/pricing` (self-hosted cost calculator, ships early,
    independent) and `/limits` (ceilings + worked scenarios, ships with the
    replication launch). Both `(marketing)` routes, public by group.
+8. **The SQL layer is ORM-compatible (user decision).** Storage is the
+   contract from S1 on: the physical table is named after the declared
+   table with plain reserved system columns (`id`, `owner`, `created_at`,
+   `updated_at`), so drizzle/prisma-generated SQL runs unmodified. The S2
+   execution surface takes D1's request/response shape, making
+   `drizzle-orm/d1`-style adapters thin shims; the column DSL remains the
+   schema source of truth (ORM-authored DDL is refused, schema codegen
+   ships instead). Details in db-table-design.md §10.
 
 ## Architecture
 
@@ -123,10 +131,12 @@ resume is a later protocol-compatible upgrade since replicas hold the log tail.
   nullable/default/unique + secondary indexes) applied as real SQLite DDL.
   Additive migrations only (ADD COLUMN, CREATE INDEX); no user DDL strings.
 - **Three API tiers**: (1) typed CRUD + the same `where/orderBy/limit` DSL for
-  public clients — the live-query surface; (2) parameterized **SELECT-only raw
-  SQL** (parser-validated allowlist), executed **only on replicas** — arbitrary
-  SQL reads scale horizontally by construction; (3) operator SQL console in
-  the dashboard (writes → primary).
+  public clients — the live-query surface; (2) a **D1-shaped SQL endpoint**
+  (single-table; SELECT vs DML classified, DML `RETURNING`-captured so live
+  queries and the change log fire; drivable by drizzle/prisma via thin
+  adapters) — SELECT tier executes **only on replicas** once R1 lands, so
+  arbitrary SQL reads scale horizontally by construction; (3) operator SQL
+  console in the dashboard (writes → primary).
 - **RLS without a policy language**: access modes `public|auth|owner`; `owner`
   adds an implicit indexed `_owner` column auto-scoped on public reads/writes;
   `readPermission`/`writePermission` reuse `rules.ts` unchanged; column types
@@ -226,8 +236,11 @@ replica log streaming; the replica-map demo. **M2 — `/limits`** ships with it.
 
 ### S2 — SQL depth
 
-Replica-only raw SQL tier, table aggregates, LSN resume tokens if demand
-warrants.
+The D1-shaped SQL endpoint (single-table SELECT + DML with `RETURNING`
+capture, statement classification, `batch`), the `@cloudflarebase/db/drizzle`
+adapter and schema codegen from declared columns, SELECT routing to replicas,
+table aggregates, LSN resume tokens if demand warrants. Prisma driver
+adapter follows.
 
 ### S3 — parity + default-on
 

@@ -249,6 +249,167 @@ export const settingsRequestSchema = z.strictObject({
 });
 
 // ---------------------------------------------------------------------------
+// Tables: the typed-column DSL (phase S1 of docs/db-scale-plan.md)
+
+/** Table names are DO name suffixes exactly like collection names; the
+ * physical SQLite table inside the instance is always `rows`. */
+export const tableNameSchema = collectionNameSchema;
+
+/**
+ * No leading underscore (reserved for future system use) and no hyphens
+ * (column names appear as dotted query field-path segments). Quoted in all
+ * generated SQL regardless. The system columns are PLAIN reserved names -
+ * `id`, `owner`, `created_at`, `updated_at` - so ORM-generated SQL reads
+ * like a normal table; the reservation lives in tableColumnsSchema.
+ */
+export const columnNameSchema = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);
+
+/** Owned by the platform: the row envelope's fields as real SQL columns. */
+export const RESERVED_COLUMN_NAMES = ['id', 'owner', 'created_at', 'updated_at'] as const;
+
+export const columnTypeSchema = z.enum(['text', 'integer', 'real', 'boolean', 'json']);
+export type ColumnType = z.infer<typeof columnTypeSchema>;
+
+export const MAX_TABLE_COLUMNS = 64;
+/** unique + index combined. */
+export const MAX_TABLE_INDEXES = 16;
+
+/**
+ * One declared column. SQLite affinity is NOT the type system - it would
+ * happily store text in an INTEGER column - so the write path validates
+ * values against `type` in JS before binding. The rules-lite bounds
+ * (maxLength/min/max/enum) are enforced in the same place, never as CHECK
+ * constraints (CHECK cannot be added or altered after the fact).
+ */
+export const tableColumnSchema = z
+	.strictObject({
+		name: columnNameSchema,
+		type: columnTypeSchema,
+		nullable: z.boolean().default(true),
+		/** Materialized by the WRITE PATH (missing column -> default), so
+		 * changing it later is metadata-only. The SQL DEFAULT clause is only
+		 * emitted where SQLite demands one: ADD COLUMN ... NOT NULL. */
+		default: scalarSchema.optional(),
+		/** Implemented as a UNIQUE index; implies `index`. */
+		unique: z.boolean().default(false),
+		index: z.boolean().default(false),
+		/** text columns: maximum string length. */
+		maxLength: z.number().int().min(0).max(131072).optional(),
+		/** integer/real columns only. */
+		min: z.number().optional(),
+		max: z.number().optional(),
+		/** text/integer/real columns: allowed values. */
+		enum: z.array(scalarSchema).min(1).max(20).optional(),
+	})
+	.superRefine((column, ctx) => {
+		const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
+		if (column.default !== undefined && !valueFitsType(column.type, column.default)) {
+			fail(`"${column.name}": default must be a ${column.type}`);
+		}
+		if (column.type === 'json' && column.default !== undefined) {
+			fail(`"${column.name}": json columns cannot declare a default`);
+		}
+		// NOT NULL without a default is legal and useful - it means "required on
+		// write". Only ADDING such a column to an existing table is refused (the
+		// DDL planner owns that rule: SQLite must backfill existing rows).
+		if (column.maxLength !== undefined && column.type !== 'text') {
+			fail(`"${column.name}": maxLength applies to text columns`);
+		}
+		if ((column.min !== undefined || column.max !== undefined) && column.type !== 'integer' && column.type !== 'real') {
+			fail(`"${column.name}": min/max apply to integer and real columns`);
+		}
+		if (column.enum !== undefined && (column.type === 'json' || column.type === 'boolean')) {
+			fail(`"${column.name}": enum applies to text, integer, and real columns`);
+		}
+	});
+export type TableColumn = z.infer<typeof tableColumnSchema>;
+
+/** Scalar-vs-declared-type check shared by the schema and the write path. */
+export function valueFitsType(type: ColumnType, value: string | number | boolean | null): boolean {
+	if (value === null) return true;
+	switch (type) {
+		case 'text':
+			return typeof value === 'string';
+		case 'integer':
+			return typeof value === 'number' && Number.isInteger(value);
+		case 'real':
+			return typeof value === 'number';
+		case 'boolean':
+			return typeof value === 'boolean';
+		case 'json':
+			return true;
+	}
+}
+
+export const tableColumnsSchema = z
+	.array(tableColumnSchema)
+	.min(1)
+	.max(MAX_TABLE_COLUMNS)
+	.superRefine((columns, ctx) => {
+		const names = new Set<string>();
+		for (const column of columns) {
+			if (names.has(column.name)) {
+				ctx.addIssue({ code: 'custom', message: `duplicate column "${column.name}"` });
+			}
+			names.add(column.name);
+			if ((RESERVED_COLUMN_NAMES as readonly string[]).includes(column.name)) {
+				ctx.addIssue({
+					code: 'custom',
+					message: `"${column.name}" is a system column (id, owner, created_at, updated_at are reserved)`,
+				});
+			}
+		}
+		const indexes = columns.filter((column) => column.unique || column.index).length;
+		if (indexes > MAX_TABLE_INDEXES) {
+			ctx.addIssue({
+				code: 'custom',
+				message: `a table is limited to ${MAX_TABLE_INDEXES} indexed columns`,
+			});
+		}
+	});
+
+/**
+ * The PUT /admin/tables/:name body. Permissions are three-state exactly like
+ * collections (omitted = unchanged, null = clear); `columns` is the full
+ * desired schema - the parent diffs it against the registry's stored columns
+ * and refuses destructive changes before anything is pushed.
+ */
+export const tableModesSchema = z.strictObject({
+	readAccess: accessModeSchema.default('auth'),
+	writeAccess: accessModeSchema.default('auth'),
+	readPermission: permissionKeySchema.nullable().optional(),
+	writePermission: permissionKeySchema.nullable().optional(),
+	columns: tableColumnsSchema,
+});
+
+/** Pushed parent -> child; cached in collection_meta alongside a record of
+ * what DDL has actually been applied (pragma_table_info is SQLITE_AUTH). */
+export const tableConfigSchema = z.strictObject({
+	kind: z.literal('table'),
+	projectId: projectIdSchema,
+	table: tableNameSchema,
+	readAccess: accessModeSchema,
+	writeAccess: accessModeSchema,
+	readPermission: z.string().nullable(),
+	writePermission: z.string().nullable(),
+	columns: tableColumnsSchema,
+	allowedOrigins: z.array(z.string()).max(10),
+	demo: z.boolean(),
+	configVersion: z.number().int().min(0),
+});
+export type TableConfig = z.infer<typeof tableConfigSchema>;
+
+export const storedTableConfigSchema = tableConfigSchema.nullable().catch(null);
+
+/**
+ * A row's wire shape is deliberately the document envelope - `data` is the
+ * column-value map (json columns parsed, booleans as true/false) - so the
+ * live-query frames, the SDK subscribe machinery, and the dashboard change
+ * handling are shared with collections rather than forked.
+ */
+export type DbRow = DbDocument;
+
+// ---------------------------------------------------------------------------
 // Export / import / point-in-time restore
 
 export const MAX_IMPORT_DOCS = 1000;
