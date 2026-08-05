@@ -103,8 +103,15 @@ test.describe('demo project', () => {
 		expect(created.status(), await created.text()).toBe(201);
 		const doc = await created.json();
 
+		// Replication defaults to auto for demo projects too - the demo IS the
+		// pitch - so the write answers with a session bookmark, and threading it
+		// into the read is the documented read-your-writes contract.
+		const lsn = Number(created.headers()['cfb-lsn']);
+		expect(lsn, 'demo shards replicate by default').toBeGreaterThan(0);
+
 		const queried = await request.post(dbQueryPath(DEMO_PROJECT, 'notes'), {
-			data: { where: [{ field: 'marker', op: '==', value: marker }] }
+			data: { where: [{ field: 'marker', op: '==', value: marker }] },
+			headers: { 'cfb-min-lsn': String(lsn) }
 		});
 		expect(queried.ok(), await queried.text()).toBeTruthy();
 		const { docs } = await queried.json();
@@ -133,8 +140,14 @@ test.describe('demo project', () => {
 		expect(created.status(), await created.text()).toBe(201);
 		expect((await created.json()).data.done).toBe(false);
 
+		// Same bookmark threading as the collection flow: tables replicate by
+		// default on demo projects too.
+		const lsn = Number(created.headers()['cfb-lsn']);
+		expect(lsn, 'demo tables replicate by default').toBeGreaterThan(0);
+
 		const queried = await request.post(dbTableQueryPath(DEMO_PROJECT, 'demo_todos'), {
-			data: { where: [{ field: 'title', op: '==', value: marker }] }
+			data: { where: [{ field: 'title', op: '==', value: marker }] },
+			headers: { 'cfb-min-lsn': String(lsn) }
 		});
 		expect(queried.ok(), await queried.text()).toBeTruthy();
 		expect((await queried.json()).docs).toHaveLength(1);

@@ -24,6 +24,7 @@ test.describe('db agent (live queries over tables)', () => {
 			data: {
 				readAccess: 'public',
 				writeAccess: 'public',
+				replication: 'off',
 				columns: [
 					{ name: 'title', type: 'text', nullable: false },
 					{ name: 'rank', type: 'integer', default: 0 },
@@ -91,6 +92,7 @@ test.describe('db agent (live queries over tables)', () => {
 			data: {
 				readAccess: 'public',
 				writeAccess: 'public',
+				replication: 'off',
 				columns: [{ name: 'rank', type: 'integer', nullable: false }]
 			}
 		});
@@ -145,6 +147,7 @@ test.describe('db agent (live queries over tables)', () => {
 			data: {
 				readAccess: 'public',
 				writeAccess: 'public',
+				replication: 'off',
 				columns: [{ name: 'title', type: 'text' }]
 			}
 		});
@@ -173,6 +176,7 @@ test.describe('db agent (live queries over tables)', () => {
 			data: {
 				readAccess: 'auth',
 				writeAccess: 'auth',
+				replication: 'off',
 				columns: [{ name: 'title', type: 'text' }]
 			}
 		});

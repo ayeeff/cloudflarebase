@@ -27,7 +27,7 @@ test.describe('db agent (live queries)', () => {
 	}) => {
 		const collection = `live-flow-${run}`;
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, collection), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -106,7 +106,7 @@ test.describe('db agent (live queries)', () => {
 	test('rejects malformed frames with an invalid-frame error', async ({ request }) => {
 		const collection = `live-frames-${run}`;
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, collection), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -133,7 +133,7 @@ test.describe('db agent (live queries)', () => {
 	test('windowed queries emit displacement deltas', async ({ request }) => {
 		const collection = `live-window-${run}`;
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, collection), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -184,7 +184,7 @@ test.describe('db agent (live queries)', () => {
 	test('auth-mode collections refuse tokenless subscriptions', async ({ request }) => {
 		const collection = `live-secure-${run}`;
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, collection), {
-			data: { readAccess: 'auth', writeAccess: 'auth' }
+			data: { readAccess: 'auth', writeAccess: 'auth', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -204,7 +204,7 @@ test.describe('db agent (live queries)', () => {
 		// REST write through the proxy must still reach this direct subscriber.
 		const collection = `live-direct-${run}`;
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, collection), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 

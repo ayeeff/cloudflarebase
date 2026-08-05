@@ -179,6 +179,14 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return this.env.DEMO_MODE === 'true' && DEMO_PROJECT_PATTERN.test(this.name);
 	}
 
+	/** A row's replication, normalized to the union. The column defaults to
+	 * 'auto' (read replicas out of the box, demos included - the demo IS the
+	 * pitch for this feature); 'off' is the explicit opt-out. One choke point
+	 * for every config build, routing answer, and state summary. */
+	private shardReplication(row: { replication: string }): 'off' | 'auto' {
+		return row.replication === 'auto' ? 'auto' : 'off';
+	}
+
 	async onStart(): Promise<void> {
 		// Idempotent - drizzle tracks applied migrations in its own table.
 		await migrate(this.db, migrations);
@@ -296,7 +304,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		if (!row) return null;
 		return {
 			kind: row.kind === 'table' ? 'table' : 'collection',
-			replication: row.replication === 'auto' ? 'auto' : 'off',
+			replication: this.shardReplication(row),
 		};
 	}
 
@@ -941,7 +949,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		// the epoch that tells replicas to discard and re-bootstrap must live
 		// here, in the parent. Bump it and push the config carrying it.
 		const restoredRow = await this.collectionRow(name);
-		if (restoredRow && restoredRow.replication === 'auto') {
+		if (restoredRow && this.shardReplication(restoredRow) === 'auto') {
 			await this.db
 				.update(collections)
 				.set({ repEpoch: restoredRow.repEpoch + 1 })
@@ -1049,11 +1057,6 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			patch.validator = modes.data.validator === null ? null : JSON.stringify(modes.data.validator);
 		}
 		if (modes.data.replication !== undefined) {
-			// Demo shards are throwaway; replicating them multiplies cost for
-			// nothing that outlives the TTL.
-			if (this.isEphemeral && modes.data.replication === 'auto') {
-				return Response.json({ error: 'demo projects cannot enable replication' }, { status: 400 });
-			}
 			patch.replication = modes.data.replication;
 		}
 
@@ -1159,9 +1162,6 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			patch.writePermission = modes.data.writePermission;
 		}
 		if (modes.data.replication !== undefined) {
-			if (this.isEphemeral && modes.data.replication === 'auto') {
-				return Response.json({ error: 'demo projects cannot enable replication' }, { status: 400 });
-			}
 			patch.replication = modes.data.replication;
 		}
 
@@ -1372,7 +1372,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			allowedOrigins: this.state.allowedOrigins,
 			demo: this.isEphemeral,
 			configVersion: version,
-			replication: row.replication === 'auto' ? 'auto' : 'off',
+			replication: this.shardReplication(row),
 			repEpoch: row.repEpoch,
 		};
 	}
@@ -1397,7 +1397,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			allowedOrigins: this.state.allowedOrigins,
 			demo: this.isEphemeral,
 			configVersion: version,
-			replication: row.replication === 'auto' ? 'auto' : 'off',
+			replication: this.shardReplication(row),
 			repEpoch: row.repEpoch,
 		};
 	}
@@ -1435,7 +1435,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				readPermission: row.readPermission,
 				writePermission: row.writePermission,
 				validator: parseStoredValidator(row.validator),
-				replication: row.replication === 'auto' ? ('auto' as const) : ('off' as const),
+				replication: this.shardReplication(row),
 				docs: row.docs,
 			}));
 		const tables: DbTableSummary[] = rows
@@ -1447,7 +1447,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				readPermission: row.readPermission,
 				writePermission: row.writePermission,
 				columns: parseStoredColumns(row.columns),
-				replication: row.replication === 'auto' ? ('auto' as const) : ('off' as const),
+				replication: this.shardReplication(row),
 				rows: row.docs,
 			}));
 		this.setState({

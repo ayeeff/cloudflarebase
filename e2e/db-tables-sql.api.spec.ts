@@ -54,6 +54,7 @@ test.describe('db agent (SQL endpoint)', () => {
 			data: {
 				readAccess: 'auth',
 				writeAccess: 'auth',
+				replication: 'off',
 				columns: [
 					{ name: 'title', type: 'text', nullable: false },
 					{ name: 'votes', type: 'integer', default: 0 }
@@ -126,6 +127,7 @@ test.describe('db agent (SQL endpoint)', () => {
 			data: {
 				readAccess: 'auth',
 				writeAccess: 'auth',
+				replication: 'off',
 				columns: [{ name: 'title', type: 'text', nullable: false }]
 			}
 		});
@@ -161,6 +163,7 @@ test.describe('db agent (SQL endpoint)', () => {
 			data: {
 				readAccess: 'auth',
 				writeAccess: 'auth',
+				replication: 'off',
 				columns: [{ name: 'title', type: 'text' }]
 			}
 		});
@@ -195,6 +198,7 @@ test.describe('db agent (SQL endpoint)', () => {
 			data: {
 				readAccess: 'owner',
 				writeAccess: 'owner',
+				replication: 'off',
 				columns: [{ name: 'note', type: 'text' }]
 			}
 		});
@@ -223,6 +227,7 @@ test.describe('db agent (SQL endpoint)', () => {
 			data: {
 				readAccess: 'public',
 				writeAccess: 'public',
+				replication: 'off',
 				columns: [{ name: 'votes', type: 'integer', default: 0 }]
 			}
 		});

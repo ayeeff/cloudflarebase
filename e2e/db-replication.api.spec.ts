@@ -155,10 +155,11 @@ test.describe('db agent (replication)', () => {
 		expect((await after.json()).data.title).toBe('survives');
 	});
 
-	test('unreplicated shards never advertise bookmarks', async ({ request }) => {
+	// Replication defaults to AUTO - opting out is the explicit act now.
+	test('shards opted out of replication never advertise bookmarks', async ({ request }) => {
 		const collection = `repnone-${run}`;
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, collection), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 

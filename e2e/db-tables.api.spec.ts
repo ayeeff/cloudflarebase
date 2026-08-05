@@ -72,7 +72,12 @@ test.describe('db agent (SQL tables)', () => {
 	}) => {
 		const table = `todos-${run}`;
 		const declare = await request.put(dbAdminTablePath(DB_PROJECT, table), {
-			data: { readAccess: 'public', writeAccess: 'public', columns: TODO_COLUMNS }
+			data: {
+				readAccess: 'public',
+				writeAccess: 'public',
+				replication: 'off',
+				columns: TODO_COLUMNS
+			}
 		});
 		expect(declare.ok(), await declare.text()).toBeTruthy();
 		const declared = await declare.json();
@@ -183,7 +188,7 @@ test.describe('db agent (SQL tables)', () => {
 		const table = `alter-${run}`;
 		const base = [{ name: 'title', type: 'text' }];
 		const declare = await request.put(dbAdminTablePath(DB_PROJECT, table), {
-			data: { readAccess: 'public', writeAccess: 'public', columns: base }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off', columns: base }
 		});
 		expect(declare.ok(), await declare.text()).toBeTruthy();
 
@@ -192,6 +197,7 @@ test.describe('db agent (SQL tables)', () => {
 			data: {
 				readAccess: 'public',
 				writeAccess: 'public',
+				replication: 'off',
 				columns: [
 					{ name: 'title', type: 'text', index: true },
 					{ name: 'votes', type: 'integer', default: 0 }
@@ -209,7 +215,7 @@ test.describe('db agent (SQL tables)', () => {
 			[{ name: 'title', type: 'text', index: true }]
 		]) {
 			const refused = await request.put(dbAdminTablePath(DB_PROJECT, table), {
-				data: { readAccess: 'public', writeAccess: 'public', columns }
+				data: { readAccess: 'public', writeAccess: 'public', replication: 'off', columns }
 			});
 			expect(refused.status(), JSON.stringify(columns)).toBe(400);
 			expect((await refused.json()).error).toContain('cannot');
@@ -220,6 +226,7 @@ test.describe('db agent (SQL tables)', () => {
 			data: {
 				readAccess: 'public',
 				writeAccess: 'public',
+				replication: 'off',
 				columns: [
 					{ name: 'title', type: 'text', index: true },
 					{ name: 'votes', type: 'integer', default: 0 },
@@ -234,12 +241,17 @@ test.describe('db agent (SQL tables)', () => {
 	test('table and collection names share one namespace', async ({ request }) => {
 		const name = `clash-${run}`;
 		const collection = await request.put(dbAdminCollectionPath(DB_PROJECT, name), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(collection.ok(), await collection.text()).toBeTruthy();
 
 		const table = await request.put(dbAdminTablePath(DB_PROJECT, name), {
-			data: { readAccess: 'public', writeAccess: 'public', columns: [{ name: 'x', type: 'text' }] }
+			data: {
+				readAccess: 'public',
+				writeAccess: 'public',
+				replication: 'off',
+				columns: [{ name: 'x', type: 'text' }]
+			}
 		});
 		expect(table.status()).toBe(409);
 		expect((await table.json()).error).toContain('already a collection');
@@ -251,6 +263,7 @@ test.describe('db agent (SQL tables)', () => {
 			data: {
 				readAccess: 'owner',
 				writeAccess: 'owner',
+				replication: 'off',
 				columns: [{ name: 'note', type: 'text', nullable: false }]
 			}
 		});
@@ -315,6 +328,7 @@ test.describe('db agent (SQL tables)', () => {
 			data: {
 				readAccess: 'auth',
 				writeAccess: 'auth',
+				replication: 'off',
 				columns: [
 					{ name: 'label', type: 'text', nullable: false },
 					{ name: 'stock', type: 'integer', min: 0, default: 0 }

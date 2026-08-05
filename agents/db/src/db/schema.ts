@@ -30,8 +30,11 @@ export const collections = sqliteTable('collections', {
 	validator: text('validator'),
 	/** JSON TableColumn[]; the declared schema of record. Tables only. */
 	columns: text('columns'),
-	/** 'off' | 'auto' - whether reads route to per-region replicas. */
-	replication: text('replication').notNull().default('off'),
+	/** 'off' | 'auto' - whether reads route to per-region replicas. AUTO by
+	 * default ("read replicas out of the box"), demos included: replicas cost
+	 * nothing until a region actually reads. `off` is the explicit opt-out
+	 * through the admin API. */
+	replication: text('replication').notNull().default('auto'),
 	/** Parent-owned restore epoch; bumped after PITR so replicas re-bootstrap. */
 	repEpoch: integer('rep_epoch').notNull().default(0),
 	/** Last count reported by the child (docs or rows); the child's own
