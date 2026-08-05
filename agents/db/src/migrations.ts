@@ -5,45 +5,45 @@
 // in the consumer's config. Regenerate with `npm run migrations`.
 
 const journal = {
-	"version": "7",
-	"dialect": "sqlite",
-	"entries": [
+	version: '7',
+	dialect: 'sqlite',
+	entries: [
 		{
-			"idx": 0,
-			"version": "6",
-			"when": 1785365009827,
-			"tag": "0000_swift_lethal_legion",
-			"breakpoints": true
+			idx: 0,
+			version: '6',
+			when: 1785365009827,
+			tag: '0000_swift_lethal_legion',
+			breakpoints: true,
 		},
 		{
-			"idx": 1,
-			"version": "6",
-			"when": 1785425136947,
-			"tag": "0001_moaning_beast",
-			"breakpoints": true
+			idx: 1,
+			version: '6',
+			when: 1785425136947,
+			tag: '0001_moaning_beast',
+			breakpoints: true,
 		},
 		{
-			"idx": 2,
-			"version": "6",
-			"when": 1785428742608,
-			"tag": "0002_gigantic_sleeper",
-			"breakpoints": true
+			idx: 2,
+			version: '6',
+			when: 1785428742608,
+			tag: '0002_gigantic_sleeper',
+			breakpoints: true,
 		},
 		{
-			"idx": 3,
-			"version": "6",
-			"when": 1785899012221,
-			"tag": "0003_large_anthem",
-			"breakpoints": true
+			idx: 3,
+			version: '6',
+			when: 1785899012221,
+			tag: '0003_large_anthem',
+			breakpoints: true,
 		},
 		{
-			"idx": 4,
-			"version": "6",
-			"when": 1785906574078,
-			"tag": "0004_luxuriant_marauders",
-			"breakpoints": true
-		}
-	]
+			idx: 4,
+			version: '6',
+			when: 1785906574078,
+			tag: '0004_luxuriant_marauders',
+			breakpoints: true,
+		},
+	],
 };
 
 const m0000 = `CREATE TABLE \`collection_meta\` (
@@ -133,6 +133,6 @@ export default {
 		m0001,
 		m0002,
 		m0003,
-		m0004
-	}
+		m0004,
+	},
 };

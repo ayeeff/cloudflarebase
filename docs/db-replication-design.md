@@ -6,6 +6,25 @@
 > with REST reads on replicas; R2 moves live queries onto them. The model is
 > D1's published replication design re-implemented in userland: log shipping,
 > session bookmarks, sequential consistency, single-primary writes.
+>
+> **R1 core implemented 2026-08-05.** Deviations, for future readers:
+>
+> - **Imports replicate through the log**, they do not bump the epoch (§2 as
+>   drafted): admin import funnels through the normal write path, so every
+>   imported line is an ordinary `put` entry. Only PITR restores bump the
+>   parent-owned epoch - the one path that rewrites data without the write
+>   path.
+> - `repBootstrap` takes the caller's identity and REGISTERS it before
+>   returning (the live smoke caught a bootstrapped-but-unregistered replica
+>   - an erase-fan-out orphan - when registration lived only in `repPull`).
+> - Data+log atomicity rides DO write coalescing (log append in the same
+>   task, no intervening I/O awaits) rather than `transactionSync` - risk #2's
+>   fallback, chosen because drizzle's async API cannot run inside a sync
+>   callback; verified against live workerd.
+> - The dashboard replica-map panel and the copilot ops tool ship with the
+>   R2/M2 chunk; `/admin/replication/:name` (the data they consume) is live.
+> - `/aggregate` routes to replicas for collections only (tables gain
+>   aggregates in S2).
 
 ## 1. Shape
 

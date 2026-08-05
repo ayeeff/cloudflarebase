@@ -196,7 +196,7 @@ export const logEntrySchema = z.object({
 	id: z.string(),
 	/** DTO JSON for put, config JSON for cfg, null tombstone for del. */
 	image: z.string().nullable(),
-	ts: z.number()
+	ts: z.number(),
 });
 export type LogEntry = z.infer<typeof logEntrySchema>;
 
@@ -210,6 +210,28 @@ export const MAX_REPLICA_LAG_MS = 3_000;
 export type RepPullResult =
 	| { resync: true; epoch: number }
 	| { resync: false; entries: LogEntry[]; lastLsn: number; epoch: number };
+
+export const repPullInputSchema = z.strictObject({
+	since: z.number().int().min(0),
+	replicaId: z.string().regex(/^r:[a-z-]+:\d+$/),
+	region: z.string().min(1).max(16),
+});
+
+/** Observability payloads (`/admin/replication/:name`, the replica map). */
+export interface RepReplicaStatus {
+	id: string;
+	region: string;
+	appliedLsn: number;
+	lagLsn: number;
+	lastSeenAt: string;
+}
+export interface RepStatus {
+	enabled: boolean;
+	epoch: number;
+	lastLsn: number;
+	horizonLsn: number;
+	replicas: RepReplicaStatus[];
+}
 
 // ---------------------------------------------------------------------------
 // Collection configuration

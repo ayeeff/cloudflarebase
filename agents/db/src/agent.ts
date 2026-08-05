@@ -116,6 +116,7 @@ export interface DbCollectionSummary {
 	readPermission: string | null;
 	writePermission: string | null;
 	validator: CollectionValidator | null;
+	replication: 'off' | 'auto';
 	docs: number;
 }
 
@@ -126,6 +127,7 @@ export interface DbTableSummary {
 	readPermission: string | null;
 	writePermission: string | null;
 	columns: TableColumn[];
+	replication: 'off' | 'auto';
 	rows: number;
 }
 
@@ -277,6 +279,27 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return this.buildTableConfig(row);
 	}
 
+	/**
+	 * The worker's routing lookup: is this shard replicated, and what kind is
+	 * it? Cached isolate-locally for 60s at the caller; a stale answer is a
+	 * latency wobble, never a correctness problem (replicas forward).
+	 */
+	async getShardRouting(
+		name: string,
+	): Promise<{ kind: 'collection' | 'table'; replication: 'off' | 'auto' } | null> {
+		if (!collectionNameSchema.safeParse(name).success) return null;
+		const [row] = await this.db
+			.select()
+			.from(collections)
+			.where(eq(collections.name, name))
+			.limit(1);
+		if (!row) return null;
+		return {
+			kind: row.kind === 'table' ? 'table' : 'collection',
+			replication: row.replication === 'auto' ? 'auto' : 'off',
+		};
+	}
+
 	/** Debounced absolute row-count report from a table child. */
 	async reportTableStats(name: string, stats: { rows: number }): Promise<void> {
 		if (!collectionNameSchema.safeParse(name).success) return;
@@ -412,6 +435,11 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		}
 		if (collection && request.method === 'DELETE') {
 			return this.deleteCollection(decodeURIComponent(collection[1]));
+		}
+
+		const replicationStatus = subPath.match(/^\/admin\/replication\/([^/]+)$/);
+		if (replicationStatus && request.method === 'GET') {
+			return this.adminReplicationStatus(decodeURIComponent(replicationStatus[1]));
 		}
 
 		const tableRow = subPath.match(/^\/admin\/tables\/([^/]+)\/rows\/([^/]+)$/);
@@ -867,6 +895,24 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				? `collection "${name}" rolled back to ${parsed.data.timestamp}`
 				: `collection "${name}" restored to a bookmark`,
 		);
+		// A restore rewinds the primary's storage INCLUDING its change log, so
+		// the epoch that tells replicas to discard and re-bootstrap must live
+		// here, in the parent. Bump it and push the config carrying it.
+		const restoredRow = await this.collectionRow(name);
+		if (restoredRow && restoredRow.replication === 'auto') {
+			await this.db
+				.update(collections)
+				.set({ repEpoch: restoredRow.repEpoch + 1 })
+				.where(eq(collections.name, name));
+			const bumped = await this.collectionRow(name);
+			if (bumped) {
+				try {
+					await this.pushConfig(bumped);
+				} catch {
+					// the child heals via lazy pull; replicas resync on next pull
+				}
+			}
+		}
 		// The undo point was captured before the restore, so it is already in
 		// the list; the response carries whichever undo handle survived.
 		// The child aborts a tick after answering; give the restored session a
@@ -959,6 +1005,14 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		}
 		if (modes.data.validator !== undefined) {
 			patch.validator = modes.data.validator === null ? null : JSON.stringify(modes.data.validator);
+		}
+		if (modes.data.replication !== undefined) {
+			// Demo shards are throwaway; replicating them multiplies cost for
+			// nothing that outlives the TTL.
+			if (this.isEphemeral && modes.data.replication === 'auto') {
+				return Response.json({ error: 'demo projects cannot enable replication' }, { status: 400 });
+			}
+			patch.replication = modes.data.replication;
 		}
 
 		const [row] = await this.db
@@ -1062,6 +1116,12 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		if (modes.data.writePermission !== undefined) {
 			patch.writePermission = modes.data.writePermission;
 		}
+		if (modes.data.replication !== undefined) {
+			if (this.isEphemeral && modes.data.replication === 'auto') {
+				return Response.json({ error: 'demo projects cannot enable replication' }, { status: 400 });
+			}
+			patch.replication = modes.data.replication;
+		}
 
 		const [row] = await this.db
 			.insert(collections)
@@ -1131,6 +1191,17 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		this.recordEvent('table.deleted', `table "${name}" deleted`);
 		await this.syncCollectionsState();
 		return Response.json({ deleted: true });
+	}
+
+	/** The replica map: lag and last-seen per region, for either kind. */
+	private async adminReplicationStatus(name: string): Promise<Response> {
+		const routing = await this.getShardRouting(name);
+		if (!routing) return Response.json({ error: 'no such collection or table' }, { status: 404 });
+		const status =
+			routing.kind === 'table'
+				? await this.tableStub(name).repStatus()
+				: await this.childStub(name).repStatus();
+		return Response.json(status);
 	}
 
 	private async adminTableRowWrite(
@@ -1322,6 +1393,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				readPermission: row.readPermission,
 				writePermission: row.writePermission,
 				validator: parseStoredValidator(row.validator),
+				replication: row.replication === 'auto' ? ('auto' as const) : ('off' as const),
 				docs: row.docs,
 			}));
 		const tables: DbTableSummary[] = rows
@@ -1333,6 +1405,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				readPermission: row.readPermission,
 				writePermission: row.writePermission,
 				columns: parseStoredColumns(row.columns),
+				replication: row.replication === 'auto' ? ('auto' as const) : ('off' as const),
 				rows: row.docs,
 			}));
 		this.setState({

@@ -4,6 +4,7 @@ import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlit
 import * as schema from './db/schema';
 import { subscriptions } from './db/schema';
 import type { ProjectJwtVerifier } from './jwt';
+import { parseShardRole, type ShardRole } from './replication';
 import { isWindowed, matchesQuery } from './query';
 import { hasPermission } from './rules';
 import {
@@ -46,10 +47,13 @@ export interface LiveGate {
 
 export abstract class LiveShard extends DurableObject<Env> {
 	protected db: DrizzleSqliteDODatabase<typeof schema>;
+	/** primary or `:r:<region>:<n>` replica - decided by the instance name. */
+	protected readonly role: ShardRole;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.db = drizzle(ctx.storage, { schema });
+		this.role = parseShardRole(ctx.id.name);
 	}
 
 	// -------------------------------------------------------------------------

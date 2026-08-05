@@ -2,6 +2,8 @@ import {
 	aggregateRequestSchema,
 	querySchema,
 	serverFrameSchema,
+	LSN_HEADER,
+	MIN_LSN_HEADER,
 	type AggregateRequest,
 	type DbDocument,
 	type Query,
@@ -100,6 +102,9 @@ class ShardHandle<T extends Record<string, unknown> = Record<string, unknown>> {
 	private nextSubId = 1;
 	private backoffMs = 500;
 	private closedByUser = false;
+	/** Session bookmark (D1-style): the highest LSN this handle has seen.
+	 * Writes advance it; reads echo it so replicas serve read-your-writes. */
+	private lastLsn = 0;
 
 	constructor(
 		protected readonly baseUrl: string,
@@ -120,11 +125,20 @@ class ShardHandle<T extends Record<string, unknown> = Record<string, unknown>> {
 	}
 
 	protected async request<R>(method: string, subPath: string, body?: unknown): Promise<R> {
+		const headers = await this.headers();
+		// Reads carry the session bookmark so a region replica either catches
+		// up past our own writes or hands the read to the primary.
+		const isRead = method === 'GET' || subPath === '/query' || subPath === '/aggregate';
+		if (isRead && this.lastLsn > 0) headers[MIN_LSN_HEADER] = String(this.lastLsn);
+
 		const response = await fetch(this.url(subPath), {
 			method,
-			headers: await this.headers(),
+			headers,
 			body: body === undefined ? undefined : JSON.stringify(body),
 		});
+		const lsn = Number(response.headers.get(LSN_HEADER) ?? 0);
+		if (lsn > this.lastLsn) this.lastLsn = lsn;
+
 		const payload = (await response.json().catch(() => null)) as (R & { error?: string }) | null;
 		if (!response.ok) {
 			throw new DbError(response.status, payload?.error ?? `request failed (${response.status})`);

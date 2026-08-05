@@ -40,6 +40,8 @@ export interface DbAgentBindings {
 	TRUSTED_ORIGINS?: string;
 	SENTRY_DSN?: string;
 	SENTRY_ENV?: string;
+	/** Test stacks only: honor x-cfb-region for deterministic region routing. */
+	REGION_OVERRIDE_HEADER?: string;
 	/** Local/test analytics mirror; production uses DB_EVENTS alone. */
 	LOCAL_ANALYTICS?: D1Database;
 	DEMO_MODE?: 'true';

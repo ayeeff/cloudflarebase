@@ -8,6 +8,20 @@ import { collectionMeta, documents } from './db/schema';
 import { ProjectJwtVerifier } from './jwt';
 import { LiveShard, type LiveGate } from './live';
 import {
+	appendLog,
+	clearReplicas,
+	horizonLsn,
+	lastLsn,
+	listReplicas,
+	readReplicaMeta,
+	registerReplica,
+	serveRepPull,
+	truncateLog,
+	writeReplicaMeta,
+	type ReplicaMeta,
+	type ReplicaRole,
+} from './replication';
+import {
 	compileAggregate,
 	compileQuery,
 	decodeCursor,
@@ -22,12 +36,18 @@ import {
 	createDocumentSchema,
 	documentDataSchema,
 	importLineSchema,
+	logEntrySchema,
 	querySchema,
 	restoreRequestSchema,
 	storedConfigSchema,
+	repPullInputSchema,
 	EXPORT_CHUNK,
 	IMPORT_RPC_CHUNK,
+	LSN_HEADER,
 	MAX_DOC_BYTES,
+	MAX_REPLICA_LAG_MS,
+	MIN_LSN_HEADER,
+	REPLICATION_PULL_CHUNK,
 	type AccessMode,
 	type AggregateRequest,
 	type AggregateResult,
@@ -35,10 +55,13 @@ import {
 	type CollectionConfig,
 	type DbDocument,
 	type ImportReport,
+	type LogEntry,
 	type Query,
+	type RepPullResult,
+	type RepStatus,
 	type RestoreOutcome,
 } from './schemas';
-import type { DbAgent } from './agent';
+import { isDurableObjectReset, type DbAgent } from './agent';
 
 /**
  * One collection's documents, query engine, and live-query subscriptions.
@@ -80,6 +103,8 @@ export class DbCollection extends LiveShard {
 	private verifier: ProjectJwtVerifier | null = null;
 	private statsTimer: ReturnType<typeof setTimeout> | null = null;
 	private localAnalyticsReady = false;
+	/** LSN of the current request's write, surfaced as the session bookmark. */
+	private pendingLsn: number | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -112,10 +137,12 @@ export class DbCollection extends LiveShard {
 	// -------------------------------------------------------------------------
 	// RPC surface (parent and worker entrypoint only - never public HTTP)
 
-	/** Parent push on create/config change. Stale versions are ignored. */
+	/** Parent push on create/config change (replicas run it applying `cfg`
+	 * log entries and during bootstrap). Stale versions are ignored. */
 	async configure(input: unknown): Promise<void> {
 		const parsed = collectionConfigSchema.parse(input);
 		if (this.config && parsed.configVersion < this.config.configVersion) return;
+		const previous = this.config;
 		this.config = parsed;
 		this.verifier = null;
 		await this.db
@@ -125,6 +152,15 @@ export class DbCollection extends LiveShard {
 				target: collectionMeta.id,
 				set: { config: JSON.stringify(parsed), updatedAt: new Date() },
 			});
+
+		if (this.role.kind === 'primary') {
+			if (parsed.replication === 'auto') {
+				// Config changes replicate IN WRITE ORDER with the data.
+				appendLog(this.ctx.storage.sql, 'cfg', '', JSON.stringify(parsed));
+			} else if (previous?.replication === 'auto') {
+				await this.repDisable();
+			}
+		}
 	}
 
 	/** Operator query over the dashboard proxy (parent-forwarded). */
@@ -346,12 +382,18 @@ export class DbCollection extends LiveShard {
 	}
 
 	/**
-	 * Erase this collection. deleteAll leaves any alarm armed; this class
+	 * Erase this collection. A PRIMARY destroys its registered replicas first
+	 * - the parent's children-before-registry contract extends one level down,
+	 * and the `replicas` table (populated before any pull is served) is what
+	 * makes the fan-out complete. deleteAll leaves any alarm armed; this class
 	 * schedules none, but deleteAlarm is kept for symmetry with the auth
 	 * agent's hard-won sequence. The deferred abort preserves the RPC's own
 	 * response - aborting synchronously would fail every successful erase.
 	 */
 	async destroy(): Promise<void> {
+		if (this.role.kind === 'primary') {
+			await this.destroyReplicaInstances();
+		}
 		for (const ws of this.ctx.getWebSockets()) {
 			try {
 				ws.close(1001, 'collection erased');
@@ -362,6 +404,267 @@ export class DbCollection extends LiveShard {
 		await this.ctx.storage.deleteAll();
 		await this.ctx.storage.deleteAlarm();
 		setTimeout(() => this.ctx.abort(), 0);
+	}
+
+	// -------------------------------------------------------------------------
+	// Replication: the primary's feed (docs/db-replication-design.md)
+
+	/** Append to the change log in the SAME task as the data write. */
+	private logChange(op: 'put' | 'del', id: string, image: string | null): void {
+		if (this.role.kind !== 'primary' || this.config?.replication !== 'auto') return;
+		this.pendingLsn = appendLog(this.ctx.storage.sql, op, id, image);
+	}
+
+	/** Attach the session bookmark to a write response, when one was logged. */
+	private withLsn(response: Response): Response {
+		if (this.pendingLsn === null) return response;
+		const headers = new Headers(response.headers);
+		headers.set(LSN_HEADER, String(this.pendingLsn));
+		this.pendingLsn = null;
+		return new Response(response.body, {
+			status: response.status,
+			statusText: response.statusText,
+			headers,
+		});
+	}
+
+	/** Replica bootstrap: config + the log position the snapshot starts from.
+	 * The caller is registered BEFORE any data leaves - the erase fan-out
+	 * iterates that registry, so a bootstrapped replica is never an orphan. */
+	async repBootstrap(input: unknown): Promise<{
+		config: CollectionConfig;
+		epoch: number;
+		lsn: number;
+	}> {
+		const caller = repPullInputSchema.parse(input);
+		const config = this.config;
+		if (this.role.kind !== 'primary' || !config || config.replication !== 'auto') {
+			throw new Error('replication is not enabled on this collection');
+		}
+		registerReplica(this.ctx.storage.sql, caller.replicaId, caller.region, caller.since);
+		return { config, epoch: config.repEpoch, lsn: lastLsn(this.ctx.storage.sql) };
+	}
+
+	/** Replica catch-up; registers the caller durably before serving data. */
+	async repPull(input: unknown): Promise<RepPullResult> {
+		const parsed = repPullInputSchema.parse(input);
+		const config = this.config;
+		if (this.role.kind !== 'primary' || !config || config.replication !== 'auto') {
+			// Disabled mid-flight: force the replica to notice via resync; the
+			// disable path destroys it moments later anyway.
+			return { resync: true, epoch: this.config?.repEpoch ?? 0 };
+		}
+		return serveRepPull(this.ctx.storage.sql, parsed, config.repEpoch);
+	}
+
+	/** Observability for /admin/replication/:name and the copilot. */
+	async repStatus(): Promise<RepStatus> {
+		const sql = this.ctx.storage.sql;
+		const enabled = this.role.kind === 'primary' && this.config?.replication === 'auto';
+		const last = enabled ? lastLsn(sql) : 0;
+		return {
+			enabled,
+			epoch: this.config?.repEpoch ?? 0,
+			lastLsn: last,
+			horizonLsn: enabled ? horizonLsn(sql) : 0,
+			replicas: enabled
+				? listReplicas(sql).map((replica) => ({
+						id: replica.id,
+						region: replica.region,
+						appliedLsn: replica.appliedLsn,
+						lagLsn: Math.max(0, last - replica.appliedLsn),
+						lastSeenAt: new Date(replica.lastSeenAt).toISOString(),
+					}))
+				: [],
+		};
+	}
+
+	/** Turn replication off: destroy every registered replica, drop the log. */
+	async repDisable(): Promise<void> {
+		if (this.role.kind !== 'primary') return;
+		await this.destroyReplicaInstances();
+		const sql = this.ctx.storage.sql;
+		truncateLog(sql);
+		clearReplicas(sql);
+	}
+
+	private async destroyReplicaInstances(): Promise<void> {
+		const name = this.ctx.id.name;
+		if (!name) return;
+		const namespace = this.env.DbCollection as unknown as DurableObjectNamespace<DbCollection>;
+		for (const replica of listReplicas(this.ctx.storage.sql)) {
+			const stub = namespace.get(namespace.idFromName(`${name}:${replica.id}`));
+			try {
+				await stub.destroy();
+			} catch (error) {
+				// The deferred-abort race again; an empty replica proves the wipe.
+				if (!isDurableObjectReset(error)) throw error;
+			}
+		}
+	}
+
+	// -------------------------------------------------------------------------
+	// Replication: the replica role
+
+	private primaryStub() {
+		const namespace = this.env.DbCollection as unknown as DurableObjectNamespace<DbCollection>;
+		return namespace.get(namespace.idFromName((this.role as ReplicaRole).primaryName));
+	}
+
+	/** Anything that is not a replicated read belongs to the primary. */
+	private async forwardToPrimary(request: Request): Promise<Response> {
+		const namespace = this.env.DbCollection as unknown as DurableObjectNamespace;
+		const stub = namespace.get(namespace.idFromName((this.role as ReplicaRole).primaryName));
+		return (await stub.fetch(request)) as unknown as Response;
+	}
+
+	/**
+	 * Replica request handling: reads serve locally (bounded staleness +
+	 * session bookmarks), everything else forwards - correctness never
+	 * depends on the worker's routing cache being fresh.
+	 */
+	private async replicaDispatch(request: Request, url: URL, subPath: string): Promise<Response> {
+		const isRead =
+			(request.method === 'GET' && subPath !== '/subscribe') ||
+			(request.method === 'POST' && (subPath === '/query' || subPath === '/aggregate'));
+		if (!isRead) return this.forwardToPrimary(request);
+
+		const minLsn = Number(request.headers.get(MIN_LSN_HEADER) ?? 0) || 0;
+		const ready = await this.ensureReplica(minLsn);
+		// An unsatisfiable bookmark (or a failed bootstrap) is answered with
+		// the primary's truth rather than an error or stale data.
+		if (!ready || !this.config) return this.forwardToPrimary(request);
+
+		const cors = this.corsHeaders(request);
+		if (request.headers.get('origin') && !cors) {
+			return Response.json({ error: 'origin is not trusted' }, { status: 403 });
+		}
+		return withCors(await this.route(request, url, subPath, this.config), cors);
+	}
+
+	/** Bootstrapped and fresh enough for this request's bookmark? */
+	private async ensureReplica(minLsn: number): Promise<boolean> {
+		const sql = this.ctx.storage.sql;
+		let meta = readReplicaMeta(sql);
+		if (!meta || !this.config) {
+			if (!(await this.replicaBootstrap())) return false;
+			meta = readReplicaMeta(sql);
+			if (!meta) return false;
+		}
+		const stale = Date.now() - meta.pulledAt > MAX_REPLICA_LAG_MS;
+		if (stale || minLsn > meta.appliedLsn) {
+			meta = await this.replicaPullLoop(meta);
+		}
+		return minLsn <= meta.appliedLsn;
+	}
+
+	/** Full state transfer: config, snapshot pages, applied position. */
+	private async replicaBootstrap(): Promise<boolean> {
+		const role = this.role as ReplicaRole;
+		try {
+			const primary = this.primaryStub();
+			const boot = (await primary.repBootstrap({
+				since: 0,
+				replicaId: role.replicaId,
+				region: role.region,
+			})) as unknown as Awaited<ReturnType<DbCollection['repBootstrap']>>;
+			await this.configure(boot.config);
+			await this.db.delete(documents);
+
+			let afterId: string | undefined;
+			for (;;) {
+				const chunk = (await primary.exportChunk(afterId)) as unknown as Awaited<
+					ReturnType<DbCollection['exportChunk']>
+				>;
+				for (const doc of chunk.docs) this.applyDocImage(doc);
+				if (chunk.nextAfterId === null) break;
+				afterId = chunk.nextAfterId;
+			}
+
+			writeReplicaMeta(this.ctx.storage.sql, {
+				epoch: boot.epoch,
+				appliedLsn: boot.lsn,
+				pulledAt: Date.now(),
+			});
+			this.writeDbEvent('replica.bootstrap');
+			return true;
+		} catch (error) {
+			try {
+				Sentry.captureException(error, {
+					level: 'error',
+					tags: { operation: 'replica-bootstrap', shard: this.ctx.id.name ?? 'unknown' },
+				});
+			} catch {
+				// reporting must never break the request path
+			}
+			return false;
+		}
+	}
+
+	/**
+	 * Catch up from the primary's log. A pull failure returns the old meta -
+	 * bounded staleness is acceptable, and the caller's bookmark check is
+	 * what decides between serving and forwarding. A resync answer or an
+	 * epoch change (post-restore) discards everything and re-bootstraps.
+	 */
+	private async replicaPullLoop(meta: ReplicaMeta): Promise<ReplicaMeta> {
+		const role = this.role as ReplicaRole;
+		const sql = this.ctx.storage.sql;
+		try {
+			const primary = this.primaryStub();
+			let current = meta;
+			for (;;) {
+				const result = (await primary.repPull({
+					since: current.appliedLsn,
+					replicaId: role.replicaId,
+					region: role.region,
+				})) as RepPullResult;
+				if (result.resync || result.epoch !== current.epoch) {
+					this.writeDbEvent('replica.resync');
+					if (!(await this.replicaBootstrap())) return current;
+					return readReplicaMeta(sql) ?? current;
+				}
+				for (const entry of result.entries) await this.applyLogEntry(entry);
+				current = {
+					epoch: result.epoch,
+					appliedLsn: result.entries.length
+						? result.entries[result.entries.length - 1].lsn
+						: current.appliedLsn,
+					pulledAt: Date.now(),
+				};
+				writeReplicaMeta(sql, current);
+				if (result.entries.length < REPLICATION_PULL_CHUNK) return current;
+			}
+		} catch {
+			return meta;
+		}
+	}
+
+	private async applyLogEntry(entry: LogEntry): Promise<void> {
+		const parsed = logEntrySchema.parse(entry);
+		if (parsed.op === 'cfg') {
+			if (parsed.image) await this.configure(JSON.parse(parsed.image));
+			return;
+		}
+		if (parsed.op === 'del') {
+			this.ctx.storage.sql.exec(`DELETE FROM documents WHERE id = ?`, parsed.id);
+			return;
+		}
+		if (parsed.image) this.applyDocImage(JSON.parse(parsed.image) as DbDocument);
+	}
+
+	/** Idempotent image upsert - ids, owners, and timestamps verbatim. */
+	private applyDocImage(doc: DbDocument): void {
+		this.ctx.storage.sql.exec(
+			`INSERT INTO documents (id, data, owner, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET data = excluded.data, owner = excluded.owner,
+			   created_at = excluded.created_at, updated_at = excluded.updated_at`,
+			doc.id,
+			JSON.stringify(doc.data),
+			doc.owner,
+			Date.parse(doc.createdAt),
+			Date.parse(doc.updatedAt),
+		);
 	}
 
 	// -------------------------------------------------------------------------
@@ -379,6 +682,12 @@ export class DbCollection extends LiveShard {
 		const match = url.pathname.match(/^\/agents\/[^/]+\/([^/]+)\/collections\/([^/]+)(\/.*)?$/);
 		if (!match) return Response.json({ error: 'not found' }, { status: 404 });
 		const subPath = match[3] ?? '/';
+
+		// Replicas never consult the parent - their config arrives from the
+		// primary's feed, and everything non-read forwards to the primary.
+		if (this.role.kind === 'replica') {
+			return this.replicaDispatch(request, url, subPath);
+		}
 
 		const config = await this.ensureConfig(match[1], match[2]);
 		if (!config) {
@@ -511,7 +820,7 @@ export class DbCollection extends LiveShard {
 			owner,
 			upsert: true,
 		});
-		return Response.json(written, { status: 201 });
+		return this.withLsn(Response.json(written, { status: 201 }));
 	}
 
 	private async handleGet(docId: string, owner: string | null): Promise<Response> {
@@ -558,13 +867,13 @@ export class DbCollection extends LiveShard {
 			owner: existing.owner,
 			upsert: false,
 		});
-		return Response.json(written);
+		return this.withLsn(Response.json(written));
 	}
 
 	private async handleDelete(docId: string, owner: string | null): Promise<Response> {
 		const deleted = await this.deleteDocument(docId, owner);
 		if (!deleted) return Response.json({ error: 'no such document' }, { status: 404 });
-		return Response.json({ deleted: true });
+		return this.withLsn(Response.json({ deleted: true }));
 	}
 
 	private async handleQuery(request: Request, owner: string | null): Promise<Response> {
@@ -691,6 +1000,9 @@ export class DbCollection extends LiveShard {
 				.returning();
 		}
 
+		// Log BEFORE any await: DO write coalescing commits the data row and
+		// its log entry atomically only while no I/O yield separates them.
+		this.logChange('put', id, JSON.stringify(toDto(row)));
 		this.writeDbEvent(before ? 'doc.updated' : 'doc.created');
 		await this.notifySubscribers(before ? toDto(before) : null, toDto(row));
 		this.scheduleStatsReport();
@@ -702,6 +1014,7 @@ export class DbCollection extends LiveShard {
 		if (!before || (owner && before.owner !== owner)) return false;
 
 		await this.db.delete(documents).where(eq(documents.id, id));
+		this.logChange('del', id, null);
 		this.writeDbEvent('doc.deleted');
 		await this.notifySubscribers(toDto(before), null);
 		this.scheduleStatsReport();

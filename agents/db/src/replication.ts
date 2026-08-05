@@ -1,9 +1,4 @@
-import {
-	logEntrySchema,
-	MAX_LOG_ROWS,
-	REPLICATION_PULL_CHUNK,
-	type LogEntry,
-} from './schemas';
+import { logEntrySchema, MAX_LOG_ROWS, REPLICATION_PULL_CHUNK, type LogEntry } from './schemas';
 
 /**
  * The replication substrate's shared plumbing (docs/db-replication-design.md):
@@ -139,4 +134,108 @@ export function canServeSince(sql: SqlStorage, since: number): boolean {
 
 export function truncateLog(sql: SqlStorage): void {
 	sql.exec(`DELETE FROM changelog`);
+}
+
+// ---------------------------------------------------------------------------
+// Primary side: the feed server (shared verbatim by both shard classes)
+
+export interface RepPullInput {
+	since: number;
+	replicaId: string;
+	region: string;
+}
+
+/** Durable registration - MUST happen before any data leaves the primary
+ * (bootstrap included): the erase fan-out iterates this registry. */
+export function registerReplica(
+	sql: SqlStorage,
+	replicaId: string,
+	region: string,
+	appliedLsn: number,
+): void {
+	sql.exec(
+		`INSERT INTO replicas (id, region, applied_lsn, last_seen_at) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET applied_lsn = excluded.applied_lsn, last_seen_at = excluded.last_seen_at`,
+		replicaId,
+		region,
+		appliedLsn,
+		Date.now(),
+	);
+}
+
+/**
+ * Serve one pull. The replica is registered DURABLY before any data leaves -
+ * the erase fan-out iterates that registry, so a replica holding data can
+ * never be unknown to its primary. DO storage writes coalesce with the read
+ * in this same task, and single-threaded execution means the registration
+ * commits before any other request observes the table.
+ */
+export function serveRepPull(
+	sql: SqlStorage,
+	input: RepPullInput,
+	epoch: number,
+): import('./schemas').RepPullResult {
+	registerReplica(sql, input.replicaId, input.region, input.since);
+
+	if (!canServeSince(sql, input.since)) return { resync: true, epoch };
+
+	const entries = readLogSince(sql, input.since);
+	const applied = entries.length ? entries[entries.length - 1].lsn : input.since;
+	sql.exec(`UPDATE replicas SET applied_lsn = ? WHERE id = ?`, applied, input.replicaId);
+	return { resync: false, entries, lastLsn: lastLsn(sql), epoch };
+}
+
+export interface RegisteredReplica {
+	id: string;
+	region: string;
+	appliedLsn: number;
+	lastSeenAt: number;
+}
+
+export function listReplicas(sql: SqlStorage): RegisteredReplica[] {
+	return (
+		sql
+			.exec(`SELECT id, region, applied_lsn, last_seen_at FROM replicas ORDER BY id`)
+			.toArray() as {
+			id: string;
+			region: string;
+			applied_lsn: number;
+			last_seen_at: number;
+		}[]
+	).map((row) => ({
+		id: row.id,
+		region: row.region,
+		appliedLsn: row.applied_lsn,
+		lastSeenAt: row.last_seen_at,
+	}));
+}
+
+export function clearReplicas(sql: SqlStorage): void {
+	sql.exec(`DELETE FROM replicas`);
+}
+
+// ---------------------------------------------------------------------------
+// Replica side: applied-position bookkeeping
+
+export interface ReplicaMeta {
+	epoch: number;
+	appliedLsn: number;
+	pulledAt: number;
+}
+
+export function readReplicaMeta(sql: SqlStorage): ReplicaMeta | null {
+	const [row] = sql
+		.exec(`SELECT epoch, applied_lsn, pulled_at FROM replica_meta WHERE id = 1`)
+		.toArray() as { epoch: number; applied_lsn: number; pulled_at: number }[];
+	return row ? { epoch: row.epoch, appliedLsn: row.applied_lsn, pulledAt: row.pulled_at } : null;
+}
+
+export function writeReplicaMeta(sql: SqlStorage, meta: ReplicaMeta): void {
+	sql.exec(
+		`INSERT INTO replica_meta (id, epoch, applied_lsn, pulled_at) VALUES (1, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET epoch = excluded.epoch, applied_lsn = excluded.applied_lsn, pulled_at = excluded.pulled_at`,
+		meta.epoch,
+		meta.appliedLsn,
+		meta.pulledAt,
+	);
 }

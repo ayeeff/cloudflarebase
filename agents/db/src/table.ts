@@ -5,6 +5,20 @@ import { checkAccess, corsHeadersFor, drainUnusedBody, withCors } from './access
 import { collectionMeta } from './db/schema';
 import { ProjectJwtVerifier } from './jwt';
 import { LiveShard, type LiveGate } from './live';
+import {
+	appendLog,
+	clearReplicas,
+	horizonLsn,
+	lastLsn,
+	listReplicas,
+	readReplicaMeta,
+	registerReplica,
+	serveRepPull,
+	truncateLog,
+	writeReplicaMeta,
+	type ReplicaMeta,
+	type ReplicaRole,
+} from './replication';
 import { getPath, encodeCursor, decodeCursor, type DecodedCursor } from './query';
 import {
 	applyColumnDefaults,
@@ -22,17 +36,27 @@ import { ulid } from './ulid';
 import {
 	createDocumentSchema,
 	documentDataSchema,
+	logEntrySchema,
 	querySchema,
+	repPullInputSchema,
 	storedTableMetaSchema,
 	tableConfigSchema,
+	EXPORT_CHUNK,
+	LSN_HEADER,
 	MAX_DOC_BYTES,
+	MAX_REPLICA_LAG_MS,
+	MIN_LSN_HEADER,
+	REPLICATION_PULL_CHUNK,
 	type DbRow,
+	type LogEntry,
 	type Query,
+	type RepPullResult,
+	type RepStatus,
 	type TableColumn,
 	type TableConfig,
 	type TableMeta,
 } from './schemas';
-import type { DbAgent } from './agent';
+import { isDurableObjectReset, type DbAgent } from './agent';
 
 /**
  * One SQL table: typed columns over a physical SQLite table NAMED AFTER the
@@ -62,6 +86,8 @@ export class DbTable extends LiveShard {
 	private meta: TableMeta | null = null;
 	private verifier: ProjectJwtVerifier | null = null;
 	private statsTimer: ReturnType<typeof setTimeout> | null = null;
+	/** LSN of the current request's write, surfaced as the session bookmark. */
+	private pendingLsn: number | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -128,6 +154,7 @@ export class DbTable extends LiveShard {
 			}
 		}
 
+		const previous = this.meta?.config;
 		this.meta = { config: parsed, appliedColumns: parsed.columns };
 		this.verifier = null;
 		const serialized = JSON.stringify(this.meta);
@@ -138,6 +165,16 @@ export class DbTable extends LiveShard {
 				target: collectionMeta.id,
 				set: { config: serialized, updatedAt: new Date() },
 			});
+
+		if (this.role.kind === 'primary') {
+			if (parsed.replication === 'auto') {
+				// Config AND schema changes replicate in write order: a replica
+				// applying this entry runs the same DDL diff path.
+				appendLog(this.ctx.storage.sql, 'cfg', '', JSON.stringify(parsed));
+			} else if (previous?.replication === 'auto') {
+				await this.repDisable();
+			}
+		}
 	}
 
 	/** Operator query over the dashboard proxy (parent-forwarded). Compile
@@ -190,8 +227,12 @@ export class DbTable extends LiveShard {
 		return row?.n ?? 0;
 	}
 
-	/** Erase this table - the collection destroy sequence verbatim. */
+	/** Erase this table - the collection destroy sequence verbatim, with a
+	 * primary destroying its registered replicas first. */
 	async destroy(): Promise<void> {
+		if (this.role.kind === 'primary') {
+			await this.destroyReplicaInstances();
+		}
 		for (const ws of this.ctx.getWebSockets()) {
 			try {
 				ws.close(1001, 'table erased');
@@ -202,6 +243,259 @@ export class DbTable extends LiveShard {
 		await this.ctx.storage.deleteAll();
 		await this.ctx.storage.deleteAlarm();
 		setTimeout(() => this.ctx.abort(), 0);
+	}
+
+	// -------------------------------------------------------------------------
+	// Replication (mirrors collection.ts's machinery; the table-specific parts
+	// are the snapshot source and the row-image apply)
+
+	private logChange(op: 'put' | 'del', id: string, image: string | null): void {
+		if (this.role.kind !== 'primary' || this.config?.replication !== 'auto') return;
+		this.pendingLsn = appendLog(this.ctx.storage.sql, op, id, image);
+	}
+
+	private withLsn(response: Response): Response {
+		if (this.pendingLsn === null) return response;
+		const headers = new Headers(response.headers);
+		headers.set(LSN_HEADER, String(this.pendingLsn));
+		this.pendingLsn = null;
+		return new Response(response.body, {
+			status: response.status,
+			statusText: response.statusText,
+			headers,
+		});
+	}
+
+	/** Caller registered BEFORE data leaves - see the collection twin. */
+	async repBootstrap(input: unknown): Promise<{ config: TableConfig; epoch: number; lsn: number }> {
+		const caller = repPullInputSchema.parse(input);
+		const config = this.config;
+		if (this.role.kind !== 'primary' || !config || config.replication !== 'auto') {
+			throw new Error('replication is not enabled on this table');
+		}
+		registerReplica(this.ctx.storage.sql, caller.replicaId, caller.region, caller.since);
+		return { config, epoch: config.repEpoch, lsn: lastLsn(this.ctx.storage.sql) };
+	}
+
+	/** Snapshot page for replica bootstrap, keyset over the primary key. */
+	async repSnapshotChunk(afterId?: string): Promise<{ docs: DbRow[]; nextAfterId: string | null }> {
+		const table = this.requireTableName();
+		const rows = this.ctx.storage.sql
+			.exec(
+				`SELECT ${selectList(this.columns)} FROM ${quoteIdent(table)}` +
+					(afterId !== undefined ? ` WHERE "id" > ?` : '') +
+					` ORDER BY "id" ASC LIMIT ?`,
+				...(afterId !== undefined ? [afterId, EXPORT_CHUNK] : [EXPORT_CHUNK]),
+			)
+			.toArray() as Record<string, unknown>[];
+		const docs = rows.map((row) => this.toDto(row));
+		return { docs, nextAfterId: docs.length < EXPORT_CHUNK ? null : docs[docs.length - 1].id };
+	}
+
+	async repPull(input: unknown): Promise<RepPullResult> {
+		const parsed = repPullInputSchema.parse(input);
+		const config = this.config;
+		if (this.role.kind !== 'primary' || !config || config.replication !== 'auto') {
+			return { resync: true, epoch: this.config?.repEpoch ?? 0 };
+		}
+		return serveRepPull(this.ctx.storage.sql, parsed, config.repEpoch);
+	}
+
+	async repStatus(): Promise<RepStatus> {
+		const sql = this.ctx.storage.sql;
+		const enabled = this.role.kind === 'primary' && this.config?.replication === 'auto';
+		const last = enabled ? lastLsn(sql) : 0;
+		return {
+			enabled,
+			epoch: this.config?.repEpoch ?? 0,
+			lastLsn: last,
+			horizonLsn: enabled ? horizonLsn(sql) : 0,
+			replicas: enabled
+				? listReplicas(sql).map((replica) => ({
+						id: replica.id,
+						region: replica.region,
+						appliedLsn: replica.appliedLsn,
+						lagLsn: Math.max(0, last - replica.appliedLsn),
+						lastSeenAt: new Date(replica.lastSeenAt).toISOString(),
+					}))
+				: [],
+		};
+	}
+
+	async repDisable(): Promise<void> {
+		if (this.role.kind !== 'primary') return;
+		await this.destroyReplicaInstances();
+		const sql = this.ctx.storage.sql;
+		truncateLog(sql);
+		clearReplicas(sql);
+	}
+
+	private async destroyReplicaInstances(): Promise<void> {
+		const name = this.ctx.id.name;
+		if (!name) return;
+		const namespace = this.env.DbTable as unknown as DurableObjectNamespace<DbTable>;
+		for (const replica of listReplicas(this.ctx.storage.sql)) {
+			const stub = namespace.get(namespace.idFromName(`${name}:${replica.id}`));
+			try {
+				await stub.destroy();
+			} catch (error) {
+				if (!isDurableObjectReset(error)) throw error;
+			}
+		}
+	}
+
+	private primaryTableStub() {
+		const namespace = this.env.DbTable as unknown as DurableObjectNamespace<DbTable>;
+		return namespace.get(namespace.idFromName((this.role as ReplicaRole).primaryName));
+	}
+
+	private async forwardToPrimary(request: Request): Promise<Response> {
+		const namespace = this.env.DbTable as unknown as DurableObjectNamespace;
+		const stub = namespace.get(namespace.idFromName((this.role as ReplicaRole).primaryName));
+		return (await stub.fetch(request)) as unknown as Response;
+	}
+
+	private async replicaDispatch(request: Request, subPath: string): Promise<Response> {
+		const isRead =
+			(request.method === 'GET' && subPath !== '/subscribe') ||
+			(request.method === 'POST' && subPath === '/query');
+		if (!isRead) return this.forwardToPrimary(request);
+
+		const minLsn = Number(request.headers.get(MIN_LSN_HEADER) ?? 0) || 0;
+		const ready = await this.ensureReplica(minLsn);
+		if (!ready || !this.config) return this.forwardToPrimary(request);
+
+		const cors = corsHeadersFor(request, this.env.TRUSTED_ORIGINS, this.config.allowedOrigins);
+		if (request.headers.get('origin') && !cors) {
+			return Response.json({ error: 'origin is not trusted' }, { status: 403 });
+		}
+		return withCors(await this.route(request, subPath, this.config), cors);
+	}
+
+	private async ensureReplica(minLsn: number): Promise<boolean> {
+		const sql = this.ctx.storage.sql;
+		let meta = readReplicaMeta(sql);
+		if (!meta || !this.meta) {
+			if (!(await this.replicaBootstrap())) return false;
+			meta = readReplicaMeta(sql);
+			if (!meta) return false;
+		}
+		const stale = Date.now() - meta.pulledAt > MAX_REPLICA_LAG_MS;
+		if (stale || minLsn > meta.appliedLsn) {
+			meta = await this.replicaPullLoop(meta);
+		}
+		return minLsn <= meta.appliedLsn;
+	}
+
+	private async replicaBootstrap(): Promise<boolean> {
+		const role = this.role as ReplicaRole;
+		try {
+			const primary = this.primaryTableStub();
+			const boot = (await primary.repBootstrap({
+				since: 0,
+				replicaId: role.replicaId,
+				region: role.region,
+			})) as unknown as Awaited<ReturnType<DbTable['repBootstrap']>>;
+			// configure() plans and applies the physical DDL locally.
+			await this.configure(boot.config);
+			this.ctx.storage.sql.exec(`DELETE FROM ${quoteIdent(boot.config.table)}`);
+
+			let afterId: string | undefined;
+			for (;;) {
+				const chunk = (await primary.repSnapshotChunk(afterId)) as unknown as Awaited<
+					ReturnType<DbTable['repSnapshotChunk']>
+				>;
+				for (const row of chunk.docs) this.applyRowImage(row);
+				if (chunk.nextAfterId === null) break;
+				afterId = chunk.nextAfterId;
+			}
+
+			writeReplicaMeta(this.ctx.storage.sql, {
+				epoch: boot.epoch,
+				appliedLsn: boot.lsn,
+				pulledAt: Date.now(),
+			});
+			this.writeDbEvent('replica.bootstrap');
+			return true;
+		} catch (error) {
+			try {
+				Sentry.captureException(error, {
+					level: 'error',
+					tags: { operation: 'replica-bootstrap', shard: this.ctx.id.name ?? 'unknown' },
+				});
+			} catch {
+				// reporting must never break the request path
+			}
+			return false;
+		}
+	}
+
+	private async replicaPullLoop(meta: ReplicaMeta): Promise<ReplicaMeta> {
+		const role = this.role as ReplicaRole;
+		const sql = this.ctx.storage.sql;
+		try {
+			const primary = this.primaryTableStub();
+			let current = meta;
+			for (;;) {
+				const result = (await primary.repPull({
+					since: current.appliedLsn,
+					replicaId: role.replicaId,
+					region: role.region,
+				})) as RepPullResult;
+				if (result.resync || result.epoch !== current.epoch) {
+					this.writeDbEvent('replica.resync');
+					if (!(await this.replicaBootstrap())) return current;
+					return readReplicaMeta(sql) ?? current;
+				}
+				for (const entry of result.entries) await this.applyLogEntry(entry);
+				current = {
+					epoch: result.epoch,
+					appliedLsn: result.entries.length
+						? result.entries[result.entries.length - 1].lsn
+						: current.appliedLsn,
+					pulledAt: Date.now(),
+				};
+				writeReplicaMeta(sql, current);
+				if (result.entries.length < REPLICATION_PULL_CHUNK) return current;
+			}
+		} catch {
+			return meta;
+		}
+	}
+
+	private async applyLogEntry(entry: LogEntry): Promise<void> {
+		const parsed = logEntrySchema.parse(entry);
+		if (parsed.op === 'cfg') {
+			if (parsed.image) await this.configure(JSON.parse(parsed.image));
+			return;
+		}
+		const table = this.requireTableName();
+		if (parsed.op === 'del') {
+			this.ctx.storage.sql.exec(`DELETE FROM ${quoteIdent(table)} WHERE "id" = ?`, parsed.id);
+			return;
+		}
+		if (parsed.image) this.applyRowImage(JSON.parse(parsed.image) as DbRow);
+	}
+
+	/** Idempotent row-image upsert against the physical table. */
+	private applyRowImage(row: DbRow): void {
+		const table = this.requireTableName();
+		const columns = this.columns;
+		const names = columns.map((column) => quoteIdent(column.name));
+		const values = columns.map((column) => toSqlValue(column, row.data[column.name]));
+		this.ctx.storage.sql.exec(
+			`INSERT INTO ${quoteIdent(table)} ("id", "owner", "created_at", "updated_at"` +
+				(names.length ? `, ${names.join(', ')}` : '') +
+				`) VALUES (?, ?, ?, ?${names.length ? `, ${names.map(() => '?').join(', ')}` : ''})
+			 ON CONFLICT("id") DO UPDATE SET "owner" = excluded."owner",
+			   "created_at" = excluded."created_at", "updated_at" = excluded."updated_at"` +
+				(names.length ? `, ${names.map((name) => `${name} = excluded.${name}`).join(', ')}` : ''),
+			row.id,
+			row.owner,
+			Date.parse(row.createdAt),
+			Date.parse(row.updatedAt),
+			...values,
+		);
 	}
 
 	// -------------------------------------------------------------------------
@@ -219,6 +513,12 @@ export class DbTable extends LiveShard {
 		const match = url.pathname.match(/^\/agents\/[^/]+\/([^/]+)\/tables\/([^/]+)(\/.*)?$/);
 		if (!match) return Response.json({ error: 'not found' }, { status: 404 });
 		const subPath = match[3] ?? '/';
+
+		// Replicas never consult the parent - their config arrives from the
+		// primary's feed, and everything non-read forwards to the primary.
+		if (this.role.kind === 'replica') {
+			return this.replicaDispatch(request, subPath);
+		}
 
 		const state = await this.ensureMeta(match[1], match[2]);
 		if (state === 'unknown') {
@@ -317,7 +617,7 @@ export class DbTable extends LiveShard {
 
 		try {
 			const written = await this.writeRow(id, full, { owner });
-			return Response.json(written, { status: 201 });
+			return this.withLsn(Response.json(written, { status: 201 }));
 		} catch (error) {
 			return this.uniqueViolationResponse(error) ?? this.rethrow(error);
 		}
@@ -358,7 +658,7 @@ export class DbTable extends LiveShard {
 			const written = await this.writeRow(rowId, merged, {
 				owner: (existing.owner as string | null) ?? null,
 			});
-			return Response.json(written);
+			return this.withLsn(Response.json(written));
 		} catch (error) {
 			return this.uniqueViolationResponse(error) ?? this.rethrow(error);
 		}
@@ -367,7 +667,7 @@ export class DbTable extends LiveShard {
 	private async handleDelete(rowId: string, owner: string | null): Promise<Response> {
 		const deleted = await this.deleteRow(rowId, owner);
 		if (!deleted) return Response.json({ error: 'no such row' }, { status: 404 });
-		return Response.json({ deleted: true });
+		return this.withLsn(Response.json({ deleted: true }));
 	}
 
 	private async handleQuery(request: Request, owner: string | null): Promise<Response> {
@@ -464,6 +764,8 @@ export class DbTable extends LiveShard {
 		const after = this.rowById(id);
 		if (!after) throw new Error('row vanished mid-write');
 
+		// Log BEFORE any await: write coalescing keeps data + log atomic.
+		this.logChange('put', id, JSON.stringify(this.toDto(after)));
 		this.writeDbEvent(before ? 'row.updated' : 'row.created');
 		await this.notifySubscribers(before ? this.toDto(before) : null, this.toDto(after));
 		this.scheduleStatsReport();
@@ -476,6 +778,7 @@ export class DbTable extends LiveShard {
 		if (!before || (owner && before.owner !== owner)) return false;
 
 		this.ctx.storage.sql.exec(`DELETE FROM ${quoteIdent(table)} WHERE "id" = ?`, id);
+		this.logChange('del', id, null);
 		this.writeDbEvent('row.deleted');
 		await this.notifySubscribers(this.toDto(before), null);
 		this.scheduleStatsReport();

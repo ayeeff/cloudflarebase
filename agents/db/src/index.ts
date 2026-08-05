@@ -5,6 +5,8 @@ import { drainUnusedBody } from './access';
 import { isDurableObjectReset, DbAgent as DbAgentBase } from './agent';
 import { DbCollection as DbCollectionBase } from './collection';
 import { DbTable as DbTableBase } from './table';
+import { regionHint, REGION_HINTS } from './region';
+import { replicaName } from './replication';
 import { collectionNameSchema, projectIdSchema } from './schemas';
 
 export type {
@@ -38,6 +40,42 @@ const sentryOptions = (env: Env) => ({
 	tracesSampleRate: 0.1,
 	enableRpcTracePropagation: true,
 });
+
+/**
+ * Isolate-local replication-flag cache for read routing. A stale answer is a
+ * latency wobble only: replicas forward what they should not serve, and the
+ * primary serves everything - so 60 seconds of staleness cannot produce a
+ * wrong result, and a non-replicated shard keeps its one-hop path with zero
+ * added requests.
+ */
+const ROUTING_TTL_MS = 60_000;
+const routingCache = new Map<string, { auto: boolean; expires: number }>();
+
+async function shardReplicationAuto(env: Env, projectId: string, shard: string): Promise<boolean> {
+	const key = `${projectId}:${shard}`;
+	const cached = routingCache.get(key);
+	const now = Date.now();
+	if (cached && cached.expires > now) return cached.auto;
+	try {
+		const agent = await getAgentByName<Env, DbAgentBase>(env.DbAgent, projectId);
+		const routing = await agent.getShardRouting(shard);
+		const auto = routing?.replication === 'auto';
+		routingCache.set(key, { auto, expires: now + ROUTING_TTL_MS });
+		return auto;
+	} catch {
+		// The parent being unreachable must not break reads: route primary.
+		routingCache.set(key, { auto: false, expires: now + ROUTING_TTL_MS });
+		return false;
+	}
+}
+
+/** Replicated-read detection per engine; everything else stays primary. */
+function isRoutableRead(kind: string, method: string, subPath: string): boolean {
+	if (method === 'GET') return subPath !== '/subscribe' && subPath !== '/';
+	if (method !== 'POST') return false;
+	if (subPath === '/query') return true;
+	return kind === 'collections' && subPath === '/aggregate';
+}
 
 export const DbAgent = Sentry.instrumentDurableObjectWithSentry(sentryOptions, DbAgentBase);
 export const DbCollection = Sentry.instrumentDurableObjectWithSentry(
@@ -115,7 +153,36 @@ class DbService extends WorkerEntrypoint<Env> {
 			// The two namespaces cannot cross wires: a name only routes within
 			// its own kind's namespace, whatever the registry says about it.
 			const namespace = hot[2] === 'tables' ? this.env.DbTable : this.env.DbCollection;
-			const stub = namespace.get(namespace.idFromName(`${projectId}:${shard}`));
+			const subPath = hot[4] ?? '/';
+
+			// Replicated reads land on the caller's region replica; everything
+			// else (and every non-replicated shard) keeps the primary hop.
+			let instanceName = `${projectId}:${shard}`;
+			let locationHint: DurableObjectLocationHint | undefined;
+			if (
+				isRoutableRead(hot[2], request.method, subPath) &&
+				(await shardReplicationAuto(this.env, projectId, shard))
+			) {
+				const override =
+					this.env.REGION_OVERRIDE_HEADER === 'true' ? request.headers.get('x-cfb-region') : null;
+				const region =
+					override && REGION_HINTS.has(override)
+						? override
+						: regionHint(
+								(
+									request as Request & {
+										cf?: { continent?: string; country?: string; longitude?: string };
+									}
+								).cf ?? {},
+							);
+				instanceName = replicaName(instanceName, region, 1);
+				locationHint = region as DurableObjectLocationHint;
+			}
+
+			const stub = namespace.get(
+				namespace.idFromName(instanceName),
+				locationHint ? { locationHint } : undefined,
+			);
 			// The hot path is the whole customer-facing data API, so it gets the
 			// same 5xx reporting as everything else - it used to return here,
 			// outside the net below, which made a 500 on a document read or a

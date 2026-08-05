@@ -340,6 +340,7 @@ export const dbCollectionSummarySchema = z
 		readPermission: z.string().nullable().catch(null),
 		writePermission: z.string().nullable().catch(null),
 		validator: dbValidatorSchema.nullable().catch(null),
+		replication: z.enum(['off', 'auto']).catch('off'),
 		docs: z.number()
 	})
 	.meta({ id: 'DbCollectionSummary' });
@@ -410,6 +411,7 @@ export const dbTableSummarySchema = z
 		readPermission: z.string().nullable().catch(null),
 		writePermission: z.string().nullable().catch(null),
 		columns: z.array(dbTableColumnSchema).catch([]),
+		replication: z.enum(['off', 'auto']).catch('off'),
 		rows: z.number()
 	})
 	.meta({ id: 'DbTableSummary' });

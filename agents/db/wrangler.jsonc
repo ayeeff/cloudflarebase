@@ -224,6 +224,9 @@
 				// demo-named test project as throwaway. A real demo deployment sets
 				// both.
 				"TRUSTED_ORIGINS": "http://localhost:8797,http://127.0.0.1:8797",
+				// Lets specs pin region routing on a single-colo local stack by
+				// sending x-cfb-region. Test env only - never in production.
+				"REGION_OVERRIDE_HEADER": "true",
 			},
 
 			"analytics_engine_datasets": [
