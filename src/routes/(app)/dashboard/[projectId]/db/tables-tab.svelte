@@ -7,7 +7,6 @@
 		DbTableColumn,
 		DbTableSummary
 	} from '$lib/agents';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -17,7 +16,7 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { ulid } from '$lib/ulid';
-	import { Columns3, Pencil, Plus, Table2, Trash2, X } from '@lucide/svelte';
+	import { Columns3, Pencil, Play, Plus, Table2, Trash2, X } from '@lucide/svelte';
 
 	/**
 	 * The Tables tab: schema-first SQL tables beside the document collections.
@@ -259,8 +258,17 @@
 		rows = [];
 		rowsLoaded = false;
 		rowsError = null;
+		sqlView = 'grid';
+		sqlResults = null;
+		sqlError = null;
+		resetDesigner();
+		seedSqlEditor(name);
 		void loadRows(name);
 	}
+
+	/** The right pane shows the schema designer whenever nothing is selected
+	 * (declare mode) or an alter is in progress; the workspace otherwise. */
+	const showDesigner = $derived(selected === null || designerFor !== null);
 
 	async function loadRows(table: string) {
 		try {
@@ -393,6 +401,60 @@
 	}
 
 	// -------------------------------------------------------------------------
+	// SQL console: the operator surface over POST /admin/tables/:name/sql -
+	// the same gate as the public T2 endpoint (single table, no DDL), but
+	// operator-authenticated, so the workspace needs no project JWT.
+
+	type SqlStatementResult = {
+		results: Record<string, unknown>[];
+		columns: string[];
+		raw: unknown[][];
+		meta: { changes: number; rows_read: number; rows_written: number };
+	};
+	let sqlView = $state<'grid' | 'sql'>('grid');
+	let sqlText = $state('');
+	let sqlBusy = $state(false);
+	let sqlError = $state<string | null>(null);
+	let sqlResults = $state<SqlStatementResult[] | null>(null);
+
+	function seedSqlEditor(table: string) {
+		if (!sqlText.trim() || sqlText.startsWith('SELECT * FROM ')) {
+			sqlText = `SELECT * FROM ${table} ORDER BY created_at DESC LIMIT 50;`;
+		}
+	}
+
+	async function runSql() {
+		const table = selected;
+		const sql = sqlText.trim().replace(/;$/, '');
+		if (!table || !sql) return;
+		sqlBusy = true;
+		sqlError = null;
+		try {
+			const response = await fetch(`${adminBase}/tables/${encodeURIComponent(table)}/sql`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ sql })
+			});
+			const body = (await response.json().catch(() => null)) as
+				{ success: true; batch: SqlStatementResult[] } | { success: false; error?: string } | null;
+			if (!response.ok || !body || body.success !== true) {
+				throw new Error(
+					(body && 'error' in body && body.error) || `request failed (HTTP ${response.status})`
+				);
+			}
+			sqlResults = body.batch;
+			// DML lands in the grid and the stats too.
+			await refresh();
+			await loadRows(table);
+		} catch (error) {
+			sqlError = error instanceof Error ? error.message : String(error);
+			sqlResults = null;
+		} finally {
+			sqlBusy = false;
+		}
+	}
+
+	// -------------------------------------------------------------------------
 	// Delete table (typed-name confirmation, like the collections panel)
 
 	let deleteOpen = $state(false);
@@ -448,375 +510,459 @@
 		{/each}
 	</div>
 
-	<div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
-		<Card.Root class="min-w-0 lg:col-span-2" data-testid="db-tables-card">
+	<div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
+		<!-- Schema tree: the workspace's constant left rail. -->
+		<Card.Root class="min-w-0" data-testid="db-tables-card">
 			<Card.Header>
 				<Card.Title>Tables</Card.Title>
-				<Card.Description>
-					Schema-first SQL: declare typed columns, then click a table to browse its rows.
-				</Card.Description>
+				<Card.Action>
+					<Button
+						size="sm"
+						variant="outline"
+						data-testid="db-new-table"
+						onclick={() => {
+							selected = null;
+							resetDesigner();
+						}}
+					>
+						<Plus class="h-3.5 w-3.5" /> New
+					</Button>
+				</Card.Action>
 			</Card.Header>
-			<Card.Content>
+			<Card.Content class="px-3">
 				{#if tables.length === 0}
-					<p class="py-8 text-center text-sm text-muted-foreground" data-testid="db-tables-empty">
+					<p class="py-6 text-center text-sm text-muted-foreground" data-testid="db-tables-empty">
 						No tables yet - declare one to get typed columns, unique indexes, and live queries over
 						SQL rows.
 					</p>
 				{:else}
-					<div class="overflow-x-auto">
-						<Table.Root class="min-w-[36rem]" data-testid="db-tables-table">
-							<Table.Header>
-								<Table.Row>
-									<Table.Head>Name</Table.Head>
-									<Table.Head>Columns</Table.Head>
-									<Table.Head class="text-right">Rows</Table.Head>
-									<Table.Head>Read</Table.Head>
-									<Table.Head>Write</Table.Head>
-								</Table.Row>
-							</Table.Header>
-							<Table.Body>
-								{#each tables as table (table.name)}
-									<Table.Row
-										class={['cursor-pointer', selected === table.name && 'bg-muted/50']}
-										data-testid={`db-table-${table.name}`}
-										onclick={() => selectTable(table.name)}
-									>
-										<Table.Cell class="font-mono font-medium">{table.name}</Table.Cell>
-										<Table.Cell class="max-w-[16rem]">
-											<span class="block truncate font-mono text-xs text-muted-foreground">
-												{table.columns.map((column) => `${column.name}:${column.type}`).join(', ')}
-											</span>
-										</Table.Cell>
-										<Table.Cell class="text-right tabular-nums">{table.rows}</Table.Cell>
-										<Table.Cell><Badge variant="outline">{table.readAccess}</Badge></Table.Cell>
-										<Table.Cell><Badge variant="outline">{table.writeAccess}</Badge></Table.Cell>
-									</Table.Row>
-								{/each}
-							</Table.Body>
-						</Table.Root>
-					</div>
+					<ul class="space-y-0.5" data-testid="db-tables-table">
+						{#each tables as table (table.name)}
+							<li>
+								<button
+									type="button"
+									class={[
+										'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+										selected === table.name
+											? 'bg-muted font-medium text-foreground'
+											: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+									]}
+									data-testid={`db-table-${table.name}`}
+									onclick={() => selectTable(table.name)}
+								>
+									<Table2 class="h-3.5 w-3.5 shrink-0" />
+									<span class="min-w-0 flex-1 truncate font-mono">{table.name}</span>
+									<span class="text-xs tabular-nums">{table.rows}</span>
+								</button>
+							</li>
+						{/each}
+					</ul>
 				{/if}
 			</Card.Content>
 		</Card.Root>
 
-		<Card.Root data-testid="db-declare-table">
-			<Card.Header>
-				<Card.Title>{designerFor ? `Alter "${designerFor}"` : 'Declare a table'}</Card.Title>
-				<Card.Description>
-					{designerFor
-						? 'Add columns or toggle indexes. Destructive changes are refused - export and recreate instead.'
-						: 'The full schema up front: typed columns, defaults, unique and secondary indexes.'}
-				</Card.Description>
-			</Card.Header>
-			<Card.Content>
-				<form class="space-y-3" onsubmit={submitDesigner}>
-					{#if !designerFor}
-						<div class="space-y-1.5">
-							<Label for="new-table-name">Name</Label>
-							<Input
-								id="new-table-name"
-								bind:value={designerName}
-								placeholder="todos"
-								autocomplete="off"
-								data-testid="db-new-table-name"
-							/>
-						</div>
-					{/if}
-
-					<div class="space-y-2">
-						<Label>Columns</Label>
-						{#each designerColumns as column, index (index)}
-							<div class="space-y-1.5 rounded-md border p-2" data-testid={`db-column-${index}`}>
-								<div class="flex items-center gap-1.5">
-									<Input
-										class="h-8 font-mono text-xs"
-										placeholder="column_name"
-										autocomplete="off"
-										bind:value={column.name}
-										data-testid={`db-column-name-${index}`}
-									/>
-									<Select.Root
-										type="single"
-										value={column.type}
-										onValueChange={(value) => {
-											if (value) column.type = value as DbColumnType;
-										}}
-									>
-										<Select.Trigger
-											class="h-8 w-24 text-xs"
-											data-testid={`db-column-type-${index}`}
-										>
-											{column.type}
-										</Select.Trigger>
-										<Select.Content>
-											{#each columnTypes as type (type)}
-												<Select.Item value={type}>{type}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-									<Button
-										type="button"
-										variant="ghost"
-										size="icon"
-										class="h-8 w-8 shrink-0"
-										aria-label="Remove column"
-										onclick={() => {
-											designerColumns = designerColumns.filter((_, i) => i !== index);
-										}}
-									>
-										<X class="h-3.5 w-3.5" />
-									</Button>
-								</div>
-								<div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-									<label class="flex items-center gap-1">
-										<input type="checkbox" bind:checked={column.nullable} /> nullable
-									</label>
-									<label class="flex items-center gap-1">
-										<input type="checkbox" bind:checked={column.unique} /> unique
-									</label>
-									<label class="flex items-center gap-1">
-										<input type="checkbox" bind:checked={column.index} /> index
-									</label>
-									{#if column.type !== 'json'}
-										<Input
-											class="h-7 w-24 text-xs"
-											placeholder="default"
-											autocomplete="off"
-											bind:value={column.defaultText}
-										/>
-									{/if}
-								</div>
+		{#if showDesigner}
+			<Card.Root data-testid="db-declare-table">
+				<Card.Header>
+					<Card.Title>{designerFor ? `Alter "${designerFor}"` : 'Declare a table'}</Card.Title>
+					<Card.Description>
+						{designerFor
+							? 'Add columns or toggle indexes. Destructive changes are refused - export and recreate instead.'
+							: 'The full schema up front: typed columns, defaults, unique and secondary indexes.'}
+					</Card.Description>
+				</Card.Header>
+				<Card.Content>
+					<form class="space-y-3" onsubmit={submitDesigner}>
+						{#if !designerFor}
+							<div class="space-y-1.5">
+								<Label for="new-table-name">Name</Label>
+								<Input
+									id="new-table-name"
+									bind:value={designerName}
+									placeholder="todos"
+									autocomplete="off"
+									data-testid="db-new-table-name"
+								/>
 							</div>
-						{/each}
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							class="w-full"
-							data-testid="db-add-column"
-							onclick={() => (designerColumns = [...designerColumns, blankColumn()])}
-						>
-							<Plus class="h-3.5 w-3.5" /> Add column
+						{/if}
+
+						<div class="space-y-2">
+							<Label>Columns</Label>
+							{#each designerColumns as column, index (index)}
+								<div class="space-y-1.5 rounded-md border p-2" data-testid={`db-column-${index}`}>
+									<div class="flex items-center gap-1.5">
+										<Input
+											class="h-8 font-mono text-xs"
+											placeholder="column_name"
+											autocomplete="off"
+											bind:value={column.name}
+											data-testid={`db-column-name-${index}`}
+										/>
+										<Select.Root
+											type="single"
+											value={column.type}
+											onValueChange={(value) => {
+												if (value) column.type = value as DbColumnType;
+											}}
+										>
+											<Select.Trigger
+												class="h-8 w-24 text-xs"
+												data-testid={`db-column-type-${index}`}
+											>
+												{column.type}
+											</Select.Trigger>
+											<Select.Content>
+												{#each columnTypes as type (type)}
+													<Select.Item value={type}>{type}</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											class="h-8 w-8 shrink-0"
+											aria-label="Remove column"
+											onclick={() => {
+												designerColumns = designerColumns.filter((_, i) => i !== index);
+											}}
+										>
+											<X class="h-3.5 w-3.5" />
+										</Button>
+									</div>
+									<div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+										<label class="flex items-center gap-1">
+											<input type="checkbox" bind:checked={column.nullable} /> nullable
+										</label>
+										<label class="flex items-center gap-1">
+											<input type="checkbox" bind:checked={column.unique} /> unique
+										</label>
+										<label class="flex items-center gap-1">
+											<input type="checkbox" bind:checked={column.index} /> index
+										</label>
+										{#if column.type !== 'json'}
+											<Input
+												class="h-7 w-24 text-xs"
+												placeholder="default"
+												autocomplete="off"
+												bind:value={column.defaultText}
+											/>
+										{/if}
+									</div>
+								</div>
+							{/each}
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								class="w-full"
+								data-testid="db-add-column"
+								onclick={() => (designerColumns = [...designerColumns, blankColumn()])}
+							>
+								<Plus class="h-3.5 w-3.5" /> Add column
+							</Button>
+						</div>
+
+						<div class="grid grid-cols-2 gap-2">
+							<div class="space-y-1.5">
+								<Label>Read</Label>
+								<Select.Root type="single" bind:value={designerRead}>
+									<Select.Trigger class="w-full" data-testid="db-new-table-read">
+										{designerRead}
+									</Select.Trigger>
+									<Select.Content>
+										{#each accessModes as mode (mode)}
+											<Select.Item value={mode}>{mode}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							</div>
+							<div class="space-y-1.5">
+								<Label>Write</Label>
+								<Select.Root type="single" bind:value={designerWrite}>
+									<Select.Trigger class="w-full" data-testid="db-new-table-write">
+										{designerWrite}
+									</Select.Trigger>
+									<Select.Content>
+										{#each accessModes as mode (mode)}
+											<Select.Item value={mode}>{mode}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							</div>
+						</div>
+
+						<div class="space-y-1.5">
+							<Label>Replication</Label>
+							<Select.Root
+								type="single"
+								value={designerReplication}
+								onValueChange={(value) => {
+									designerReplication = value === 'off' ? 'off' : 'auto';
+								}}
+							>
+								<Select.Trigger class="w-full" data-testid="db-new-table-replication">
+									{designerReplication === 'auto'
+										? 'auto (per-region replicas)'
+										: 'off (single region)'}
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value="auto">auto (per-region replicas)</Select.Item>
+									<Select.Item value="off">off (single region)</Select.Item>
+								</Select.Content>
+							</Select.Root>
+						</div>
+
+						{#if designerRead !== 'public' || designerWrite !== 'public'}
+							<div class="grid grid-cols-2 gap-2">
+								{#if designerRead !== 'public'}
+									<div class="space-y-1.5">
+										<Label class="text-xs">Read permission</Label>
+										<Select.Root
+											type="single"
+											value={designerReadPermission || NO_PERMISSION}
+											onValueChange={(value) => {
+												designerReadPermission = value === NO_PERMISSION ? '' : (value ?? '');
+											}}
+										>
+											<Select.Trigger class="w-full text-xs">
+												{designerReadPermission || 'none'}
+											</Select.Trigger>
+											<Select.Content>
+												<Select.Item value={NO_PERMISSION}>none</Select.Item>
+												{#each permissionOptions(designerReadPermission) as key (key)}
+													<Select.Item value={key}>{key}</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>
+									</div>
+								{/if}
+								{#if designerWrite !== 'public'}
+									<div class="space-y-1.5">
+										<Label class="text-xs">Write permission</Label>
+										<Select.Root
+											type="single"
+											value={designerWritePermission || NO_PERMISSION}
+											onValueChange={(value) => {
+												designerWritePermission = value === NO_PERMISSION ? '' : (value ?? '');
+											}}
+										>
+											<Select.Trigger class="w-full text-xs">
+												{designerWritePermission || 'none'}
+											</Select.Trigger>
+											<Select.Content>
+												<Select.Item value={NO_PERMISSION}>none</Select.Item>
+												{#each permissionOptions(designerWritePermission) as key (key)}
+													<Select.Item value={key}>{key}</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>
+									</div>
+								{/if}
+							</div>
+						{/if}
+
+						<p class="text-xs text-muted-foreground" data-testid="db-table-access-sentence">
+							{designerSentence}
+						</p>
+
+						<div class="flex items-center gap-2">
+							<Button type="submit" disabled={designerBusy} data-testid="db-declare-submit">
+								<Plus class="h-4 w-4" />
+								{designerFor ? 'Apply changes' : 'Declare'}
+							</Button>
+							{#if designerFor}
+								<Button type="button" variant="ghost" onclick={resetDesigner}>Cancel</Button>
+							{/if}
+						</div>
+						{#if designerError}
+							<p class="text-sm text-destructive" data-testid="db-declare-error">{designerError}</p>
+						{/if}
+					</form>
+				</Card.Content>
+			</Card.Root>
+		{:else if selected && selectedTable}
+			<Card.Root data-testid="db-rows-card">
+				<Card.Header class="flex flex-row flex-wrap items-center justify-between gap-2">
+					<div>
+						<Card.Title class="font-mono">{selected}</Card.Title>
+						<Card.Description>
+							{selectedTable.columns.length} declared columns · newest last (ids are chronological)
+						</Card.Description>
+					</div>
+					<div class="flex items-center gap-2">
+						<div class="mr-1 flex rounded-md border p-0.5" role="tablist" aria-label="Table view">
+							{#each [['grid', 'Grid'], ['sql', 'SQL']] as view (view[0])}
+								<button
+									type="button"
+									role="tab"
+									aria-selected={sqlView === view[0]}
+									class={[
+										'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+										sqlView === view[0]
+											? 'bg-muted text-foreground'
+											: 'text-muted-foreground hover:text-foreground'
+									]}
+									data-testid={`db-view-${view[0]}`}
+									onclick={() => (sqlView = view[0] as 'grid' | 'sql')}
+								>
+									{view[1]}
+								</button>
+							{/each}
+						</div>
+						<Button size="sm" onclick={openInsert} data-testid="db-add-row">
+							<Plus class="h-3.5 w-3.5" /> Add row
 						</Button>
-					</div>
-
-					<div class="grid grid-cols-2 gap-2">
-						<div class="space-y-1.5">
-							<Label>Read</Label>
-							<Select.Root type="single" bind:value={designerRead}>
-								<Select.Trigger class="w-full" data-testid="db-new-table-read">
-									{designerRead}
-								</Select.Trigger>
-								<Select.Content>
-									{#each accessModes as mode (mode)}
-										<Select.Item value={mode}>{mode}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</div>
-						<div class="space-y-1.5">
-							<Label>Write</Label>
-							<Select.Root type="single" bind:value={designerWrite}>
-								<Select.Trigger class="w-full" data-testid="db-new-table-write">
-									{designerWrite}
-								</Select.Trigger>
-								<Select.Content>
-									{#each accessModes as mode (mode)}
-										<Select.Item value={mode}>{mode}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</div>
-					</div>
-
-					<div class="space-y-1.5">
-						<Label>Replication</Label>
-						<Select.Root
-							type="single"
-							value={designerReplication}
-							onValueChange={(value) => {
-								designerReplication = value === 'off' ? 'off' : 'auto';
+						<Button size="sm" variant="outline" onclick={() => openAlter(selectedTable)}>
+							<Pencil class="h-3.5 w-3.5" /> Edit schema
+						</Button>
+						<Button
+							size="sm"
+							variant="outline"
+							class="text-destructive"
+							data-testid="db-delete-table"
+							onclick={() => {
+								deleteConfirm = '';
+								deleteError = null;
+								deleteOpen = true;
 							}}
 						>
-							<Select.Trigger class="w-full" data-testid="db-new-table-replication">
-								{designerReplication === 'auto'
-									? 'auto (per-region replicas)'
-									: 'off (single region)'}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="auto">auto (per-region replicas)</Select.Item>
-								<Select.Item value="off">off (single region)</Select.Item>
-							</Select.Content>
-						</Select.Root>
-					</div>
-
-					{#if designerRead !== 'public' || designerWrite !== 'public'}
-						<div class="grid grid-cols-2 gap-2">
-							{#if designerRead !== 'public'}
-								<div class="space-y-1.5">
-									<Label class="text-xs">Read permission</Label>
-									<Select.Root
-										type="single"
-										value={designerReadPermission || NO_PERMISSION}
-										onValueChange={(value) => {
-											designerReadPermission = value === NO_PERMISSION ? '' : (value ?? '');
-										}}
-									>
-										<Select.Trigger class="w-full text-xs">
-											{designerReadPermission || 'none'}
-										</Select.Trigger>
-										<Select.Content>
-											<Select.Item value={NO_PERMISSION}>none</Select.Item>
-											{#each permissionOptions(designerReadPermission) as key (key)}
-												<Select.Item value={key}>{key}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								</div>
-							{/if}
-							{#if designerWrite !== 'public'}
-								<div class="space-y-1.5">
-									<Label class="text-xs">Write permission</Label>
-									<Select.Root
-										type="single"
-										value={designerWritePermission || NO_PERMISSION}
-										onValueChange={(value) => {
-											designerWritePermission = value === NO_PERMISSION ? '' : (value ?? '');
-										}}
-									>
-										<Select.Trigger class="w-full text-xs">
-											{designerWritePermission || 'none'}
-										</Select.Trigger>
-										<Select.Content>
-											<Select.Item value={NO_PERMISSION}>none</Select.Item>
-											{#each permissionOptions(designerWritePermission) as key (key)}
-												<Select.Item value={key}>{key}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								</div>
-							{/if}
-						</div>
-					{/if}
-
-					<p class="text-xs text-muted-foreground" data-testid="db-table-access-sentence">
-						{designerSentence}
-					</p>
-
-					<div class="flex items-center gap-2">
-						<Button type="submit" disabled={designerBusy} data-testid="db-declare-submit">
-							<Plus class="h-4 w-4" />
-							{designerFor ? 'Apply changes' : 'Declare'}
+							<Trash2 class="h-3.5 w-3.5" /> Delete
 						</Button>
-						{#if designerFor}
-							<Button type="button" variant="ghost" onclick={resetDesigner}>Cancel</Button>
+					</div>
+				</Card.Header>
+				<Card.Content>
+					{#if sqlView === 'sql'}
+						<div class="space-y-3">
+							<Textarea
+								bind:value={sqlText}
+								class="min-h-32 font-mono text-xs"
+								spellcheck={false}
+								placeholder={`SELECT * FROM ${selected} LIMIT 50;`}
+								data-testid="db-sql-editor"
+							/>
+							<div class="flex items-center gap-2">
+								<Button
+									size="sm"
+									disabled={sqlBusy || !sqlText.trim()}
+									onclick={() => void runSql()}
+									data-testid="db-sql-run"
+								>
+									<Play class="h-3.5 w-3.5" /> Run
+								</Button>
+								<p class="text-xs text-muted-foreground">
+									One SELECT/INSERT/UPDATE/DELETE over
+									<span class="font-mono">{selected}</span> - operator-grade, no DDL. System
+									columns: <span class="font-mono">id · owner · created_at · updated_at</span>.
+								</p>
+							</div>
+							{#if sqlError}
+								<p class="text-sm text-destructive" data-testid="db-sql-error">{sqlError}</p>
+							{/if}
+							{#each sqlResults ?? [] as statement, statementIndex (statementIndex)}
+								<div class="space-y-1">
+									<p class="text-xs text-muted-foreground tabular-nums">
+										{statement.results.length}
+										{statement.results.length === 1 ? 'row' : 'rows'} · {statement.meta.rows_read} read
+										· {statement.meta.rows_written} written
+									</p>
+									{#if statement.results.length > 0}
+										<div class="overflow-x-auto rounded-md border">
+											<Table.Root class="min-w-[36rem]" data-testid="db-sql-results">
+												<Table.Header>
+													<Table.Row>
+														{#each statement.columns as column (column)}
+															<Table.Head class="font-mono text-xs">{column}</Table.Head>
+														{/each}
+													</Table.Row>
+												</Table.Header>
+												<Table.Body>
+													{#each statement.raw as row, rowIndex (rowIndex)}
+														<Table.Row>
+															{#each row as value, valueIndex (valueIndex)}
+																<Table.Cell class="max-w-[14rem] truncate font-mono text-xs">
+																	{cellText(value)}
+																</Table.Cell>
+															{/each}
+														</Table.Row>
+													{/each}
+												</Table.Body>
+											</Table.Root>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{:else}
+						{#if rowsError}
+							<p class="mb-3 text-sm text-destructive" data-testid="db-rows-error">{rowsError}</p>
 						{/if}
-					</div>
-					{#if designerError}
-						<p class="text-sm text-destructive" data-testid="db-declare-error">{designerError}</p>
-					{/if}
-				</form>
-			</Card.Content>
-		</Card.Root>
-	</div>
-
-	{#if selected && selectedTable}
-		<Card.Root data-testid="db-rows-card">
-			<Card.Header class="flex flex-row flex-wrap items-center justify-between gap-2">
-				<div>
-					<Card.Title class="font-mono">{selected}</Card.Title>
-					<Card.Description>
-						{selectedTable.columns.length} declared columns · newest last (ids are chronological)
-					</Card.Description>
-				</div>
-				<div class="flex items-center gap-2">
-					<Button size="sm" onclick={openInsert} data-testid="db-add-row">
-						<Plus class="h-3.5 w-3.5" /> Add row
-					</Button>
-					<Button size="sm" variant="outline" onclick={() => openAlter(selectedTable)}>
-						<Pencil class="h-3.5 w-3.5" /> Edit schema
-					</Button>
-					<Button
-						size="sm"
-						variant="outline"
-						class="text-destructive"
-						data-testid="db-delete-table"
-						onclick={() => {
-							deleteConfirm = '';
-							deleteError = null;
-							deleteOpen = true;
-						}}
-					>
-						<Trash2 class="h-3.5 w-3.5" /> Delete
-					</Button>
-				</div>
-			</Card.Header>
-			<Card.Content>
-				{#if rowsError}
-					<p class="mb-3 text-sm text-destructive" data-testid="db-rows-error">{rowsError}</p>
-				{/if}
-				{#if !rowsLoaded}
-					<p class="py-6 text-center text-sm text-muted-foreground">Loading rows…</p>
-				{:else if rows.length === 0}
-					<p class="py-6 text-center text-sm text-muted-foreground" data-testid="db-rows-empty">
-						No rows yet.
-					</p>
-				{:else}
-					<div class="overflow-x-auto">
-						<Table.Root class="min-w-[42rem]" data-testid="db-rows-table">
-							<Table.Header>
-								<Table.Row>
-									<Table.Head class="w-40">id</Table.Head>
-									{#each selectedTable.columns as column (column.name)}
-										<Table.Head class="font-mono text-xs">{column.name}</Table.Head>
-									{/each}
-									<Table.Head class="w-20 text-right">Actions</Table.Head>
-								</Table.Row>
-							</Table.Header>
-							<Table.Body>
-								{#each rows as row (row.id)}
-									<Table.Row data-testid={`db-row-${row.id}`}>
-										<Table.Cell class="max-w-40 truncate font-mono text-xs text-muted-foreground">
-											{row.id}
-										</Table.Cell>
-										{#each selectedTable.columns as column (column.name)}
-											<Table.Cell class="max-w-[14rem] truncate font-mono text-xs">
-												{cellText(row.data[column.name])}
-											</Table.Cell>
+						{#if !rowsLoaded}
+							<p class="py-6 text-center text-sm text-muted-foreground">Loading rows…</p>
+						{:else if rows.length === 0}
+							<p class="py-6 text-center text-sm text-muted-foreground" data-testid="db-rows-empty">
+								No rows yet.
+							</p>
+						{:else}
+							<div class="overflow-x-auto">
+								<Table.Root class="min-w-[42rem]" data-testid="db-rows-table">
+									<Table.Header>
+										<Table.Row>
+											<Table.Head class="w-40">id</Table.Head>
+											{#each selectedTable.columns as column (column.name)}
+												<Table.Head class="font-mono text-xs">{column.name}</Table.Head>
+											{/each}
+											<Table.Head class="w-20 text-right">Actions</Table.Head>
+										</Table.Row>
+									</Table.Header>
+									<Table.Body>
+										{#each rows as row (row.id)}
+											<Table.Row data-testid={`db-row-${row.id}`}>
+												<Table.Cell
+													class="max-w-40 truncate font-mono text-xs text-muted-foreground"
+												>
+													{row.id}
+												</Table.Cell>
+												{#each selectedTable.columns as column (column.name)}
+													<Table.Cell class="max-w-[14rem] truncate font-mono text-xs">
+														{cellText(row.data[column.name])}
+													</Table.Cell>
+												{/each}
+												<Table.Cell class="text-right">
+													<div class="flex justify-end gap-1">
+														<Button
+															variant="ghost"
+															size="icon"
+															class="h-7 w-7"
+															aria-label="Edit row"
+															data-testid={`db-row-edit-${row.id}`}
+															onclick={() => openEdit(row)}
+														>
+															<Pencil class="h-3.5 w-3.5" />
+														</Button>
+														<Button
+															variant="ghost"
+															size="icon"
+															class="h-7 w-7 text-destructive"
+															aria-label="Delete row"
+															data-testid={`db-row-delete-${row.id}`}
+															onclick={() => void deleteRow(row.id)}
+														>
+															<Trash2 class="h-3.5 w-3.5" />
+														</Button>
+													</div>
+												</Table.Cell>
+											</Table.Row>
 										{/each}
-										<Table.Cell class="text-right">
-											<div class="flex justify-end gap-1">
-												<Button
-													variant="ghost"
-													size="icon"
-													class="h-7 w-7"
-													aria-label="Edit row"
-													data-testid={`db-row-edit-${row.id}`}
-													onclick={() => openEdit(row)}
-												>
-													<Pencil class="h-3.5 w-3.5" />
-												</Button>
-												<Button
-													variant="ghost"
-													size="icon"
-													class="h-7 w-7 text-destructive"
-													aria-label="Delete row"
-													data-testid={`db-row-delete-${row.id}`}
-													onclick={() => void deleteRow(row.id)}
-												>
-													<Trash2 class="h-3.5 w-3.5" />
-												</Button>
-											</div>
-										</Table.Cell>
-									</Table.Row>
-								{/each}
-							</Table.Body>
-						</Table.Root>
-					</div>
-				{/if}
-			</Card.Content>
-		</Card.Root>
-	{/if}
+									</Table.Body>
+								</Table.Root>
+							</div>
+						{/if}
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		{/if}
+	</div>
 </div>
 
 <Dialog.Root bind:open={editorOpen}>
