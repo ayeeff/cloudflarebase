@@ -13,14 +13,27 @@ import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlit
 export const project = sqliteTable(
 	'project',
 	{
-		/** Becomes the Durable Object name and the API base path. Immutable. */
+		/** Becomes the Durable Object name and the API base path. Immutable.
+		 * A BRANCH row's id is `<parentId>--<branchName>` - the derived id IS
+		 * the isolation (docs/branches-design.md): every agent already keys on
+		 * project id, so a branch gets its own instances, keys, and replicas
+		 * with zero agent changes. */
 		id: text('id').primaryKey(),
 		name: text('name').notNull(),
+		/** Root project this row branches from; null = a root project. The
+		 * registry decides what is a branch - never the string shape (ids
+		 * containing `--` from before the rule are grandfathered roots). */
+		parentId: text('parent_id'),
+		/** The branch's short name (`staging`); null on roots (`main`). */
+		branchName: text('branch_name'),
 		createdAt: integer('created_at', { mode: 'timestamp_ms' })
 			.notNull()
 			.default(sql`(unixepoch() * 1000)`)
 	},
-	(table) => [index('project_created_at').on(table.createdAt)]
+	(table) => [
+		index('project_created_at').on(table.createdAt),
+		index('project_parent').on(table.parentId)
+	]
 );
 
 export type ProjectRow = typeof project.$inferSelect;

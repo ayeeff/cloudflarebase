@@ -206,9 +206,13 @@ export const registryProjectSchema = z
 	.object({
 		id: z.string(),
 		name: z.string(),
+		/** Root project this row branches from; null = a root project. */
+		parentId: z.string().nullable(),
+		/** The branch's short name (`staging`); null on roots (`main`). */
+		branchName: z.string().nullable(),
 		createdAt: z.iso.datetime()
 	})
-	.meta({ id: 'RegistryProject', description: 'A project this installation owns.' });
+	.meta({ id: 'RegistryProject', description: 'A project or branch this installation owns.' });
 
 export const projectRegistryStateSchema = z
 	.object({ projects: z.array(registryProjectSchema) })
