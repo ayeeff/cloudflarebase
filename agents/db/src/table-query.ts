@@ -23,8 +23,7 @@ import type { Query, TableColumn, WhereClause } from './schemas';
  */
 
 export type TableCompileResult =
-	| { ok: true; compiled: CompiledQuery }
-	| { ok: false; error: string };
+	{ ok: true; compiled: CompiledQuery } | { ok: false; error: string };
 
 interface ResolvedField {
 	/** SQL expression for the field. */

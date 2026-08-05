@@ -120,6 +120,19 @@ test('validateRow: bounds and enum', () => {
 	assert.deepEqual(validateRow(bounded, { slug: 'abcd' }), ['"slug" is limited to 3 characters']);
 });
 
+test('validateRow: skipPolicy bypasses bounds and enum but never structure', () => {
+	const bounded = cols({ name: 'state', type: 'text', enum: ['open'], maxLength: 2 });
+	// Policy violations pass on operator surfaces...
+	assert.deepEqual(validateRow(bounded, { state: 'closed' }, { skipPolicy: true }), []);
+	// ...but structure always holds: the schema IS the storage.
+	assert.deepEqual(validateRow(bounded, { state: 7 }, { skipPolicy: true }), [
+		'"state" must be a text, got number',
+	]);
+	assert.deepEqual(validateRow(bounded, { ghost: 1 }, { skipPolicy: true }), [
+		'"ghost" is not a declared column',
+	]);
+});
+
 test('applyColumnDefaults: defaults then null; required stays absent', () => {
 	const full = applyColumnDefaults(TODO, { title: 'x' });
 	assert.deepEqual(full, { title: 'x', done: false, priority: 3, meta: null });
@@ -144,7 +157,9 @@ test('planDdl: full create emits table, system indexes, column indexes', () => {
 			'"id" TEXT PRIMARY KEY, "owner" TEXT, "created_at" INTEGER NOT NULL, ' +
 			'"updated_at" INTEGER NOT NULL, "email" TEXT, "age" INTEGER)',
 	);
-	assert.ok(plan.statements.includes('CREATE INDEX IF NOT EXISTS "idx_users_owner" ON "users" ("owner")'));
+	assert.ok(
+		plan.statements.includes('CREATE INDEX IF NOT EXISTS "idx_users_owner" ON "users" ("owner")'),
+	);
 	assert.ok(
 		plan.statements.includes(
 			'CREATE UNIQUE INDEX IF NOT EXISTS "uniq_users_email" ON "users" ("email")',
@@ -156,7 +171,11 @@ test('planDdl: full create emits table, system indexes, column indexes', () => {
 });
 
 test('planDdl: NOT NULL columns carry their backfill default on create', () => {
-	const plan = planDdl('t', null, cols({ name: 'state', type: 'text', nullable: false, default: 'open' }));
+	const plan = planDdl(
+		't',
+		null,
+		cols({ name: 'state', type: 'text', nullable: false, default: 'open' }),
+	);
 	assert.equal(plan.ok, true);
 	if (!plan.ok) return;
 	assert.match(plan.statements[0], /"state" TEXT NOT NULL DEFAULT 'open'/);
@@ -164,7 +183,10 @@ test('planDdl: NOT NULL columns carry their backfill default on create', () => {
 
 test('planDdl: additive column lands as ALTER; NOT NULL without default is refused', () => {
 	const applied = cols({ name: 'title', type: 'text' });
-	const grown = cols({ name: 'title', type: 'text' }, { name: 'votes', type: 'integer', default: 0 });
+	const grown = cols(
+		{ name: 'title', type: 'text' },
+		{ name: 'votes', type: 'integer', default: 0 },
+	);
 	const plan = planDdl('posts', applied, grown);
 	assert.equal(plan.ok, true);
 	if (plan.ok) {

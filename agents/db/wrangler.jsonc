@@ -12,6 +12,10 @@
 			"new_sqlite_classes": ["DbAgent", "DbCollection"],
 			"tag": "v1",
 		},
+		{
+			"new_sqlite_classes": ["DbTable"],
+			"tag": "v2",
+		},
 	],
 	"durable_objects": {
 		"bindings": [
@@ -22,6 +26,10 @@
 			{
 				"class_name": "DbCollection",
 				"name": "DbCollection",
+			},
+			{
+				"class_name": "DbTable",
+				"name": "DbTable",
 			},
 		],
 	},
@@ -107,6 +115,10 @@
 						"class_name": "DbCollection",
 						"name": "DbCollection",
 					},
+					{
+						"class_name": "DbTable",
+						"name": "DbTable",
+					},
 				],
 			},
 
@@ -150,6 +162,10 @@
 						"class_name": "DbCollection",
 						"name": "DbCollection",
 					},
+					{
+						"class_name": "DbTable",
+						"name": "DbTable",
+					},
 				],
 			},
 
@@ -190,6 +206,10 @@
 					{
 						"class_name": "DbCollection",
 						"name": "DbCollection",
+					},
+					{
+						"class_name": "DbTable",
+						"name": "DbTable",
 					},
 				],
 			},
@@ -233,6 +253,10 @@
 					{
 						"class_name": "DbCollection",
 						"name": "DbCollection",
+					},
+					{
+						"class_name": "DbTable",
+						"name": "DbTable",
 					},
 				],
 			},

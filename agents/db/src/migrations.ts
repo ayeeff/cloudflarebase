@@ -29,6 +29,13 @@ const journal = {
 			tag: '0002_gigantic_sleeper',
 			breakpoints: true,
 		},
+		{
+			idx: 3,
+			version: '6',
+			when: 1785899012221,
+			tag: '0003_large_anthem',
+			breakpoints: true,
+		},
 	],
 };
 
@@ -84,11 +91,15 @@ const m0002 = `CREATE TABLE \`restore_points\` (
 --> statement-breakpoint
 CREATE INDEX \`restore_points_collection\` ON \`restore_points\` (\`collection\`);`;
 
+const m0003 = `ALTER TABLE \`collections\` ADD \`kind\` text DEFAULT 'collection' NOT NULL;--> statement-breakpoint
+ALTER TABLE \`collections\` ADD \`columns\` text;`;
+
 export default {
 	journal,
 	migrations: {
 		m0000,
 		m0001,
 		m0002,
+		m0003,
 	},
 };

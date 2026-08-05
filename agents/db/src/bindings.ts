@@ -21,6 +21,8 @@ export interface DbAgentBindings {
 	DbAgent: AnyDurableObjectNamespace;
 	/** The per-collection store class. Required. */
 	DbCollection: AnyDurableObjectNamespace;
+	/** The per-table store class (typed columns, ORM-compatible). Required. */
+	DbTable: AnyDurableObjectNamespace;
 	/** Document/collection events; auto-creates on first write. Required. */
 	DB_EVENTS: AnalyticsEngineDataset;
 

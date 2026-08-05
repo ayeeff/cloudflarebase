@@ -9,17 +9,29 @@ import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlit
  * if the two schemas diverge heavily.
  */
 
-/** DbAgent only: the authoritative collection registry for one project. */
+/**
+ * DbAgent only: the authoritative shard registry for one project - both
+ * kinds. `name` stays the sole primary key, so a name is unique ACROSS
+ * collections and tables (changing the PK would force a table rebuild
+ * migration; global uniqueness is also simply less confusing). `kind`
+ * discriminates; `columns` carries the declared column DSL for tables and
+ * stays null for collections, `validator` the inverse.
+ */
 export const collections = sqliteTable('collections', {
 	name: text('name').primaryKey(),
+	/** 'collection' | 'table' */
+	kind: text('kind').notNull().default('collection'),
 	readAccess: text('read_access').notNull().default('auth'),
 	writeAccess: text('write_access').notNull().default('auth'),
 	/** Permission key the JWT must carry to read/write; null = mode alone. */
 	readPermission: text('read_permission'),
 	writePermission: text('write_permission'),
-	/** JSON CollectionValidator; null = no document rules. */
+	/** JSON CollectionValidator; null = no document rules. Collections only. */
 	validator: text('validator'),
-	/** Last count reported by the child; the child's own count is exact. */
+	/** JSON TableColumn[]; the declared schema of record. Tables only. */
+	columns: text('columns'),
+	/** Last count reported by the child (docs or rows); the child's own
+	 * count is exact. */
 	docs: integer('docs').notNull().default(0),
 	createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 	reportedAt: integer('reported_at', { mode: 'timestamp_ms' }),

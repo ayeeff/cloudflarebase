@@ -1,23 +1,35 @@
 import * as Sentry from '@sentry/cloudflare';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { getAgentByName, routeAgentRequest } from 'agents';
+import { drainUnusedBody } from './access';
 import { isDurableObjectReset, DbAgent as DbAgentBase } from './agent';
 import { DbCollection as DbCollectionBase } from './collection';
+import { DbTable as DbTableBase } from './table';
 import { collectionNameSchema, projectIdSchema } from './schemas';
 
-export type { DbActivityEvent, DbAgentState, DbCollectionSummary, DbOverview } from './agent';
+export type {
+	DbActivityEvent,
+	DbAgentState,
+	DbCollectionSummary,
+	DbTableSummary,
+	DbOverview,
+} from './agent';
 export type { AssertDbAgentEnv, DbAgentBindings } from './bindings';
 export type {
 	AccessMode,
 	AggregateRequest,
 	AggregateResult,
 	CollectionValidator,
+	ColumnType,
 	DbDocument,
+	DbRow,
 	FieldRule,
 	ImportReport,
 	Query,
 	RestoreRequest,
 	ServerFrame,
+	TableColumn,
+	TableConfig,
 } from './schemas';
 
 const sentryOptions = (env: Env) => ({
@@ -32,6 +44,7 @@ export const DbCollection = Sentry.instrumentDurableObjectWithSentry(
 	sentryOptions,
 	DbCollectionBase,
 );
+export const DbTable = Sentry.instrumentDurableObjectWithSentry(sentryOptions, DbTableBase);
 
 /**
  * Worker entrypoint. Routing:
@@ -45,12 +58,25 @@ export const DbCollection = Sentry.instrumentDurableObjectWithSentry(
  * - `/agents/db-agent/<pid>/collections/<c>/**` - the HOT PATH, dispatched
  *   straight to the DbCollection instance (`<pid>:<c>`) in ONE hop,
  *   including the /subscribe WebSocket upgrade.
+ * - `/agents/db-agent/<pid>/tables/<t>/**` - the second hot path, same
+ *   shape, straight to the DbTable instance.
  * - everything else under /agents/* - routeAgentRequest -> DbAgent
  *   (/config, /overview, /admin/*, and the AgentClient state-sync socket).
  *   Never with `cors: true`: the agents own their per-project CORS policy.
  */
 class DbService extends WorkerEntrypoint<Env> {
 	async fetch(request: Request): Promise<Response> {
+		// Answering a body-bearing request without consuming the body wedges
+		// the whole worker (uncaught "Can't read from request stream after
+		// response has been sent") - every DO drains its own, and this covers
+		// the entry-level answers (/health, 404s); already-forwarded bodies
+		// no-op because the DO consumed the shared stream.
+		const response = await this.dispatch(request);
+		await drainUnusedBody(request);
+		return response;
+	}
+
+	private async dispatch(request: Request): Promise<Response> {
 		const url = new URL(request.url);
 
 		if (url.pathname === '/health') {
@@ -74,18 +100,22 @@ class DbService extends WorkerEntrypoint<Env> {
 			return Response.json({ erased: true });
 		}
 
-		const hot = url.pathname.match(/^\/agents\/db-agent\/([^/]+)\/collections\/([^/]+)(\/.*)?$/);
+		const hot = url.pathname.match(
+			/^\/agents\/db-agent\/([^/]+)\/(collections|tables)\/([^/]+)(\/.*)?$/,
+		);
 		if (hot) {
 			const projectId = decodeURIComponent(hot[1]);
-			const collection = decodeURIComponent(hot[2]);
+			const shard = decodeURIComponent(hot[3]);
 			if (
 				!projectIdSchema.safeParse(projectId).success ||
-				!collectionNameSchema.safeParse(collection).success
+				!collectionNameSchema.safeParse(shard).success
 			) {
-				return Response.json({ error: 'invalid project or collection name' }, { status: 400 });
+				return Response.json({ error: 'invalid project or shard name' }, { status: 400 });
 			}
-			const namespace = this.env.DbCollection;
-			const stub = namespace.get(namespace.idFromName(`${projectId}:${collection}`));
+			// The two namespaces cannot cross wires: a name only routes within
+			// its own kind's namespace, whatever the registry says about it.
+			const namespace = hot[2] === 'tables' ? this.env.DbTable : this.env.DbCollection;
+			const stub = namespace.get(namespace.idFromName(`${projectId}:${shard}`));
 			// The hot path is the whole customer-facing data API, so it gets the
 			// same 5xx reporting as everything else - it used to return here,
 			// outside the net below, which made a 500 on a document read or a

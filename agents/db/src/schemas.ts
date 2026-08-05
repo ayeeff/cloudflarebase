@@ -315,7 +315,11 @@ export const tableColumnSchema = z
 		if (column.maxLength !== undefined && column.type !== 'text') {
 			fail(`"${column.name}": maxLength applies to text columns`);
 		}
-		if ((column.min !== undefined || column.max !== undefined) && column.type !== 'integer' && column.type !== 'real') {
+		if (
+			(column.min !== undefined || column.max !== undefined) &&
+			column.type !== 'integer' &&
+			column.type !== 'real'
+		) {
 			fail(`"${column.name}": min/max apply to integer and real columns`);
 		}
 		if (column.enum !== undefined && (column.type === 'json' || column.type === 'boolean')) {
@@ -400,6 +404,18 @@ export const tableConfigSchema = z.strictObject({
 export type TableConfig = z.infer<typeof tableConfigSchema>;
 
 export const storedTableConfigSchema = tableConfigSchema.nullable().catch(null);
+
+/**
+ * The child's cached meta row: the pushed config plus the record of what DDL
+ * has actually been applied - which replaces introspection, because
+ * `pragma_table_info()` is SQLITE_AUTH. `appliedColumns` only moves after
+ * every planned statement succeeded.
+ */
+export const storedTableMetaSchema = z
+	.object({ config: tableConfigSchema, appliedColumns: tableColumnsSchema })
+	.nullable()
+	.catch(null);
+export type TableMeta = { config: TableConfig; appliedColumns: TableColumn[] };
 
 /**
  * A row's wire shape is deliberately the document envelope - `data` is the

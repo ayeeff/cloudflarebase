@@ -17,6 +17,8 @@ import {
 	querySchema,
 	restoreRequestSchema,
 	settingsRequestSchema,
+	tableColumnsSchema,
+	tableModesSchema,
 	validatorSchema,
 	DEMO_PROJECT_PATTERN,
 	IMPORT_RPC_CHUNK,
@@ -29,8 +31,13 @@ import {
 	type ImportLine,
 	type ImportReport,
 	type RestorePoint,
+	type TableColumn,
+	type TableConfig,
 } from './schemas';
+import { drainUnusedBody } from './access';
+import { planDdl, uniqueViolationColumn } from './table-schema';
 import type { DbCollection } from './collection';
+import type { DbTable } from './table';
 
 /**
  * The per-project coordinator: owns the authoritative collection registry
@@ -74,6 +81,16 @@ function parseStoredValidator(raw: string | null): CollectionValidator | null {
 	}
 }
 
+/** Table rows store the declared columns as JSON text; unreadable = []. */
+function parseStoredColumns(raw: string | null): TableColumn[] {
+	if (!raw) return [];
+	try {
+		return tableColumnsSchema.parse(JSON.parse(raw));
+	} catch {
+		return [];
+	}
+}
+
 export interface DbActivityEvent {
 	id: string;
 	type:
@@ -83,7 +100,11 @@ export interface DbActivityEvent {
 		| 'collection.configured'
 		| 'collection.restored'
 		| 'documents.changed'
-		| 'documents.imported';
+		| 'documents.imported'
+		| 'table.created'
+		| 'table.configured'
+		| 'table.deleted'
+		| 'rows.changed';
 	message: string;
 	at: string;
 }
@@ -98,12 +119,24 @@ export interface DbCollectionSummary {
 	docs: number;
 }
 
+export interface DbTableSummary {
+	name: string;
+	readAccess: AccessMode;
+	writeAccess: AccessMode;
+	readPermission: string | null;
+	writePermission: string | null;
+	columns: TableColumn[];
+	rows: number;
+}
+
 export interface DbAgentState {
 	projectId: string;
 	provisionedAt: string | null;
 	allowedOrigins: string[];
 	collections: DbCollectionSummary[];
+	tables: DbTableSummary[];
 	totalDocs: number;
+	totalRows: number;
 	/** Bumped on any reported change; dashboards refetch when it moves. */
 	rev: number;
 	totalEvents: number;
@@ -114,6 +147,7 @@ export interface DbAgentState {
 export interface DbOverview {
 	projectId: string;
 	collections: DbCollectionSummary[];
+	tables: DbTableSummary[];
 	state: DbAgentState;
 }
 
@@ -123,7 +157,9 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		provisionedAt: null,
 		allowedOrigins: [],
 		collections: [],
+		tables: [],
 		totalDocs: 0,
+		totalRows: 0,
 		rev: 0,
 		totalEvents: 0,
 		lastEventAt: null,
@@ -207,9 +243,12 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		if (!collectionNameSchema.safeParse(name).success) return null;
 
 		let [row] = await this.db.select().from(collections).where(eq(collections.name, name)).limit(1);
+		// A name registered as a table never resolves as a collection (names
+		// are unique across kinds), and auto-create must not squat on it.
+		if (row && row.kind !== 'collection') return null;
 		if (!row) {
 			if (!options.autoCreate) return null;
-			const denied = this.checkCollectionCap();
+			const denied = this.checkShardCap();
 			if (denied) return null;
 			[row] = await this.db
 				.insert(collections)
@@ -223,6 +262,32 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		}
 
 		return this.buildConfig(row);
+	}
+
+	/** The table child's lazy config pull. NO auto-creation - tables are
+	 * schema-first, so an unregistered name stays null and the child 404s. */
+	async getTableConfig(name: string): Promise<TableConfig | null> {
+		if (!collectionNameSchema.safeParse(name).success) return null;
+		const [row] = await this.db
+			.select()
+			.from(collections)
+			.where(eq(collections.name, name))
+			.limit(1);
+		if (!row || row.kind !== 'table') return null;
+		return this.buildTableConfig(row);
+	}
+
+	/** Debounced absolute row-count report from a table child. */
+	async reportTableStats(name: string, stats: { rows: number }): Promise<void> {
+		if (!collectionNameSchema.safeParse(name).success) return;
+		const rows = Number.isFinite(stats.rows) && stats.rows >= 0 ? Math.floor(stats.rows) : 0;
+
+		await this.db
+			.update(collections)
+			.set({ docs: rows, reportedAt: new Date() })
+			.where(and(eq(collections.name, name), eq(collections.kind, 'table')));
+		this.recordEvent('rows.changed', `table "${name}" now holds ${rows} rows`);
+		await this.syncCollectionsState();
 	}
 
 	/** Debounced absolute-count report from a child. Best-effort by design. */
@@ -247,7 +312,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	async destroy(): Promise<void> {
 		const rows = await this.db.select().from(collections).orderBy(asc(collections.name));
 		for (const row of rows) {
-			await this.destroyChild(row.name);
+			await this.destroyChild(row.kind === 'table' ? 'table' : 'collection', row.name);
 		}
 
 		await this.ctx.storage.deleteAll();
@@ -264,7 +329,9 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 
 	async onRequest(request: Request): Promise<Response> {
 		try {
-			return await this.routeRequest(request);
+			const response = await this.routeRequest(request);
+			await drainUnusedBody(request);
+			return response;
 		} catch (error) {
 			// The Agents SDK's own _tryCatch converts handler exceptions into a
 			// bare 500 BEFORE Sentry's DO instrumentation (which only sees
@@ -347,6 +414,23 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			return this.deleteCollection(decodeURIComponent(collection[1]));
 		}
 
+		const tableRow = subPath.match(/^\/admin\/tables\/([^/]+)\/rows\/([^/]+)$/);
+		if (tableRow) {
+			return this.adminTableRowWrite(
+				request,
+				decodeURIComponent(tableRow[1]),
+				decodeURIComponent(tableRow[2]),
+			);
+		}
+
+		const table = subPath.match(/^\/admin\/tables\/([^/]+)$/);
+		if (table && request.method === 'PUT') {
+			return this.configureTable(request, decodeURIComponent(table[1]));
+		}
+		if (table && request.method === 'DELETE') {
+			return this.deleteTable(decodeURIComponent(table[1]));
+		}
+
 		return Response.json({ error: 'not found' }, { status: 404 });
 	}
 
@@ -354,32 +438,57 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return {
 			projectId: this.name,
 			collections: this.state.collections,
+			tables: this.state.tables ?? [],
 			state: this.state,
 		};
 	}
 
+	/**
+	 * One operator query surface for both engines (and the copilot's query
+	 * tool): the body names exactly one of `collection` or `table`. Table
+	 * compile refusals (unknown column, illegal dotted path) answer 400 with
+	 * the compiler's message.
+	 */
 	private async adminQuery(request: Request): Promise<Response> {
 		const body = (await request.json().catch(() => null)) as {
 			collection?: unknown;
+			table?: unknown;
 			query?: unknown;
 		} | null;
-		const name = collectionNameSchema.safeParse(body?.collection);
 		const query = querySchema.safeParse(body?.query ?? {});
-		if (!name.success || !query.success) {
-			return Response.json({ error: 'invalid collection or query' }, { status: 400 });
+		const hasCollection = body?.collection !== undefined;
+		const hasTable = body?.table !== undefined;
+		if (!query.success || hasCollection === hasTable) {
+			return Response.json(
+				{ error: 'name exactly one of collection or table, plus a valid query' },
+				{ status: 400 },
+			);
 		}
-		const [row] = await this.db
-			.select()
-			.from(collections)
-			.where(eq(collections.name, name.data))
-			.limit(1);
-		if (!row) return Response.json({ error: 'no such collection' }, { status: 404 });
 
+		if (hasTable) {
+			const name = collectionNameSchema.safeParse(body?.table);
+			if (!name.success) return Response.json({ error: 'invalid table name' }, { status: 400 });
+			if (!(await this.tableRow(name.data))) {
+				return Response.json({ error: 'no such table' }, { status: 404 });
+			}
+			const result = (await this.tableStub(name.data).adminQuery(query.data)) as unknown as Awaited<
+				ReturnType<DbTable['adminQuery']>
+			>;
+			if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
+			const { ok: _ok, ...payload } = result;
+			return Response.json(payload);
+		}
+
+		const name = collectionNameSchema.safeParse(body?.collection);
+		if (!name.success) return Response.json({ error: 'invalid collection name' }, { status: 400 });
+		if (!(await this.collectionRow(name.data))) {
+			return Response.json({ error: 'no such collection' }, { status: 404 });
+		}
 		const child = this.childStub(name.data);
 		return Response.json(await child.adminQuery(query.data));
 	}
 
-	/** The registry row, or null for an invalid/unknown name. */
+	/** The collection registry row, or null for invalid/unknown/table names. */
 	private async collectionRow(name: string): Promise<typeof collections.$inferSelect | null> {
 		if (!collectionNameSchema.safeParse(name).success) return null;
 		const [row] = await this.db
@@ -387,7 +496,18 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			.from(collections)
 			.where(eq(collections.name, name))
 			.limit(1);
-		return row ?? null;
+		return row && row.kind === 'collection' ? row : null;
+	}
+
+	/** The table registry row, or null for invalid/unknown/collection names. */
+	private async tableRow(name: string): Promise<typeof collections.$inferSelect | null> {
+		if (!collectionNameSchema.safeParse(name).success) return null;
+		const [row] = await this.db
+			.select()
+			.from(collections)
+			.where(eq(collections.name, name))
+			.limit(1);
+		return row && row.kind === 'table' ? row : null;
 	}
 
 	private async adminAggregate(request: Request): Promise<Response> {
@@ -765,15 +885,9 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		name: string,
 		docId: string,
 	): Promise<Response> {
-		if (!collectionNameSchema.safeParse(name).success) {
-			return Response.json({ error: 'invalid collection name' }, { status: 400 });
+		if (!(await this.collectionRow(name))) {
+			return Response.json({ error: 'no such collection' }, { status: 404 });
 		}
-		const [row] = await this.db
-			.select()
-			.from(collections)
-			.where(eq(collections.name, name))
-			.limit(1);
-		if (!row) return Response.json({ error: 'no such collection' }, { status: 404 });
 		const child = this.childStub(name);
 
 		if (request.method === 'PUT') {
@@ -823,8 +937,13 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			.where(eq(collections.name, name))
 			.limit(1);
 
+		// Names are unique across kinds (the registry PK): a table already
+		// holds this one.
+		if (existing && existing.kind !== 'collection') {
+			return Response.json({ error: `"${name}" is already a table` }, { status: 409 });
+		}
 		if (!existing) {
-			const denied = this.checkCollectionCap();
+			const denied = this.checkShardCap();
 			if (denied) return denied;
 		}
 
@@ -877,16 +996,12 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	}
 
 	private async deleteCollection(name: string): Promise<Response> {
-		const [row] = await this.db
-			.select()
-			.from(collections)
-			.where(eq(collections.name, name))
-			.limit(1);
+		const row = await this.collectionRow(name);
 		if (!row) return Response.json({ error: 'no such collection' }, { status: 404 });
 
 		// Child first, registry second - a failure leaves the row so the
 		// operator can retry; the reverse order would orphan the child's data.
-		await this.destroyChild(name);
+		await this.destroyChild('collection', name);
 		await this.db.delete(collections).where(eq(collections.name, name));
 		// A deliberate erase must stay erased - drop its restore markers too.
 		await this.db.delete(restorePoints).where(eq(restorePoints.collection, name));
@@ -895,6 +1010,175 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		this.recordEvent('collection.deleted', `collection "${name}" deleted`);
 		await this.syncCollectionsState();
 		return Response.json({ deleted: true });
+	}
+
+	/**
+	 * Declare or alter a table: full desired schema in, destructive diffs
+	 * refused HERE (before any row write or push - the child's planner is
+	 * defensive only), row first, then push. A DDL failure at the child (e.g.
+	 * uniquifying a column holding duplicates) must not leave the registry
+	 * claiming columns that never applied: the row reverts and the SQLite
+	 * message surfaces as the 409.
+	 */
+	private async configureTable(request: Request, name: string): Promise<Response> {
+		if (!collectionNameSchema.safeParse(name).success) {
+			return Response.json(
+				{ error: 'table names are lowercase letters, digits, _ and - (max 64 chars)' },
+				{ status: 400 },
+			);
+		}
+		const modes = tableModesSchema.safeParse(await request.json().catch(() => ({})));
+		if (!modes.success) {
+			return Response.json(
+				{ error: 'invalid table schema', issues: modes.error.issues },
+				{ status: 400 },
+			);
+		}
+
+		const [existing] = await this.db
+			.select()
+			.from(collections)
+			.where(eq(collections.name, name))
+			.limit(1);
+		if (existing && existing.kind !== 'table') {
+			return Response.json({ error: `"${name}" is already a collection` }, { status: 409 });
+		}
+		if (!existing) {
+			const denied = this.checkShardCap();
+			if (denied) return denied;
+		}
+
+		if (existing) {
+			const plan = planDdl(name, parseStoredColumns(existing.columns), modes.data.columns);
+			if (!plan.ok) return Response.json({ error: plan.reason }, { status: 400 });
+		}
+
+		const patch: Partial<typeof collections.$inferInsert> = {
+			readAccess: modes.data.readAccess,
+			writeAccess: modes.data.writeAccess,
+			columns: JSON.stringify(modes.data.columns),
+		};
+		if (modes.data.readPermission !== undefined) patch.readPermission = modes.data.readPermission;
+		if (modes.data.writePermission !== undefined) {
+			patch.writePermission = modes.data.writePermission;
+		}
+
+		const [row] = await this.db
+			.insert(collections)
+			.values({
+				name,
+				kind: 'table',
+				readPermission: null,
+				writePermission: null,
+				validator: null,
+				...patch,
+				createdAt: new Date(),
+			})
+			.onConflictDoUpdate({ target: collections.name, set: patch })
+			.returning();
+
+		try {
+			await this.pushTableConfig(row);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (existing) {
+				await this.db
+					.update(collections)
+					.set({
+						readAccess: existing.readAccess,
+						writeAccess: existing.writeAccess,
+						readPermission: existing.readPermission,
+						writePermission: existing.writePermission,
+						columns: existing.columns,
+					})
+					.where(eq(collections.name, name));
+			} else {
+				await this.db.delete(collections).where(eq(collections.name, name));
+			}
+			return Response.json(
+				{ error: `schema change failed: ${message.slice(0, 256)}` },
+				{ status: 409 },
+			);
+		}
+
+		this.writeDbEvent(existing ? 'table.configured' : 'table.created');
+		this.recordEvent(
+			existing ? 'table.configured' : 'table.created',
+			existing
+				? `table "${name}" reconfigured (${modes.data.columns.length} columns)`
+				: `table "${name}" declared (${modes.data.columns.length} columns)`,
+		);
+		await this.syncCollectionsState();
+		return Response.json({
+			name,
+			readAccess: row.readAccess,
+			writeAccess: row.writeAccess,
+			readPermission: row.readPermission,
+			writePermission: row.writePermission,
+			columns: parseStoredColumns(row.columns),
+		});
+	}
+
+	private async deleteTable(name: string): Promise<Response> {
+		const row = await this.tableRow(name);
+		if (!row) return Response.json({ error: 'no such table' }, { status: 404 });
+
+		// Child first, registry second - the collection erase discipline.
+		await this.destroyChild('table', name);
+		await this.db.delete(collections).where(eq(collections.name, name));
+
+		this.writeDbEvent('table.deleted');
+		this.recordEvent('table.deleted', `table "${name}" deleted`);
+		await this.syncCollectionsState();
+		return Response.json({ deleted: true });
+	}
+
+	private async adminTableRowWrite(
+		request: Request,
+		name: string,
+		rowId: string,
+	): Promise<Response> {
+		if (!(await this.tableRow(name))) {
+			return Response.json({ error: 'no such table' }, { status: 404 });
+		}
+		const child = this.tableStub(name);
+
+		if (request.method === 'PUT') {
+			const data = (await request.json().catch(() => null)) as { data?: unknown } | null;
+			if (!data || typeof data.data !== 'object' || data.data === null) {
+				return Response.json({ error: 'invalid row body' }, { status: 400 });
+			}
+			const ifAbsent = new URL(request.url).searchParams.get('ifAbsent') === '1';
+			let result: Awaited<ReturnType<DbTable['adminPut']>>;
+			try {
+				result = (await child.adminPut(rowId, data.data, ifAbsent)) as unknown as Awaited<
+					ReturnType<DbTable['adminPut']>
+				>;
+			} catch (error) {
+				const column = uniqueViolationColumn(error);
+				if (!column) throw error;
+				return Response.json(
+					{ error: `a row with that ${column} already exists (unique column)` },
+					{ status: 409 },
+				);
+			}
+			if (typeof result === 'object' && result !== null && 'conflict' in result) {
+				return Response.json({ error: 'a row with that id already exists' }, { status: 409 });
+			}
+			if (typeof result === 'object' && result !== null && 'invalid' in result) {
+				return Response.json(
+					{ error: 'row failed validation', issues: result.invalid },
+					{ status: 400 },
+				);
+			}
+			return Response.json(result);
+		}
+		if (request.method === 'DELETE') {
+			const deleted = await child.adminDelete(rowId);
+			if (!deleted) return Response.json({ error: 'no such row' }, { status: 404 });
+			return Response.json({ deleted: true });
+		}
+		return Response.json({ error: 'not found' }, { status: 404 });
 	}
 
 	private async updateSettings(request: Request): Promise<Response> {
@@ -908,15 +1192,17 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 
 		this.setState({ ...this.state, allowedOrigins: parsed.data.allowedOrigins });
 
-		// Re-push every child so cached CORS lists update. Retry once; a child
-		// that still fails heals on its next lazy pull.
+		// Re-push every child - both kinds - so cached CORS lists update.
+		// Retry once; a child that still fails heals on its next lazy pull.
 		const rows = await this.db.select().from(collections);
 		for (const row of rows) {
+			const push =
+				row.kind === 'table' ? () => this.pushTableConfig(row) : () => this.pushConfig(row);
 			try {
-				await this.pushConfig(row);
+				await push();
 			} catch {
 				try {
-					await this.pushConfig(row);
+					await push();
 				} catch {
 					// seconds-level staleness accepted; documented risk
 				}
@@ -933,20 +1219,29 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return namespace.get(namespace.idFromName(`${this.name}:${name}`));
 	}
 
+	private tableStub(name: string) {
+		const namespace = this.env.DbTable as unknown as DurableObjectNamespace<DbTable>;
+		return namespace.get(namespace.idFromName(`${this.name}:${name}`));
+	}
+
 	/**
-	 * Destroy one child, tolerating the abort-vs-reply race: an abort-reset
-	 * error is verified against a fresh instance instead of failing the
-	 * operation - zero documents means the wipe landed. A genuine failure
-	 * (documents still there) rethrows, and the registry row survives so the
-	 * operator can retry; nothing may orphan a Durable Object holding data.
+	 * Destroy one child of either kind, tolerating the abort-vs-reply race:
+	 * an abort-reset error is verified against a fresh instance instead of
+	 * failing the operation - zero documents/rows means the wipe landed. A
+	 * genuine failure rethrows, and the registry row survives so the operator
+	 * can retry; nothing may orphan a Durable Object holding data.
 	 */
-	private async destroyChild(name: string): Promise<void> {
+	private async destroyChild(kind: 'collection' | 'table', name: string): Promise<void> {
 		try {
-			await this.childStub(name).destroy();
+			if (kind === 'table') await this.tableStub(name).destroy();
+			else await this.childStub(name).destroy();
 		} catch (error) {
 			if (!isDurableObjectReset(error)) throw error;
-			const docs = await this.childStub(name).getDocCount();
-			if (docs > 0) throw error;
+			const remaining =
+				kind === 'table'
+					? await this.tableStub(name).getRowCount()
+					: await this.childStub(name).getDocCount();
+			if (remaining > 0) throw error;
 		}
 	}
 
@@ -972,14 +1267,39 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		await child.configure(await this.buildConfig(row));
 	}
 
-	private checkCollectionCap(): Response | null {
+	private async buildTableConfig(row: typeof collections.$inferSelect): Promise<TableConfig> {
+		const version = ((await this.ctx.storage.get<number>('config-version')) ?? 0) + 1;
+		await this.ctx.storage.put('config-version', version);
+		return {
+			kind: 'table',
+			projectId: this.name,
+			table: row.name,
+			readAccess: row.readAccess as AccessMode,
+			writeAccess: row.writeAccess as AccessMode,
+			readPermission: row.readPermission,
+			writePermission: row.writePermission,
+			columns: parseStoredColumns(row.columns),
+			allowedOrigins: this.state.allowedOrigins,
+			demo: this.isEphemeral,
+			configVersion: version,
+		};
+	}
+
+	private async pushTableConfig(row: typeof collections.$inferSelect): Promise<void> {
+		await this.tableStub(row.name).configure(await this.buildTableConfig(row));
+	}
+
+	/** ONE pool across kinds: a project holds at most MAX_COLLECTIONS shards
+	 * (collections + tables together), DEMO_MAX_COLLECTIONS in demos. */
+	private checkShardCap(): Response | null {
 		const cap = this.isEphemeral ? DEMO_MAX_COLLECTIONS : MAX_COLLECTIONS;
-		if (this.state.collections.length >= cap) {
+		const total = this.state.collections.length + (this.state.tables ?? []).length;
+		if (total >= cap) {
 			return Response.json(
 				{
 					error: this.isEphemeral
-						? `demo projects are capped at ${DEMO_MAX_COLLECTIONS} collections`
-						: `projects are capped at ${MAX_COLLECTIONS} collections`,
+						? `demo projects are capped at ${DEMO_MAX_COLLECTIONS} collections and tables`
+						: `projects are capped at ${MAX_COLLECTIONS} collections and tables`,
 				},
 				{ status: 429 },
 			);
@@ -989,19 +1309,34 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 
 	private async syncCollectionsState(): Promise<void> {
 		const rows = await this.db.select().from(collections).orderBy(asc(collections.name));
-		const summaries: DbCollectionSummary[] = rows.map((row) => ({
-			name: row.name,
-			readAccess: row.readAccess as AccessMode,
-			writeAccess: row.writeAccess as AccessMode,
-			readPermission: row.readPermission,
-			writePermission: row.writePermission,
-			validator: parseStoredValidator(row.validator),
-			docs: row.docs,
-		}));
+		const summaries: DbCollectionSummary[] = rows
+			.filter((row) => row.kind === 'collection')
+			.map((row) => ({
+				name: row.name,
+				readAccess: row.readAccess as AccessMode,
+				writeAccess: row.writeAccess as AccessMode,
+				readPermission: row.readPermission,
+				writePermission: row.writePermission,
+				validator: parseStoredValidator(row.validator),
+				docs: row.docs,
+			}));
+		const tables: DbTableSummary[] = rows
+			.filter((row) => row.kind === 'table')
+			.map((row) => ({
+				name: row.name,
+				readAccess: row.readAccess as AccessMode,
+				writeAccess: row.writeAccess as AccessMode,
+				readPermission: row.readPermission,
+				writePermission: row.writePermission,
+				columns: parseStoredColumns(row.columns),
+				rows: row.docs,
+			}));
 		this.setState({
 			...this.state,
 			collections: summaries,
+			tables,
 			totalDocs: summaries.reduce((sum, entry) => sum + entry.docs, 0),
+			totalRows: tables.reduce((sum, entry) => sum + entry.rows, 0),
 			rev: this.state.rev + 1,
 		});
 	}

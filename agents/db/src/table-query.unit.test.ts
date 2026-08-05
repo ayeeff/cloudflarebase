@@ -64,10 +64,7 @@ test('compiler: dotted paths reach into json columns only', () => {
 	const c = compiled(q({ where: [{ field: 'meta.author', op: '==', value: 'ada' }] }));
 	assert.equal(c.whereSql, `json_extract("meta", '$.author') = ?`);
 
-	const refused = compileTableQuery(
-		q({ where: [{ field: 'title.x', op: '==', value: 1 }] }),
-		TODO,
-	);
+	const refused = compileTableQuery(q({ where: [{ field: 'title.x', op: '==', value: 1 }] }), TODO);
 	assert.equal(refused.ok, false);
 	if (!refused.ok) assert.match(refused.error, /dotted paths only reach into json columns/);
 });

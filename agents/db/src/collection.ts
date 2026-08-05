@@ -3,7 +3,7 @@ import { count, eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import { z } from 'zod';
 import migrations from './migrations';
-import { checkAccess, corsHeadersFor, withCors } from './access';
+import { checkAccess, corsHeadersFor, drainUnusedBody, withCors } from './access';
 import { collectionMeta, documents } from './db/schema';
 import { ProjectJwtVerifier } from './jwt';
 import { LiveShard, type LiveGate } from './live';
@@ -368,6 +368,13 @@ export class DbCollection extends LiveShard {
 	// HTTP surface: /agents/db-agent/<pid>/collections/<name>/...
 
 	async fetch(request: Request): Promise<Response> {
+		// EVERY exit drains an unread body first - see drainUnusedBody.
+		const response = await this.dispatch(request);
+		await drainUnusedBody(request);
+		return response;
+	}
+
+	private async dispatch(request: Request): Promise<Response> {
 		const url = new URL(request.url);
 		const match = url.pathname.match(/^\/agents\/[^/]+\/([^/]+)\/collections\/([^/]+)(\/.*)?$/);
 		if (!match) return Response.json({ error: 'not found' }, { status: 404 });

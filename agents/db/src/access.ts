@@ -15,9 +15,7 @@ import type { AccessMode } from './schemas';
  * - `owner` resolves to the token's subject, scoping every read and write.
  */
 
-export type AccessDecision =
-	| { ok: true; owner: string | null }
-	| { ok: false; response: Response };
+export type AccessDecision = { ok: true; owner: string | null } | { ok: false; response: Response };
 
 export async function checkAccess(
 	request: Request,
@@ -41,10 +39,7 @@ export async function checkAccess(
 		if (result.code === 'not-configured') {
 			return {
 				ok: false,
-				response: Response.json(
-					{ error: 'auth verification is not configured' },
-					{ status: 503 },
-				),
+				response: Response.json({ error: 'auth verification is not configured' }, { status: 503 }),
 			};
 		}
 		return {
@@ -94,6 +89,27 @@ export function corsHeadersFor(
 		'access-control-allow-headers': 'authorization, content-type',
 		vary: 'Origin',
 	});
+}
+
+/**
+ * Cancel an unread request body before a response goes out. A body-bearing
+ * request forwarded to a Durable Object stub whose handler answers WITHOUT
+ * reading the body (a 404 fallthrough, an auth refusal) crashes workerd with
+ * an uncaught "Can't read from request stream after response has been sent"
+ * that wedges the whole instance - reproduced against wrangler 4.115. Every
+ * DO fetch/onRequest path drains through this before returning.
+ */
+export async function drainUnusedBody(request: Request): Promise<void> {
+	if (request.body && !request.bodyUsed) {
+		try {
+			// CONSUME rather than cancel: cancelling races the runtime's own
+			// body pipe and still detonates; a full read completes it. Bodies
+			// on these surfaces are JSON far below platform caps.
+			await request.arrayBuffer();
+		} catch {
+			// locked or already consumed - nothing to drain
+		}
+	}
 }
 
 /** Apply CORS to a routed response without mutating the original. */

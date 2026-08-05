@@ -46,8 +46,17 @@ export function quoteIdent(name: string): string {
  * `additionalFields: allow` for typed rows). Returns every issue; an empty
  * array means the row passes. Callers validate the MERGED result for PATCH,
  * exactly like document rules.
+ *
+ * `skipPolicy` is the operator-surface mode: bounds and enum (POLICY, the
+ * rules-lite analog Firestore's Admin SDK bypasses) are skipped, but
+ * STRUCTURE - unknown columns, types, NOT NULL - always holds, because the
+ * schema is the storage, not a rule about it.
  */
-export function validateRow(columns: TableColumn[], data: Record<string, unknown>): string[] {
+export function validateRow(
+	columns: TableColumn[],
+	data: Record<string, unknown>,
+	options: { skipPolicy?: boolean } = {},
+): string[] {
 	const issues: string[] = [];
 	const byName = new Map(columns.map((column) => [column.name, column]));
 
@@ -71,17 +80,17 @@ export function validateRow(columns: TableColumn[], data: Record<string, unknown
 			continue;
 		}
 
-		issues.push(...checkColumnValue(column, value));
+		issues.push(...checkColumnValue(column, value, options.skipPolicy === true));
 	}
 
 	return issues;
 }
 
-function checkColumnValue(column: TableColumn, value: unknown): string[] {
+function checkColumnValue(column: TableColumn, value: unknown, skipPolicy = false): string[] {
 	switch (column.type) {
 		case 'text':
 			if (typeof value !== 'string') return [typeIssue(column, value)];
-			if (column.maxLength !== undefined && value.length > column.maxLength) {
+			if (!skipPolicy && column.maxLength !== undefined && value.length > column.maxLength) {
 				return [`"${column.name}" is limited to ${column.maxLength} characters`];
 			}
 			break;
@@ -102,6 +111,8 @@ function checkColumnValue(column: TableColumn, value: unknown): string[] {
 			// Any JSON value; nesting depth/size is bounded by the row byte cap.
 			break;
 	}
+
+	if (skipPolicy) return [];
 
 	const issues: string[] = [];
 	if (typeof value === 'number') {
@@ -305,6 +316,14 @@ function defaultLiteral(value: string | number | boolean | null): string {
 /** The apply loop's "already there" detector for non-idempotent ADD COLUMN. */
 export function isDuplicateColumnError(error: unknown): boolean {
 	return /duplicate column name/i.test(error instanceof Error ? error.message : String(error));
+}
+
+/** SQLite phrases unique violations "UNIQUE constraint failed: <t>.<col>"
+ * (workerd appends ": SQLITE_CONSTRAINT..."); the offending column, or null
+ * when the error is something else. */
+export function uniqueViolationColumn(error: unknown): string | null {
+	const message = error instanceof Error ? error.message : String(error);
+	return message.match(/UNIQUE constraint failed: [^.\s]+\.([A-Za-z0-9_]+)/i)?.[1] ?? null;
 }
 
 // ---------------------------------------------------------------------------
