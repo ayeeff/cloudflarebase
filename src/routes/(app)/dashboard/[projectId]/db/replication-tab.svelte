@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { DbCollectionSummary, DbReplicationStatus, DbTableSummary } from '$lib/agents';
+	import { WORLD_OUTLINE_PATH } from '$lib/world-outline';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Table from '$lib/components/ui/table';
@@ -148,44 +149,12 @@
 	}
 
 	// ------------------------------------------------------------------
-	// The map: a hand-authored 48x24 equirectangular dot lattice (75N-60S),
-	// same idiom as the marketing topology diagram - dots, theme tokens,
-	// animateMotion packets, all gated on prefers-reduced-motion.
+	// The map: vendored simplified continent silhouettes (equirectangular,
+	// 75N-60S - src/lib/world-outline.ts, generated, never hand-edited) with
+	// theme-token fills, animateMotion packets gated on prefers-reduced-motion.
 
 	const MAP_W = 480;
 	const MAP_H = 240;
-	const WORLD = [
-		'.........#####..#####.....###...###########.....',
-		'.......######...#####.....###.#################.',
-		'..###########....##..#..######################..',
-		'...##########..##......#.####################...',
-		'......######..##......##.###################....',
-		'.......########........###################.....',
-		'.......########.......##.################.#.....',
-		'........######........###################......',
-		'........######........##########.###.####......',
-		'..........#..##......##########.###..##.........',
-		'...........##.......###########..##..####.......',
-		'.............#.......##########......###........',
-		'.............#####.......#####......####.####...',
-		'.............######......#####.......###.####...',
-		'.............#######.....#####..........#.......',
-		'..............######.....#####.#.......####....',
-		'...............####......####..........######...',
-		'..............###.........###..........######...',
-		'..............###.........##...........#####....',
-		'..............##...........................#..#.',
-		'..............##..............................#.',
-		'..............#.................................',
-		'..............#.................................',
-		'................................................'
-	];
-	const dots: { x: number; y: number }[] = [];
-	WORLD.forEach((rowChars, row) => {
-		for (let col = 0; col < rowChars.length; col += 1) {
-			if (rowChars[col] === '#') dots.push({ x: col * 10 + 5, y: row * 10 + 5 });
-		}
-	});
 
 	/** Approximate anchor per region hint (agents/db/src/region.ts). */
 	const REGION_POINTS: Record<string, { x: number; y: number; label: string }> = {
@@ -237,88 +206,107 @@
 			</Card.Action>
 		</Card.Header>
 		<Card.Content>
-			<svg
-				viewBox="0 0 {MAP_W} {MAP_H}"
-				class="w-full"
-				role="img"
-				aria-label="World map of live replica regions"
-				data-testid="db-replication-map"
-			>
-				{#each dots as dot (`${dot.x}-${dot.y}`)}
-					<circle cx={dot.x} cy={dot.y} r="1.3" class="fill-muted-foreground/25" />
-				{/each}
+			<div class="overflow-hidden rounded-xl border bg-muted/20">
+				<svg
+					viewBox="0 0 {MAP_W} {MAP_H}"
+					class="w-full"
+					role="img"
+					aria-label="World map of live replica regions"
+					data-testid="db-replication-map"
+				>
+					<path
+						d={WORLD_OUTLINE_PATH}
+						class="fill-primary/10 stroke-primary/20"
+						stroke-width="0.5"
+						stroke-linejoin="round"
+					/>
 
-				<!-- Arcs primary -> live regions, packets riding them. -->
-				{#each regionRows as row, index (row.region)}
-					{#if REGION_POINTS[row.region]}
-						<path
-							d={arcPath(row.region)}
-							class="fill-none stroke-primary"
-							stroke-width="1"
-							stroke-dasharray="3 3"
-							opacity="0.35"
-						/>
-						{#if !reduceMotion}
-							<circle r="2" class="fill-primary">
-								<animateMotion
-									dur="{(2.4 + (index % 3) * 0.5).toFixed(1)}s"
-									begin="{(index * 0.7).toFixed(1)}s"
-									repeatCount="indefinite"
-									path={arcPath(row.region)}
-								/>
-							</circle>
-						{/if}
-					{/if}
-				{/each}
-
-				<!-- Region markers: lit when a replica lives there. -->
-				{#each Object.entries(REGION_POINTS) as [region, point] (region)}
-					{@const lit = liveRegions.has(region)}
-					{#if lit}
-						<circle cx={point.x} cy={point.y} r="8" class="fill-primary/15" />
-						<circle cx={point.x} cy={point.y} r="3" class="fill-primary" />
-						{#if !reduceMotion}
-							<circle
-								cx={point.x}
-								cy={point.y}
-								r="5"
-								opacity="0"
+					<!-- Arcs primary -> live regions, packets riding them. -->
+					{#each regionRows as row, index (row.region)}
+						{#if REGION_POINTS[row.region]}
+							<path
+								d={arcPath(row.region)}
 								class="fill-none stroke-primary"
 								stroke-width="1"
-							>
-								<animate attributeName="r" values="4;10" dur="2s" repeatCount="indefinite" />
-								<animate attributeName="opacity" values="0.6;0" dur="2s" repeatCount="indefinite" />
-							</circle>
+								stroke-dasharray="3 3"
+								opacity="0.35"
+							/>
+							{#if !reduceMotion}
+								<circle r="2" class="fill-primary">
+									<animateMotion
+										dur="{(2.4 + (index % 3) * 0.5).toFixed(1)}s"
+										begin="{(index * 0.7).toFixed(1)}s"
+										repeatCount="indefinite"
+										path={arcPath(row.region)}
+									/>
+								</circle>
+							{/if}
 						{/if}
-						<text
-							x={point.x}
-							y={point.y - 7}
-							text-anchor="middle"
-							class="fill-foreground font-mono"
-							font-size="7"
-						>
-							{region}
-						</text>
-					{:else}
-						<circle cx={point.x} cy={point.y} r="2" class="fill-muted-foreground/40">
-							<title>{point.label} ({region}) - no replica yet</title>
-						</circle>
-					{/if}
-				{/each}
+					{/each}
 
-				<!-- The primary hub: abstract on purpose, primaries have no region. -->
-				<circle cx={HUB.x} cy={HUB.y} r="11" class="fill-primary/15" />
-				<circle cx={HUB.x} cy={HUB.y} r="4.5" class="fill-primary" />
-				<text
-					x={HUB.x}
-					y={HUB.y + 18}
-					text-anchor="middle"
-					class="fill-muted-foreground font-mono"
-					font-size="7"
-				>
-					primary
-				</text>
-			</svg>
+					<!-- Region markers: lit when a replica lives there. -->
+					{#each Object.entries(REGION_POINTS) as [region, point] (region)}
+						{@const lit = liveRegions.has(region)}
+						{#if lit}
+							<circle cx={point.x} cy={point.y} r="8" class="fill-primary/15" />
+							<circle cx={point.x} cy={point.y} r="3" class="fill-primary" />
+							{#if !reduceMotion}
+								<circle
+									cx={point.x}
+									cy={point.y}
+									r="5"
+									opacity="0"
+									class="fill-none stroke-primary"
+									stroke-width="1"
+								>
+									<animate attributeName="r" values="4;10" dur="2s" repeatCount="indefinite" />
+									<animate
+										attributeName="opacity"
+										values="0.6;0"
+										dur="2s"
+										repeatCount="indefinite"
+									/>
+								</circle>
+							{/if}
+							<text
+								x={point.x}
+								y={point.y - 7}
+								text-anchor="middle"
+								class="fill-foreground font-mono"
+								font-size="7"
+							>
+								{region}
+							</text>
+						{:else}
+							<circle cx={point.x} cy={point.y} r="2" class="fill-muted-foreground/40">
+								<title>{point.label} ({region}) - no replica yet</title>
+							</circle>
+							<text
+								x={point.x}
+								y={point.y - 6}
+								text-anchor="middle"
+								class="fill-muted-foreground/60 font-mono"
+								font-size="6"
+							>
+								{region}
+							</text>
+						{/if}
+					{/each}
+
+					<!-- The primary hub: abstract on purpose, primaries have no region. -->
+					<circle cx={HUB.x} cy={HUB.y} r="11" class="fill-primary/15" />
+					<circle cx={HUB.x} cy={HUB.y} r="4.5" class="fill-primary" />
+					<text
+						x={HUB.x}
+						y={HUB.y + 18}
+						text-anchor="middle"
+						class="fill-muted-foreground font-mono"
+						font-size="7"
+					>
+						primary
+					</text>
+				</svg>
+			</div>
 		</Card.Content>
 	</Card.Root>
 
