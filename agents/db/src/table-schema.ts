@@ -1,4 +1,4 @@
-import { valueFitsType, type ColumnType, type TableColumn } from './schemas';
+import type { ColumnType, TableColumn } from './schemas';
 
 /**
  * Pure table-schema module: row validation against declared columns, default
