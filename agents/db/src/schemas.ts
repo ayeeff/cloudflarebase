@@ -177,6 +177,41 @@ export interface DbDocument {
 }
 
 // ---------------------------------------------------------------------------
+// Replication (phase R1 of docs/db-scale-plan.md; docs/db-replication-design.md)
+
+export const replicationModeSchema = z.enum(['off', 'auto']);
+export type ReplicationMode = z.infer<typeof replicationModeSchema>;
+
+/** Session bookmark headers - the D1 Sessions contract, LSN-shaped. Writes
+ * on a replicated primary answer with LSN_HEADER; clients echo the highest
+ * seen value on reads via MIN_LSN_HEADER for read-your-writes on replicas. */
+export const LSN_HEADER = 'cfb-lsn';
+export const MIN_LSN_HEADER = 'cfb-min-lsn';
+
+/** One change-log row (row images, never statements - deterministic apply,
+ * engine-agnostic: the same substrate replicates documents and typed rows). */
+export const logEntrySchema = z.object({
+	lsn: z.number().int().min(1),
+	op: z.enum(['put', 'del', 'cfg']),
+	id: z.string(),
+	/** DTO JSON for put, config JSON for cfg, null tombstone for del. */
+	image: z.string().nullable(),
+	ts: z.number()
+});
+export type LogEntry = z.infer<typeof logEntrySchema>;
+
+export const REPLICATION_PULL_CHUNK = 500;
+/** Log retention; a replica behind the horizon is FORCED to re-bootstrap. */
+export const MAX_LOG_ROWS = 100_000;
+/** R1 freshness window: replica reads may lag this far unless the session
+ * bookmark demands newer. Matches the dashboard's own polling cadence. */
+export const MAX_REPLICA_LAG_MS = 3_000;
+
+export type RepPullResult =
+	| { resync: true; epoch: number }
+	| { resync: false; entries: LogEntry[]; lastLsn: number; epoch: number };
+
+// ---------------------------------------------------------------------------
 // Collection configuration
 
 export const accessModeSchema = z.enum(['public', 'auth', 'owner']);
@@ -193,6 +228,8 @@ export const collectionModesSchema = z.strictObject({
 	readPermission: permissionKeySchema.nullable().optional(),
 	writePermission: permissionKeySchema.nullable().optional(),
 	validator: validatorSchema.nullable().optional(),
+	/** Three-state like the permission fields: omitted = unchanged. */
+	replication: replicationModeSchema.optional(),
 });
 
 /** Pushed parent -> child on create/config change; cached in collection_meta. */
@@ -211,6 +248,13 @@ export const collectionConfigSchema = z.strictObject({
 	demo: z.boolean(),
 	/** Monotonic; lets a child ignore a stale push after a failed retry. */
 	configVersion: z.number().int().min(0),
+	/** Defaults keep configs stored before R1 parseable. */
+	replication: replicationModeSchema.default('off'),
+	/** PARENT-owned restore epoch: bumped after a PITR restore so replicas
+	 * discard and re-bootstrap. Lives in config (not the primary's storage)
+	 * because a restore rewinds the primary's storage - including any epoch
+	 * it would have kept itself. */
+	repEpoch: z.number().int().min(0).default(0),
 });
 export type CollectionConfig = z.infer<typeof collectionConfigSchema>;
 
@@ -384,6 +428,8 @@ export const tableModesSchema = z.strictObject({
 	readPermission: permissionKeySchema.nullable().optional(),
 	writePermission: permissionKeySchema.nullable().optional(),
 	columns: tableColumnsSchema,
+	/** Three-state like the permission fields: omitted = unchanged. */
+	replication: replicationModeSchema.optional(),
 });
 
 /** Pushed parent -> child; cached in collection_meta alongside a record of
@@ -400,6 +446,8 @@ export const tableConfigSchema = z.strictObject({
 	allowedOrigins: z.array(z.string()).max(10),
 	demo: z.boolean(),
 	configVersion: z.number().int().min(0),
+	replication: replicationModeSchema.default('off'),
+	repEpoch: z.number().int().min(0).default(0),
 });
 export type TableConfig = z.infer<typeof tableConfigSchema>;
 

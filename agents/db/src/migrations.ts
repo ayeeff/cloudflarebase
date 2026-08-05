@@ -5,38 +5,45 @@
 // in the consumer's config. Regenerate with `npm run migrations`.
 
 const journal = {
-	version: '7',
-	dialect: 'sqlite',
-	entries: [
+	"version": "7",
+	"dialect": "sqlite",
+	"entries": [
 		{
-			idx: 0,
-			version: '6',
-			when: 1785365009827,
-			tag: '0000_swift_lethal_legion',
-			breakpoints: true,
+			"idx": 0,
+			"version": "6",
+			"when": 1785365009827,
+			"tag": "0000_swift_lethal_legion",
+			"breakpoints": true
 		},
 		{
-			idx: 1,
-			version: '6',
-			when: 1785425136947,
-			tag: '0001_moaning_beast',
-			breakpoints: true,
+			"idx": 1,
+			"version": "6",
+			"when": 1785425136947,
+			"tag": "0001_moaning_beast",
+			"breakpoints": true
 		},
 		{
-			idx: 2,
-			version: '6',
-			when: 1785428742608,
-			tag: '0002_gigantic_sleeper',
-			breakpoints: true,
+			"idx": 2,
+			"version": "6",
+			"when": 1785428742608,
+			"tag": "0002_gigantic_sleeper",
+			"breakpoints": true
 		},
 		{
-			idx: 3,
-			version: '6',
-			when: 1785899012221,
-			tag: '0003_large_anthem',
-			breakpoints: true,
+			"idx": 3,
+			"version": "6",
+			"when": 1785899012221,
+			"tag": "0003_large_anthem",
+			"breakpoints": true
 		},
-	],
+		{
+			"idx": 4,
+			"version": "6",
+			"when": 1785906574078,
+			"tag": "0004_luxuriant_marauders",
+			"breakpoints": true
+		}
+	]
 };
 
 const m0000 = `CREATE TABLE \`collection_meta\` (
@@ -94,6 +101,31 @@ CREATE INDEX \`restore_points_collection\` ON \`restore_points\` (\`collection\`
 const m0003 = `ALTER TABLE \`collections\` ADD \`kind\` text DEFAULT 'collection' NOT NULL;--> statement-breakpoint
 ALTER TABLE \`collections\` ADD \`columns\` text;`;
 
+const m0004 = `CREATE TABLE \`changelog\` (
+	\`lsn\` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	\`op\` text NOT NULL,
+	\`id\` text NOT NULL,
+	\`image\` text,
+	\`ts\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE \`replica_meta\` (
+	\`id\` integer PRIMARY KEY NOT NULL,
+	\`epoch\` integer DEFAULT 0 NOT NULL,
+	\`applied_lsn\` integer DEFAULT 0 NOT NULL,
+	\`pulled_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE \`replicas\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`region\` text NOT NULL,
+	\`applied_lsn\` integer DEFAULT 0 NOT NULL,
+	\`last_seen_at\` integer NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE \`collections\` ADD \`replication\` text DEFAULT 'off' NOT NULL;--> statement-breakpoint
+ALTER TABLE \`collections\` ADD \`rep_epoch\` integer DEFAULT 0 NOT NULL;`;
+
 export default {
 	journal,
 	migrations: {
@@ -101,5 +133,6 @@ export default {
 		m0001,
 		m0002,
 		m0003,
-	},
+		m0004
+	}
 };

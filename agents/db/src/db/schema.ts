@@ -30,6 +30,10 @@ export const collections = sqliteTable('collections', {
 	validator: text('validator'),
 	/** JSON TableColumn[]; the declared schema of record. Tables only. */
 	columns: text('columns'),
+	/** 'off' | 'auto' - whether reads route to per-region replicas. */
+	replication: text('replication').notNull().default('off'),
+	/** Parent-owned restore epoch; bumped after PITR so replicas re-bootstrap. */
+	repEpoch: integer('rep_epoch').notNull().default(0),
 	/** Last count reported by the child (docs or rows); the child's own
 	 * count is exact. */
 	docs: integer('docs').notNull().default(0),
@@ -107,4 +111,43 @@ export const collectionMeta = sqliteTable('collection_meta', {
 	/** JSON CollectionConfig. */
 	config: text('config').notNull(),
 	updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
+/**
+ * PRIMARY role (both shard classes): the replication change log. Row images,
+ * never statements - `put` carries the full DTO JSON, `del` a tombstone,
+ * `cfg` the shard config (so mode changes and table DDL replicate in write
+ * order). Written in the same task as the data mutation (DO write coalescing
+ * commits them atomically) and pruned to MAX_LOG_ROWS; replicas behind the
+ * horizon are forced to re-bootstrap.
+ */
+export const changelog = sqliteTable('changelog', {
+	lsn: integer('lsn').primaryKey({ autoIncrement: true }),
+	/** 'put' | 'del' | 'cfg' */
+	op: text('op').notNull(),
+	id: text('id').notNull(),
+	image: text('image'),
+	ts: integer('ts', { mode: 'timestamp_ms' }).notNull(),
+});
+
+/**
+ * PRIMARY role: every replica that has ever pulled, registered DURABLY
+ * before it is served data - the erase fan-out iterates this table, so no
+ * replica holding data can be unknown to its primary.
+ */
+export const replicas = sqliteTable('replicas', {
+	/** The instance-name suffix, e.g. `r:weur:1`. */
+	id: text('id').primaryKey(),
+	region: text('region').notNull(),
+	appliedLsn: integer('applied_lsn').notNull().default(0),
+	lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
+/** REPLICA role: single-row applied position and freshness bookkeeping. */
+export const replicaMeta = sqliteTable('replica_meta', {
+	/** Always 1. */
+	id: integer('id').primaryKey(),
+	epoch: integer('epoch').notNull().default(0),
+	appliedLsn: integer('applied_lsn').notNull().default(0),
+	pulledAt: integer('pulled_at', { mode: 'timestamp_ms' }).notNull(),
 });

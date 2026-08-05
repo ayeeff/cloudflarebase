@@ -1259,6 +1259,8 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			allowedOrigins: this.state.allowedOrigins,
 			demo: this.isEphemeral,
 			configVersion: version,
+			replication: row.replication === 'auto' ? 'auto' : 'off',
+			repEpoch: row.repEpoch,
 		};
 	}
 
@@ -1282,6 +1284,8 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			allowedOrigins: this.state.allowedOrigins,
 			demo: this.isEphemeral,
 			configVersion: version,
+			replication: row.replication === 'auto' ? 'auto' : 'off',
+			repEpoch: row.repEpoch,
 		};
 	}
 
