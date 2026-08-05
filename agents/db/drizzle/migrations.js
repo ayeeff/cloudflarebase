@@ -7,6 +7,7 @@ import m0004 from './0004_luxuriant_marauders.sql';
 import m0005 from './0005_late_white_tiger.sql';
 import m0006 from './0006_black_infant_terrible.sql';
 import m0007 from './0007_sweet_morlocks.sql';
+import m0008 from './0008_blushing_shotgun.sql';
 
   export default {
     journal,
@@ -18,7 +19,8 @@ m0003,
 m0004,
 m0005,
 m0006,
-m0007
+m0007,
+m0008
     }
   }
   

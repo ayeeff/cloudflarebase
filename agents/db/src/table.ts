@@ -1424,6 +1424,21 @@ export class DbTable extends LiveShard {
 		if (this.role.kind === 'replica') await this.ensureReplica(0);
 	}
 
+	/** RPC-path readiness: primaries pull the declared config on first touch
+	 * (schema-first - an undeclared table stays unconfigured and the caller
+	 * answers accordingly); replicas ensure their local copy. */
+	protected async ensureShardReady(): Promise<void> {
+		if (this.role.kind === 'replica') {
+			await this.ensureReplica(0);
+			return;
+		}
+		const name = this.ctx.id.name;
+		if (!this.meta && name) {
+			const [projectId, table] = name.split(':');
+			if (projectId && table) await this.ensureMeta(projectId, table);
+		}
+	}
+
 	/** Track what the primary believes; flip only on transitions. */
 	private pushWanted: boolean | null = null;
 	/** Last socket count reported. In-memory on purpose: hibernation resets

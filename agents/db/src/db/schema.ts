@@ -80,6 +80,10 @@ export const subscriptions = sqliteTable(
 		tokenExp: integer('token_exp'),
 		/** JSON id[] of the last delivered window - orderBy+limit queries only. */
 		lastMembership: text('last_membership'),
+		/** Gateway instance name when the subscriber connected through a
+		 * DbGateway; null = a socket held locally. Delivery is the ONLY
+		 * difference: via-rows get frames by RPC instead of a socket send. */
+		via: text('via'),
 		createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 	},
 	(table) => [
@@ -161,3 +165,39 @@ export const replicaMeta = sqliteTable('replica_meta', {
 	appliedLsn: integer('applied_lsn').notNull().default(0),
 	pulledAt: integer('pulled_at', { mode: 'timestamp_ms' }).notNull(),
 });
+
+/**
+ * DbAgent only: every gateway instance that has ever accepted a socket,
+ * registered durably for the erase fan-out and the sibling-spawn picker
+ * (reported socket counts, exactly like `replicas.sockets`).
+ */
+export const gateways = sqliteTable('gateways', {
+	/** The instance-name suffix, e.g. `gw:weur:1`. */
+	id: text('id').primaryKey(),
+	region: text('region').notNull(),
+	sockets: integer('sockets').notNull().default(0),
+	lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
+/**
+ * DbGateway only: which shard each client subscription addresses - the whole
+ * durable state of a gateway (`connId -> socket` lives in the hibernation
+ * API; this maps `connId/subId -> shard instance`), so a woken instance can
+ * clean up shard-side rows when a socket closes.
+ */
+export const gatewaySubs = sqliteTable(
+	'gateway_subs',
+	{
+		connId: text('conn_id').notNull(),
+		subId: text('sub_id').notNull(),
+		shardKind: text('shard_kind').notNull(),
+		shardName: text('shard_name').notNull(),
+		/** The instance actually subscribed on (primary or region replica). */
+		instance: text('instance').notNull(),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.connId, table.subId] }),
+		index('gateway_subs_conn').on(table.connId),
+	],
+);

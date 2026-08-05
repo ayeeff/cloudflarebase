@@ -23,6 +23,8 @@ export interface DbAgentBindings {
 	DbCollection: AnyDurableObjectNamespace;
 	/** The per-table store class (typed columns, ORM-compatible). Required. */
 	DbTable: AnyDurableObjectNamespace;
+	/** The realtime gateway class (one client socket, all shards). Required. */
+	DbGateway: AnyDurableObjectNamespace;
 	/** Document/collection events; auto-creates on first write. Required. */
 	DB_EVENTS: AnalyticsEngineDataset;
 

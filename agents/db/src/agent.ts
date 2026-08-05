@@ -5,7 +5,8 @@ import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlit
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import migrations from './migrations';
 import * as schema from './db/schema';
-import { collections, restorePoints } from './db/schema';
+import { collections, gateways, restorePoints } from './db/schema';
+import { pickSubscribeSibling } from './replication';
 import {
 	aggregateRequestSchema,
 	checkpointRequestSchema,
@@ -22,9 +23,11 @@ import {
 	validatorSchema,
 	DEMO_PROJECT_PATTERN,
 	IMPORT_RPC_CHUNK,
+	MAX_GATEWAY_SIBLINGS,
 	MAX_IMPORT_BYTES,
 	MAX_IMPORT_DOCS,
 	MAX_RESTORE_POINTS,
+	SIBLING_SPAWN_SOCKETS,
 	type AccessMode,
 	type BookmarkOutcome,
 	type CollectionConfig,
@@ -41,6 +44,7 @@ import {
 import { drainUnusedBody } from './access';
 import { planDdl, uniqueViolationColumn } from './table-schema';
 import type { DbCollection } from './collection';
+import type { DbGateway } from './gateway';
 import type { DbTable } from './table';
 
 /**
@@ -332,6 +336,42 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		};
 	}
 
+	/** The project's per-project extra origins, for the gateway's socket-level
+	 * origin gate (per-shard authorization still happens at each shard). */
+	async getAllowedOrigins(): Promise<string[]> {
+		return this.state.allowedOrigins;
+	}
+
+	/** Step-debounced socket-count report from a gateway instance - the
+	 * sibling-spawn signal, registered durably for the erase fan-out too. */
+	async reportGatewaySockets(id: string, region: string, sockets: number): Promise<void> {
+		if (!/^gw:[a-z-]+:\d+$/.test(id)) return;
+		const clean = Number.isFinite(sockets) && sockets >= 0 ? Math.floor(sockets) : 0;
+		await this.db
+			.insert(gateways)
+			.values({ id, region, sockets: clean, lastSeenAt: new Date() })
+			.onConflictDoUpdate({
+				target: gateways.id,
+				set: { sockets: clean, lastSeenAt: new Date() },
+			});
+	}
+
+	/** Which gateway sibling a NEW realtime socket should land on - the
+	 * replica sibling-spawn mechanism verbatim (fill-lowest with headroom,
+	 * unregistered = 0 sockets so picking it IS the spawn). Demo projects
+	 * never spawn siblings. */
+	async gatewaySubscribeTarget(region: string): Promise<number> {
+		if (this.isEphemeral) return 1;
+		const rows = await this.db.select().from(gateways).where(eq(gateways.region, region));
+		const counts: number[] = [];
+		for (const row of rows) {
+			const n = Number(row.id.split(':')[2]);
+			if (Number.isInteger(n) && n >= 1) counts[n - 1] = row.sockets;
+		}
+		const threshold = Number(this.env.SIBLING_SPAWN_SOCKETS ?? '') || SIBLING_SPAWN_SOCKETS;
+		return pickSubscribeSibling(counts, threshold, MAX_GATEWAY_SIBLINGS);
+	}
+
 	/** Debounced absolute row-count report from a table child. */
 	async reportTableStats(name: string, stats: { rows: number }): Promise<void> {
 		if (!collectionNameSchema.safeParse(name).success) return;
@@ -368,6 +408,17 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		const rows = await this.db.select().from(collections).orderBy(asc(collections.name));
 		for (const row of rows) {
 			await this.destroyChild(row.kind === 'table' ? 'table' : 'collection', row.name);
+		}
+		// Gateways hold only routing rows, but they are project-derived state:
+		// close their sockets and wipe them before the registry goes.
+		const gatewayRows = await this.db.select().from(gateways);
+		const gatewayNamespace = this.env.DbGateway as unknown as DurableObjectNamespace<DbGateway>;
+		for (const row of gatewayRows) {
+			try {
+				await gatewayNamespace.get(gatewayNamespace.idFromName(`${this.name}:${row.id}`)).destroy();
+			} catch (error) {
+				if (!isDurableObjectReset(error)) throw error;
+			}
 		}
 
 		await this.ctx.storage.deleteAll();
@@ -473,6 +524,18 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		const replicationStatus = subPath.match(/^\/admin\/replication\/([^/]+)$/);
 		if (replicationStatus && request.method === 'GET') {
 			return this.adminReplicationStatus(decodeURIComponent(replicationStatus[1]));
+		}
+
+		if (subPath === '/admin/realtime' && request.method === 'GET') {
+			const rows = await this.db.select().from(gateways).orderBy(asc(gateways.id));
+			return Response.json({
+				gateways: rows.map((row) => ({
+					id: row.id,
+					region: row.region,
+					sockets: row.sockets,
+					lastSeenAt: row.lastSeenAt.toISOString(),
+				})),
+			});
 		}
 
 		const tableSql = subPath.match(/^\/admin\/tables\/([^/]+)\/sql$/);

@@ -1175,6 +1175,22 @@ export class DbCollection extends LiveShard {
 		if (this.role.kind === 'replica') await this.ensureReplica(0);
 	}
 
+	/** RPC-path readiness (the gateway's remoteSubscribe arrives without the
+	 * HTTP path's lazy-config heal): primaries pull config from the parent on
+	 * first touch - auto-creating exactly like a first write - and replicas
+	 * ensure their local copy. */
+	protected async ensureShardReady(): Promise<void> {
+		if (this.role.kind === 'replica') {
+			await this.ensureReplica(0);
+			return;
+		}
+		const name = this.ctx.id.name;
+		if (!this.config && name) {
+			const [projectId, collection] = name.split(':');
+			if (projectId && collection) await this.ensureConfig(projectId, collection);
+		}
+	}
+
 	/** Track what the primary believes; flip only on transitions. */
 	private pushWanted: boolean | null = null;
 	/** Last socket count reported. In-memory on purpose: hibernation resets

@@ -4,6 +4,7 @@ import { getAgentByName, routeAgentRequest } from 'agents';
 import { drainUnusedBody } from './access';
 import { isDurableObjectReset, DbAgent as DbAgentBase } from './agent';
 import { DbCollection as DbCollectionBase } from './collection';
+import { DbGateway as DbGatewayBase, gatewayName } from './gateway';
 import { DbTable as DbTableBase } from './table';
 import { regionHint, REGION_HINTS } from './region';
 import { replicaName } from './replication';
@@ -90,6 +91,28 @@ function isRoutableRead(_kind: string, method: string, subPath: string): boolean
 const SIBLING_TTL_MS = 60_000;
 const siblingCache = new Map<string, { n: number; expires: number }>();
 
+/** Gateway sibling routing: same shape, answered by the project parent
+ * (which holds the gateway socket-count registry). */
+const gatewayCache = new Map<string, { n: number; expires: number }>();
+
+async function gatewaySibling(env: Env, projectId: string, region: string): Promise<number> {
+	const key = `${projectId}:${region}`;
+	const now = Date.now();
+	const cached = gatewayCache.get(key);
+	if (cached && cached.expires > now) return cached.n;
+	const ttl = Number(env.SIBLING_ROUTING_TTL_MS ?? '') || SIBLING_TTL_MS;
+	let n = 1;
+	try {
+		const agent = await getAgentByName<Env, DbAgentBase>(env.DbAgent, projectId);
+		const answer = await agent.gatewaySubscribeTarget(region);
+		if (Number.isInteger(answer) && answer >= 1) n = answer;
+	} catch {
+		// The parent being unreachable must not break realtime: sibling 1.
+	}
+	gatewayCache.set(key, { n, expires: now + ttl });
+	return n;
+}
+
 async function subscribeSibling(
 	env: Env,
 	kind: 'collections' | 'tables',
@@ -126,6 +149,7 @@ export const DbCollection = Sentry.instrumentDurableObjectWithSentry(
 	DbCollectionBase,
 );
 export const DbTable = Sentry.instrumentDurableObjectWithSentry(sentryOptions, DbTableBase);
+export const DbGateway = Sentry.instrumentDurableObjectWithSentry(sentryOptions, DbGatewayBase);
 
 /**
  * Worker entrypoint. Routing:
@@ -179,6 +203,41 @@ class DbService extends WorkerEntrypoint<Env> {
 				if (!isDurableObjectReset(error)) throw error;
 			}
 			return Response.json({ erased: true });
+		}
+
+		// The gateway socket: one client WebSocket for the whole database,
+		// terminated on a DbGateway instance in the SUBSCRIBER'S region
+		// (locationHint) - shards RPC resolved frames back to it.
+		const realtime = url.pathname.match(/^\/agents\/db-agent\/([^/]+)\/realtime$/);
+		if (realtime) {
+			const projectId = decodeURIComponent(realtime[1]);
+			if (!projectIdSchema.safeParse(projectId).success) {
+				return Response.json({ error: 'invalid project id' }, { status: 400 });
+			}
+			// WebSocket clients cannot set headers, so the test override also
+			// rides a query param (same env.test-only gate as shard routing).
+			const override =
+				this.env.REGION_OVERRIDE_HEADER === 'true'
+					? (request.headers.get('x-cfb-region') ?? url.searchParams.get('cfb-region'))
+					: null;
+			const region =
+				override && REGION_HINTS.has(override)
+					? override
+					: regionHint(
+							(
+								request as Request & {
+									cf?: { continent?: string; country?: string; longitude?: string };
+								}
+							).cf ?? {},
+						);
+			const sibling = await gatewaySibling(this.env, projectId, region);
+			const stub = this.env.DbGateway.get(
+				this.env.DbGateway.idFromName(gatewayName(projectId, region, sibling)),
+				{ locationHint: region as DurableObjectLocationHint },
+			);
+			const gatewayResponse = (await stub.fetch(request)) as unknown as Response;
+			await this.reportServerError(request, url, gatewayResponse);
+			return gatewayResponse;
 		}
 
 		const hot = url.pathname.match(

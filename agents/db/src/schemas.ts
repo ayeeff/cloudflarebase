@@ -653,6 +653,63 @@ export const unsubscribeFrameSchema = z.strictObject({
 export const clientFrameSchema = z.union([subscribeFrameSchema, unsubscribeFrameSchema]);
 export type ClientFrame = z.infer<typeof clientFrameSchema>;
 
+// ---------------------------------------------------------------------------
+// Gateway protocol (one client socket for the whole database)
+
+/** Which shard a gateway subscription addresses. */
+export const shardAddressSchema = z.strictObject({
+	kind: z.enum(['collection', 'table']),
+	name: collectionNameSchema,
+});
+export type ShardAddress = z.infer<typeof shardAddressSchema>;
+
+/** The per-shard subscribe frame plus a shard address - the only difference
+ * between the gateway socket and a direct shard socket. */
+export const gatewaySubscribeFrameSchema = subscribeFrameSchema.extend({
+	shard: shardAddressSchema,
+});
+export const gatewayClientFrameSchema = z.union([
+	gatewaySubscribeFrameSchema,
+	unsubscribeFrameSchema,
+]);
+export type GatewayClientFrame = z.infer<typeof gatewayClientFrameSchema>;
+
+/** Cross-shard subscriptions one gateway connection may hold (per-shard caps
+ * still apply at each shard). Demo cap mirrors the 5-shard x 5-sub ceiling. */
+export const GATEWAY_MAX_SUBSCRIPTIONS_PER_CONNECTION = 100;
+export const DEMO_GATEWAY_MAX_SUBSCRIPTIONS_PER_CONNECTION = 25;
+export const MAX_GATEWAY_SIBLINGS = 8;
+
+/** Shard-side registration of one gateway-held subscription. The shard runs
+ * the SAME live engine over it; only delivery differs (RPC to the gateway
+ * instead of a local socket send). The token is re-verified by the shard -
+ * the gateway is never trusted with authorization. */
+export const remoteSubscribeInputSchema = z.strictObject({
+	gateway: z.string().min(1).max(256),
+	connId: z.string().min(1).max(64),
+	subId: z.string().min(1).max(64),
+	query: querySchema.omit({ cursor: true }),
+	token: z.string().max(8192).optional(),
+});
+export type RemoteSubscribeInput = z.infer<typeof remoteSubscribeInputSchema>;
+
+export type RemoteSubscribeResult =
+	| { ok: true; docs: DbDocument[] }
+	| {
+			ok: false;
+			code: 'invalid-query' | 'unauthorized' | 'subscription-limit' | 'shard-unavailable';
+			message: string;
+	  }
+	/** A replica that cannot serve (failed bootstrap); retry on the primary. */
+	| { forward: true };
+
+export const remoteUnsubscribeInputSchema = z.strictObject({
+	connId: z.string().min(1).max(64),
+	/** Omitted = every subscription this connection holds on the shard. */
+	subId: z.string().min(1).max(64).optional(),
+});
+export type RemoteUnsubscribeInput = z.infer<typeof remoteUnsubscribeInputSchema>;
+
 const dbDocumentSchema = z.object({
 	id: z.string(),
 	data: z.record(z.string(), z.unknown()),
@@ -683,6 +740,7 @@ export const serverFrameSchema = z.union([
 			'unauthorized',
 			'token-expired',
 			'subscription-limit',
+			'shard-unavailable',
 			'internal',
 		]),
 		message: z.string(),

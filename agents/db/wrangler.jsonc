@@ -16,6 +16,10 @@
 			"new_sqlite_classes": ["DbTable"],
 			"tag": "v2",
 		},
+		{
+			"new_sqlite_classes": ["DbGateway"],
+			"tag": "v3",
+		},
 	],
 	"durable_objects": {
 		"bindings": [
@@ -30,6 +34,10 @@
 			{
 				"class_name": "DbTable",
 				"name": "DbTable",
+			},
+			{
+				"class_name": "DbGateway",
+				"name": "DbGateway",
 			},
 		],
 	},
@@ -119,6 +127,10 @@
 						"class_name": "DbTable",
 						"name": "DbTable",
 					},
+					{
+						"class_name": "DbGateway",
+						"name": "DbGateway",
+					},
 				],
 			},
 
@@ -166,6 +178,10 @@
 						"class_name": "DbTable",
 						"name": "DbTable",
 					},
+					{
+						"class_name": "DbGateway",
+						"name": "DbGateway",
+					},
 				],
 			},
 
@@ -210,6 +226,10 @@
 					{
 						"class_name": "DbTable",
 						"name": "DbTable",
+					},
+					{
+						"class_name": "DbGateway",
+						"name": "DbGateway",
 					},
 				],
 			},
@@ -266,6 +286,10 @@
 					{
 						"class_name": "DbTable",
 						"name": "DbTable",
+					},
+					{
+						"class_name": "DbGateway",
+						"name": "DbGateway",
 					},
 				],
 			},

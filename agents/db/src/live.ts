@@ -10,12 +10,16 @@ import { hasPermission } from './rules';
 import {
 	clientFrameSchema,
 	querySchema,
+	remoteSubscribeInputSchema,
+	remoteUnsubscribeInputSchema,
 	subscribeFrameSchema,
 	type AccessMode,
 	type DbDocument,
 	type Query,
+	type RemoteSubscribeResult,
 	type ServerFrame,
 } from './schemas';
+import type { DbGateway } from './gateway';
 
 /**
  * The live-query engine, shared by DbCollection and DbTable as a base class
@@ -77,6 +81,14 @@ export abstract class LiveShard extends DurableObject<Env> {
 
 	/** Replicas freshen from the primary before a snapshot; primaries no-op. */
 	protected async beforeSnapshot(): Promise<void> {}
+
+	/**
+	 * Make the shard serveable for an RPC that arrives without the HTTP
+	 * path's lazy-config heal: primaries pull their config from the parent on
+	 * first touch, replicas ensure their local copy. Implemented per class;
+	 * a shard that stays unconfigured afterwards reports through liveGate().
+	 */
+	protected async ensureShardReady(): Promise<void> {}
 
 	/** Fired whenever the subscription set changes, with the remaining count
 	 * - how a replica keeps its primary's push flag honest. */
@@ -157,54 +169,16 @@ export abstract class LiveShard extends DurableObject<Env> {
 			return;
 		}
 
-		// Read-mode gate, mirroring the REST guard.
-		let ownerSub: string | null = null;
-		let tokenExp: number | null = null;
-		if (gate.readAccess !== 'public') {
-			if (!frame.token) {
-				this.send(ws, {
-					type: 'error',
-					id: frame.id,
-					code: 'unauthorized',
-					message: 'a project token is required to subscribe',
-				});
-				return;
-			}
-			const result = await this.getVerifier().verify(frame.token);
-			if (!result.ok) {
-				this.send(ws, {
-					type: 'error',
-					id: frame.id,
-					code: 'unauthorized',
-					message:
-						result.code === 'not-configured'
-							? 'auth verification is not configured'
-							: 'invalid or expired token',
-				});
-				return;
-			}
-			// Mirror the REST guard: a required permission binds subscriptions too.
-			if (!hasPermission(gate.readPermission, result.claims.permissions)) {
-				this.send(ws, {
-					type: 'error',
-					id: frame.id,
-					code: 'unauthorized',
-					message: 'the token does not carry the required permission',
-				});
-				return;
-			}
-			ownerSub = gate.readAccess === 'owner' ? result.claims.sub : null;
-			tokenExp = result.exp;
+		const auth = await this.authorizeSubscribe(gate, frame.token);
+		if (!auth.ok) {
+			this.send(ws, { type: 'error', id: frame.id, code: auth.code, message: auth.message });
+			return;
 		}
 
 		const cap = gate.demo
 			? DEMO_MAX_SUBSCRIPTIONS_PER_CONNECTION
 			: MAX_SUBSCRIPTIONS_PER_CONNECTION;
-		const [existing] = await this.db
-			.select({ value: count() })
-			.from(subscriptions)
-			.where(eq(subscriptions.connId, connId));
-		if ((existing?.value ?? 0) >= cap) {
+		if ((await this.connectionSubCount(connId)) >= cap) {
 			this.send(ws, {
 				type: 'error',
 				id: frame.id,
@@ -215,35 +189,161 @@ export abstract class LiveShard extends DurableObject<Env> {
 		}
 
 		await this.beforeSnapshot();
-		const snapshot = await this.runLiveQuery(frame.query, ownerSub);
+		const snapshot = await this.runLiveQuery(frame.query, auth.ownerSub);
 		this.send(ws, { type: 'snapshot', id: frame.id, docs: snapshot.docs });
 
+		await this.upsertSubscription(connId, frame.id, frame.query, auth, null, snapshot.docs);
+
+		this.writeShardEvent('subscription.opened');
+		await this.onSubscriptionsChanged(await this.subscriptionCount());
+	}
+
+	/** The read-mode gate, mirroring the REST guard - shared verbatim by the
+	 * direct socket path and the gateway RPC path so they cannot drift. */
+	private async authorizeSubscribe(
+		gate: LiveGate,
+		token: string | undefined,
+	): Promise<
+		| { ok: true; ownerSub: string | null; tokenExp: number | null }
+		| { ok: false; code: 'unauthorized'; message: string }
+	> {
+		if (gate.readAccess === 'public') return { ok: true, ownerSub: null, tokenExp: null };
+		if (!token) {
+			return {
+				ok: false,
+				code: 'unauthorized',
+				message: 'a project token is required to subscribe',
+			};
+		}
+		const result = await this.getVerifier().verify(token);
+		if (!result.ok) {
+			return {
+				ok: false,
+				code: 'unauthorized',
+				message:
+					result.code === 'not-configured'
+						? 'auth verification is not configured'
+						: 'invalid or expired token',
+			};
+		}
+		// Mirror the REST guard: a required permission binds subscriptions too.
+		if (!hasPermission(gate.readPermission, result.claims.permissions)) {
+			return {
+				ok: false,
+				code: 'unauthorized',
+				message: 'the token does not carry the required permission',
+			};
+		}
+		return {
+			ok: true,
+			ownerSub: gate.readAccess === 'owner' ? result.claims.sub : null,
+			tokenExp: result.exp,
+		};
+	}
+
+	private async connectionSubCount(connId: string): Promise<number> {
+		const [existing] = await this.db
+			.select({ value: count() })
+			.from(subscriptions)
+			.where(eq(subscriptions.connId, connId));
+		return existing?.value ?? 0;
+	}
+
+	private async upsertSubscription(
+		connId: string,
+		subId: string,
+		query: Query,
+		auth: { ownerSub: string | null; tokenExp: number | null },
+		via: string | null,
+		snapshotDocs: DbDocument[],
+	): Promise<void> {
+		const lastMembership = isWindowed(query)
+			? JSON.stringify(snapshotDocs.map((doc) => doc.id))
+			: null;
 		await this.db
 			.insert(subscriptions)
 			.values({
 				connId,
-				subId: frame.id,
-				query: JSON.stringify(frame.query),
-				ownerSub,
-				tokenExp,
-				lastMembership: isWindowed(frame.query)
-					? JSON.stringify(snapshot.docs.map((doc) => doc.id))
-					: null,
+				subId,
+				query: JSON.stringify(query),
+				ownerSub: auth.ownerSub,
+				tokenExp: auth.tokenExp,
+				lastMembership,
+				via,
 				createdAt: new Date(),
 			})
 			.onConflictDoUpdate({
 				target: [subscriptions.connId, subscriptions.subId],
 				set: {
-					query: JSON.stringify(frame.query),
-					ownerSub,
-					tokenExp,
-					lastMembership: isWindowed(frame.query)
-						? JSON.stringify(snapshot.docs.map((doc) => doc.id))
-						: null,
+					query: JSON.stringify(query),
+					ownerSub: auth.ownerSub,
+					tokenExp: auth.tokenExp,
+					lastMembership,
+					via,
 				},
 			});
+	}
+
+	// -------------------------------------------------------------------------
+	// The gateway surface: subscriptions held by a DbGateway on behalf of a
+	// client socket that lives THERE. The shard runs the same live engine over
+	// them; only delivery differs (RPC to the gateway instead of a socket
+	// send). The token is re-verified here - the gateway is never trusted.
+
+	async remoteSubscribe(input: unknown): Promise<RemoteSubscribeResult> {
+		const parsed = remoteSubscribeInputSchema.parse(input);
+		await this.ensureShardReady();
+		const gate = this.liveGate();
+		if (!gate) {
+			// A replica that could not bootstrap forwards to the primary; an
+			// unconfigured primary (undeclared table) is the shard's answer.
+			if (this.role.kind === 'replica') return { forward: true };
+			return { ok: false, code: 'shard-unavailable', message: 'shard is not configured' };
+		}
+
+		const queryIssue = this.validateSubscribeQuery(parsed.query);
+		if (queryIssue) return { ok: false, code: 'invalid-query', message: queryIssue };
+
+		const auth = await this.authorizeSubscribe(gate, parsed.token);
+		if (!auth.ok) return auth;
+
+		const cap = gate.demo
+			? DEMO_MAX_SUBSCRIPTIONS_PER_CONNECTION
+			: MAX_SUBSCRIPTIONS_PER_CONNECTION;
+		if ((await this.connectionSubCount(parsed.connId)) >= cap) {
+			return {
+				ok: false,
+				code: 'subscription-limit',
+				message: `a connection is limited to ${cap} subscriptions per shard`,
+			};
+		}
+
+		await this.beforeSnapshot();
+		const snapshot = await this.runLiveQuery(parsed.query, auth.ownerSub);
+		await this.upsertSubscription(
+			parsed.connId,
+			parsed.subId,
+			parsed.query,
+			auth,
+			parsed.gateway,
+			snapshot.docs,
+		);
 
 		this.writeShardEvent('subscription.opened');
+		await this.onSubscriptionsChanged(await this.subscriptionCount());
+		return { ok: true, docs: snapshot.docs };
+	}
+
+	async remoteUnsubscribe(input: unknown): Promise<void> {
+		const parsed = remoteUnsubscribeInputSchema.parse(input);
+		await this.db
+			.delete(subscriptions)
+			.where(
+				parsed.subId === undefined
+					? eq(subscriptions.connId, parsed.connId)
+					: and(eq(subscriptions.connId, parsed.connId), eq(subscriptions.subId, parsed.subId)),
+			);
+		this.writeShardEvent('subscription.closed');
 		await this.onSubscriptionsChanged(await this.subscriptionCount());
 	}
 
@@ -294,18 +394,32 @@ export abstract class LiveShard extends DurableObject<Env> {
 		if (!rows.length) return;
 
 		const nowSeconds = Math.floor(Date.now() / 1000);
+		/** Frames for gateway-held subscriptions, grouped gateway -> connId and
+		 * flushed by RPC after the loop (batched per connection, off the write
+		 * path's latency via waitUntil). */
+		const gatewayFrames = new Map<string, Map<string, ServerFrame[]>>();
 
 		for (const sub of rows) {
-			const sockets = this.ctx.getWebSockets(sub.connId);
-			if (!sockets.length) {
-				// Connection died without a close event (eviction); prune lazily.
-				await this.db.delete(subscriptions).where(eq(subscriptions.connId, sub.connId));
-				continue;
+			let sink: (frame: ServerFrame) => void;
+			if (sub.via) {
+				const perConn = gatewayFrames.get(sub.via) ?? new Map<string, ServerFrame[]>();
+				gatewayFrames.set(sub.via, perConn);
+				const list = perConn.get(sub.connId) ?? [];
+				perConn.set(sub.connId, list);
+				sink = (frame) => list.push(frame);
+			} else {
+				const sockets = this.ctx.getWebSockets(sub.connId);
+				if (!sockets.length) {
+					// Connection died without a close event (eviction); prune lazily.
+					await this.db.delete(subscriptions).where(eq(subscriptions.connId, sub.connId));
+					continue;
+				}
+				const ws = sockets[0];
+				sink = (frame) => this.send(ws, frame);
 			}
-			const ws = sockets[0];
 
 			if (sub.tokenExp && sub.tokenExp < nowSeconds) {
-				this.send(ws, {
+				sink({
 					type: 'error',
 					id: sub.subId,
 					code: 'token-expired',
@@ -329,22 +443,26 @@ export abstract class LiveShard extends DurableObject<Env> {
 			if (!matchedBefore && !matchedAfter) continue;
 
 			if (isWindowed(query)) {
-				await this.notifyWindowed(ws, sub.connId, sub.subId, query, sub, after, before);
+				await this.notifyWindowed(sink, sub.connId, sub.subId, query, sub, after, before);
 				continue;
 			}
 
 			if (!matchedBefore && matchedAfter && after) {
-				this.send(ws, { type: 'change', id: sub.subId, kind: 'added', doc: after });
+				sink({ type: 'change', id: sub.subId, kind: 'added', doc: after });
 			} else if (matchedBefore && matchedAfter && after) {
-				this.send(ws, { type: 'change', id: sub.subId, kind: 'modified', doc: after });
+				sink({ type: 'change', id: sub.subId, kind: 'modified', doc: after });
 			} else if (matchedBefore && !matchedAfter && before) {
-				this.send(ws, { type: 'change', id: sub.subId, kind: 'removed', doc: before });
+				sink({ type: 'change', id: sub.subId, kind: 'removed', doc: before });
 			}
+		}
+
+		if (gatewayFrames.size) {
+			this.ctx.waitUntil(this.flushGatewayFrames(gatewayFrames));
 		}
 	}
 
 	private async notifyWindowed(
-		ws: WebSocket,
+		sink: (frame: ServerFrame) => void,
 		connId: string,
 		subId: string,
 		query: Query,
@@ -362,7 +480,7 @@ export abstract class LiveShard extends DurableObject<Env> {
 		for (const id of freshIds) {
 			if (!previousSet.has(id)) {
 				const doc = byId.get(id);
-				if (doc) this.send(ws, { type: 'change', id: subId, kind: 'added', doc });
+				if (doc) sink({ type: 'change', id: subId, kind: 'added', doc });
 			}
 		}
 		for (const id of previous) {
@@ -370,16 +488,47 @@ export abstract class LiveShard extends DurableObject<Env> {
 				// Displaced out of the window, or deleted. Prefer the written doc's
 				// old value; otherwise fetch the still-existing displaced doc.
 				const doc = beforeDoc?.id === id ? beforeDoc : ((await this.fetchDocById(id)) ?? beforeDoc);
-				if (doc) this.send(ws, { type: 'change', id: subId, kind: 'removed', doc });
+				if (doc) sink({ type: 'change', id: subId, kind: 'removed', doc });
 			}
 		}
 		if (afterDoc && freshSet.has(afterDoc.id) && previousSet.has(afterDoc.id)) {
-			this.send(ws, { type: 'change', id: subId, kind: 'modified', doc: afterDoc });
+			sink({ type: 'change', id: subId, kind: 'modified', doc: afterDoc });
 		}
 
 		await this.db
 			.update(subscriptions)
 			.set({ lastMembership: JSON.stringify(freshIds) })
 			.where(and(eq(subscriptions.connId, connId), eq(subscriptions.subId, subId)));
+	}
+
+	/**
+	 * Deliver buffered frames to their gateways by RPC - the primary->replica
+	 * push pattern one level up: the RPC WAKES a hibernated gateway, which
+	 * forwards to the right client socket. A `{stop}` answer means that
+	 * connection is gone; its rows are pruned (the same self-healing the push
+	 * flags use). An unreachable gateway keeps its rows - the next delivery
+	 * or the gateway's own close cleanup retries.
+	 */
+	private async flushGatewayFrames(
+		byGateway: Map<string, Map<string, ServerFrame[]>>,
+	): Promise<void> {
+		const namespace = this.env.DbGateway as unknown as DurableObjectNamespace<DbGateway>;
+		for (const [gateway, perConn] of byGateway) {
+			const stub = namespace.get(namespace.idFromName(gateway));
+			for (const [connId, frames] of perConn) {
+				if (!frames.length) continue;
+				try {
+					const result = (await stub.gatewayDeliver(connId, frames)) as
+						{ ok: true } | { stop: true };
+					if ('stop' in result && result.stop) {
+						await this.db.delete(subscriptions).where(eq(subscriptions.connId, connId));
+						await this.onSubscriptionsChanged(await this.subscriptionCount());
+					}
+				} catch {
+					// best-effort: the gateway may be mid-restart; rows heal on the
+					// next delivery or the gateway's own close cleanup
+				}
+			}
+		}
 	}
 }
