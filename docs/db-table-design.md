@@ -5,6 +5,25 @@
 > v1. No replication here: tables ship on the existing single-DO engine, and
 > the substrate lands in R1. Aggregates and raw SQL are S2; export/import/PITR
 > parity for tables is S3.
+>
+> **Implemented 2026-08-05.** Deviations from this design, for future readers:
+>
+> - **Names are unique ACROSS kinds**, not per kind (§6 as drafted): the
+>   registry PK stays `name`, because per-kind uniqueness would force a
+>   composite-PK table rebuild under no-transaction migrations, and one
+>   namespace is less confusing anyway. Cross-kind reuse answers 409.
+> - **Table access modes are edited in the Tables tab's schema designer**,
+>   not the Access tab (§8 as drafted): the admin PUT takes the full desired
+>   schema plus modes in one body, so the UI mirrors the contract - one form,
+>   one save. The plain-English sentence lives under that form.
+> - The live engine was extracted into a shared `LiveShard` base class
+>   (`live.ts`) and the access gate into `access.ts` - the "shared module"
+>   of §5, shaped as inheritance rather than parameterized functions.
+> - Implementation surfaced a pre-existing platform bug: answering a
+>   body-bearing request without consuming the body wedges the whole worker
+>   ("Can't read from request stream after response has been sent"). Every DO
+>   fetch/onRequest path and the entry worker now drain unread bodies
+>   (`drainUnusedBody` in access.ts) - this fix covers collections too.
 
 ## 1. Shape
 

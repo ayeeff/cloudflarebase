@@ -9,6 +9,20 @@ import svelteConfig from './svelte.config.js';
 
 const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 
+/**
+ * eslint --cache serializes the whole config, so the svelte config is passed
+ * explicitly (eslint-plugin-svelte's recommendation for rule compatibility)
+ * MINUS its function-valued keys - compilerOptions.runes (the parser
+ * auto-detects runes per file anyway) and kit.adapter (never consulted by
+ * lint rules). Reintroducing a function here silently turns lint back into
+ * the uncached 6-minute run.
+ */
+const serializableSvelteConfig = {
+	...svelteConfig,
+	compilerOptions: { ...svelteConfig.compilerOptions, runes: undefined },
+	kit: { ...svelteConfig.kit, adapter: undefined }
+};
+
 export default defineConfig(
 	includeIgnoreFile(gitignorePath),
 	// Generated Wrangler types are never linted or hand-edited.
@@ -50,7 +64,7 @@ export default defineConfig(
 				projectService: true,
 				extraFileExtensions: ['.svelte'],
 				parser: ts.parser,
-				svelteConfig
+				svelteConfig: serializableSvelteConfig
 			}
 		}
 	},

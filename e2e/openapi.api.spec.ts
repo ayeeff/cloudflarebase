@@ -71,6 +71,19 @@ test.describe('openapi document', () => {
 		}
 		expect(doc.components.schemas.DbValidator).toBeTruthy();
 		expect(doc.components.schemas.DbAggregateRequest).toBeTruthy();
+
+		// SQL tables: the typed-row surface and the schema DSL components.
+		for (const path of [
+			'/db/tables/{table}/rows',
+			'/db/tables/{table}/rows/{rowId}',
+			'/db/tables/{table}/query',
+			'/db/admin/tables/{name}',
+			'/db/admin/tables/{name}/rows/{rowId}'
+		]) {
+			expect(doc.paths[path], `${path} should be documented`).toBeTruthy();
+		}
+		expect(doc.components.schemas.DbTableColumn).toBeTruthy();
+		expect(doc.components.schemas.DbTableConfig).toBeTruthy();
 	});
 
 	test('resolves every schema reference it emits', async ({ request }) => {

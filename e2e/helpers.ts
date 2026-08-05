@@ -137,3 +137,25 @@ export function dbAdminRestorePath(projectId: string, name: string): string {
 export function dbOverviewPath(projectId: string): string {
 	return `/api/projects/${projectId}/db/overview`;
 }
+
+// --- SQL tables (schema-first; declared via the admin surface) ---
+
+export function dbAdminTablePath(projectId: string, name: string): string {
+	return `/api/projects/${projectId}/db/admin/tables/${encodeURIComponent(name)}`;
+}
+
+export function dbAdminTableRowPath(projectId: string, name: string, rowId: string): string {
+	return `${dbAdminTablePath(projectId, name)}/rows/${encodeURIComponent(rowId)}`;
+}
+
+export function dbRowsPath(projectId: string, table: string): string {
+	return `/api/projects/${projectId}/db/tables/${table}/rows`;
+}
+
+export function dbRowPath(projectId: string, table: string, rowId: string): string {
+	return `/api/projects/${projectId}/db/tables/${table}/rows/${encodeURIComponent(rowId)}`;
+}
+
+export function dbTableQueryPath(projectId: string, table: string): string {
+	return `/api/projects/${projectId}/db/tables/${table}/query`;
+}

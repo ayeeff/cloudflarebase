@@ -3,8 +3,11 @@ import {
 	authPath,
 	configPath,
 	dbAdminCollectionPath,
+	dbAdminTablePath,
 	dbDocumentsPath,
 	dbQueryPath,
+	dbRowsPath,
+	dbTableQueryPath,
 	overviewPath,
 	settingsPath,
 	uniqueEmail
@@ -106,6 +109,35 @@ test.describe('demo project', () => {
 		expect(queried.ok(), await queried.text()).toBeTruthy();
 		const { docs } = await queried.json();
 		expect(docs.map((entry: { id: string }) => entry.id)).toEqual([doc.id]);
+	});
+
+	test('serves the demo SQL-table flow without an operator', async ({ request }) => {
+		// Tables ride the same demo bypass: the anonymous visitor declares a
+		// typed schema and round-trips rows through the proxy.
+		const declare = await request.put(dbAdminTablePath(DEMO_PROJECT, 'demo_todos'), {
+			data: {
+				readAccess: 'public',
+				writeAccess: 'public',
+				columns: [
+					{ name: 'title', type: 'text', nullable: false },
+					{ name: 'done', type: 'boolean', default: false }
+				]
+			}
+		});
+		expect(declare.ok(), await declare.text()).toBeTruthy();
+
+		const marker = `demo-table-${Date.now()}`;
+		const created = await request.post(dbRowsPath(DEMO_PROJECT, 'demo_todos'), {
+			data: { data: { title: marker } }
+		});
+		expect(created.status(), await created.text()).toBe(201);
+		expect((await created.json()).data.done).toBe(false);
+
+		const queried = await request.post(dbTableQueryPath(DEMO_PROJECT, 'demo_todos'), {
+			data: { where: [{ field: 'title', op: '==', value: marker }] }
+		});
+		expect(queried.ok(), await queried.text()).toBeTruthy();
+		expect((await queried.json()).docs).toHaveLength(1);
 	});
 
 	test('demo limits do not reach named projects', async ({ request }) => {

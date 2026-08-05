@@ -16,6 +16,7 @@
 	} from '$lib/agents';
 	import { dbAccessModeSchema, dbValidatorSchema } from '$lib/agents';
 	import CodeExamples from '$lib/components/code-examples.svelte';
+	import TablesTab from './tables-tab.svelte';
 	import { ulid } from '$lib/ulid';
 	import type { CodeExample } from '$lib/integration-examples';
 	import { Badge } from '$lib/components/ui/badge';
@@ -97,7 +98,9 @@
 	let agentState = $state<DbAgentState>(data.overview.state);
 	let live = $state(false);
 	let activeTab = $state(
-		initialTab === 'access' || initialTab === 'setup' ? initialTab : 'collections'
+		initialTab === 'tables' || initialTab === 'access' || initialTab === 'setup'
+			? initialTab
+			: 'collections'
 	);
 	let busy = $state(false);
 
@@ -971,7 +974,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 
 	<div>
 		<div class="flex h-10 max-w-full gap-1 overflow-x-auto border-b px-1" role="tablist">
-			{#each [['collections', 'Collections'], ['access', 'Access'], ['setup', 'Integration']] as tab (tab[0])}
+			{#each [['collections', 'Collections'], ['tables', 'Tables'], ['access', 'Access'], ['setup', 'Integration']] as tab (tab[0])}
 				<button
 					type="button"
 					role="tab"
@@ -1424,6 +1427,17 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 		{/if}
 
 		<!-- ACCESS -->
+		<!-- TABLES -->
+		{#if activeTab === 'tables'}
+			<TablesTab
+				projectId={data.projectId}
+				tables={agentState.tables ?? []}
+				totalRows={agentState.totalRows ?? 0}
+				{permissionOptions}
+				refresh={() => refreshData(data.projectId)}
+			/>
+		{/if}
+
 		{#if activeTab === 'access'}
 			<div class="mt-4">
 				<Card.Root data-testid="db-access-modes">

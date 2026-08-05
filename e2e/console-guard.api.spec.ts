@@ -10,6 +10,8 @@ import {
 	dbAdminImportPath,
 	dbAdminQueryPath,
 	dbAdminRestorePath,
+	dbAdminTablePath,
+	dbAdminTableRowPath,
 	dbOverviewPath,
 	overviewPath,
 	SCRATCH_PROJECT,
@@ -60,8 +62,9 @@ test.describe('console guard', () => {
 	});
 
 	test('the db agent passthrough is guarded too', async ({ request }) => {
-		// The db manifest declares only /collections/* and /config public; the
-		// overview and every admin route stay operator-only on the passthrough.
+		// The db manifest declares only /collections/*, /tables/*, and /config
+		// public; the overview and every admin route stay operator-only on the
+		// passthrough.
 		const overview = await request.get(`/agents/db-agent/${SEED_PROJECT}/overview`);
 		expect(overview.status()).toBe(401);
 
@@ -69,6 +72,11 @@ test.describe('console guard', () => {
 			data: { readAccess: 'public', writeAccess: 'public' }
 		});
 		expect(configure.status()).toBe(401);
+
+		const declare = await request.put(`/agents/db-agent/${SEED_PROJECT}/admin/tables/x`, {
+			data: { columns: [{ name: 'a', type: 'text' }] }
+		});
+		expect(declare.status()).toBe(401);
 	});
 
 	test('the db console proxy rejects anonymous callers', async ({ request }) => {
@@ -94,6 +102,17 @@ test.describe('console guard', () => {
 			data: '{"data":{}}'
 		});
 		expect(importDocs.status()).toBe(401);
+
+		// The table admin surface (DDL!) is operator-only on both hops too.
+		const declare = await request.put(dbAdminTablePath(SEED_PROJECT, 'x'), {
+			data: { columns: [{ name: 'a', type: 'text' }] }
+		});
+		expect(declare.status()).toBe(401);
+
+		const rowWrite = await request.put(dbAdminTableRowPath(SEED_PROJECT, 'x', 'row-1'), {
+			data: { data: {} }
+		});
+		expect(rowWrite.status()).toBe(401);
 	});
 
 	test('the product API stays public', async ({ request }) => {
