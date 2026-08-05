@@ -366,7 +366,7 @@ export const dbActivityEventSchema = z
 	})
 	.meta({ id: 'DbActivityEvent' });
 
-// --- Tables (phase S1 of docs/db-scale-plan.md) ---
+// --- Tables (phase T1 of docs/db-scale-plan.md) ---
 
 export const dbColumnTypeSchema = z.enum(['text', 'integer', 'real', 'boolean', 'json']);
 

@@ -49,7 +49,7 @@
 		"build": "tsc -p tsconfig.build.json",
 		"typecheck": "tsc --noEmit",
 		"prepublishOnly": "npm run build",
-		"test:unit": "node --import tsx --test src/query.unit.test.ts src/rules.unit.test.ts src/ulid.unit.test.ts src/table-schema.unit.test.ts src/table-query.unit.test.ts src/replication.unit.test.ts",
+		"test:unit": "node --import tsx --test src/query.unit.test.ts src/rules.unit.test.ts src/ulid.unit.test.ts src/table-schema.unit.test.ts src/table-query.unit.test.ts src/replication.unit.test.ts src/table-sql.unit.test.ts",
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev --env local --persist-to=../../.wrangler/state/ --ip 0.0.0.0 --port 8789",
 		"start": "wrangler dev",

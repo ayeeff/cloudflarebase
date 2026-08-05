@@ -1,6 +1,6 @@
 import type { CompiledQuery, DecodedCursor } from './query';
 import { quoteIdent } from './table-schema';
-import type { Query, TableColumn, WhereClause } from './schemas';
+import type { AggregateRequest, Query, TableColumn, WhereClause } from './schemas';
 
 /**
  * Pure table-query compiler: the SAME parsed Query the document engine uses,
@@ -163,6 +163,78 @@ function compileClause(
 			return null;
 		}
 	}
+}
+
+export interface CompiledTableAggregate {
+	/** Full SELECT over the physical table; aliases agg_0.. in order. */
+	sql: string;
+	params: unknown[];
+	aliases: string[];
+}
+
+export type TableAggregateResult =
+	| { ok: true; compiled: CompiledTableAggregate }
+	| { ok: false; error: string };
+
+/**
+ * count/sum/avg over typed columns - the document aggregate's twin. Typed
+ * numeric columns sum directly; json paths keep the json_type gate (only
+ * genuine JSON numbers count, Firestore-style); sum/avg over non-numeric
+ * typed columns are compile-time refusals rather than silent zeros.
+ */
+export function compileTableAggregate(
+	table: string,
+	request: AggregateRequest,
+	columns: TableColumn[],
+	options: { ownerSub?: string | null } = {},
+): TableAggregateResult {
+	const base = compileTableQuery({ where: request.where }, columns, {
+		ownerSub: options.ownerSub,
+	});
+	if (!base.ok) return base;
+
+	const byName = new Map(columns.map((column) => [column.name, column]));
+	const aliases = Object.keys(request.aggregates);
+	const expressions: string[] = [];
+
+	for (const [index, alias] of aliases.entries()) {
+		const spec = request.aggregates[alias];
+		if (spec.op === 'count') {
+			expressions.push(`COUNT(*) AS agg_${index}`);
+			continue;
+		}
+		const resolved = resolveField(spec.field ?? '', byName);
+		if (typeof resolved === 'string') return { ok: false, error: resolved };
+		let numeric: string;
+		if (resolved.column.type === 'integer' || resolved.column.type === 'real') {
+			numeric = resolved.sql;
+		} else if (resolved.column.type === 'json') {
+			const target = quoteIdent(resolved.column.name);
+			const typeExpr = resolved.jsonPath
+				? `json_type(${target}, ${resolved.jsonPath})`
+				: `json_type(${target})`;
+			numeric = `CASE WHEN ${typeExpr} IN ('integer', 'real') THEN ${resolved.sql} END`;
+		} else {
+			return {
+				ok: false,
+				error: `"${spec.field}" is a ${resolved.column.type} column - sum/avg need integer, real, or json`,
+			};
+		}
+		expressions.push(
+			spec.op === 'sum'
+				? `COALESCE(SUM(${numeric}), 0) AS agg_${index}`
+				: `AVG(${numeric}) AS agg_${index}`,
+		);
+	}
+
+	return {
+		ok: true,
+		compiled: {
+			sql: `SELECT ${expressions.join(', ')} FROM ${quoteIdent(table)} WHERE ${base.compiled.whereSql}`,
+			params: base.compiled.params,
+			aliases,
+		},
+	};
 }
 
 /**

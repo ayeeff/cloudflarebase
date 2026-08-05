@@ -9,8 +9,8 @@ import type { ColumnType, TableColumn } from './schemas';
  * columns are plain `id` / `owner` / `created_at` / `updated_at` (reserved
  * from user columns) - deliberately, so ORM-generated SQL (drizzle, prisma)
  * reads and writes the real schema unmodified: `select "id", "title" from
- * "todos"` is exactly what is stored. The S2 SQL endpoint builds on this;
- * renaming later would be a data migration, so the naming lands in S1.
+ * "todos"` is exactly what is stored. The T2 SQL endpoint builds on this;
+ * renaming later would be a data migration, so the naming lands in T1.
  *
  * Two platform facts shape the module:
  * - `pragma_table_info()` is blocked (SQLITE_AUTH), so the applied schema is

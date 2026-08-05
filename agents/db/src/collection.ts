@@ -426,7 +426,7 @@ export class DbCollection extends LiveShard {
 	}
 
 	/**
-	 * R2 delivery: an RPC per push-flagged replica, AFTER the response
+	 * REP2 delivery: an RPC per push-flagged replica, AFTER the response
 	 * (waitUntil). RPC wakes a hibernated replica, which applies the entry
 	 * and notifies its own subscribers - no sockets, no keep-alive fights.
 	 * Failures are absorbed: the pull path heals gaps, and a replica that
@@ -611,7 +611,7 @@ export class DbCollection extends LiveShard {
 	 * depends on the worker's routing cache being fresh.
 	 */
 	private async replicaDispatch(request: Request, url: URL, subPath: string): Promise<Response> {
-		// R2: subscribers land HERE - the replica runs the live engine over
+		// REP2: subscribers land HERE - the replica runs the live engine over
 		// its local copy, fed by primary pushes.
 		if (request.method === 'GET' && subPath === '/subscribe') {
 			const ready = await this.ensureReplica(0);

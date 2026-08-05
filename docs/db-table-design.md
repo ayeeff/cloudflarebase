@@ -1,10 +1,10 @@
-# DbTable Design — SQL tables on the existing engine (phase S1)
+# DbTable Design — SQL tables on the existing engine (phase T1)
 
-> **Drafted 2026-08-04 — the phase-S1 design for [db-scale-plan.md](db-scale-plan.md).**
-> Normative for the S1 implementation, same role db-agent-design.md played for
+> **Drafted 2026-08-04 — the phase-T1 design for [db-scale-plan.md](db-scale-plan.md).**
+> Normative for the T1 implementation, same role db-agent-design.md played for
 > v1. No replication here: tables ship on the existing single-DO engine, and
-> the substrate lands in R1. Aggregates and raw SQL are S2; export/import/PITR
-> parity for tables is S3.
+> the substrate lands in REP1. Aggregates and raw SQL are T2; export/import/PITR
+> parity for tables is T3.
 >
 > **Implemented 2026-08-05.** Deviations from this design, for future readers:
 >
@@ -46,9 +46,9 @@ What makes a table a table:
   table is named after the declared table and the system columns are plain
   reserved names - `id`, `owner`, `created_at`, `updated_at`, refused as
   user column names - so ORM-generated SQL (`select "id", "title" from
-"todos"`) reads and writes the real schema unmodified. Naming lands in S1
+"todos"`) reads and writes the real schema unmodified. Naming lands in T1
   because renaming later is a data migration; the SQL execution surface
-  itself is S2 (§13).
+  itself is T2 (§13).
 - **Schema-first, never auto-created.** Unlike collections (first write
   auto-creates), a table must be declared via `PUT /admin/tables/:name`
   before any data traffic; an unregistered table 404s. SQL means schema.
@@ -118,7 +118,7 @@ DEFAULT lit]`. SQLite requires a default to backfill NOT NULL adds; the
 - Removed column, changed type, removed NOT NULL, renamed column → **refused
   with 400 by the parent before any push** (diffed against the registry's
   stored columns). Destructive migrations are export → recreate → import
-  territory (S3 tooling; until then, recreate).
+  territory (T3 tooling; until then, recreate).
 - Bounds/enum rule changes are metadata-only - no DDL, config push alone.
 
 All generated SQL quotes identifiers; values are always bound. The physical
@@ -173,7 +173,7 @@ columns)` created on first `configure()`; `owner` and `updated_at` get
   same 401/403 split, owner-mode 404-for-privacy on foreign rows, permission
   gate on subscribe. The guard and CORS logic are extracted from
   `collection.ts` into a shared `access.ts` (config + verifier in, decision
-  out) rather than copied - the S1 refactor, kept behavior-identical for
+  out) rather than copied - the T1 refactor, kept behavior-identical for
   collections.
 - **RPC surface**: `configure()` (applies the DDL plan before persisting
   meta; a DDL failure throws so the parent can surface it and the registry
@@ -198,7 +198,7 @@ ifAbsent)` with the same 409 contract, `adminDelete`, `getRowCount`,
 
 - **Registry**: the `collections` table gains `kind` (`'collection'`
   default) and `columns` (JSON, tables only); `restore_points` gains `kind`
-  for S3. Name uniqueness is per kind (different namespaces); the dashboard
+  for T3. Name uniqueness is per kind (different namespaces); the dashboard
   discourages reusing a name across kinds but nothing breaks.
 - **Admin surface**: `PUT /admin/tables/:name` (declare/alter: validates,
   diffs against stored columns, refuses destructive diffs 400, row-first-
@@ -247,7 +247,7 @@ ifAbsent)` with the same 409 contract, `adminDelete`, `getRowCount`,
 - **Dashboard** (`/dashboard/[projectId]/db`): a Tables area beside
   Collections - create form with a column editor (name/type/nullable/
   default/unique/index + bounds), a real data grid whose columns come from
-  the declared schema (this is the S1 screenshot), row editor with ULID
+  the declared schema (this is the T1 screenshot), row editor with ULID
   minting from `src/lib/ulid.ts` for blank ids, per-table Access tab
   rendering the same plain-English sentence, Integration snippets for
   `db.table(...)`. Visual work goes through a variant picker before rollout.
@@ -265,7 +265,7 @@ ifAbsent)` with the same 409 contract, `adminDelete`, `getRowCount`,
 one shared handle parameterized by path segment (`collections`/`tables`) -
 CRUD, query, subscribe, reconnect/backoff, comparator-sorted local docs are
 identical by construction. Tables expose `create/get/update/patch/delete/
-query/subscribe` in S1 (aggregate arrives with S2, export with S3). Optional
+query/subscribe` in T1 (aggregate arrives with T2, export with T3). Optional
 compile-time typing: `table<T extends Record<string, unknown>>(name)` types
 `data` as `T` through the handle - zero runtime cost, real DX.
 
@@ -274,12 +274,12 @@ compile-time typing: `table<T extends Record<string, unknown>>(name)` types
 The SQL layer must be drivable by ORMs - drizzle and prisma named
 explicitly. What that means concretely, and when each piece lands:
 
-- **S1 (this phase): the storage is the contract.** Physical table named
+- **T1 (this phase): the storage is the contract.** Physical table named
   after the declared table, plain reserved system columns, real types and
   indexes - ORM-generated SQL matches the schema on disk. This is why the
   naming ships now: it is the only part that would be a data migration
   later.
-- **S2: a D1-shaped execution surface.** The per-table SQL endpoint takes
+- **T2: a D1-shaped execution surface.** The per-table SQL endpoint takes
   D1's request/response contract (`{sql, params}` in, D1-style results out)
   rather than a protocol of our own, because `drizzle-orm/d1` and prisma's
   D1 driver-adapter pattern already speak it - official adapters become
@@ -287,7 +287,7 @@ explicitly. What that means concretely, and when each piece lands:
   Single-table SQL only; statements are classified (SELECT vs DML), DML
   runs `RETURNING` capture so live queries (and later the replication log)
   fire identically to typed CRUD, and every write funnels through the same
-  `table-schema.ts` validation. Reads route to replicas once R1 lands.
+  `table-schema.ts` validation. Reads route to replicas once REP1 lands.
 - **The column DSL stays the schema source of truth.** ORMs are runtime
   clients; drizzle-kit/prisma-migrate DDL is not accepted (the endpoint
   refuses DDL statements). The inverse direction ships instead: schema
@@ -296,7 +296,7 @@ explicitly. What that means concretely, and when each piece lands:
   declared truth.
 - **Transactions**: single-statement atomicity is native; a D1-style
   `batch` (one table, one implicit transaction via `transactionSync`) is
-  the S2 shape. Cross-table transactions remain out of scope - shard
+  the T2 shape. Cross-table transactions remain out of scope - shard
   independence is the topology.
 
 ## 11. e2e
@@ -313,11 +313,11 @@ Tables tab behind `gotoAuthPage`-style hydration gates, and the OpenAPI spec
 asserting the new paths. Unit: `table-schema` DDL planner + `table-query`
 parity suites run in the same node:test pipeline.
 
-## 12. Non-goals (S1)
+## 12. Non-goals (T1)
 
 Joins and cross-shard reads/writes; aggregates and the SQL execution
-surface (S2, §10); export/import/PITR/checkpoints for tables (S3);
-replication (R1+); composite indexes; column drop/rename/retype tooling;
+surface (T2, §10); export/import/PITR/checkpoints for tables (T3);
+replication (REP1+); composite indexes; column drop/rename/retype tooling;
 CHECK constraints, foreign keys, generated columns; ORM-authored migrations
 (drizzle-kit/prisma-migrate emit DDL we refuse - the column DSL is the
 schema source of truth); table-level validators beyond per-column bounds

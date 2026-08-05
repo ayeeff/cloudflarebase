@@ -1,13 +1,13 @@
-# Replication Design — the R1 substrate (phases R1/R2 of db-scale-plan.md)
+# Replication Design — the REP1 substrate (phases REP1/REP2 of db-scale-plan.md)
 
-> **Drafted 2026-08-05 — the phase-R1/R2 design for [db-scale-plan.md](db-scale-plan.md).**
-> Normative for implementation, same role db-table-design.md played for S1.
-> R1 ships the substrate (log, replicas, sessions, routing, observability)
-> with REST reads on replicas; R2 moves live queries onto them. The model is
+> **Drafted 2026-08-05 — the phase-REP1/REP2 design for [db-scale-plan.md](db-scale-plan.md).**
+> Normative for implementation, same role db-table-design.md played for T1.
+> REP1 ships the substrate (log, replicas, sessions, routing, observability)
+> with REST reads on replicas; REP2 moves live queries onto them. The model is
 > D1's published replication design re-implemented in userland: log shipping,
 > session bookmarks, sequential consistency, single-primary writes.
 >
-> **R1 core implemented 2026-08-05.** Deviations, for future readers:
+> **REP1 core implemented 2026-08-05.** Deviations, for future readers:
 >
 > - **Imports replicate through the log**, they do not bump the epoch (§2 as
 >   drafted): admin import funnels through the normal write path, so every
@@ -22,11 +22,11 @@
 >   fallback, chosen because drizzle's async API cannot run inside a sync
 >   callback; verified against live workerd.
 > - The dashboard replica-map panel and the copilot ops tool ship with the
->   R2/M2 chunk; `/admin/replication/:name` (the data they consume) is live.
+>   REP2/M2 chunk; `/admin/replication/:name` (the data they consume) is live.
 > - `/aggregate` routes to replicas for collections only (tables gain
->   aggregates in S2).
+>   aggregates in T2).
 >
-> **R2 core implemented 2026-08-05.** Further deviations:
+> **REP2 core implemented 2026-08-05.** Further deviations:
 >
 > - **Live delivery is RPC push, not a tail socket** (§3/§8 as drafted). An
 >   outgoing socket dies when the replica hibernates - exactly when pushes
@@ -41,7 +41,7 @@
 > - `repBootstrap` answers `{ ok: false }` for disabled shards instead of
 >   throwing - stale routing hits it constantly right after a disable, and
 >   an expected condition must not be Sentry noise.
-> - **Sibling spawn is deferred** past R2: one replica per region for now
+> - **Sibling spawn is deferred** past REP2: one replica per region for now
 >   (the naming, parsing, and routing already carry `:n`, so adding spawn is
 >   additive). The per-shard realtime ceiling is therefore ~32k sockets ×
 >   regions until then.
@@ -49,17 +49,17 @@
 ## 1. Shape
 
 Replication is per shard (one collection or table), configured
-`replication: 'off' | 'auto'`, default off in R1 (S3 flips tables to auto).
+`replication: 'off' | 'auto'`, default off in REP1 (T3 flips tables to auto).
 The SAME DO classes host both roles; the instance name decides:
 
 | Role    | Instance name                   | Holds                                                                 |
 | ------- | ------------------------------- | --------------------------------------------------------------------- |
 | primary | `<pid>:<name>`                  | authoritative data + the change log + the replica registry            |
-| replica | `<pid>:<name>:r:<region>[:<n>]` | a full copy, applied from the log; serves reads (R2: + subscriptions) |
+| replica | `<pid>:<name>:r:<region>[:<n>]` | a full copy, applied from the log; serves reads (REP2: + subscriptions) |
 
 `:` cannot appear in project or shard names, so the `:r:` suffix is
 unambiguous. `<region>` is a Cloudflare location hint (`wnam enam sam weur
-eeur apac apac-ne apac-se oc afr me`); `<n>` is the R2 sibling index (R1
+eeur apac apac-ne apac-se oc afr me`); `<n>` is the REP2 sibling index (REP1
 always `1`). Replicas are created lazily by the first routed read from a
 region - `namespace.get(id, { locationHint: region })`, best-effort placement
 by design.
@@ -121,11 +121,11 @@ native DO replication (scale-plan risk #4):
   primary records `replicaId → { region, appliedLsn, lastSeenAt }` in a
   `replicas` table DURABLY BEFORE serving data - the erase fan-out reads it,
   so no replica holding data can be unknown to its primary.
-- R2 adds the push stream: an internal tail socket (server side on the
+- REP2 adds the push stream: an internal tail socket (server side on the
   primary = hibernatable; the replica's outgoing side keeps only
-  traffic-bearing replicas warm). R1 is pull-only.
+  traffic-bearing replicas warm). REP1 is pull-only.
 
-**R1 freshness rule (pull-only)**: a replica serves a read if it pulled
+**REP1 freshness rule (pull-only)**: a replica serves a read if it pulled
 within `MAX_LAG_MS` (3s - the dashboard's own polling cadence); otherwise it
 pulls first. Combined with bookmarks this is sequential consistency with
 bounded staleness - the honest v1, stated in docs as "replica reads may be
@@ -160,7 +160,7 @@ OC→oc, AF→afr`, Middle-East country list → `me`), one static documented
   Stale-cache misroutes are correct (replica forwards; primary always
   serves).
 - What routes to replicas: GET document/row, `POST /query`,
-  `POST /aggregate`, `GET /export`. Writes, `/subscribe` (until R2), and
+  `POST /aggregate`, `GET /export`. Writes, `/subscribe` (until REP2), and
   every `/admin/*` + parent surface stay on the primary.
 - **Test hook**: env.test sets `REGION_OVERRIDE_HEADER=true`; the worker then
   honors `x-cfb-region: <hint>` so single-colo local stacks can exercise
@@ -177,14 +177,14 @@ OC→oc, AF→afr`, Middle-East country list → `me`), one static documented
   pushes only to the primary.
 - **Disable** (`auto → off`): the parent tells the primary, which destroys
   every registered replica (close sockets → deleteAll → deferred abort, the
-  S1 sequence) and truncates the log. Registry row updated last.
+  T1 sequence) and truncates the log. Registry row updated last.
 - **Erase fan-out**: `destroyChild` now means "primary destroys its replicas
   first, then itself" - the parent's contract (children die before registry
   rows) is unchanged; the primary's `replicas` table is what makes the
   fan-out complete (§3).
 - **Demo projects**: forced `off`; the config push refuses `auto`.
 
-## 7. Observability (the R1 dashboard payoff)
+## 7. Observability (the REP1 dashboard payoff)
 
 - Primary RPC `replicationStatus()` → `{ enabled, epoch, lastLsn, logRows,
 replicas: [{ region, n, appliedLsn, lagLsn, lastSeenAt }] }`.
@@ -193,10 +193,10 @@ replicas: [{ region, n, appliedLsn, lagLsn, lastSeenAt }] }`.
   the copilot gains it as an ops tool ("why is EU slow?").
 - Analytics: `replica.bootstrap`, `replica.resync` events to DB_EVENTS.
 
-## 8. What R2 adds (design now, build later)
+## 8. What REP2 adds (design now, build later)
 
 - Subscribe path routes to the region replica; `LiveShard` runs there
-  unchanged (S1 already made the engine role-agnostic - it evaluates
+  unchanged (T1 already made the engine role-agnostic - it evaluates
   against local SQLite).
 - The tail socket replaces polling pulls while a replica has subscribers;
   writes stream `{ entries }` frames; the replica applies then notifies its
@@ -204,9 +204,9 @@ replicas: [{ region, n, appliedLsn, lagLsn, lastSeenAt }] }`.
 - Sibling spawn: at `~25k` sockets a replica answers new `/subscribe`
   upgrades with a `redirect` frame naming `:r:<region>:<n+1>`; the worker
   also spreads new sockets by connection-count hints. (Exact mechanism
-  finalized in the R2 pass; nothing in R1 precludes it.)
+  finalized in the REP2 pass; nothing in REP1 precludes it.)
 
-## 9. File plan (R1)
+## 9. File plan (REP1)
 
 | File                                       | Change                                                                                                                                                                              |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -222,9 +222,9 @@ replicas: [{ region, n, appliedLsn, lagLsn, lastSeenAt }] }`.
 | dashboard db page                          | replica map panel (Tables + Collections), replication toggle in the designer/access surfaces                                                                                        |
 | e2e                                        | `db-replication.api.spec.ts`: enable → routed read via forced region serves from replica; bookmark read-your-writes; horizon resync; disable destroys replicas; demo refuses `auto` |
 
-## 10. Non-goals (R1)
+## 10. Non-goals (REP1)
 
-Live queries on replicas and sibling spawn (R2); default-on (S3); pinned
+Live queries on replicas and sibling spawn (REP2); default-on (T3); pinned
 region lists; cross-shard anything; write forwarding as a FEATURE (it is a
 correctness net, not an API); replica-aware aggregate consistency beyond the
 bookmark rule; multi-primary or partitioned writes (post-v2, the log/LSN
@@ -234,13 +234,13 @@ composes).
 
 1. **Write amplification**: every logged write costs an extra row write
    (+1/M rows written per M writes) and log churn; `off` stays the default
-   until S3 and the pricing page's model constants gain the replica terms
+   until T3 and the pricing page's model constants gain the replica terms
    then.
 2. **transactionSync + drizzle**: collections write via drizzle's async API;
    the log append must join the same atomic scope. If drizzle's driver
    fights `transactionSync`, the fallback is ordering (data write, then log
    append, with idempotent replay tolerance) - decided at implementation
-   with a live workerd smoke, like S1's DDL loop.
+   with a live workerd smoke, like T1's DDL loop.
 3. **Isolate flag-cache staleness** (60s): reads may hit the primary
    briefly after enabling, or a dead replica name briefly after disabling -
    the forward-net makes both correct; document the window.

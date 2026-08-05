@@ -10,7 +10,7 @@ import {
 } from './helpers';
 
 /**
- * The R1 replication substrate through the built web worker: session
+ * The REP1 replication substrate through the built web worker: session
  * bookmarks (cfb-lsn / cfb-min-lsn ride the proxy untouched), region-routed
  * reads served by replicas (pinned via the env.test x-cfb-region override on
  * this single-colo stack), the replica registry, and the disable path.

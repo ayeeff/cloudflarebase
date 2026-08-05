@@ -177,7 +177,7 @@ export interface DbDocument {
 }
 
 // ---------------------------------------------------------------------------
-// Replication (phase R1 of docs/db-scale-plan.md; docs/db-replication-design.md)
+// Replication (phase REP1 of docs/db-scale-plan.md; docs/db-replication-design.md)
 
 export const replicationModeSchema = z.enum(['off', 'auto']);
 export type ReplicationMode = z.infer<typeof replicationModeSchema>;
@@ -203,7 +203,7 @@ export type LogEntry = z.infer<typeof logEntrySchema>;
 export const REPLICATION_PULL_CHUNK = 500;
 /** Log retention; a replica behind the horizon is FORCED to re-bootstrap. */
 export const MAX_LOG_ROWS = 100_000;
-/** R1 freshness window: replica reads may lag this far unless the session
+/** REP1 freshness window: replica reads may lag this far unless the session
  * bookmark demands newer. Matches the dashboard's own polling cadence. */
 export const MAX_REPLICA_LAG_MS = 3_000;
 
@@ -217,7 +217,7 @@ export const repPullInputSchema = z.strictObject({
 	region: z.string().min(1).max(16),
 });
 
-/** Primary -> replica push (R2): entries applied live, or a healing hint. */
+/** Primary -> replica push (REP2): entries applied live, or a healing hint. */
 export const repApplyInputSchema = z.strictObject({
 	entries: z.array(logEntrySchema).min(1).max(REPLICATION_PULL_CHUNK),
 	epoch: z.number().int().min(0),
@@ -291,7 +291,7 @@ export const collectionConfigSchema = z.strictObject({
 	demo: z.boolean(),
 	/** Monotonic; lets a child ignore a stale push after a failed retry. */
 	configVersion: z.number().int().min(0),
-	/** Defaults keep configs stored before R1 parseable. */
+	/** Defaults keep configs stored before REP1 parseable. */
 	replication: replicationModeSchema.default('off'),
 	/** PARENT-owned restore epoch: bumped after a PITR restore so replicas
 	 * discard and re-bootstrap. Lives in config (not the primary's storage)
@@ -336,7 +336,7 @@ export const settingsRequestSchema = z.strictObject({
 });
 
 // ---------------------------------------------------------------------------
-// Tables: the typed-column DSL (phase S1 of docs/db-scale-plan.md)
+// Tables: the typed-column DSL (phase T1 of docs/db-scale-plan.md)
 
 /** Table names are DO name suffixes exactly like collection names; the
  * physical SQLite table inside the instance is always `rows`. */
@@ -515,6 +515,33 @@ export type TableMeta = { config: TableConfig; appliedColumns: TableColumn[] };
  * handling are shared with collections rather than forked.
  */
 export type DbRow = DbDocument;
+
+// --- The D1-shaped SQL endpoint (T2; db-table-design.md §10) ---
+
+const sqlStatementSchema = z.strictObject({
+	sql: z.string().min(1).max(10_000),
+	params: z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])).max(100).optional(),
+});
+
+/** One statement, or an atomic batch (transactionSync under the hood). */
+export const tableSqlRequestSchema = z.union([
+	sqlStatementSchema,
+	z.strictObject({ batch: z.array(sqlStatementSchema).min(1).max(20) }),
+]);
+
+/** D1-shaped per-statement result. `raw` + `columns` exist for ORM drivers
+ * (drizzle's sqlite-proxy wants value arrays in column order). */
+export interface TableSqlResult {
+	results: Record<string, unknown>[];
+	columns: string[];
+	raw: unknown[][];
+	meta: { changes: number; rows_read: number; rows_written: number };
+}
+
+export type TableSqlResponse =
+	| { success: true; result: TableSqlResult }
+	| { success: true; batch: TableSqlResult[] }
+	| { success: false; error: string };
 
 // ---------------------------------------------------------------------------
 // Export / import / point-in-time restore

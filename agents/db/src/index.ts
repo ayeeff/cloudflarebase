@@ -70,13 +70,12 @@ async function shardReplicationAuto(env: Env, projectId: string, shard: string):
 }
 
 /** Replicated-read detection per engine; everything else stays primary.
- * R2: /subscribe routes too - replicas run the live engine over their local
- * copy, fed by primary pushes. */
-function isRoutableRead(kind: string, method: string, subPath: string): boolean {
+ * REP2 routes /subscribe (replicas run the live engine locally); T2 routes
+ * /sql - the replica itself classifies and forwards DML to the primary. */
+function isRoutableRead(_kind: string, method: string, subPath: string): boolean {
 	if (method === 'GET') return subPath !== '/';
 	if (method !== 'POST') return false;
-	if (subPath === '/query') return true;
-	return kind === 'collections' && subPath === '/aggregate';
+	return subPath === '/query' || subPath === '/aggregate' || subPath === '/sql';
 }
 
 export const DbAgent = Sentry.instrumentDurableObjectWithSentry(sentryOptions, DbAgentBase);

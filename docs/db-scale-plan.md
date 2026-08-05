@@ -2,7 +2,7 @@
 
 > **Drafted 2026-08-04 — awaiting approval.** Extends the shipped
 > [db-agent-plan.md](db-agent-plan.md) / [db-agent-design.md](db-agent-design.md).
-> Once R1/R2 land, this supersedes their "no DO read replicas" ceilings; until
+> Once REP1/REP2 land, this supersedes their "no DO read replicas" ceilings; until
 > then `agents/db/CLAUDE.md` remains authoritative for what exists. A detailed
 > design doc (the db-agent-design.md equivalent) is written per phase before
 > implementation; this file is the executable summary.
@@ -66,9 +66,9 @@ in every region and live queries on both models, out of the box.
    independent) and `/limits` (ceilings + worked scenarios, ships with the
    replication launch). Both `(marketing)` routes, public by group.
 8. **The SQL layer is ORM-compatible (user decision).** Storage is the
-   contract from S1 on: the physical table is named after the declared
+   contract from T1 on: the physical table is named after the declared
    table with plain reserved system columns (`id`, `owner`, `created_at`,
-   `updated_at`), so drizzle/prisma-generated SQL runs unmodified. The S2
+   `updated_at`), so drizzle/prisma-generated SQL runs unmodified. The T2
    execution surface takes D1's request/response shape, making
    `drizzle-orm/d1`-style adapters thin shims; the column DSL remains the
    schema source of truth (ORM-authored DDL is refused, schema codegen
@@ -134,7 +134,7 @@ resume is a later protocol-compatible upgrade since replicas hold the log tail.
   public clients — the live-query surface; (2) a **D1-shaped SQL endpoint**
   (single-table; SELECT vs DML classified, DML `RETURNING`-captured so live
   queries and the change log fire; drivable by drizzle/prisma via thin
-  adapters) — SELECT tier executes **only on replicas** once R1 lands, so
+  adapters) — SELECT tier executes **only on replicas** once REP1 lands, so
   arbitrary SQL reads scale horizontally by construction; (3) operator SQL
   console in the dashboard (writes → primary).
 - **RLS without a policy language**: access modes `public|auth|owner`; `owner`
@@ -146,7 +146,7 @@ resume is a later protocol-compatible upgrade since replicas hold the log tail.
   `query.ts` splits into a shared core + two compilers under the same
   parity-test regime.
 - A new DO class means a new migration tag in consumer wrangler configs — the
-  CLI fragment-merge already appends under the next free tag; S1 exercises it.
+  CLI fragment-merge already appends under the next free tag; T1 exercises it.
 
 ### Ceilings after (the `/limits` page content)
 
@@ -175,7 +175,7 @@ scales by adding shards, not within one.
   then worked scenario cards ("1M concurrent subscribers on one collection",
   "chat app with 10M users", "where you'll actually hit a wall" — with the
   sharding answer), then published Firestore/Supabase limits vs ours, sourced
-  and linked. Honest limits are the credibility asset; ships with R2 so the
+  and linked. Honest limits are the credibility asset; ships with REP2 so the
   headline scenarios describe shipped behavior.
 - Implementation notes: visual work gets a variant picker before rollout; the
   breakdown chart goes through the dataviz pass; e2e is marketing smoke specs
@@ -189,13 +189,13 @@ admin surfaces. That refactor stays its own workstream — but this plan is
 sequenced to feed it, and each phase ships its new surface as copilot tools,
 not just UI:
 
-- **S1**: table schemas are declared, not guessed — the copilot reads the
+- **T1**: table schemas are declared, not guessed — the copilot reads the
   registry (`kind` + column DSL) and gains schema-grounded tools; the tables
   admin surface joins `/admin/query` in the tool set.
-- **R1**: lag/health RPCs become tools (operational questions, not just data
+- **REP1**: lag/health RPCs become tools (operational questions, not just data
   questions). The change log is an ordered per-project event stream — the
   substrate for standing queries and trigger-style automation later.
-- **S2**: SELECT-only raw SQL on replicas is the copilot's ideal read tool —
+- **T2**: SELECT-only raw SQL on replicas is the copilot's ideal read tool —
   expressive, parser-gated, and blast-radius-isolated from primaries by
   construction (a runaway generated query can never block writes).
 - **Write-capable tools wait for scoped authority**: the copilot gets a
@@ -203,12 +203,12 @@ not just UI:
   exists), never an operator bypass.
 - The manifest registry remains the discovery layer, and the same
   registry-driven tool surface is the natural shape for a per-project **MCP
-  server** (external agents managing a Cloudflarebase backend) — post-S3,
+  server** (external agents managing a Cloudflarebase backend) — post-T3,
   noted here so nothing in this plan precludes it.
 
 ## Phases (each lands green: `npm run check` / `lint` / per-package `tsc --noEmit` / unit / `npm test`)
 
-### S1 — `DbTable` on the existing engine (launch #1)
+### T1 — `DbTable` on the existing engine (launch #1)
 
 No replication. `DbTable` class + schema DSL + typed CRUD/query + access modes
 with `_owner` + live queries via the generalized engine; registry `kind`;
@@ -220,21 +220,21 @@ collection specs (modes, owner isolation, live deltas, demo caps).
 ### M1 — `/pricing` calculator (independent, any time from now)
 
 `(marketing)/pricing` as described; replica-regions slider may land marked
-"coming" before R2.
+"coming" before REP2.
 
-### R1 — replication substrate (feature-flagged per shard)
+### REP1 — replication substrate (feature-flagged per shard)
 
 Change log + LSN in both classes, snapshot bootstrap, `pullSince`, replica
 role, region routing in the worker entrypoint, SDK session bookmarks,
 lag/health RPC, replica map panel in the dashboard. Local dev/e2e simulate
 regions by instance name (one colo locally) — routing logic fully testable.
 
-### R2 — realtime scale-out (launch #2, with M2)
+### REP2 — realtime scale-out (launch #2, with M2)
 
 Subscribe path lands on replicas; sibling spawn on socket pressure; primary →
 replica log streaming; the replica-map demo. **M2 — `/limits`** ships with it.
 
-### S2 — SQL depth
+### T2 — SQL depth
 
 The D1-shaped SQL endpoint (single-table SELECT + DML with `RETURNING`
 capture, statement classification, `batch`), the `@cloudflarebase/db/drizzle`
@@ -242,7 +242,7 @@ adapter and schema codegen from declared columns, SELECT routing to replicas,
 table aggregates, LSN resume tokens if demand warrants. Prisma driver
 adapter follows.
 
-### S3 — parity + default-on
+### T3 — parity + default-on
 
 Replication `auto` by default for tables; PITR/export/import parity for
 tables; docs (`agents/db/CLAUDE.md`, root `CLAUDE.md`, README), landing-page
@@ -253,7 +253,7 @@ comparison table.
 No cross-shard joins/batches/transactions (table groups — co-locating small
 tables in one DO for real joins — is a possible later opt-in, not planned);
 no partitioned primaries (designed-for, not built); no per-colo placement;
-no resume tokens at R2 launch; no billing API behind `/pricing`; auth agent
+no resume tokens at REP2 launch; no billing API behind `/pricing`; auth agent
 scaling is out of scope.
 
 ## Open risks

@@ -10,7 +10,7 @@ import {
 import { LiveSocket, WEB_WS } from './live-socket';
 
 /**
- * R2: live queries served BY REPLICAS. The subscriber's socket lands on the
+ * REP2: live queries served BY REPLICAS. The subscriber's socket lands on the
  * region replica (?cfb-region - WebSocket clients cannot set headers, so the
  * env.test override rides a query param); writes hit the primary, whose RPC
  * push wakes the replica, which applies the entry and notifies its own

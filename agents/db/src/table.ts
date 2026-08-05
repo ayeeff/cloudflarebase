@@ -22,6 +22,8 @@ import {
 	type ReplicaRole,
 } from './replication';
 import { getPath, encodeCursor, decodeCursor, type DecodedCursor } from './query';
+import { hasPermission } from './rules';
+import { prepareTableSql } from './table-sql';
 import {
 	applyColumnDefaults,
 	isDuplicateColumnError,
@@ -33,9 +35,10 @@ import {
 	uniqueViolationColumn,
 	validateRow,
 } from './table-schema';
-import { compileTableQuery } from './table-query';
+import { compileTableAggregate, compileTableQuery } from './table-query';
 import { ulid } from './ulid';
 import {
+	aggregateRequestSchema,
 	createDocumentSchema,
 	documentDataSchema,
 	logEntrySchema,
@@ -45,12 +48,15 @@ import {
 	repSetPushInputSchema,
 	storedTableMetaSchema,
 	tableConfigSchema,
+	tableSqlRequestSchema,
 	EXPORT_CHUNK,
 	LSN_HEADER,
 	MAX_DOC_BYTES,
 	MAX_REPLICA_LAG_MS,
 	MIN_LSN_HEADER,
 	REPLICATION_PULL_CHUNK,
+	type AggregateRequest,
+	type AggregateResult,
 	type DbRow,
 	type LogEntry,
 	type Query,
@@ -60,6 +66,7 @@ import {
 	type TableColumn,
 	type TableConfig,
 	type TableMeta,
+	type TableSqlResult,
 } from './schemas';
 import { isDurableObjectReset, type DbAgent } from './agent';
 
@@ -263,7 +270,7 @@ export class DbTable extends LiveShard {
 		this.schedulePush({ lsn, op, id, image, ts: Date.now() });
 	}
 
-	/** R2 delivery by RPC - the collection twin's reasoning applies. */
+	/** REP2 delivery by RPC - the collection twin's reasoning applies. */
 	private schedulePush(entry: LogEntry): void {
 		const config = this.config;
 		const name = this.ctx.id.name;
@@ -431,14 +438,41 @@ export class DbTable extends LiveShard {
 	}
 
 	private async replicaDispatch(request: Request, subPath: string): Promise<Response> {
-		// R2: subscribers land HERE, on the local copy fed by primary pushes.
+		// REP2: subscribers land HERE, on the local copy fed by primary pushes.
 		if (request.method === 'GET' && subPath === '/subscribe') {
 			const ready = await this.ensureReplica(0);
 			if (!ready || !this.config) return this.forwardToPrimary(request);
 			return this.acceptSubscriber(request);
 		}
 
-		const isRead = request.method === 'GET' || (request.method === 'POST' && subPath === '/query');
+		// T2: raw SQL routes here, but only all-SELECT requests serve locally
+		// - classifying requires the body, so it is re-materialized either way.
+		if (request.method === 'POST' && subPath === '/sql') {
+			const bodyText = await request.text();
+			const remade = () =>
+				new Request(request.url, { method: 'POST', headers: request.headers, body: bodyText });
+			let allSelect = true;
+			try {
+				const parsed = tableSqlRequestSchema.parse(JSON.parse(bodyText));
+				const statements = 'batch' in parsed ? parsed.batch : [parsed];
+				allSelect = statements.every((statement) => /^\s*(select|with)\b/i.test(statement.sql));
+			} catch {
+				// malformed: let whichever side handles it shape the 400
+			}
+			if (!allSelect) return this.forwardToPrimary(remade());
+			const wantLsn = Number(request.headers.get(MIN_LSN_HEADER) ?? 0) || 0;
+			const fresh = await this.ensureReplica(wantLsn);
+			if (!fresh || !this.config) return this.forwardToPrimary(remade());
+			const sqlCors = corsHeadersFor(request, this.env.TRUSTED_ORIGINS, this.config.allowedOrigins);
+			if (request.headers.get('origin') && !sqlCors) {
+				return Response.json({ error: 'origin is not trusted' }, { status: 403 });
+			}
+			return withCors(await this.route(remade(), subPath, this.config), sqlCors);
+		}
+
+		const isRead =
+			request.method === 'GET' ||
+			(request.method === 'POST' && (subPath === '/query' || subPath === '/aggregate'));
 		if (!isRead) return this.forwardToPrimary(request);
 
 		const minLsn = Number(request.headers.get(MIN_LSN_HEADER) ?? 0) || 0;
@@ -644,6 +678,14 @@ export class DbTable extends LiveShard {
 		if (subPath === '/query' && request.method === 'POST') {
 			return this.guarded(request, 'read', config, (owner) => this.handleQuery(request, owner));
 		}
+		if (subPath === '/aggregate' && request.method === 'POST') {
+			return this.guarded(request, 'read', config, (owner) =>
+				this.handleAggregate(request, owner),
+			);
+		}
+		if (subPath === '/sql' && request.method === 'POST') {
+			return this.handleSql(request, config);
+		}
 
 		const row = subPath.match(/^\/rows\/([^/]+)$/);
 		if (row) {
@@ -776,6 +818,227 @@ export class DbTable extends LiveShard {
 			}
 			throw error;
 		}
+	}
+
+	private async handleAggregate(request: Request, owner: string | null): Promise<Response> {
+		const parsed = aggregateRequestSchema.safeParse(await request.json().catch(() => null));
+		if (!parsed.success) {
+			return Response.json(
+				{ error: 'invalid aggregate request', issues: parsed.error.issues },
+				{ status: 400 },
+			);
+		}
+		const result = this.runAggregate(parsed.data, owner);
+		if ('error' in result) return Response.json({ error: result.error }, { status: 400 });
+		return Response.json(result);
+	}
+
+	private runAggregate(
+		request: AggregateRequest,
+		ownerSub: string | null,
+	): AggregateResult | { error: string } {
+		const compiled = compileTableAggregate(this.requireTableName(), request, this.columns, {
+			ownerSub,
+		});
+		if (!compiled.ok) return { error: compiled.error };
+		const [row] = this.ctx.storage.sql
+			.exec(compiled.compiled.sql, ...(compiled.compiled.params as (string | number | null)[]))
+			.toArray() as Record<string, unknown>[];
+		const results: Record<string, number | null> = {};
+		compiled.compiled.aliases.forEach((alias, index) => {
+			const value = row?.[`agg_${index}`];
+			results[alias] = typeof value === 'number' ? value : null;
+		});
+		return { results };
+	}
+
+	// -------------------------------------------------------------------------
+	// The D1-shaped SQL endpoint (T2): ORM-grade single-table SQL
+
+	/**
+	 * Raw SQL ALWAYS requires a project JWT - public access modes open the
+	 * typed API, never arbitrary SQL - and owner-scoped tables refuse it
+	 * outright (arbitrary SQL cannot be owner-scoped without rewriting it).
+	 * SELECT binds readPermission, DML binds writePermission; DML is
+	 * operator-grade like adminPut (structure enforced by the schema itself,
+	 * policy bounds not re-checked). The statement gate is table-sql.ts.
+	 */
+	private async handleSql(request: Request, config: TableConfig): Promise<Response> {
+		const body = tableSqlRequestSchema.safeParse(await request.json().catch(() => null));
+		if (!body.success) {
+			return Response.json(
+				{ success: false, error: 'invalid sql request', issues: body.error.issues },
+				{ status: 400 },
+			);
+		}
+		const statements = 'batch' in body.data ? body.data.batch : [body.data];
+		const prepared = [];
+		for (const statement of statements) {
+			const gate = prepareTableSql(statement.sql, config.table, this.columns);
+			if (!gate.ok) {
+				return Response.json({ success: false, error: gate.error }, { status: 400 });
+			}
+			prepared.push({ ...gate, params: statement.params ?? [] });
+		}
+
+		const wantsWrite = prepared.some((statement) => statement.kind !== 'select');
+		if (
+			(wantsWrite && config.writeAccess === 'owner') ||
+			(!wantsWrite && config.readAccess === 'owner')
+		) {
+			return Response.json(
+				{ success: false, error: 'owner-scoped tables refuse raw SQL - use the typed API' },
+				{ status: 403 },
+			);
+		}
+
+		const header = request.headers.get('authorization');
+		const token = header?.match(/^Bearer (.+)$/i)?.[1];
+		if (!token) {
+			return Response.json(
+				{ success: false, error: 'raw SQL requires a project token' },
+				{ status: 401 },
+			);
+		}
+		const verified = await this.getVerifier().verify(token);
+		if (!verified.ok) {
+			return Response.json(
+				{
+					success: false,
+					error:
+						verified.code === 'not-configured'
+							? 'auth verification is not configured'
+							: 'invalid or expired token',
+				},
+				{ status: verified.code === 'not-configured' ? 503 : 401 },
+			);
+		}
+		const required = wantsWrite ? config.writePermission : config.readPermission;
+		if (!hasPermission(required, verified.claims.permissions)) {
+			return Response.json(
+				{ success: false, error: 'the token does not carry the required permission' },
+				{ status: 403 },
+			);
+		}
+
+		try {
+			const outcome = this.runSqlStatements(prepared);
+			for (const notice of outcome.notifications) {
+				if (notice.kind === 'delete') {
+					await this.notifySubscribers(notice.row, null);
+				} else {
+					// UPDATE before-images are not recoverable from raw SQL; the
+					// live engine receives before=null (documented limitation:
+					// predicate-EXIT deltas are not emitted for raw updates).
+					await this.notifySubscribers(null, notice.row);
+				}
+			}
+			this.scheduleStatsReport();
+			const payload =
+				'batch' in body.data
+					? { success: true as const, batch: outcome.results }
+					: { success: true as const, result: outcome.results[0] };
+			return this.withLsn(Response.json(payload));
+		} catch (error) {
+			const conflict = this.uniqueViolationResponse(error);
+			if (conflict) return conflict;
+			const message = error instanceof Error ? error.message : String(error);
+			return Response.json({ success: false, error: message.slice(0, 512) }, { status: 400 });
+		}
+	}
+
+	/** Execute inside ONE transactionSync (a failing batch rolls back whole);
+	 * log entries are appended in the same transaction, notifications are
+	 * collected for after the commit. */
+	private runSqlStatements(
+		statements: { kind: 'select' | 'insert' | 'update' | 'delete'; sql: string; params: unknown[] }[],
+	): {
+		results: TableSqlResult[];
+		notifications: { kind: 'upsert' | 'delete'; row: DbRow }[];
+	} {
+		const results: TableSqlResult[] = [];
+		const notifications: { kind: 'upsert' | 'delete'; row: DbRow }[] = [];
+
+		this.ctx.storage.transactionSync(() => {
+			for (const statement of statements) {
+				const cursor = this.ctx.storage.sql.exec(
+					statement.sql,
+					...(statement.params as (string | number | null)[]),
+				);
+				const columns = cursor.columnNames;
+				const raw = [...cursor.raw()] as unknown[][];
+				const objects = raw.map((values) => {
+					const record: Record<string, unknown> = {};
+					columns.forEach((column, index) => (record[column] = values[index]));
+					return record;
+				});
+
+				if (statement.kind !== 'select') {
+					for (const row of objects) {
+						const dto = this.toDto(row);
+						if (statement.kind === 'delete') {
+							this.logChange('del', dto.id, null);
+							notifications.push({ kind: 'delete', row: dto });
+						} else {
+							this.logChange('put', dto.id, JSON.stringify(dto));
+							notifications.push({ kind: 'upsert', row: dto });
+						}
+					}
+				}
+
+				results.push({
+					results: objects,
+					columns,
+					raw,
+					meta: {
+						changes: statement.kind === 'select' ? 0 : objects.length,
+						rows_read: cursor.rowsRead,
+						rows_written: cursor.rowsWritten,
+					},
+				});
+			}
+		});
+
+		return { results, notifications };
+	}
+
+	/** Operator SQL (dashboard console / copilot) - no JWT, session-guarded
+	 * upstream; same statement gate, same owner-mode indifference. */
+	async adminSql(
+		input: unknown,
+	): Promise<{ ok: true; batch: TableSqlResult[] } | { ok: false; error: string }> {
+		const body = tableSqlRequestSchema.safeParse(input);
+		if (!body.success) return { ok: false, error: 'invalid sql request' };
+		const statements = 'batch' in body.data ? body.data.batch : [body.data];
+		const prepared = [];
+		for (const statement of statements) {
+			const gate = prepareTableSql(statement.sql, this.requireTableName(), this.columns);
+			if (!gate.ok) return { ok: false, error: gate.error };
+			prepared.push({ ...gate, params: statement.params ?? [] });
+		}
+		try {
+			const outcome = this.runSqlStatements(prepared);
+			for (const notice of outcome.notifications) {
+				if (notice.kind === 'delete') await this.notifySubscribers(notice.row, null);
+				else await this.notifySubscribers(null, notice.row);
+			}
+			this.scheduleStatsReport();
+			return { ok: true, batch: outcome.results };
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			return { ok: false, error: message.slice(0, 512) };
+		}
+	}
+
+	/** Operator aggregate mirror; discriminated like adminQuery. */
+	async adminAggregate(
+		input: unknown,
+	): Promise<{ ok: true; results: Record<string, number | null> } | { ok: false; error: string }> {
+		const parsed = aggregateRequestSchema.safeParse(input);
+		if (!parsed.success) return { ok: false, error: 'invalid aggregate request' };
+		const result = this.runAggregate(parsed.data, null);
+		if ('error' in result) return { ok: false, error: result.error };
+		return { ok: true, results: result.results };
 	}
 
 	/** Row size + schema validation; null when the row passes. */
