@@ -34,6 +34,18 @@ export const createProjectSchema = z
 	})
 	.meta({ id: 'CreateProjectRequest' });
 
+// Mirrors branchNameSchema in src/lib/server/registry.ts - keep both in sync.
+// The registry adds the server-only checks (no `--`, combined 32-char ceiling,
+// reserved roots) with the same first-line grammar.
+export const createBranchSchema = z
+	.object({
+		branch: z
+			.string()
+			.regex(/^[a-z0-9][a-z0-9-]{0,15}$/, 'Use lowercase letters, numbers, and hyphens only.')
+			.describe('Appended to the root id as `<root>--<branch>` - the branch project id.')
+	})
+	.meta({ id: 'CreateBranchRequest' });
+
 // Mirrors the AuthAgent's rules in agents/auth/src/schemas.ts - keep both in sync
 // so requests that pass here are never rejected by the agent with a vaguer error.
 export const allowedOriginSchema = z

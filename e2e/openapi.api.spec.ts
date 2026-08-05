@@ -39,10 +39,15 @@ test.describe('openapi document', () => {
 			'/admin/settings',
 			'/admin/roles',
 			'/admin/users/{userId}',
-			'/admin/sessions/{sessionId}'
+			'/admin/sessions/{sessionId}',
+			'/branches'
 		]) {
 			expect(doc.paths[path], `${path} should be documented`).toBeTruthy();
 		}
+
+		// The branches contribution ships its request and row components too.
+		expect(doc.components.schemas.RegistryProject).toBeTruthy();
+		expect(doc.components.schemas.CreateBranchRequest).toBeTruthy();
 	});
 
 	test('covers the db agent surface', async ({ request }) => {

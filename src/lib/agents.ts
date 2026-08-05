@@ -218,6 +218,10 @@ export const projectRegistryStateSchema = z
 	.object({ projects: z.array(registryProjectSchema) })
 	.meta({ id: 'ProjectRegistryState' });
 
+export const projectBranchesSchema = z
+	.object({ branches: z.array(registryProjectSchema) })
+	.meta({ id: 'ProjectBranches', description: "A root project's branches, oldest first." });
+
 // ---------------------------------------------------------------------------
 // DB agent DTOs. Keep in sync with agents/db/src/schemas.ts and
 // agents/db/src/agent.ts - deliberately copied, never imported (the agent is
@@ -619,6 +623,7 @@ export type AgentChatMessage = z.infer<typeof agentChatMessageSchema>;
 export type AgentChatReply = z.infer<typeof agentChatReplySchema>;
 export type RegistryProject = z.infer<typeof registryProjectSchema>;
 export type ProjectRegistryState = z.infer<typeof projectRegistryStateSchema>;
+export type ProjectBranches = z.infer<typeof projectBranchesSchema>;
 export type DbAccessMode = z.infer<typeof dbAccessModeSchema>;
 export type DbQuery = z.infer<typeof dbQuerySchema>;
 export type DbDocument = z.infer<typeof dbDocumentSchema>;
