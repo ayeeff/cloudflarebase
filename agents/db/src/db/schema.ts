@@ -147,6 +147,9 @@ export const replicas = sqliteTable('replicas', {
 	 * pushed to it by RPC (which wakes a hibernated instance). Flipped off
 	 * when the replica reports no subscribers left. */
 	push: integer('push').notNull().default(0),
+	/** Last reported hibernatable-socket count; at SIBLING_SPAWN_SOCKETS the
+	 * worker routes NEW subscribers to the next sibling (`:r:<region>:2`…). */
+	sockets: integer('sockets').notNull().default(0),
 	lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
 });
 

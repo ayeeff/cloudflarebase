@@ -207,6 +207,20 @@ export const MAX_LOG_ROWS = 100_000;
  * bookmark demands newer. Matches the dashboard's own polling cadence. */
 export const MAX_REPLICA_LAG_MS = 3_000;
 
+/** Sibling spawn: a region replica this close to the ~32k hibernatable-socket
+ * ceiling stops taking NEW subscribers - the worker routes them to the next
+ * sibling (`:r:<region>:2`…). 75% leaves headroom for one routing-cache TTL
+ * of herd. Overridable per environment (env.test sets it to 2). */
+export const SIBLING_SPAWN_SOCKETS = 24_000;
+/** Sibling cap per region: bounds a socket-flood to this many data copies. */
+export const MAX_REGION_SIBLINGS = 8;
+/** Replicas report socket counts when they move at least this much - one
+ * report per ~6% of the threshold keeps the primary current without a write
+ * per socket. Always >= 1 so tiny test thresholds still report. */
+export function socketReportStep(spawnAt: number): number {
+	return Math.max(1, Math.floor(spawnAt / 16));
+}
+
 export type RepPullResult =
 	| { resync: true; epoch: number }
 	| { resync: false; entries: LogEntry[]; lastLsn: number; epoch: number };
@@ -233,7 +247,10 @@ export type RepApplyResult =
 export const repSetPushInputSchema = z.strictObject({
 	replicaId: z.string().regex(/^r:[a-z-]+:\d+$/),
 	region: z.string().min(1).max(16),
-	push: z.boolean(),
+	/** Omitted = leave the push flag alone (a sockets-only report). */
+	push: z.boolean().optional(),
+	/** Hibernatable-socket count, reported step-debounced for sibling spawn. */
+	sockets: z.number().int().min(0).optional(),
 });
 
 /** Observability payloads (`/admin/replication/:name`, the replica map). */
@@ -244,6 +261,8 @@ export interface RepReplicaStatus {
 	lagLsn: number;
 	/** Receiving live pushes (it holds subscribers). */
 	push: boolean;
+	/** Last reported hibernatable-socket count (drives sibling spawn). */
+	sockets: number;
 	lastSeenAt: string;
 }
 export interface RepStatus {

@@ -12,7 +12,9 @@ import {
 	lastLsn,
 	listPushReplicas,
 	listReplicas,
+	pickSubscribeSibling,
 	readReplicaMeta,
+	regionSocketCounts,
 	registerReplica,
 	serveRepPull,
 	setReplicaPush,
@@ -52,9 +54,12 @@ import {
 	EXPORT_CHUNK,
 	LSN_HEADER,
 	MAX_DOC_BYTES,
+	MAX_REGION_SIBLINGS,
 	MAX_REPLICA_LAG_MS,
 	MIN_LSN_HEADER,
 	REPLICATION_PULL_CHUNK,
+	SIBLING_SPAWN_SOCKETS,
+	socketReportStep,
 	type AggregateRequest,
 	type AggregateResult,
 	type DbRow,
@@ -289,7 +294,7 @@ export class DbTable extends LiveShard {
 							epoch: config.repEpoch,
 						})) as RepApplyResult;
 						if ('stop' in result) {
-							setReplicaPush(this.ctx.storage.sql, replica.id, replica.region, false);
+							setReplicaPush(this.ctx.storage.sql, replica.id, replica.region, { push: false });
 						}
 					} catch {
 						// best-effort: the replica's pull path heals on next touch
@@ -302,7 +307,27 @@ export class DbTable extends LiveShard {
 	async repSetPush(input: unknown): Promise<void> {
 		if (this.role.kind !== 'primary') return;
 		const parsed = repSetPushInputSchema.parse(input);
-		setReplicaPush(this.ctx.storage.sql, parsed.replicaId, parsed.region, parsed.push);
+		setReplicaPush(this.ctx.storage.sql, parsed.replicaId, parsed.region, {
+			push: parsed.push,
+			sockets: parsed.sockets,
+		});
+	}
+
+	/** Sibling routing for NEW subscribers; see DbCollection.repSubscribeTarget. */
+	async repSubscribeTarget(region: string): Promise<number> {
+		if (this.role.kind !== 'primary' || this.config?.replication !== 'auto' || this.config.demo) {
+			return 1;
+		}
+		return pickSubscribeSibling(
+			regionSocketCounts(this.ctx.storage.sql, region),
+			this.spawnThreshold(),
+			MAX_REGION_SIBLINGS,
+		);
+	}
+
+	/** Env-overridable so the e2e stack can force spawn with 2 sockets. */
+	private spawnThreshold(): number {
+		return Number(this.env.SIBLING_SPAWN_SOCKETS ?? '') || SIBLING_SPAWN_SOCKETS;
 	}
 
 	async repApply(input: unknown): Promise<RepApplyResult> {
@@ -398,6 +423,7 @@ export class DbTable extends LiveShard {
 						appliedLsn: replica.appliedLsn,
 						lagLsn: Math.max(0, last - replica.appliedLsn),
 						push: replica.push,
+						sockets: replica.sockets,
 						lastSeenAt: new Date(replica.lastSeenAt).toISOString(),
 					}))
 				: [],
@@ -1239,21 +1265,40 @@ export class DbTable extends LiveShard {
 
 	/** Track what the primary believes; flip only on transitions. */
 	private pushWanted: boolean | null = null;
+	/** Last socket count reported. In-memory on purpose: hibernation resets
+	 * it to null and the next accepted socket re-reports - self-healing. */
+	private lastReportedSockets: number | null = null;
 
 	protected async onSubscriptionsChanged(count: number): Promise<void> {
 		if (this.role.kind !== 'replica') return;
 		const want = count > 0;
 		if (this.pushWanted === want) return;
+		// Transitions carry the socket count for free.
+		await this.reportToPrimary({ push: want, sockets: this.ctx.getWebSockets().length });
+	}
+
+	protected async onSocketAccepted(count: number): Promise<void> {
+		if (this.role.kind !== 'replica') return;
+		const step = socketReportStep(this.spawnThreshold());
+		if (this.lastReportedSockets !== null && Math.abs(count - this.lastReportedSockets) < step) {
+			return;
+		}
+		await this.reportToPrimary({ sockets: count });
+	}
+
+	private async reportToPrimary(update: { push?: boolean; sockets?: number }): Promise<void> {
 		const role = this.role as ReplicaRole;
 		try {
 			await this.primaryTableStub().repSetPush({
 				replicaId: role.replicaId,
 				region: role.region,
-				push: want,
+				...update,
 			});
-			this.pushWanted = want;
+			if (update.push !== undefined) this.pushWanted = update.push;
+			if (update.sockets !== undefined) this.lastReportedSockets = update.sockets;
 		} catch {
-			this.pushWanted = null;
+			if (update.push !== undefined) this.pushWanted = null;
+			if (update.sockets !== undefined) this.lastReportedSockets = null;
 		}
 	}
 

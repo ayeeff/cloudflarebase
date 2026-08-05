@@ -41,10 +41,21 @@
 > - `repBootstrap` answers `{ ok: false }` for disabled shards instead of
 >   throwing - stale routing hits it constantly right after a disable, and
 >   an expected condition must not be Sentry noise.
-> - **Sibling spawn is deferred** past REP2: one replica per region for now
->   (the naming, parsing, and routing already carry `:n`, so adding spawn is
->   additive). The per-shard realtime ceiling is therefore ~32k sockets ×
->   regions until then.
+> - **Sibling spawn is implemented** (post-REP2 hardening): replicas report
+>   their hibernatable-socket count to the primary (piggybacked on
+>   `repSetPush`, step-debounced on accept), the primary's registry keeps a
+>   `sockets` column, and the worker asks `repSubscribeTarget(region)` (60s
+>   isolate cache, `SIBLING_ROUTING_TTL_MS` in test) before naming a
+>   subscriber's instance. `pickSubscribeSibling` fills the lowest sibling
+>   with headroom (`SIBLING_SPAWN_SOCKETS` = 24k, 75% of the ~32k ceiling;
+>   unregistered = 0, so picking it IS the spawn), capped at
+>   `MAX_REGION_SIBLINGS` = 8 (~256k sockets/region/shard). Plain reads stay
+>   on `:1` - read QPS is not the ceiling being hardened. Drained siblings
+>   linger deliberately: hibernated zero-socket DOs are free, they stay in
+>   the registry for the erase fan-out, and re-pressurization reuses them via
+>   catch-up pull. Demo shards never spawn (`repSubscribeTarget` answers 1).
+>   Pinned by `db-replication-siblings.api.spec.ts` (env.test forces the
+>   threshold to 2) and the pick-function unit tests.
 
 ## 1. Shape
 

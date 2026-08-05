@@ -82,6 +82,11 @@ export abstract class LiveShard extends DurableObject<Env> {
 	 * - how a replica keeps its primary's push flag honest. */
 	protected async onSubscriptionsChanged(_count: number): Promise<void> {}
 
+	/** Fired on every accepted socket with the current hibernatable-socket
+	 * count - how a replica reports pressure for sibling spawn. Counts bare
+	 * sockets that never subscribe too: they consume the ceiling all the same. */
+	protected async onSocketAccepted(_count: number): Promise<void> {}
+
 	protected async subscriptionCount(): Promise<number> {
 		const [row] = await this.db.select({ value: count() }).from(subscriptions);
 		return row?.value ?? 0;
@@ -101,6 +106,8 @@ export abstract class LiveShard extends DurableObject<Env> {
 		// Everything a woken instance needs lives in the subscriptions table.
 		this.ctx.acceptWebSocket(pair[1], [connId]);
 		pair[1].serializeAttachment({ connId });
+
+		this.ctx.waitUntil(this.onSocketAccepted(this.ctx.getWebSockets().length));
 
 		return new Response(null, { status: 101, webSocket: pair[0] });
 	}

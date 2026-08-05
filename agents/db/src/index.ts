@@ -78,6 +78,48 @@ function isRoutableRead(_kind: string, method: string, subPath: string): boolean
 	return subPath === '/query' || subPath === '/aggregate' || subPath === '/sql';
 }
 
+/**
+ * Sibling routing for NEW subscribers: the primary knows each region
+ * replica's reported socket count and answers which sibling has headroom
+ * (`pickSubscribeSibling`). Cached per isolate like the replication flag -
+ * a stale answer routes to a fuller (or drained) sibling, which still WORKS,
+ * so this is latency-shaped state, never correctness. Plain reads always
+ * stay on sibling 1: read QPS is not the ceiling being hardened, and
+ * spreading them would multiply warm data copies for nothing.
+ */
+const SIBLING_TTL_MS = 60_000;
+const siblingCache = new Map<string, { n: number; expires: number }>();
+
+async function subscribeSibling(
+	env: Env,
+	kind: 'collections' | 'tables',
+	projectId: string,
+	shard: string,
+	region: string,
+): Promise<number> {
+	const key = `${kind}:${projectId}:${shard}:${region}`;
+	const now = Date.now();
+	const cached = siblingCache.get(key);
+	if (cached && cached.expires > now) return cached.n;
+	const ttl = Number(env.SIBLING_ROUTING_TTL_MS ?? '') || SIBLING_TTL_MS;
+	let n = 1;
+	try {
+		const namespace = (kind === 'tables'
+			? env.DbTable
+			: env.DbCollection) as unknown as DurableObjectNamespace;
+		const stub = namespace.get(namespace.idFromName(`${projectId}:${shard}`)) as unknown as {
+			repSubscribeTarget(region: string): Promise<number>;
+		};
+		const answer = await stub.repSubscribeTarget(region);
+		if (Number.isInteger(answer) && answer >= 1) n = answer;
+	} catch {
+		// The primary being unreachable must not break subscribes: sibling 1
+		// is exactly yesterday's behavior.
+	}
+	siblingCache.set(key, { n, expires: now + ttl });
+	return n;
+}
+
 export const DbAgent = Sentry.instrumentDurableObjectWithSentry(sentryOptions, DbAgentBase);
 export const DbCollection = Sentry.instrumentDurableObjectWithSentry(
 	sentryOptions,
@@ -180,7 +222,19 @@ class DbService extends WorkerEntrypoint<Env> {
 									}
 								).cf ?? {},
 							);
-				instanceName = replicaName(instanceName, region, 1);
+				// Subscribers spread across siblings under socket pressure; every
+				// other read keeps sibling 1.
+				const sibling =
+					subPath === '/subscribe'
+						? await subscribeSibling(
+								this.env,
+								hot[2] as 'collections' | 'tables',
+								projectId,
+								shard,
+								region,
+							)
+						: 1;
+				instanceName = replicaName(instanceName, region, sibling);
 				locationHint = region as DurableObjectLocationHint;
 			}
 

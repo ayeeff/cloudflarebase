@@ -227,6 +227,12 @@
 				// Lets specs pin region routing on a single-colo local stack by
 				// sending x-cfb-region. Test env only - never in production.
 				"REGION_OVERRIDE_HEADER": "true",
+				// Sibling-spawn knobs: force a spawn at 2 sockets and expire the
+				// worker's sibling routing cache fast enough for specs to observe
+				// the second sibling. Production uses the compiled defaults
+				// (24k sockets, 60s TTL).
+				"SIBLING_SPAWN_SOCKETS": "2",
+				"SIBLING_ROUTING_TTL_MS": "250",
 			},
 
 			"analytics_engine_datasets": [

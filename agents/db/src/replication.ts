@@ -191,18 +191,21 @@ export interface RegisteredReplica {
 	appliedLsn: number;
 	/** True while the replica holds subscribers and receives live pushes. */
 	push: boolean;
+	/** Last reported hibernatable-socket count (sibling-spawn signal). */
+	sockets: number;
 	lastSeenAt: number;
 }
 
 export function listReplicas(sql: SqlStorage): RegisteredReplica[] {
 	return (
 		sql
-			.exec(`SELECT id, region, applied_lsn, push, last_seen_at FROM replicas ORDER BY id`)
+			.exec(`SELECT id, region, applied_lsn, push, sockets, last_seen_at FROM replicas ORDER BY id`)
 			.toArray() as {
 			id: string;
 			region: string;
 			applied_lsn: number;
 			push: number;
+			sockets: number;
 			last_seen_at: number;
 		}[]
 	).map((row) => ({
@@ -210,6 +213,7 @@ export function listReplicas(sql: SqlStorage): RegisteredReplica[] {
 		region: row.region,
 		appliedLsn: row.applied_lsn,
 		push: row.push === 1,
+		sockets: row.sockets,
 		lastSeenAt: row.last_seen_at,
 	}));
 }
@@ -218,20 +222,28 @@ export function clearReplicas(sql: SqlStorage): void {
 	sql.exec(`DELETE FROM replicas`);
 }
 
-/** Flip a replica's push flag (registers it if somehow unknown). */
+/** Update a replica's push flag and/or socket count (registers it if somehow
+ * unknown). Omitted fields stay as they are - a sockets-only report must not
+ * clobber the push flag, and vice versa. */
 export function setReplicaPush(
 	sql: SqlStorage,
 	replicaId: string,
 	region: string,
-	push: boolean,
+	update: { push?: boolean; sockets?: number },
 ): void {
 	sql.exec(
-		`INSERT INTO replicas (id, region, applied_lsn, push, last_seen_at) VALUES (?, ?, 0, ?, ?)
-		 ON CONFLICT(id) DO UPDATE SET push = excluded.push, last_seen_at = excluded.last_seen_at`,
+		`INSERT INTO replicas (id, region, applied_lsn, push, sockets, last_seen_at) VALUES (?, ?, 0, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET
+			push = CASE WHEN ? THEN excluded.push ELSE push END,
+			sockets = CASE WHEN ? THEN excluded.sockets ELSE sockets END,
+			last_seen_at = excluded.last_seen_at`,
 		replicaId,
 		region,
-		push ? 1 : 0,
+		update.push ? 1 : 0,
+		update.sockets ?? 0,
 		Date.now(),
+		update.push !== undefined ? 1 : 0,
+		update.sockets !== undefined ? 1 : 0,
 	);
 }
 
@@ -239,15 +251,64 @@ export function setReplicaPush(
 export function listPushReplicas(sql: SqlStorage): RegisteredReplica[] {
 	return (
 		sql
-			.exec(`SELECT id, region, applied_lsn, last_seen_at FROM replicas WHERE push = 1 ORDER BY id`)
-			.toArray() as { id: string; region: string; applied_lsn: number; last_seen_at: number }[]
+			.exec(
+				`SELECT id, region, applied_lsn, sockets, last_seen_at FROM replicas WHERE push = 1 ORDER BY id`,
+			)
+			.toArray() as {
+			id: string;
+			region: string;
+			applied_lsn: number;
+			sockets: number;
+			last_seen_at: number;
+		}[]
 	).map((row) => ({
 		id: row.id,
 		region: row.region,
 		appliedLsn: row.applied_lsn,
 		push: true,
+		sockets: row.sockets,
 		lastSeenAt: row.last_seen_at,
 	}));
+}
+
+// ---------------------------------------------------------------------------
+// Sibling spawn (socket-pressure scale-out within a region)
+
+/** Reported socket counts per sibling, indexed n-1 (holes = never seen). */
+export function regionSocketCounts(sql: SqlStorage, region: string): number[] {
+	const rows = sql.exec(`SELECT id, sockets FROM replicas WHERE region = ?`, region).toArray() as {
+		id: string;
+		sockets: number;
+	}[];
+	const counts: number[] = [];
+	for (const row of rows) {
+		const n = Number(row.id.split(':')[2]);
+		if (Number.isInteger(n) && n >= 1) counts[n - 1] = row.sockets;
+	}
+	return counts;
+}
+
+/**
+ * Which sibling a NEW subscriber should land on: the lowest n with headroom
+ * (an unregistered n counts as 0 sockets - picking it IS the spawn; the
+ * subscriber's arrival bootstraps it), else the least-loaded. Deterministic
+ * and memoryless on purpose: thousands of isolates cannot coordinate a
+ * round-robin, and fill-lowest reuses drained siblings before spawning new
+ * ones. An overfull answer still WORKS (the replica never refuses on count),
+ * so staleness is a latency wobble, never a correctness bug.
+ */
+export function pickSubscribeSibling(
+	counts: number[],
+	spawnAt: number,
+	maxSiblings: number,
+): number {
+	let least = 1;
+	for (let n = 1; n <= maxSiblings; n += 1) {
+		const load = counts[n - 1] ?? 0;
+		if (load < spawnAt) return n;
+		if (load < (counts[least - 1] ?? 0)) least = n;
+	}
+	return least;
 }
 
 // ---------------------------------------------------------------------------

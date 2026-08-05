@@ -104,6 +104,7 @@
 		replicas: number;
 		maxLag: number;
 		push: number;
+		sockets: number;
 		lastSeenAt: string | null;
 	};
 	const regionRows = $derived.by(() => {
@@ -116,11 +117,13 @@
 					replicas: 0,
 					maxLag: 0,
 					push: 0,
+					sockets: 0,
 					lastSeenAt: null
 				});
 				row.replicas += 1;
 				row.maxLag = Math.max(row.maxLag, replica.lagLsn);
 				row.push += replica.push ? 1 : 0;
+				row.sockets += replica.sockets ?? 0;
 				if (!row.lastSeenAt || replica.lastSeenAt > row.lastSeenAt) {
 					row.lastSeenAt = replica.lastSeenAt;
 				}
@@ -343,8 +346,9 @@
 		<Card.Header>
 			<Card.Title>Regions</Card.Title>
 			<Card.Description>
-				One replica per region per shard. Lag is change-log entries behind the primary; "live push"
-				replicas hold subscribers and receive every write the moment it lands.
+				Replicas materialize per region per shard and spawn siblings under subscriber pressure. Lag
+				is change-log entries behind the primary; "live push" replicas hold subscribers and receive
+				every write the moment it lands.
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>
@@ -376,6 +380,7 @@
 							<Table.Row>
 								<Table.Head>Region</Table.Head>
 								<Table.Head class="text-right">Replicas</Table.Head>
+								<Table.Head class="text-right">Sockets</Table.Head>
 								<Table.Head class="text-right">Live push</Table.Head>
 								<Table.Head class="text-right">Max lag</Table.Head>
 								<Table.Head class="text-right">Last seen</Table.Head>
@@ -399,6 +404,7 @@
 										</div>
 									</Table.Cell>
 									<Table.Cell class="text-right text-sm tabular-nums">{row.replicas}</Table.Cell>
+									<Table.Cell class="text-right text-sm tabular-nums">{row.sockets}</Table.Cell>
 									<Table.Cell class="text-right text-sm tabular-nums">{row.push}</Table.Cell>
 									<Table.Cell class="text-right text-sm tabular-nums">
 										{row.maxLag === 0 ? 'caught up' : `${row.maxLag} LSN`}

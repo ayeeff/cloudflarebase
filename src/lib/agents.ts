@@ -430,6 +430,10 @@ export const dbReplicaSchema = z
 		lagLsn: z.number(),
 		/** Holds live subscribers, so the primary RPC-pushes every write to it. */
 		push: z.boolean(),
+		/** Reported hibernatable-socket count; at the spawn threshold new
+		 * subscribers route to the next sibling. Tolerant for pre-sibling
+		 * agents that did not report it. */
+		sockets: z.number().catch(0),
 		lastSeenAt: z.iso.datetime()
 	})
 	.meta({ id: 'DbReplica' });

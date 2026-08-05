@@ -57,6 +57,13 @@ const journal = {
 			tag: '0006_black_infant_terrible',
 			breakpoints: true,
 		},
+		{
+			idx: 7,
+			version: '6',
+			when: 1785937604808,
+			tag: '0007_sweet_morlocks',
+			breakpoints: true,
+		},
 	],
 };
 
@@ -164,6 +171,8 @@ DROP TABLE \`collections\`;--> statement-breakpoint
 ALTER TABLE \`__new_collections\` RENAME TO \`collections\`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;`;
 
+const m0007 = `ALTER TABLE \`replicas\` ADD \`sockets\` integer DEFAULT 0 NOT NULL;`;
+
 export default {
 	journal,
 	migrations: {
@@ -174,5 +183,6 @@ export default {
 		m0004,
 		m0005,
 		m0006,
+		m0007,
 	},
 };
