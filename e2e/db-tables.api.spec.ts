@@ -13,6 +13,7 @@ import {
 	dbAdminCollectionPath,
 	dbRowPath,
 	dbRowsPath,
+	dbTableExportPath,
 	dbTableQueryPath,
 	uniqueEmail
 } from './helpers';
@@ -390,5 +391,177 @@ test.describe('db agent (SQL tables)', () => {
 			data: { table, query: {} }
 		});
 		expect(gone.status()).toBe(404);
+	});
+
+	test('export streams NDJSON that import round-trips (tables)', async ({ request, baseURL }) => {
+		const columns = [
+			{ name: 'title', type: 'text', nullable: false },
+			{ name: 'rank', type: 'integer', default: 0 },
+			{ name: 'meta', type: 'json' }
+		];
+		const source = `exportsrc-${run}`;
+		const provision = await request.put(dbAdminTablePath(DB_PROJECT, source), {
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off', columns }
+		});
+		expect(provision.ok(), await provision.text()).toBeTruthy();
+
+		const anon = await anonymousContext(baseURL);
+		try {
+			const ids = [0, 1, 2].map((index) => `exp-${run}-${index}`);
+			for (const [index, id] of ids.entries()) {
+				const created = await anon.post(dbRowsPath(DB_PROJECT, source), {
+					data: { id, data: { title: `row ${index}`, rank: index, meta: { nested: index } } }
+				});
+				expect(created.status(), await created.text()).toBe(201);
+			}
+
+			const exported = await anon.get(dbTableExportPath(DB_PROJECT, source));
+			expect(exported.ok(), await exported.text()).toBeTruthy();
+			expect(exported.headers()['content-type']).toContain('application/x-ndjson');
+			const lines = (await exported.text())
+				.split('\n')
+				.filter(Boolean)
+				.map((line) => JSON.parse(line) as { id: string; data: Record<string, unknown> });
+			expect(lines.map((line) => line.id)).toEqual(ids);
+			// Typed columns round-trip through the envelope: json parsed, ints ints.
+			expect(lines[1].data).toMatchObject({ title: 'row 1', rank: 1, meta: { nested: 1 } });
+
+			// The operator export streams the same rows through the parent.
+			const adminExported = await request.get(`${dbAdminTablePath(DB_PROJECT, source)}/export`);
+			expect(adminExported.ok(), await adminExported.text()).toBeTruthy();
+			const adminLines = (await adminExported.text())
+				.split('\n')
+				.filter(Boolean)
+				.map((line) => JSON.parse(line) as { id: string });
+			expect(adminLines.map((line) => line.id)).toEqual(ids);
+
+			// Round trip into a fresh table: exported lines keep id, owner, and
+			// timestamps; a bad JSON line and a wrong-typed line are reported
+			// with their 1-based numbers without sinking the batch (structure
+			// always validates - the schema is the storage).
+			const target = `importtgt-${run}`;
+			const provisionTarget = await request.put(dbAdminTablePath(DB_PROJECT, target), {
+				data: { readAccess: 'public', writeAccess: 'public', replication: 'off', columns }
+			});
+			expect(provisionTarget.ok(), await provisionTarget.text()).toBeTruthy();
+
+			const ownedCreatedAt = '2026-01-01T00:00:00.000Z';
+			const ndjson = [
+				...lines.map((line) => JSON.stringify(line)),
+				JSON.stringify({
+					id: `owned-${run}`,
+					data: { title: 'owned', rank: 9 },
+					owner: 'user-abc',
+					createdAt: ownedCreatedAt,
+					updatedAt: ownedCreatedAt
+				}),
+				'not json at all',
+				JSON.stringify({ data: { title: 123 } }),
+				JSON.stringify({ data: { title: 'minted' } })
+			].join('\n');
+
+			const imported = await request.post(`${dbAdminTablePath(DB_PROJECT, target)}/import`, {
+				headers: { 'content-type': 'application/x-ndjson' },
+				data: ndjson
+			});
+			expect(imported.ok(), await imported.text()).toBeTruthy();
+			const report = (await imported.json()) as {
+				imported: number;
+				updated: number;
+				errors: { line: number; error: string }[];
+			};
+			expect(report.imported).toBe(5);
+			expect(report.updated).toBe(0);
+			expect(report.errors).toHaveLength(2);
+			expect(report.errors[0]).toEqual({ line: 5, error: 'not valid JSON' });
+			expect(report.errors[1].line).toBe(6);
+			expect(report.errors[1].error).toContain('must be a text');
+
+			// Imported owner and timestamps survive; re-importing upserts.
+			const rows = await request.post(dbAdminQueryPath(DB_PROJECT), {
+				data: { table: target, query: {} }
+			});
+			expect(rows.ok(), await rows.text()).toBeTruthy();
+			const docs = (await rows.json()).docs as {
+				id: string;
+				owner: string | null;
+				createdAt: string;
+			}[];
+			expect(docs).toHaveLength(5);
+			const owned = docs.find((doc) => doc.id === `owned-${run}`);
+			expect(owned?.owner).toBe('user-abc');
+			expect(owned?.createdAt).toBe(ownedCreatedAt);
+
+			const again = await request.post(`${dbAdminTablePath(DB_PROJECT, target)}/import`, {
+				headers: { 'content-type': 'application/x-ndjson' },
+				data: lines.map((line) => JSON.stringify(line)).join('\n')
+			});
+			expect(again.ok(), await again.text()).toBeTruthy();
+			expect((await again.json()).updated).toBe(3);
+		} finally {
+			await anon.dispose();
+		}
+	});
+
+	test('table point-in-time restore validates input and reports unsupported locally', async ({
+		request
+	}) => {
+		// Against a deployed stack a valid restore would REALLY roll back; the
+		// local stack has no durable change log, which is the 501 this pins.
+		test.skip(!!process.env.BASE_URL, 'restore against a deployed target would destroy data');
+
+		const probe = 'rollback_probe_t';
+		const provision = await request.put(dbAdminTablePath(DB_PROJECT, probe), {
+			data: {
+				readAccess: 'public',
+				writeAccess: 'public',
+				replication: 'off',
+				columns: [{ name: 'note', type: 'text' }]
+			}
+		});
+		expect(provision.ok(), await provision.text()).toBeTruthy();
+
+		const base = dbAdminTablePath(DB_PROJECT, probe);
+		const both = await request.post(`${base}/restore`, {
+			data: { timestamp: new Date().toISOString(), bookmark: 'x' }
+		});
+		expect(both.status()).toBe(400);
+
+		const tooOld = await request.post(`${base}/restore`, {
+			data: { timestamp: new Date(Date.now() - 35 * 24 * 3600 * 1000).toISOString() }
+		});
+		expect(tooOld.status()).toBe(400);
+
+		const missing = await request.post(
+			`${dbAdminTablePath(DB_PROJECT, 'nope_never_declared')}/restore`,
+			{ data: { timestamp: new Date(Date.now() - 60_000).toISOString() } }
+		);
+		expect(missing.status()).toBe(404);
+
+		const unsupported = await request.post(`${base}/restore`, {
+			data: { timestamp: new Date(Date.now() - 60_000).toISOString() }
+		});
+		expect(unsupported.status(), await unsupported.text()).toBe(501);
+		expect(((await unsupported.json()) as { error: string }).error).toContain(
+			'point-in-time recovery'
+		);
+
+		// The dialog's up-front data, table-side: local stacks report
+		// unsupported with no captured points, and checkpoint plus the D1-style
+		// time-to-bookmark resolution degrade to the same clean 501.
+		const points = await request.get(`${base}/restore-points`);
+		expect(points.ok(), await points.text()).toBeTruthy();
+		expect(await points.json()).toEqual({ supported: false, points: [] });
+
+		const checkpoint = await request.post(`${base}/checkpoint`, { data: {} });
+		expect(checkpoint.status(), await checkpoint.text()).toBe(501);
+
+		const resolve = await request.get(
+			`${base}/bookmark?at=${encodeURIComponent(new Date(Date.now() - 60_000).toISOString())}`
+		);
+		expect(resolve.status(), await resolve.text()).toBe(501);
+
+		const badResolve = await request.get(`${base}/bookmark?at=not-a-time`);
+		expect(badResolve.status()).toBe(400);
 	});
 });

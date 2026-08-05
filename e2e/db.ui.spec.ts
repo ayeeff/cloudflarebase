@@ -293,6 +293,29 @@ test.describe('database page (frontend)', () => {
 		await expect(page.getByTestId(`db-table-${table}`)).not.toBeVisible();
 	});
 
+	test('the table rollback dialog explains unsupported environments up front', async ({ page }) => {
+		const table = uniqueCollection('tr');
+		await gotoDbPage(page, DB_UI_PROJECT);
+		await page.getByRole('tab', { name: 'Tables' }).click();
+
+		await page.getByTestId('db-new-table-name').fill(table);
+		await page.getByTestId('db-column-name-0').fill('note');
+		await page.getByTestId('db-declare-submit').click();
+		await expect(page.getByTestId(`db-table-${table}`)).toBeVisible();
+
+		// The workspace mounts the same shared dialog the collections browser
+		// uses, pointed at the table's own admin base.
+		await page.getByTestId(`db-table-${table}`).click();
+		await page.getByTestId('db-table-rollback').click();
+		const dialog = page.getByTestId('db-rollback-panel');
+		await expect(dialog.getByTestId('db-rollback-submit')).toBeDisabled();
+		if (!process.env.BASE_URL) {
+			await expect(dialog.getByTestId('db-rollback-unsupported')).toBeVisible();
+		} else {
+			await expect(dialog.getByTestId('db-rollback-mode-date')).toBeVisible();
+		}
+	});
+
 	test('the replication tab lights up a region after a routed read', async ({ page, request }) => {
 		const collection = uniqueCollection('rp');
 		await gotoDbPage(page, DB_UI_PROJECT);

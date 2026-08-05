@@ -152,6 +152,10 @@ export function dbRowsPath(projectId: string, table: string): string {
 	return `/api/projects/${projectId}/db/tables/${table}/rows`;
 }
 
+export function dbTableExportPath(projectId: string, table: string): string {
+	return `/api/projects/${projectId}/db/tables/${table}/export`;
+}
+
 export function dbRowPath(projectId: string, table: string, rowId: string): string {
 	return `/api/projects/${projectId}/db/tables/${table}/rows/${encodeURIComponent(rowId)}`;
 }
