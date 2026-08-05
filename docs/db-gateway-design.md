@@ -1,6 +1,42 @@
 # DbGateway: one client socket for the whole database
 
-Status: PROPOSED (drafted 2026-08-05, awaiting approval)
+Status: IMPLEMENTED (drafted 2026-08-05; approved and built 2026-08-05 -
+"standardize realtime for nosql and sql, DX first")
+
+> **Deviations from the draft, for future readers:**
+>
+> - **Gateways are regional**: instances are `<pid>:gw:<region>:<n>` (not
+>   `<pid>:gw:<n>`), created with the SUBSCRIBER'S region as the
+>   locationHint - the socket terminates near the client (user requirement),
+>   and only the shard->gateway delivery RPC crosses regions.
+> - **Sibling routing is the replica mechanism verbatim, not a connection
+>   hash**: gateways report step-debounced socket counts to the project
+>   parent (`gateways` registry), the worker asks `gatewaySubscribeTarget`
+>   behind the same isolate cache, and `pickSubscribeSibling` fills the
+>   lowest sibling with headroom. Demo projects never spawn siblings.
+> - **The snapshot is the `remoteSubscribe` return value** (no separate
+>   frame round-trip); the shard stores via-subscriptions in its normal
+>   `subscriptions` table under a `via` column and delivers through
+>   `gatewayDeliver` batched per connection in `waitUntil` - never on the
+>   write's latency path. `{stop}` answers prune dead connections; a
+>   token-expired error frame prunes the gateway's own row as it passes.
+> - **Replica-hosted subscriptions**: with replication auto the gateway
+>   registers on `:r:<region>:1`; a replica that cannot bootstrap answers
+>   `{ forward: true }` and the gateway retries the primary - routing
+>   staleness stays a latency wobble.
+> - **Origin gating at accept**: the gateway checks Origin against the
+>   environment allowlist plus the project's per-project origins (fetched
+>   from the parent, cached 60s). Authorization stays entirely shard-side.
+> - **SDK default is the gateway** (`realtime: 'auto'`): one transport per
+>   client multiplexes every `collection()`/`table()` subscription; if the
+>   endpoint has NEVER answered (an agent predating gateways), subscriptions
+>   fall back to per-shard sockets permanently for that client.
+>   `collection<T>()` also gained the same type parameter tables have.
+> - **Observability**: `GET /admin/realtime` lists the gateway registry
+>   (id, region, sockets, last seen). Caps: 100 subscriptions per gateway
+>   connection (25 on demo projects); per-shard caps unchanged.
+> - Pinned by `e2e/db-gateway.api.spec.ts` (multi-shard fan-in, replica
+>   delivery, JWT parity, kind mismatches, sibling spawn).
 
 Today the SDK opens one WebSocket **per shard** (collection or table). A
 client watching 6 collections and 2 tables holds 8 sockets. The ask: one
