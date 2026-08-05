@@ -74,6 +74,12 @@ export class LiveSocket {
 		}
 	}
 
+	/** First unclaimed frame matching the predicate WITHOUT waiting or
+	 * claiming - for asserting a frame did NOT arrive. */
+	peek(predicate: (frame: Frame) => boolean): Frame | undefined {
+		return this.frames.find((frame, position) => !this.claimed.has(position) && predicate(frame));
+	}
+
 	close(): void {
 		try {
 			this.socket.close();
