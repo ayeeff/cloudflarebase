@@ -5,6 +5,7 @@
 	import type {
 		DbAccessMode,
 		DbAgentState,
+		DbReplicationMode,
 		DbDocument,
 		DbFieldRule,
 		DbImportReport,
@@ -16,6 +17,7 @@
 	} from '$lib/agents';
 	import { dbAccessModeSchema, dbValidatorSchema } from '$lib/agents';
 	import CodeExamples from '$lib/components/code-examples.svelte';
+	import ReplicationTab from './replication-tab.svelte';
 	import TablesTab from './tables-tab.svelte';
 	import { ulid } from '$lib/ulid';
 	import type { CodeExample } from '$lib/integration-examples';
@@ -98,7 +100,10 @@
 	let agentState = $state<DbAgentState>(data.overview.state);
 	let live = $state(false);
 	let activeTab = $state(
-		initialTab === 'tables' || initialTab === 'access' || initialTab === 'setup'
+		initialTab === 'tables' ||
+			initialTab === 'access' ||
+			initialTab === 'replication' ||
+			initialTab === 'setup'
 			? initialTab
 			: 'collections'
 	);
@@ -288,6 +293,7 @@
 			readPermission?: string | null;
 			writePermission?: string | null;
 			validator?: DbValidator | null;
+			replication?: DbReplicationMode;
 		}
 	): Promise<string | null> {
 		try {
@@ -348,6 +354,7 @@
 		writeAccess: DbAccessMode;
 		readPermission: string;
 		writePermission: string;
+		replication: DbReplicationMode;
 	};
 	let accessEdits = $state<Record<string, AccessEdit>>({});
 	let accessFeedback = $state<Record<string, { ok: boolean; message: string }>>({});
@@ -359,7 +366,8 @@
 				readAccess: summary?.readAccess ?? 'owner',
 				writeAccess: summary?.writeAccess ?? 'owner',
 				readPermission: summary?.readPermission ?? '',
-				writePermission: summary?.writePermission ?? ''
+				writePermission: summary?.writePermission ?? '',
+				replication: summary?.replication ?? 'auto'
 			}
 		);
 	}
@@ -387,7 +395,11 @@
 				: pending.writeAccess === 'auth'
 					? `any signed-in user${withKey(pending.writePermission)} can create, edit, and delete any document`
 					: `signed-in users${withKey(pending.writePermission)} can create documents but edit or delete only their own`;
-		return `Read: ${read}. Write: ${write}.${hasRules ? ' New writes must also pass the document rules.' : ''}`;
+		const replication =
+			pending.replication === 'auto'
+				? ' Reads are served from a replica in the reader’s region.'
+				: ' Replication is off - every read travels to the primary.';
+		return `Read: ${read}. Write: ${write}.${hasRules ? ' New writes must also pass the document rules.' : ''}${replication}`;
 	}
 
 	async function applyAccess(name: string) {
@@ -397,7 +409,8 @@
 			readAccess: pending.readAccess,
 			writeAccess: pending.writeAccess,
 			readPermission: pending.readPermission.trim() || null,
-			writePermission: pending.writePermission.trim() || null
+			writePermission: pending.writePermission.trim() || null,
+			replication: pending.replication
 		});
 		busy = false;
 		if (message) {
@@ -974,7 +987,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 
 	<div>
 		<div class="flex h-10 max-w-full gap-1 overflow-x-auto border-b px-1" role="tablist">
-			{#each [['collections', 'Collections'], ['tables', 'Tables'], ['access', 'Access'], ['setup', 'Integration']] as tab (tab[0])}
+			{#each [['collections', 'Collections'], ['tables', 'Tables'], ['access', 'Access'], ['replication', 'Replication'], ['setup', 'Integration']] as tab (tab[0])}
 				<button
 					type="button"
 					role="tab"
@@ -1438,6 +1451,14 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 			/>
 		{/if}
 
+		{#if activeTab === 'replication'}
+			<ReplicationTab
+				projectId={data.projectId}
+				collections={agentState.collections}
+				tables={agentState.tables ?? []}
+			/>
+		{/if}
+
 		{#if activeTab === 'access'}
 			<div class="mt-4">
 				<Card.Root data-testid="db-access-modes">
@@ -1466,7 +1487,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 								No collections yet - create one under Collections.
 							</p>
 						{:else}
-							<Table.Root class="min-w-[54rem]">
+							<Table.Root class="min-w-[60rem]">
 								<Table.Header>
 									<Table.Row>
 										<Table.Head>Collection</Table.Head>
@@ -1475,6 +1496,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 										<Table.Head>Read permission</Table.Head>
 										<Table.Head>Write permission</Table.Head>
 										<Table.Head>Rules</Table.Head>
+										<Table.Head>Replication</Table.Head>
 										<Table.Head class="w-40 text-right">
 											<span class="sr-only">Actions</span>
 										</Table.Head>
@@ -1604,6 +1626,32 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 												</Button>
 											</Table.Cell>
 											<Table.Cell>
+												<Select.Root
+													type="single"
+													value={pending.replication}
+													onValueChange={(value) =>
+														setAccessField(
+															collection.name,
+															'replication',
+															value === 'off' ? 'off' : 'auto'
+														)}
+												>
+													<Select.Trigger
+														class="min-w-24 font-mono"
+														size="sm"
+														disabled={busy}
+														aria-label={`Replication for ${collection.name}`}
+														data-testid={`db-replication-${collection.name}`}
+													>
+														{pending.replication}
+													</Select.Trigger>
+													<Select.Content>
+														<Select.Item value="auto" label="auto" class="font-mono" />
+														<Select.Item value="off" label="off" class="font-mono" />
+													</Select.Content>
+												</Select.Root>
+											</Table.Cell>
+											<Table.Cell>
 												<div class="flex items-center justify-end gap-2">
 													{#if feedback}
 														<span
@@ -1632,7 +1680,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 										     edits BEFORE Apply - the tab's teaching device. -->
 										<Table.Row class="border-b hover:bg-transparent">
 											<Table.Cell
-												colspan={7}
+												colspan={8}
 												class="pt-2 pb-3 text-xs whitespace-normal text-muted-foreground"
 												data-testid={`db-access-summary-${collection.name}`}
 											>

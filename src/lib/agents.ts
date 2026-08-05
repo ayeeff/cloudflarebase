@@ -314,18 +314,21 @@ export const dbValidatorSchema = z
 			'Rules-lite document validation over top-level fields, enforced on the public write path (operator surfaces bypass it, like the Firestore Admin SDK bypasses security rules).'
 	});
 
+export const dbReplicationModeSchema = z.enum(['off', 'auto']);
+
 export const dbCollectionConfigSchema = z
 	.object({
 		readAccess: dbAccessModeSchema,
 		writeAccess: dbAccessModeSchema,
 		readPermission: dbPermissionKeySchema.nullable().optional(),
 		writePermission: dbPermissionKeySchema.nullable().optional(),
-		validator: dbValidatorSchema.nullable().optional()
+		validator: dbValidatorSchema.nullable().optional(),
+		replication: dbReplicationModeSchema.optional()
 	})
 	.meta({
 		id: 'DbCollectionConfig',
 		description:
-			'Access modes: public (anyone), auth (any valid project JWT), owner (results and writes scoped to the token subject). Optional permission keys additionally require that claim on the JWT (auth/owner modes; `*` in the claim always passes); an optional validator enforces document rules on public writes. Omitted fields stay unchanged, explicit null clears.'
+			'Access modes: public (anyone), auth (any valid project JWT), owner (results and writes scoped to the token subject). Optional permission keys additionally require that claim on the JWT (auth/owner modes; `*` in the claim always passes); an optional validator enforces document rules on public writes. Replication defaults to auto (reads served from per-region replicas); `off` opts a single-region shard out. Omitted fields stay unchanged, explicit null clears.'
 	});
 
 export const dbCollectionSummarySchema = z
@@ -395,12 +398,13 @@ export const dbTableConfigSchema = z
 		writeAccess: dbAccessModeSchema,
 		readPermission: dbPermissionKeySchema.nullable().optional(),
 		writePermission: dbPermissionKeySchema.nullable().optional(),
-		columns: z.array(dbTableColumnSchema).min(1).max(64)
+		columns: z.array(dbTableColumnSchema).min(1).max(64),
+		replication: dbReplicationModeSchema.optional()
 	})
 	.meta({
 		id: 'DbTableConfig',
 		description:
-			'The full desired table schema plus access modes. Additive changes apply as DDL; destructive changes (drop/retype/renullability) are refused - export, recreate, and import instead.'
+			'The full desired table schema plus access modes. Additive changes apply as DDL; destructive changes (drop/retype/renullability) are refused - export, recreate, and import instead. Replication defaults to auto; `off` opts out, omitted = unchanged.'
 	});
 
 export const dbTableSummarySchema = z
@@ -415,6 +419,37 @@ export const dbTableSummarySchema = z
 		rows: z.number()
 	})
 	.meta({ id: 'DbTableSummary' });
+
+// Mirrors RepStatus in agents/db/src/schemas.ts (GET /admin/replication/:name).
+export const dbReplicaSchema = z
+	.object({
+		/** `r:<region>:<n>` - the instance-name suffix that makes it a replica. */
+		id: z.string(),
+		region: z.string(),
+		appliedLsn: z.number(),
+		lagLsn: z.number(),
+		/** Holds live subscribers, so the primary RPC-pushes every write to it. */
+		push: z.boolean(),
+		lastSeenAt: z.iso.datetime()
+	})
+	.meta({ id: 'DbReplica' });
+
+export const dbReplicationStatusSchema = z
+	.object({
+		enabled: z.boolean(),
+		/** Parent-owned restore epoch; a bump forces replica re-bootstrap. */
+		epoch: z.number(),
+		lastLsn: z.number(),
+		horizonLsn: z.number(),
+		/** Empty when disabled - and often when enabled too: replicas materialize
+		 * in a region the first time that region reads. */
+		replicas: z.array(dbReplicaSchema)
+	})
+	.meta({
+		id: 'DbReplicationStatus',
+		description:
+			'Per-shard replication status: the primary change-log position and every durably registered region replica with its applied position and lag.'
+	});
 
 export const dbAggregateRequestSchema = z
 	.object({
@@ -593,3 +628,6 @@ export type DbImportReport = z.infer<typeof dbImportReportSchema>;
 export type DbRestoreResult = z.infer<typeof dbRestoreResultSchema>;
 export type DbRestorePoint = z.infer<typeof dbRestorePointSchema>;
 export type DbRestorePoints = z.infer<typeof dbRestorePointsSchema>;
+export type DbReplicationMode = z.infer<typeof dbReplicationModeSchema>;
+export type DbReplica = z.infer<typeof dbReplicaSchema>;
+export type DbReplicationStatus = z.infer<typeof dbReplicationStatusSchema>;

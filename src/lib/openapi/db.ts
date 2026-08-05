@@ -10,6 +10,8 @@ import {
 	dbOverviewSchema,
 	dbQueryResultSchema,
 	dbQuerySchema,
+	dbReplicaSchema,
+	dbReplicationStatusSchema,
 	dbRestorePointSchema,
 	dbRestorePointsSchema,
 	dbRestoreRequestSchema,
@@ -93,6 +95,8 @@ export const dbOpenApi: AgentOpenApiModule = {
 		dbRestoreResultSchema,
 		dbRestorePointSchema,
 		dbRestorePointsSchema,
+		dbReplicaSchema,
+		dbReplicationStatusSchema,
 		dbBookmarkResolutionSchema,
 		dbOverviewSchema,
 		dbSubscribeFrameSchema,
@@ -431,6 +435,21 @@ export const dbOpenApi: AgentOpenApiModule = {
 					'401': UNAUTHORIZED,
 					'404': { description: 'No such collection.' },
 					'501': { description: 'This environment has no point-in-time recovery.' }
+				}
+			}
+		},
+		'/db/admin/replication/{name}': {
+			get: {
+				tags: [DB_TAG],
+				summary: 'Replication status for one shard',
+				description:
+					'Replication defaults to auto: reads route to per-region replicas, writes answer with a `cfb-lsn` session bookmark, and sending it back as `cfb-min-lsn` guarantees read-your-writes. Replicas materialize in a region the first time it reads, so an empty list on an enabled shard just means no region has read yet.',
+				security: [{ sessionCookie: [] }],
+				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
+				responses: {
+					'200': jsonResponse(dbReplicationStatusSchema, 'Change-log head and replica map.'),
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such collection or table.' }
 				}
 			}
 		},

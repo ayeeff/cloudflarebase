@@ -293,6 +293,39 @@ test.describe('database page (frontend)', () => {
 		await expect(page.getByTestId(`db-table-${table}`)).not.toBeVisible();
 	});
 
+	test('the replication tab lights up a region after a routed read', async ({ page, request }) => {
+		const collection = uniqueCollection('rp');
+		await gotoDbPage(page, DB_UI_PROJECT);
+		await createCollection(page, collection);
+
+		// Replication defaults to auto, so a region-routed read is all it takes
+		// to materialize a replica. Seed a document through the operator surface,
+		// then read it through the hot path with the env.test region override.
+		const seeded = await request.put(
+			`/api/projects/${DB_UI_PROJECT}/db/admin/collections/${collection}/documents/rep-doc-1`,
+			{ data: { data: { title: 'replicate me' } } }
+		);
+		expect(seeded.ok(), await seeded.text()).toBeTruthy();
+		const routed = await request.get(
+			`/api/projects/${DB_UI_PROJECT}/db/collections/${collection}/documents/rep-doc-1`,
+			{ headers: { 'x-cfb-region': 'weur' } }
+		);
+		expect(routed.ok(), await routed.text()).toBeTruthy();
+
+		await page.getByRole('tab', { name: 'Replication' }).click();
+		await expect(page.getByTestId('db-replication-map')).toBeVisible();
+		if (!process.env.BASE_URL) {
+			// The override header only exists on the env.test stack; deployed
+			// targets route by real geography, so the region is theirs to pick.
+			await expect(page.getByTestId('db-replication-region-weur')).toBeVisible({
+				timeout: 15_000
+			});
+		}
+		await expect(
+			page.getByTestId('db-replication-stat-regions').getByTestId('stat-value')
+		).not.toHaveText('0', { timeout: 15_000 });
+	});
+
 	test('integration snippets address this project', async ({ page }) => {
 		await gotoDbPage(page, DB_UI_PROJECT);
 		await page.getByRole('tab', { name: 'Integration' }).click();

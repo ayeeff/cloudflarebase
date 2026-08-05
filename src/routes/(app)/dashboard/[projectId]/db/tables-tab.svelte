@@ -3,6 +3,7 @@
 		DbColumnType,
 		DbDocument,
 		DbQueryResult,
+		DbReplicationMode,
 		DbTableColumn,
 		DbTableSummary
 	} from '$lib/agents';
@@ -133,6 +134,7 @@
 	let designerWrite = $state<string>('owner');
 	let designerReadPermission = $state('');
 	let designerWritePermission = $state('');
+	let designerReplication = $state<DbReplicationMode>('auto');
 	let designerError = $state<string | null>(null);
 	let designerBusy = $state(false);
 
@@ -144,6 +146,7 @@
 		designerWrite = 'owner';
 		designerReadPermission = '';
 		designerWritePermission = '';
+		designerReplication = 'auto';
 		designerError = null;
 	}
 
@@ -155,6 +158,7 @@
 		designerWrite = table.writeAccess;
 		designerReadPermission = table.readPermission ?? '';
 		designerWritePermission = table.writePermission ?? '';
+		designerReplication = table.replication;
 		designerError = null;
 	}
 
@@ -173,7 +177,11 @@
 				: designerWrite === 'auth'
 					? `any signed-in user${withKey(designerWritePermission)} can insert, edit, and delete any row`
 					: `signed-in users${withKey(designerWritePermission)} can insert rows but edit or delete only their own`;
-		return `Read: ${read}. Write: ${write}. Every write must match the declared columns.`;
+		const replication =
+			designerReplication === 'auto'
+				? 'Reads are served from a replica in the reader’s region.'
+				: 'Replication is off - every read travels to the primary.';
+		return `Read: ${read}. Write: ${write}. Every write must match the declared columns. ${replication}`;
 	});
 
 	async function submitDesigner(event: SubmitEvent) {
@@ -211,6 +219,7 @@
 					writeAccess: designerWrite,
 					readPermission: designerReadPermission.trim() || null,
 					writePermission: designerWritePermission.trim() || null,
+					replication: designerReplication,
 					columns
 				})
 			});
@@ -618,6 +627,27 @@
 								</Select.Content>
 							</Select.Root>
 						</div>
+					</div>
+
+					<div class="space-y-1.5">
+						<Label>Replication</Label>
+						<Select.Root
+							type="single"
+							value={designerReplication}
+							onValueChange={(value) => {
+								designerReplication = value === 'off' ? 'off' : 'auto';
+							}}
+						>
+							<Select.Trigger class="w-full" data-testid="db-new-table-replication">
+								{designerReplication === 'auto'
+									? 'auto (per-region replicas)'
+									: 'off (single region)'}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="auto">auto (per-region replicas)</Select.Item>
+								<Select.Item value="off">off (single region)</Select.Item>
+							</Select.Content>
+						</Select.Root>
 					</div>
 
 					{#if designerRead !== 'public' || designerWrite !== 'public'}
