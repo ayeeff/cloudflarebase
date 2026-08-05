@@ -1,30 +1,37 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { buildConsoleNav } from '$lib/agent-registry';
 	import type { AgentChatMessage, AgentChatReply } from '$lib/agents';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
 	import * as Resizable from '$lib/components/ui/resizable';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
-	import { projectIdSchema } from '$lib/schemas/auth';
+	import { createBranchSchema, projectIdSchema } from '$lib/schemas/auth';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
-	import { tick } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
 	import {
 		ArrowRight,
 		BookOpen,
 		Bot,
+		Check,
+		ChevronDown,
 		Clock,
 		Database,
+		GitBranch,
 		HardDrive,
 		House,
 		KeyRound,
+		Plus,
 		Radio,
 		SendHorizontal,
 		Sparkles,
@@ -164,6 +171,65 @@
 		projectSwitchError = '';
 		if (parsed.data !== projectId) {
 			void goto(resolve('/(app)/dashboard/[projectId]', { projectId: parsed.data }));
+		}
+	}
+
+	// --- Branch switcher (docs/branches-design.md). data.branches is null on
+	// demo/unregistered projects, which hides the control entirely. ---
+	const branchCtx = $derived(data.branches);
+	// data-hydrated on the trigger, the suite's convention: the dropdown only
+	// answers clicks after hydration, so tests wait for this before clicking.
+	let hydrated = $state(false);
+	onMount(() => {
+		hydrated = true;
+	});
+	let newBranchOpen = $state(false);
+	let newBranchName = $state('');
+	let newBranchError = $state('');
+	let newBranchBusy = $state(false);
+	/** Branch-name budget: its own 16-char grammar, shrunk when the root id
+	 * leaves less room under the combined 32-char project-id ceiling. */
+	const maxBranchChars = $derived(
+		branchCtx ? Math.max(1, Math.min(16, 32 - branchCtx.rootId.length - 2)) : 16
+	);
+
+	/** Same tool page, other branch: swap only the project segment. */
+	function branchHref(targetId: string): string {
+		const base = resolve('/(app)/dashboard/[projectId]', { projectId });
+		const target = resolve('/(app)/dashboard/[projectId]', { projectId: targetId });
+		return target + page.url.pathname.slice(base.length);
+	}
+
+	async function createBranch(event: SubmitEvent) {
+		event.preventDefault();
+		if (!branchCtx) return;
+		const parsed = createBranchSchema.safeParse({ branch: newBranchName.trim() });
+		if (!parsed.success) {
+			newBranchError = parsed.error.issues[0]?.message ?? 'Invalid branch name.';
+			return;
+		}
+		newBranchBusy = true;
+		try {
+			const response = await fetch(`/api/projects/${branchCtx.rootId}/branches`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(parsed.data)
+			});
+			const body = (await response.json().catch(() => null)) as {
+				error?: string;
+				branch?: { id: string };
+			} | null;
+			if (!response.ok || !body?.branch) {
+				newBranchError = body?.error ?? 'Could not create the branch.';
+				return;
+			}
+			newBranchOpen = false;
+			newBranchName = '';
+			await invalidateAll();
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- branchHref builds on resolve() and swaps only the project segment
+			await goto(branchHref(body.branch.id));
+		} finally {
+			newBranchBusy = false;
 		}
 	}
 
@@ -534,6 +600,65 @@
 						class="max-w-28 truncate font-mono sm:max-w-none"
 						data-testid="project-badge">{projectId}</Badge
 					>
+					{#if branchCtx}
+						{@const ctx = branchCtx}
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										size="sm"
+										variant="ghost"
+										class="h-8 shrink-0 gap-1.5 px-2 font-mono text-xs"
+										aria-label="Switch branch"
+										data-testid="branch-switcher"
+										data-hydrated={hydrated}
+									>
+										<GitBranch class="h-3.5 w-3.5 text-muted-foreground" />
+										<span class="max-w-24 truncate">{ctx.current ?? 'main'}</span>
+										<ChevronDown class="h-3 w-3 text-muted-foreground" />
+									</Button>
+								{/snippet}
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Content align="start" class="w-56">
+								<!-- eslint-disable svelte/no-navigation-without-resolve -- branchHref builds on resolve() and swaps only the project segment -->
+								<DropdownMenu.Item data-testid="branch-item-main">
+									{#snippet child({ props })}
+										<a {...props} href={branchHref(ctx.rootId)}>
+											<GitBranch class="h-4 w-4" />
+											<span class="truncate font-mono text-xs">main</span>
+											{#if !ctx.current}<Check class="ml-auto h-4 w-4" />{/if}
+										</a>
+									{/snippet}
+								</DropdownMenu.Item>
+								{#each ctx.branches as branch (branch.id)}
+									<DropdownMenu.Item data-testid={`branch-item-${branch.branchName}`}>
+										{#snippet child({ props })}
+											<a {...props} href={branchHref(branch.id)}>
+												<GitBranch class="h-4 w-4" />
+												<span class="truncate font-mono text-xs">{branch.branchName}</span>
+												{#if ctx.current === branch.branchName}<Check
+														class="ml-auto h-4 w-4"
+													/>{/if}
+											</a>
+										{/snippet}
+									</DropdownMenu.Item>
+								{/each}
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item
+									data-testid="new-branch"
+									onclick={() => {
+										newBranchName = '';
+										newBranchError = '';
+										newBranchOpen = true;
+									}}
+								>
+									<Plus class="h-4 w-4" /> New branch…
+								</DropdownMenu.Item>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+					{/if}
 				</div>
 
 				<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
@@ -730,3 +855,43 @@
 		</div>
 	{/if}
 </div>
+
+<Dialog.Root bind:open={newBranchOpen}>
+	<Dialog.Content class="sm:max-w-md" data-testid="new-branch-dialog">
+		<Dialog.Header>
+			<Dialog.Title>New branch</Dialog.Title>
+			<Dialog.Description>
+				A branch is a fully isolated copy of the whole backend - its own users, collections, tables,
+				and keys. It starts empty, like a fresh project.
+			</Dialog.Description>
+		</Dialog.Header>
+		<form class="space-y-4" onsubmit={createBranch}>
+			<div class="space-y-1.5">
+				<Label for="new-branch-name">Branch name</Label>
+				<Input
+					id="new-branch-name"
+					data-testid="new-branch-name"
+					class="font-mono"
+					bind:value={newBranchName}
+					oninput={() => (newBranchError = '')}
+					placeholder="staging"
+					maxlength={maxBranchChars}
+					autocomplete="off"
+					spellcheck="false"
+				/>
+				<p class="font-mono text-xs text-muted-foreground" data-testid="new-branch-preview">
+					{branchCtx?.rootId}--{newBranchName || '…'}
+					<span class="ml-1 text-muted-foreground/60">{newBranchName.length}/{maxBranchChars}</span>
+				</p>
+			</div>
+			{#if newBranchError}
+				<p class="text-sm text-destructive" data-testid="new-branch-error">{newBranchError}</p>
+			{/if}
+			<Dialog.Footer>
+				<Button type="submit" disabled={newBranchBusy} data-testid="new-branch-create">
+					{newBranchBusy ? 'Creating…' : 'Create branch'}
+				</Button>
+			</Dialog.Footer>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>

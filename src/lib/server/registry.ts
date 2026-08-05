@@ -214,6 +214,47 @@ export async function createBranch(
 	return { ok: true, project: toDto(created) };
 }
 
+export interface BranchContext {
+	/** The root project id (the current project itself when it is not a branch). */
+	rootId: string;
+	/** Branch name of the CURRENT project; null when it is the root (`main`). */
+	current: string | null;
+	/** The root's branches, oldest first. */
+	branches: RegistryProject[];
+}
+
+/**
+ * The header branch switcher's data: the current project's root and that
+ * root's branches. Null for demo ids, unregistered projects, and an
+ * unreachable control plane - the dashboard hides the control instead of
+ * failing the layout, and a capture keeps the degraded case visible.
+ */
+export async function getBranchContext(
+	platform: App.Platform | undefined,
+	projectId: string
+): Promise<BranchContext | null> {
+	if (!projectIdSchema.safeParse(projectId).success || isDemoProjectId(projectId)) return null;
+	try {
+		const db = await getDb(platform);
+		const [row] = await db.select().from(project).where(eq(project.id, projectId)).limit(1);
+		if (!row) return null;
+		const rootId = row.parentId ?? row.id;
+		const rows = await db
+			.select()
+			.from(project)
+			.where(eq(project.parentId, rootId))
+			.orderBy(asc(project.createdAt));
+		return { rootId, current: row.branchName, branches: rows.map(toDto) };
+	} catch (cause) {
+		console.error('loading branch context failed', cause);
+		Sentry.captureException(cause, {
+			level: 'error',
+			tags: { operation: 'branch-context', projectId }
+		});
+		return null;
+	}
+}
+
 /** A root project's branches, oldest first (the switcher's data). */
 export async function listBranches(
 	platform: App.Platform | undefined,
