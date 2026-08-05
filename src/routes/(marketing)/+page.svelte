@@ -38,6 +38,7 @@
 		{ name: 'API', href: '#api' },
 		{ name: 'Live today', href: '#live' },
 		{ name: 'Architecture', href: '#architecture' },
+		{ name: 'Pricing', href: '/pricing' },
 		{ name: 'Roadmap', href: '#roadmap' },
 		{ name: 'FAQ', href: '#faq' }
 	];
@@ -965,6 +966,7 @@
 			>
 				<span>© 2026 Cloudflarebase</span>
 				<div class="flex gap-4">
+					<a href={resolve('/pricing')} class="hover:text-foreground">Pricing</a>
 					<a href={resolve('/privacy')} class="hover:text-foreground">Privacy</a>
 					<a href={resolve('/terms')} class="hover:text-foreground">Terms</a>
 				</div>
