@@ -1,27 +1,23 @@
 import * as Sentry from '@sentry/cloudflare';
-import { DurableObject } from 'cloudflare:workers';
-import { and, count, eq } from 'drizzle-orm';
-import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
+import { count, eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import { z } from 'zod';
 import migrations from './migrations';
-import * as schema from './db/schema';
-import { collectionMeta, documents, subscriptions } from './db/schema';
+import { checkAccess, corsHeadersFor, withCors } from './access';
+import { collectionMeta, documents } from './db/schema';
 import { ProjectJwtVerifier } from './jwt';
+import { LiveShard, type LiveGate } from './live';
 import {
 	compileAggregate,
 	compileQuery,
 	decodeCursor,
 	encodeCursor,
-	isWindowed,
-	matchesQuery,
 	type DecodedCursor,
 } from './query';
-import { hasPermission, validateDocument } from './rules';
+import { validateDocument } from './rules';
 import { ulid } from './ulid';
 import {
 	aggregateRequestSchema,
-	clientFrameSchema,
 	collectionConfigSchema,
 	createDocumentSchema,
 	documentDataSchema,
@@ -29,7 +25,6 @@ import {
 	querySchema,
 	restoreRequestSchema,
 	storedConfigSchema,
-	subscribeFrameSchema,
 	EXPORT_CHUNK,
 	IMPORT_RPC_CHUNK,
 	MAX_DOC_BYTES,
@@ -42,7 +37,6 @@ import {
 	type ImportReport,
 	type Query,
 	type RestoreOutcome,
-	type ServerFrame,
 } from './schemas';
 import type { DbAgent } from './agent';
 
@@ -66,10 +60,8 @@ import type { DbAgent } from './agent';
  * what heals a parent-side row whose config push failed.
  */
 
-export const MAX_SUBSCRIPTIONS_PER_CONNECTION = 10;
 /** Local dev keeps no durable change log; workerd phrases it several ways. */
 const UNSUPPORTED_PITR_PATTERN = /does not implement|not (yet )?(supported|implemented|available)/i;
-const DEMO_MAX_SUBSCRIPTIONS_PER_CONNECTION = 5;
 const DEMO_MAX_DOCS_PER_COLLECTION = 200;
 const DEMO_MAX_DOC_BYTES = 8 * 1024;
 /**
@@ -83,8 +75,7 @@ const STATS_REPORT_MS = 500;
 
 type DocumentRow = typeof documents.$inferSelect;
 
-export class DbCollection extends DurableObject<Env> {
-	private db: DrizzleSqliteDODatabase<typeof schema>;
+export class DbCollection extends LiveShard {
 	private config: CollectionConfig | null = null;
 	private verifier: ProjectJwtVerifier | null = null;
 	private statsTimer: ReturnType<typeof setTimeout> | null = null;
@@ -92,7 +83,6 @@ export class DbCollection extends DurableObject<Env> {
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		this.db = drizzle(ctx.storage, { schema });
 		// Idempotent - drizzle tracks applied migrations in its own table.
 		// Tables the parent class owns simply stay empty here.
 		ctx.blockConcurrencyWhile(async () => {
@@ -400,15 +390,7 @@ export class DbCollection extends DurableObject<Env> {
 			return Response.json({ error: 'origin is not trusted' }, { status: 403 });
 		}
 
-		const response = await this.route(request, url, subPath, config);
-		if (!cors) return response;
-		const headers = new Headers(response.headers);
-		cors.forEach((value, key) => headers.set(key, value));
-		return new Response(response.body, {
-			status: response.status,
-			statusText: response.statusText,
-			headers,
-		});
+		return withCors(await this.route(request, url, subPath, config), cors);
 	}
 
 	private async route(
@@ -466,10 +448,9 @@ export class DbCollection extends DurableObject<Env> {
 	}
 
 	/**
-	 * Access-mode gate. `owner` is null for public/auth requests and the JWT
-	 * subject for owner-mode ones (which scopes every read and write). A
-	 * required permission is checked against the verified token's claim -
-	 * public mode never sees a token, so permissions only bind auth/owner.
+	 * Access-mode gate over the shared checkAccess (see access.ts). `owner`
+	 * is null for public/auth requests and the JWT subject for owner-mode
+	 * ones, which scopes every read and write.
 	 */
 	private async guarded(
 		request: Request,
@@ -477,32 +458,9 @@ export class DbCollection extends DurableObject<Env> {
 		permission: string | null,
 		handler: (owner: string | null) => Promise<Response>,
 	): Promise<Response> {
-		if (mode === 'public') return handler(null);
-
-		const header = request.headers.get('authorization');
-		const token = header?.match(/^Bearer (.+)$/i)?.[1];
-		if (!token) {
-			return Response.json({ error: 'a project token is required' }, { status: 401 });
-		}
-
-		const verifier = this.getVerifier();
-		const result = await verifier.verify(token);
-		if (!result.ok) {
-			if (result.code === 'not-configured') {
-				return Response.json({ error: 'auth verification is not configured' }, { status: 503 });
-			}
-			return Response.json({ error: 'invalid or expired token' }, { status: 401 });
-		}
-
-		// 403, not 401: the token is valid, it just lacks the right.
-		if (!hasPermission(permission, result.claims.permissions)) {
-			return Response.json(
-				{ error: 'the token does not carry the required permission' },
-				{ status: 403 },
-			);
-		}
-
-		return handler(mode === 'owner' ? result.claims.sub : null);
+		const decision = await checkAccess(request, mode, permission, this.getVerifier());
+		if (!decision.ok) return decision.response;
+		return handler(decision.owner);
 	}
 
 	// -------------------------------------------------------------------------
@@ -727,7 +685,7 @@ export class DbCollection extends DurableObject<Env> {
 		}
 
 		this.writeDbEvent(before ? 'doc.updated' : 'doc.created');
-		await this.notifySubscribers(before ?? null, row);
+		await this.notifySubscribers(before ? toDto(before) : null, toDto(row));
 		this.scheduleStatsReport();
 		return toDto(row);
 	}
@@ -738,7 +696,7 @@ export class DbCollection extends DurableObject<Env> {
 
 		await this.db.delete(documents).where(eq(documents.id, id));
 		this.writeDbEvent('doc.deleted');
-		await this.notifySubscribers(before, null);
+		await this.notifySubscribers(toDto(before), null);
 		this.scheduleStatsReport();
 		return true;
 	}
@@ -816,287 +774,32 @@ export class DbCollection extends DurableObject<Env> {
 	}
 
 	// -------------------------------------------------------------------------
-	// Live queries
+	// The LiveShard surface (the engine itself lives in live.ts)
 
-	private async acceptSubscriber(request: Request): Promise<Response> {
-		if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
-			return Response.json({ error: 'expected a WebSocket upgrade' }, { status: 426 });
-		}
-
-		const pair = new WebSocketPair();
-		const connId = crypto.randomUUID();
-		// The tag is the connection id; the attachment carries nothing else.
-		// Everything a woken instance needs lives in the subscriptions table.
-		this.ctx.acceptWebSocket(pair[1], [connId]);
-		pair[1].serializeAttachment({ connId });
-
-		return new Response(null, { status: 101, webSocket: pair[0] });
+	protected liveGate(): LiveGate | null {
+		return this.config
+			? {
+					readAccess: this.config.readAccess,
+					readPermission: this.config.readPermission,
+					demo: this.config.demo,
+				}
+			: null;
 	}
 
-	async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-		const connId = this.connIdOf(ws);
-		if (!connId) return;
-
-		let frame;
-		try {
-			frame = clientFrameSchema.parse(JSON.parse(typeof raw === 'string' ? raw : ''));
-		} catch {
-			this.send(ws, {
-				type: 'error',
-				code: 'invalid-frame',
-				message: 'frames are JSON subscribe/unsubscribe messages',
-			});
-			return;
-		}
-
-		if (frame.type === 'unsubscribe') {
-			await this.db
-				.delete(subscriptions)
-				.where(and(eq(subscriptions.connId, connId), eq(subscriptions.subId, frame.id)));
-			this.send(ws, { type: 'unsubscribed', id: frame.id });
-			return;
-		}
-
-		await this.handleSubscribe(ws, connId, frame);
-	}
-
-	private async handleSubscribe(
-		ws: WebSocket,
-		connId: string,
-		frame: (typeof subscribeFrameSchema)['_output'],
-	): Promise<void> {
-		const config = this.config;
-		if (!config) {
-			this.send(ws, { type: 'error', id: frame.id, code: 'internal', message: 'not configured' });
-			return;
-		}
-
-		// Read-mode gate, mirroring the REST guard.
-		let ownerSub: string | null = null;
-		let tokenExp: number | null = null;
-		if (config.readAccess !== 'public') {
-			if (!frame.token) {
-				this.send(ws, {
-					type: 'error',
-					id: frame.id,
-					code: 'unauthorized',
-					message: 'this collection requires a project token to subscribe',
-				});
-				return;
-			}
-			const result = await this.getVerifier().verify(frame.token);
-			if (!result.ok) {
-				this.send(ws, {
-					type: 'error',
-					id: frame.id,
-					code: 'unauthorized',
-					message:
-						result.code === 'not-configured'
-							? 'auth verification is not configured'
-							: 'invalid or expired token',
-				});
-				return;
-			}
-			// Mirror the REST guard: a required permission binds subscriptions too.
-			if (!hasPermission(config.readPermission, result.claims.permissions)) {
-				this.send(ws, {
-					type: 'error',
-					id: frame.id,
-					code: 'unauthorized',
-					message: 'the token does not carry the required permission',
-				});
-				return;
-			}
-			ownerSub = config.readAccess === 'owner' ? result.claims.sub : null;
-			tokenExp = result.exp;
-		}
-
-		const cap = config.demo
-			? DEMO_MAX_SUBSCRIPTIONS_PER_CONNECTION
-			: MAX_SUBSCRIPTIONS_PER_CONNECTION;
-		const [existing] = await this.db
-			.select({ value: count() })
-			.from(subscriptions)
-			.where(eq(subscriptions.connId, connId));
-		if ((existing?.value ?? 0) >= cap) {
-			this.send(ws, {
-				type: 'error',
-				id: frame.id,
-				code: 'subscription-limit',
-				message: `a connection is limited to ${cap} subscriptions`,
-			});
-			return;
-		}
-
-		const snapshot = await this.runQuery(frame.query, ownerSub);
-		this.send(ws, { type: 'snapshot', id: frame.id, docs: snapshot.docs });
-
-		await this.db
-			.insert(subscriptions)
-			.values({
-				connId,
-				subId: frame.id,
-				query: JSON.stringify(frame.query),
-				ownerSub,
-				tokenExp,
-				lastMembership: isWindowed(frame.query)
-					? JSON.stringify(snapshot.docs.map((doc) => doc.id))
-					: null,
-				createdAt: new Date(),
-			})
-			.onConflictDoUpdate({
-				target: [subscriptions.connId, subscriptions.subId],
-				set: {
-					query: JSON.stringify(frame.query),
-					ownerSub,
-					tokenExp,
-					lastMembership: isWindowed(frame.query)
-						? JSON.stringify(snapshot.docs.map((doc) => doc.id))
-						: null,
-				},
-			});
-
-		this.writeDbEvent('subscription.opened');
-	}
-
-	async webSocketClose(ws: WebSocket): Promise<void> {
-		await this.dropConnection(ws);
-	}
-
-	async webSocketError(ws: WebSocket): Promise<void> {
-		await this.dropConnection(ws);
-	}
-
-	private async dropConnection(ws: WebSocket): Promise<void> {
-		const connId = this.connIdOf(ws);
-		if (!connId) return;
-		await this.db.delete(subscriptions).where(eq(subscriptions.connId, connId));
-		this.writeDbEvent('subscription.closed');
-	}
-
-	private connIdOf(ws: WebSocket): string | null {
-		const attachment = ws.deserializeAttachment() as { connId?: string } | null;
-		return attachment?.connId ?? null;
-	}
-
-	private send(ws: WebSocket, frame: ServerFrame): void {
-		try {
-			ws.send(JSON.stringify(frame));
-		} catch {
-			// a half-closed socket: close cleanup will prune its rows
-		}
-	}
-
-	/**
-	 * The matching pass every mutation pays. Unlimited queries diff the
-	 * predicate on old/new. Windowed queries (orderBy+limit) re-run the query
-	 * only when the write could have changed membership, then diff the id set
-	 * against lastMembership - which is what gets displacement right: a doc
-	 * pushed out by an insert emits `removed`, one pulled in by a delete
-	 * emits `added`.
-	 */
-	private async notifySubscribers(
-		before: DocumentRow | null,
-		after: DocumentRow | null,
-	): Promise<void> {
-		const rows = await this.db.select().from(subscriptions);
-		if (!rows.length) return;
-
-		const nowSeconds = Math.floor(Date.now() / 1000);
-		const beforeDoc = before ? toDto(before) : null;
-		const afterDoc = after ? toDto(after) : null;
-
-		for (const sub of rows) {
-			const sockets = this.ctx.getWebSockets(sub.connId);
-			if (!sockets.length) {
-				// Connection died without a close event (eviction); prune lazily.
-				await this.db.delete(subscriptions).where(eq(subscriptions.connId, sub.connId));
-				continue;
-			}
-			const ws = sockets[0];
-
-			if (sub.tokenExp && sub.tokenExp < nowSeconds) {
-				this.send(ws, {
-					type: 'error',
-					id: sub.subId,
-					code: 'token-expired',
-					message: 'the token this subscription was opened with has expired',
-				});
-				await this.db
-					.delete(subscriptions)
-					.where(and(eq(subscriptions.connId, sub.connId), eq(subscriptions.subId, sub.subId)));
-				continue;
-			}
-
-			let query: Query;
-			try {
-				query = querySchema.parse(JSON.parse(sub.query));
-			} catch {
-				continue;
-			}
-
-			const matchedBefore = beforeDoc ? matchesQuery(query, beforeDoc, sub.ownerSub) : false;
-			const matchedAfter = afterDoc ? matchesQuery(query, afterDoc, sub.ownerSub) : false;
-			if (!matchedBefore && !matchedAfter) continue;
-
-			if (isWindowed(query)) {
-				await this.notifyWindowed(ws, sub.connId, sub.subId, query, sub, afterDoc, beforeDoc);
-				continue;
-			}
-
-			if (!matchedBefore && matchedAfter && afterDoc) {
-				this.send(ws, { type: 'change', id: sub.subId, kind: 'added', doc: afterDoc });
-			} else if (matchedBefore && matchedAfter && afterDoc) {
-				this.send(ws, { type: 'change', id: sub.subId, kind: 'modified', doc: afterDoc });
-			} else if (matchedBefore && !matchedAfter && beforeDoc) {
-				this.send(ws, { type: 'change', id: sub.subId, kind: 'removed', doc: beforeDoc });
-			}
-		}
-	}
-
-	private async notifyWindowed(
-		ws: WebSocket,
-		connId: string,
-		subId: string,
+	protected async runLiveQuery(
 		query: Query,
-		sub: typeof subscriptions.$inferSelect,
-		afterDoc: DbDocument | null,
-		beforeDoc: DbDocument | null,
-	): Promise<void> {
-		const fresh = await this.runQuery(query, sub.ownerSub);
-		const freshIds = fresh.docs.map((doc) => doc.id);
-		const freshSet = new Set(freshIds);
-		const previous: string[] = sub.lastMembership ? JSON.parse(sub.lastMembership) : [];
-		const previousSet = new Set(previous);
-		const byId = new Map(fresh.docs.map((doc) => [doc.id, doc]));
-
-		for (const id of freshIds) {
-			if (!previousSet.has(id)) {
-				const doc = byId.get(id);
-				if (doc) this.send(ws, { type: 'change', id: subId, kind: 'added', doc });
-			}
-		}
-		for (const id of previous) {
-			if (!freshSet.has(id)) {
-				// Displaced out of the window, or deleted. Prefer the written doc's
-				// old value; otherwise fetch the still-existing displaced doc.
-				const doc = beforeDoc?.id === id ? beforeDoc : ((await this.fetchDoc(id)) ?? beforeDoc);
-				if (doc) this.send(ws, { type: 'change', id: subId, kind: 'removed', doc });
-			}
-		}
-		if (afterDoc && freshSet.has(afterDoc.id) && previousSet.has(afterDoc.id)) {
-			this.send(ws, { type: 'change', id: subId, kind: 'modified', doc: afterDoc });
-		}
-
-		await this.db
-			.update(subscriptions)
-			.set({ lastMembership: JSON.stringify(freshIds) })
-			.where(and(eq(subscriptions.connId, connId), eq(subscriptions.subId, subId)));
+		ownerSub: string | null,
+	): Promise<{ docs: DbDocument[] }> {
+		return this.runQuery(query, ownerSub);
 	}
 
-	private async fetchDoc(id: string): Promise<DbDocument | null> {
+	protected async fetchDocById(id: string): Promise<DbDocument | null> {
 		const [row] = await this.db.select().from(documents).where(eq(documents.id, id)).limit(1);
 		return row ? toDto(row) : null;
+	}
+
+	protected writeShardEvent(eventType: string): void {
+		this.writeDbEvent(eventType);
 	}
 
 	// -------------------------------------------------------------------------
@@ -1135,7 +838,7 @@ export class DbCollection extends DurableObject<Env> {
 		return namespace.get(namespace.idFromName(projectId));
 	}
 
-	private getVerifier(): ProjectJwtVerifier {
+	protected getVerifier(): ProjectJwtVerifier {
 		if (!this.verifier) {
 			this.verifier = new ProjectJwtVerifier(
 				this.ctx.storage,
@@ -1147,23 +850,7 @@ export class DbCollection extends DurableObject<Env> {
 	}
 
 	private corsHeaders(request: Request): Headers | null {
-		const origin = request.headers.get('origin');
-		const sameOrigin = origin === new URL(request.url).origin;
-		const trusted = [
-			...(this.env.TRUSTED_ORIGINS ?? '')
-				.split(',')
-				.map((entry) => entry.trim())
-				.filter(Boolean),
-			...(this.config?.allowedOrigins ?? []),
-		];
-		if (!origin || (!sameOrigin && !trusted.includes(origin))) return null;
-		return new Headers({
-			'access-control-allow-origin': origin,
-			'access-control-allow-credentials': 'true',
-			'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-			'access-control-allow-headers': 'authorization, content-type',
-			vary: 'Origin',
-		});
+		return corsHeadersFor(request, this.env.TRUSTED_ORIGINS, this.config?.allowedOrigins ?? []);
 	}
 
 	/** Best-effort analytics; a metrics failure never fails the operation. */
