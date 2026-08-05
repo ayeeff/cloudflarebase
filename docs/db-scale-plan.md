@@ -171,6 +171,31 @@ scales by adding shards, not within one.
   breakdown chart goes through the dataviz pass; e2e is marketing smoke specs
   only (public by group, no guard changes).
 
+## The agentic backend thread (cross-cutting)
+
+The copilot's endgame ([db-agent-plan.md](db-agent-plan.md) §Follow-up) is a
+master agent that knows and operates the whole backend over the primitives'
+admin surfaces. That refactor stays its own workstream — but this plan is
+sequenced to feed it, and each phase ships its new surface as copilot tools,
+not just UI:
+
+- **S1**: table schemas are declared, not guessed — the copilot reads the
+  registry (`kind` + column DSL) and gains schema-grounded tools; the tables
+  admin surface joins `/admin/query` in the tool set.
+- **R1**: lag/health RPCs become tools (operational questions, not just data
+  questions). The change log is an ordered per-project event stream — the
+  substrate for standing queries and trigger-style automation later.
+- **S2**: SELECT-only raw SQL on replicas is the copilot's ideal read tool —
+  expressive, parser-gated, and blast-radius-isolated from primaries by
+  construction (a runaway generated query can never block writes).
+- **Write-capable tools wait for scoped authority**: the copilot gets a
+  project JWT carrying rules-lite permission keys (the 403 machinery already
+  exists), never an operator bypass.
+- The manifest registry remains the discovery layer, and the same
+  registry-driven tool surface is the natural shape for a per-project **MCP
+  server** (external agents managing a Cloudflarebase backend) — post-S3,
+  noted here so nothing in this plan precludes it.
+
 ## Phases (each lands green: `npm run check` / `lint` / per-package `tsc --noEmit` / unit / `npm test`)
 
 ### S1 — `DbTable` on the existing engine (launch #1)
