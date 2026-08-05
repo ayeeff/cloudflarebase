@@ -217,12 +217,33 @@ export const repPullInputSchema = z.strictObject({
 	region: z.string().min(1).max(16),
 });
 
+/** Primary -> replica push (R2): entries applied live, or a healing hint. */
+export const repApplyInputSchema = z.strictObject({
+	entries: z.array(logEntrySchema).min(1).max(REPLICATION_PULL_CHUNK),
+	epoch: z.number().int().min(0),
+});
+export type RepApplyResult =
+	/** Applied (or already had them) - keep pushing. */
+	| { ok: true }
+	/** Out of order / wrong epoch; the replica pulled to heal. */
+	| { healed: true }
+	/** No subscribers left here - stop pushing until they return. */
+	| { stop: true };
+
+export const repSetPushInputSchema = z.strictObject({
+	replicaId: z.string().regex(/^r:[a-z-]+:\d+$/),
+	region: z.string().min(1).max(16),
+	push: z.boolean(),
+});
+
 /** Observability payloads (`/admin/replication/:name`, the replica map). */
 export interface RepReplicaStatus {
 	id: string;
 	region: string;
 	appliedLsn: number;
 	lagLsn: number;
+	/** Receiving live pushes (it holds subscribers). */
+	push: boolean;
 	lastSeenAt: string;
 }
 export interface RepStatus {

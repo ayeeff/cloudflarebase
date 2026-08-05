@@ -10,10 +10,12 @@ import {
 	clearReplicas,
 	horizonLsn,
 	lastLsn,
+	listPushReplicas,
 	listReplicas,
 	readReplicaMeta,
 	registerReplica,
 	serveRepPull,
+	setReplicaPush,
 	truncateLog,
 	writeReplicaMeta,
 	type ReplicaMeta,
@@ -38,7 +40,9 @@ import {
 	documentDataSchema,
 	logEntrySchema,
 	querySchema,
+	repApplyInputSchema,
 	repPullInputSchema,
+	repSetPushInputSchema,
 	storedTableMetaSchema,
 	tableConfigSchema,
 	EXPORT_CHUNK,
@@ -50,6 +54,7 @@ import {
 	type DbRow,
 	type LogEntry,
 	type Query,
+	type RepApplyResult,
 	type RepPullResult,
 	type RepStatus,
 	type TableColumn,
@@ -170,7 +175,9 @@ export class DbTable extends LiveShard {
 			if (parsed.replication === 'auto') {
 				// Config AND schema changes replicate in write order: a replica
 				// applying this entry runs the same DDL diff path.
-				appendLog(this.ctx.storage.sql, 'cfg', '', JSON.stringify(parsed));
+				const image = JSON.stringify(parsed);
+				const lsn = appendLog(this.ctx.storage.sql, 'cfg', '', image);
+				this.schedulePush({ lsn, op: 'cfg', id: '', image, ts: Date.now() });
 			} else if (previous?.replication === 'auto') {
 				await this.repDisable();
 			}
@@ -251,7 +258,72 @@ export class DbTable extends LiveShard {
 
 	private logChange(op: 'put' | 'del', id: string, image: string | null): void {
 		if (this.role.kind !== 'primary' || this.config?.replication !== 'auto') return;
-		this.pendingLsn = appendLog(this.ctx.storage.sql, op, id, image);
+		const lsn = appendLog(this.ctx.storage.sql, op, id, image);
+		this.pendingLsn = lsn;
+		this.schedulePush({ lsn, op, id, image, ts: Date.now() });
+	}
+
+	/** R2 delivery by RPC - the collection twin's reasoning applies. */
+	private schedulePush(entry: LogEntry): void {
+		const config = this.config;
+		const name = this.ctx.id.name;
+		if (!config || !name) return;
+		const targets = listPushReplicas(this.ctx.storage.sql);
+		if (!targets.length) return;
+
+		const namespace = this.env.DbTable as unknown as DurableObjectNamespace<DbTable>;
+		this.ctx.waitUntil(
+			(async () => {
+				for (const replica of targets) {
+					try {
+						const stub = namespace.get(namespace.idFromName(`${name}:${replica.id}`));
+						const result = (await stub.repApply({
+							entries: [entry],
+							epoch: config.repEpoch,
+						})) as RepApplyResult;
+						if ('stop' in result) {
+							setReplicaPush(this.ctx.storage.sql, replica.id, replica.region, false);
+						}
+					} catch {
+						// best-effort: the replica's pull path heals on next touch
+					}
+				}
+			})(),
+		);
+	}
+
+	async repSetPush(input: unknown): Promise<void> {
+		if (this.role.kind !== 'primary') return;
+		const parsed = repSetPushInputSchema.parse(input);
+		setReplicaPush(this.ctx.storage.sql, parsed.replicaId, parsed.region, parsed.push);
+	}
+
+	async repApply(input: unknown): Promise<RepApplyResult> {
+		if (this.role.kind !== 'replica') return { ok: true };
+		const parsed = repApplyInputSchema.parse(input);
+		if ((await this.subscriptionCount()) === 0) return { stop: true };
+
+		const sql = this.ctx.storage.sql;
+		const meta = readReplicaMeta(sql);
+		if (!meta || parsed.epoch !== meta.epoch) {
+			await this.replicaPullLoop(meta ?? { epoch: parsed.epoch, appliedLsn: 0, pulledAt: 0 });
+			return { healed: true };
+		}
+
+		const fresh = parsed.entries.filter((entry) => entry.lsn > meta.appliedLsn);
+		if (!fresh.length) return { ok: true };
+		if (fresh[0].lsn !== meta.appliedLsn + 1) {
+			await this.replicaPullLoop(meta);
+			return { healed: true };
+		}
+
+		for (const entry of fresh) await this.applyLogEntry(entry, true);
+		writeReplicaMeta(sql, {
+			epoch: meta.epoch,
+			appliedLsn: fresh[fresh.length - 1].lsn,
+			pulledAt: Date.now(),
+		});
+		return { ok: true };
 	}
 
 	private withLsn(response: Response): Response {
@@ -267,14 +339,16 @@ export class DbTable extends LiveShard {
 	}
 
 	/** Caller registered BEFORE data leaves - see the collection twin. */
-	async repBootstrap(input: unknown): Promise<{ config: TableConfig; epoch: number; lsn: number }> {
+	async repBootstrap(
+		input: unknown,
+	): Promise<{ ok: true; config: TableConfig; epoch: number; lsn: number } | { ok: false }> {
 		const caller = repPullInputSchema.parse(input);
 		const config = this.config;
 		if (this.role.kind !== 'primary' || !config || config.replication !== 'auto') {
-			throw new Error('replication is not enabled on this table');
+			return { ok: false };
 		}
 		registerReplica(this.ctx.storage.sql, caller.replicaId, caller.region, caller.since);
-		return { config, epoch: config.repEpoch, lsn: lastLsn(this.ctx.storage.sql) };
+		return { ok: true, config, epoch: config.repEpoch, lsn: lastLsn(this.ctx.storage.sql) };
 	}
 
 	/** Snapshot page for replica bootstrap, keyset over the primary key. */
@@ -316,6 +390,7 @@ export class DbTable extends LiveShard {
 						region: replica.region,
 						appliedLsn: replica.appliedLsn,
 						lagLsn: Math.max(0, last - replica.appliedLsn),
+						push: replica.push,
 						lastSeenAt: new Date(replica.lastSeenAt).toISOString(),
 					}))
 				: [],
@@ -356,9 +431,14 @@ export class DbTable extends LiveShard {
 	}
 
 	private async replicaDispatch(request: Request, subPath: string): Promise<Response> {
-		const isRead =
-			(request.method === 'GET' && subPath !== '/subscribe') ||
-			(request.method === 'POST' && subPath === '/query');
+		// R2: subscribers land HERE, on the local copy fed by primary pushes.
+		if (request.method === 'GET' && subPath === '/subscribe') {
+			const ready = await this.ensureReplica(0);
+			if (!ready || !this.config) return this.forwardToPrimary(request);
+			return this.acceptSubscriber(request);
+		}
+
+		const isRead = request.method === 'GET' || (request.method === 'POST' && subPath === '/query');
 		if (!isRead) return this.forwardToPrimary(request);
 
 		const minLsn = Number(request.headers.get(MIN_LSN_HEADER) ?? 0) || 0;
@@ -396,6 +476,7 @@ export class DbTable extends LiveShard {
 				replicaId: role.replicaId,
 				region: role.region,
 			})) as unknown as Awaited<ReturnType<DbTable['repBootstrap']>>;
+			if (!boot.ok) return false;
 			// configure() plans and applies the physical DDL locally.
 			await this.configure(boot.config);
 			this.ctx.storage.sql.exec(`DELETE FROM ${quoteIdent(boot.config.table)}`);
@@ -435,6 +516,8 @@ export class DbTable extends LiveShard {
 		const sql = this.ctx.storage.sql;
 		try {
 			const primary = this.primaryTableStub();
+			// Subscribers must see pull-healed changes as deltas too.
+			const notify = (await this.subscriptionCount()) > 0;
 			let current = meta;
 			for (;;) {
 				const result = (await primary.repPull({
@@ -447,7 +530,7 @@ export class DbTable extends LiveShard {
 					if (!(await this.replicaBootstrap())) return current;
 					return readReplicaMeta(sql) ?? current;
 				}
-				for (const entry of result.entries) await this.applyLogEntry(entry);
+				for (const entry of result.entries) await this.applyLogEntry(entry, notify);
 				current = {
 					epoch: result.epoch,
 					appliedLsn: result.entries.length
@@ -463,7 +546,8 @@ export class DbTable extends LiveShard {
 		}
 	}
 
-	private async applyLogEntry(entry: LogEntry): Promise<void> {
+	/** Apply one entry; with `notify` the local live engine fires deltas. */
+	private async applyLogEntry(entry: LogEntry, notify = false): Promise<void> {
 		const parsed = logEntrySchema.parse(entry);
 		if (parsed.op === 'cfg') {
 			if (parsed.image) await this.configure(JSON.parse(parsed.image));
@@ -471,10 +555,16 @@ export class DbTable extends LiveShard {
 		}
 		const table = this.requireTableName();
 		if (parsed.op === 'del') {
+			const before = notify ? await this.fetchDocById(parsed.id) : null;
 			this.ctx.storage.sql.exec(`DELETE FROM ${quoteIdent(table)} WHERE "id" = ?`, parsed.id);
+			if (notify && before) await this.notifySubscribers(before, null);
 			return;
 		}
-		if (parsed.image) this.applyRowImage(JSON.parse(parsed.image) as DbRow);
+		if (!parsed.image) return;
+		const after = JSON.parse(parsed.image) as DbRow;
+		const before = notify ? await this.fetchDocById(after.id) : null;
+		this.applyRowImage(after);
+		if (notify) await this.notifySubscribers(before, after);
 	}
 
 	/** Idempotent row-image upsert against the physical table. */
@@ -875,6 +965,31 @@ export class DbTable extends LiveShard {
 
 	protected writeShardEvent(eventType: string): void {
 		this.writeDbEvent(eventType);
+	}
+
+	/** Replicas freshen before serving a subscribe snapshot. */
+	protected async beforeSnapshot(): Promise<void> {
+		if (this.role.kind === 'replica') await this.ensureReplica(0);
+	}
+
+	/** Track what the primary believes; flip only on transitions. */
+	private pushWanted: boolean | null = null;
+
+	protected async onSubscriptionsChanged(count: number): Promise<void> {
+		if (this.role.kind !== 'replica') return;
+		const want = count > 0;
+		if (this.pushWanted === want) return;
+		const role = this.role as ReplicaRole;
+		try {
+			await this.primaryTableStub().repSetPush({
+				replicaId: role.replicaId,
+				region: role.region,
+				push: want,
+			});
+			this.pushWanted = want;
+		} catch {
+			this.pushWanted = null;
+		}
 	}
 
 	// -------------------------------------------------------------------------

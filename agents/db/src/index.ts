@@ -69,9 +69,11 @@ async function shardReplicationAuto(env: Env, projectId: string, shard: string):
 	}
 }
 
-/** Replicated-read detection per engine; everything else stays primary. */
+/** Replicated-read detection per engine; everything else stays primary.
+ * R2: /subscribe routes too - replicas run the live engine over their local
+ * copy, fed by primary pushes. */
 function isRoutableRead(kind: string, method: string, subPath: string): boolean {
-	if (method === 'GET') return subPath !== '/subscribe' && subPath !== '/';
+	if (method === 'GET') return subPath !== '/';
 	if (method !== 'POST') return false;
 	if (subPath === '/query') return true;
 	return kind === 'collections' && subPath === '/aggregate';
@@ -163,8 +165,12 @@ class DbService extends WorkerEntrypoint<Env> {
 				isRoutableRead(hot[2], request.method, subPath) &&
 				(await shardReplicationAuto(this.env, projectId, shard))
 			) {
+				// WebSocket clients cannot set headers, so the test override also
+				// rides a query param (same env.test-only gate).
 				const override =
-					this.env.REGION_OVERRIDE_HEADER === 'true' ? request.headers.get('x-cfb-region') : null;
+					this.env.REGION_OVERRIDE_HEADER === 'true'
+						? (request.headers.get('x-cfb-region') ?? url.searchParams.get('cfb-region'))
+						: null;
 				const region =
 					override && REGION_HINTS.has(override)
 						? override

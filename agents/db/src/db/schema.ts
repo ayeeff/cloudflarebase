@@ -140,6 +140,10 @@ export const replicas = sqliteTable('replicas', {
 	id: text('id').primaryKey(),
 	region: text('region').notNull(),
 	appliedLsn: integer('applied_lsn').notNull().default(0),
+	/** 1 while the replica holds live subscribers: every logged write is
+	 * pushed to it by RPC (which wakes a hibernated instance). Flipped off
+	 * when the replica reports no subscribers left. */
+	push: integer('push').notNull().default(0),
 	lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }).notNull(),
 });
 

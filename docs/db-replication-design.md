@@ -25,6 +25,26 @@
 >   R2/M2 chunk; `/admin/replication/:name` (the data they consume) is live.
 > - `/aggregate` routes to replicas for collections only (tables gain
 >   aggregates in S2).
+>
+> **R2 core implemented 2026-08-05.** Further deviations:
+>
+> - **Live delivery is RPC push, not a tail socket** (§3/§8 as drafted). An
+>   outgoing socket dies when the replica hibernates - exactly when pushes
+>   must still arrive. Instead the primary calls `repApply(entries, epoch)`
+>   on every push-flagged replica after a write (waitUntil): RPC WAKES a
+>   hibernated replica, which applies the entries, notifies its local
+>   subscribers, and hibernates again. No sockets, no tokens, no keep-alive
+>   fights. Replicas flip their primary's push flag on subscriber-count
+>   transitions; a `{stop}` answer (no subscribers left) self-heals stale
+>   flags; a gap or epoch mismatch triggers a healing pull - which ALSO
+>   notifies subscribers, so pull-healed changes arrive as deltas too.
+> - `repBootstrap` answers `{ ok: false }` for disabled shards instead of
+>   throwing - stale routing hits it constantly right after a disable, and
+>   an expected condition must not be Sentry noise.
+> - **Sibling spawn is deferred** past R2: one replica per region for now
+>   (the naming, parsing, and routing already carry `:n`, so adding spawn is
+>   additive). The per-shard realtime ceiling is therefore ~32k sockets ×
+>   regions until then.
 
 ## 1. Shape
 

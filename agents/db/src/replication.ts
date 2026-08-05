@@ -189,29 +189,65 @@ export interface RegisteredReplica {
 	id: string;
 	region: string;
 	appliedLsn: number;
+	/** True while the replica holds subscribers and receives live pushes. */
+	push: boolean;
 	lastSeenAt: number;
 }
 
 export function listReplicas(sql: SqlStorage): RegisteredReplica[] {
 	return (
 		sql
-			.exec(`SELECT id, region, applied_lsn, last_seen_at FROM replicas ORDER BY id`)
+			.exec(`SELECT id, region, applied_lsn, push, last_seen_at FROM replicas ORDER BY id`)
 			.toArray() as {
 			id: string;
 			region: string;
 			applied_lsn: number;
+			push: number;
 			last_seen_at: number;
 		}[]
 	).map((row) => ({
 		id: row.id,
 		region: row.region,
 		appliedLsn: row.applied_lsn,
+		push: row.push === 1,
 		lastSeenAt: row.last_seen_at,
 	}));
 }
 
 export function clearReplicas(sql: SqlStorage): void {
 	sql.exec(`DELETE FROM replicas`);
+}
+
+/** Flip a replica's push flag (registers it if somehow unknown). */
+export function setReplicaPush(
+	sql: SqlStorage,
+	replicaId: string,
+	region: string,
+	push: boolean,
+): void {
+	sql.exec(
+		`INSERT INTO replicas (id, region, applied_lsn, push, last_seen_at) VALUES (?, ?, 0, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET push = excluded.push, last_seen_at = excluded.last_seen_at`,
+		replicaId,
+		region,
+		push ? 1 : 0,
+		Date.now(),
+	);
+}
+
+/** Replicas that asked for live pushes (they hold subscribers). */
+export function listPushReplicas(sql: SqlStorage): RegisteredReplica[] {
+	return (
+		sql
+			.exec(`SELECT id, region, applied_lsn, last_seen_at FROM replicas WHERE push = 1 ORDER BY id`)
+			.toArray() as { id: string; region: string; applied_lsn: number; last_seen_at: number }[]
+	).map((row) => ({
+		id: row.id,
+		region: row.region,
+		appliedLsn: row.applied_lsn,
+		push: true,
+		lastSeenAt: row.last_seen_at,
+	}));
 }
 
 // ---------------------------------------------------------------------------

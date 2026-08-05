@@ -75,6 +75,18 @@ export abstract class LiveShard extends DurableObject<Env> {
 		return null;
 	}
 
+	/** Replicas freshen from the primary before a snapshot; primaries no-op. */
+	protected async beforeSnapshot(): Promise<void> {}
+
+	/** Fired whenever the subscription set changes, with the remaining count
+	 * - how a replica keeps its primary's push flag honest. */
+	protected async onSubscriptionsChanged(_count: number): Promise<void> {}
+
+	protected async subscriptionCount(): Promise<number> {
+		const [row] = await this.db.select({ value: count() }).from(subscriptions);
+		return row?.value ?? 0;
+	}
+
 	// -------------------------------------------------------------------------
 	// Socket lifecycle
 
@@ -114,6 +126,7 @@ export abstract class LiveShard extends DurableObject<Env> {
 				.delete(subscriptions)
 				.where(and(eq(subscriptions.connId, connId), eq(subscriptions.subId, frame.id)));
 			this.send(ws, { type: 'unsubscribed', id: frame.id });
+			await this.onSubscriptionsChanged(await this.subscriptionCount());
 			return;
 		}
 
@@ -194,6 +207,7 @@ export abstract class LiveShard extends DurableObject<Env> {
 			return;
 		}
 
+		await this.beforeSnapshot();
 		const snapshot = await this.runLiveQuery(frame.query, ownerSub);
 		this.send(ws, { type: 'snapshot', id: frame.id, docs: snapshot.docs });
 
@@ -223,6 +237,7 @@ export abstract class LiveShard extends DurableObject<Env> {
 			});
 
 		this.writeShardEvent('subscription.opened');
+		await this.onSubscriptionsChanged(await this.subscriptionCount());
 	}
 
 	async webSocketClose(ws: WebSocket): Promise<void> {
@@ -238,6 +253,7 @@ export abstract class LiveShard extends DurableObject<Env> {
 		if (!connId) return;
 		await this.db.delete(subscriptions).where(eq(subscriptions.connId, connId));
 		this.writeShardEvent('subscription.closed');
+		await this.onSubscriptionsChanged(await this.subscriptionCount());
 	}
 
 	private connIdOf(ws: WebSocket): string | null {

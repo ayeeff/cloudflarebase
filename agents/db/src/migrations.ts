@@ -43,6 +43,13 @@ const journal = {
 			tag: '0004_luxuriant_marauders',
 			breakpoints: true,
 		},
+		{
+			idx: 5,
+			version: '6',
+			when: 1785908063017,
+			tag: '0005_late_white_tiger',
+			breakpoints: true,
+		},
 	],
 };
 
@@ -126,6 +133,8 @@ CREATE TABLE \`replicas\` (
 ALTER TABLE \`collections\` ADD \`replication\` text DEFAULT 'off' NOT NULL;--> statement-breakpoint
 ALTER TABLE \`collections\` ADD \`rep_epoch\` integer DEFAULT 0 NOT NULL;`;
 
+const m0005 = `ALTER TABLE \`replicas\` ADD \`push\` integer DEFAULT 0 NOT NULL;`;
+
 export default {
 	journal,
 	migrations: {
@@ -134,5 +143,6 @@ export default {
 		m0002,
 		m0003,
 		m0004,
+		m0005,
 	},
 };

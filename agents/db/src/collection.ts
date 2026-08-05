@@ -12,10 +12,12 @@ import {
 	clearReplicas,
 	horizonLsn,
 	lastLsn,
+	listPushReplicas,
 	listReplicas,
 	readReplicaMeta,
 	registerReplica,
 	serveRepPull,
+	setReplicaPush,
 	truncateLog,
 	writeReplicaMeta,
 	type ReplicaMeta,
@@ -40,7 +42,9 @@ import {
 	querySchema,
 	restoreRequestSchema,
 	storedConfigSchema,
+	repApplyInputSchema,
 	repPullInputSchema,
+	repSetPushInputSchema,
 	EXPORT_CHUNK,
 	IMPORT_RPC_CHUNK,
 	LSN_HEADER,
@@ -57,6 +61,7 @@ import {
 	type ImportReport,
 	type LogEntry,
 	type Query,
+	type RepApplyResult,
 	type RepPullResult,
 	type RepStatus,
 	type RestoreOutcome,
@@ -156,7 +161,9 @@ export class DbCollection extends LiveShard {
 		if (this.role.kind === 'primary') {
 			if (parsed.replication === 'auto') {
 				// Config changes replicate IN WRITE ORDER with the data.
-				appendLog(this.ctx.storage.sql, 'cfg', '', JSON.stringify(parsed));
+				const image = JSON.stringify(parsed);
+				const lsn = appendLog(this.ctx.storage.sql, 'cfg', '', image);
+				this.schedulePush({ lsn, op: 'cfg', id: '', image, ts: Date.now() });
 			} else if (previous?.replication === 'auto') {
 				await this.repDisable();
 			}
@@ -409,10 +416,89 @@ export class DbCollection extends LiveShard {
 	// -------------------------------------------------------------------------
 	// Replication: the primary's feed (docs/db-replication-design.md)
 
-	/** Append to the change log in the SAME task as the data write. */
+	/** Append to the change log in the SAME task as the data write, then
+	 * schedule the live push to any replica holding subscribers. */
 	private logChange(op: 'put' | 'del', id: string, image: string | null): void {
 		if (this.role.kind !== 'primary' || this.config?.replication !== 'auto') return;
-		this.pendingLsn = appendLog(this.ctx.storage.sql, op, id, image);
+		const lsn = appendLog(this.ctx.storage.sql, op, id, image);
+		this.pendingLsn = lsn;
+		this.schedulePush({ lsn, op, id, image, ts: Date.now() });
+	}
+
+	/**
+	 * R2 delivery: an RPC per push-flagged replica, AFTER the response
+	 * (waitUntil). RPC wakes a hibernated replica, which applies the entry
+	 * and notifies its own subscribers - no sockets, no keep-alive fights.
+	 * Failures are absorbed: the pull path heals gaps, and a replica that
+	 * reports no subscribers left gets its flag flipped off.
+	 */
+	private schedulePush(entry: LogEntry): void {
+		const config = this.config;
+		const name = this.ctx.id.name;
+		if (!config || !name) return;
+		const targets = listPushReplicas(this.ctx.storage.sql);
+		if (!targets.length) return;
+
+		const namespace = this.env.DbCollection as unknown as DurableObjectNamespace<DbCollection>;
+		this.ctx.waitUntil(
+			(async () => {
+				for (const replica of targets) {
+					try {
+						const stub = namespace.get(namespace.idFromName(`${name}:${replica.id}`));
+						const result = (await stub.repApply({
+							entries: [entry],
+							epoch: config.repEpoch,
+						})) as RepApplyResult;
+						if ('stop' in result) {
+							setReplicaPush(this.ctx.storage.sql, replica.id, replica.region, false);
+						}
+					} catch {
+						// best-effort: the replica's pull path heals on next touch
+					}
+				}
+			})(),
+		);
+	}
+
+	/** A replica flips its push flag as subscribers come and go. */
+	async repSetPush(input: unknown): Promise<void> {
+		if (this.role.kind !== 'primary') return;
+		const parsed = repSetPushInputSchema.parse(input);
+		setReplicaPush(this.ctx.storage.sql, parsed.replicaId, parsed.region, parsed.push);
+	}
+
+	/**
+	 * Primary -> replica live delivery. Entries at or below the applied
+	 * position are already-haves; a gap or epoch mismatch triggers a healing
+	 * pull (which notifies subscribers too); with no subscribers left the
+	 * primary is told to stop pushing.
+	 */
+	async repApply(input: unknown): Promise<RepApplyResult> {
+		if (this.role.kind !== 'replica') return { ok: true };
+		const parsed = repApplyInputSchema.parse(input);
+		if ((await this.subscriptionCount()) === 0) return { stop: true };
+
+		const sql = this.ctx.storage.sql;
+		const meta = readReplicaMeta(sql);
+		if (!meta || parsed.epoch !== meta.epoch) {
+			await this.replicaPullLoop(meta ?? { epoch: parsed.epoch, appliedLsn: 0, pulledAt: 0 });
+			return { healed: true };
+		}
+
+		const fresh = parsed.entries.filter((entry) => entry.lsn > meta.appliedLsn);
+		if (!fresh.length) return { ok: true };
+		if (fresh[0].lsn !== meta.appliedLsn + 1) {
+			await this.replicaPullLoop(meta);
+			return { healed: true };
+		}
+
+		for (const entry of fresh) await this.applyLogEntry(entry, true);
+		writeReplicaMeta(sql, {
+			epoch: meta.epoch,
+			appliedLsn: fresh[fresh.length - 1].lsn,
+			pulledAt: Date.now(),
+		});
+		return { ok: true };
 	}
 
 	/** Attach the session bookmark to a write response, when one was logged. */
@@ -430,19 +516,19 @@ export class DbCollection extends LiveShard {
 
 	/** Replica bootstrap: config + the log position the snapshot starts from.
 	 * The caller is registered BEFORE any data leaves - the erase fan-out
-	 * iterates that registry, so a bootstrapped replica is never an orphan. */
-	async repBootstrap(input: unknown): Promise<{
-		config: CollectionConfig;
-		epoch: number;
-		lsn: number;
-	}> {
+	 * iterates that registry, so a bootstrapped replica is never an orphan.
+	 * A disabled shard answers `ok: false` (never a throw: stale routing hits
+	 * this constantly right after a disable, and it is not an error). */
+	async repBootstrap(
+		input: unknown,
+	): Promise<{ ok: true; config: CollectionConfig; epoch: number; lsn: number } | { ok: false }> {
 		const caller = repPullInputSchema.parse(input);
 		const config = this.config;
 		if (this.role.kind !== 'primary' || !config || config.replication !== 'auto') {
-			throw new Error('replication is not enabled on this collection');
+			return { ok: false };
 		}
 		registerReplica(this.ctx.storage.sql, caller.replicaId, caller.region, caller.since);
-		return { config, epoch: config.repEpoch, lsn: lastLsn(this.ctx.storage.sql) };
+		return { ok: true, config, epoch: config.repEpoch, lsn: lastLsn(this.ctx.storage.sql) };
 	}
 
 	/** Replica catch-up; registers the caller durably before serving data. */
@@ -473,6 +559,7 @@ export class DbCollection extends LiveShard {
 						region: replica.region,
 						appliedLsn: replica.appliedLsn,
 						lagLsn: Math.max(0, last - replica.appliedLsn),
+						push: replica.push,
 						lastSeenAt: new Date(replica.lastSeenAt).toISOString(),
 					}))
 				: [],
@@ -524,8 +611,16 @@ export class DbCollection extends LiveShard {
 	 * depends on the worker's routing cache being fresh.
 	 */
 	private async replicaDispatch(request: Request, url: URL, subPath: string): Promise<Response> {
+		// R2: subscribers land HERE - the replica runs the live engine over
+		// its local copy, fed by primary pushes.
+		if (request.method === 'GET' && subPath === '/subscribe') {
+			const ready = await this.ensureReplica(0);
+			if (!ready || !this.config) return this.forwardToPrimary(request);
+			return this.acceptSubscriber(request);
+		}
+
 		const isRead =
-			(request.method === 'GET' && subPath !== '/subscribe') ||
+			request.method === 'GET' ||
 			(request.method === 'POST' && (subPath === '/query' || subPath === '/aggregate'));
 		if (!isRead) return this.forwardToPrimary(request);
 
@@ -568,6 +663,7 @@ export class DbCollection extends LiveShard {
 				replicaId: role.replicaId,
 				region: role.region,
 			})) as unknown as Awaited<ReturnType<DbCollection['repBootstrap']>>;
+			if (!boot.ok) return false;
 			await this.configure(boot.config);
 			await this.db.delete(documents);
 
@@ -612,6 +708,8 @@ export class DbCollection extends LiveShard {
 		const sql = this.ctx.storage.sql;
 		try {
 			const primary = this.primaryStub();
+			// Subscribers must see pull-healed changes as deltas too.
+			const notify = (await this.subscriptionCount()) > 0;
 			let current = meta;
 			for (;;) {
 				const result = (await primary.repPull({
@@ -624,7 +722,7 @@ export class DbCollection extends LiveShard {
 					if (!(await this.replicaBootstrap())) return current;
 					return readReplicaMeta(sql) ?? current;
 				}
-				for (const entry of result.entries) await this.applyLogEntry(entry);
+				for (const entry of result.entries) await this.applyLogEntry(entry, notify);
 				current = {
 					epoch: result.epoch,
 					appliedLsn: result.entries.length
@@ -640,17 +738,25 @@ export class DbCollection extends LiveShard {
 		}
 	}
 
-	private async applyLogEntry(entry: LogEntry): Promise<void> {
+	/** Apply one entry; with `notify` the local live engine fires deltas, so
+	 * subscribers see pull-healed changes too, not only pushed ones. */
+	private async applyLogEntry(entry: LogEntry, notify = false): Promise<void> {
 		const parsed = logEntrySchema.parse(entry);
 		if (parsed.op === 'cfg') {
 			if (parsed.image) await this.configure(JSON.parse(parsed.image));
 			return;
 		}
 		if (parsed.op === 'del') {
+			const before = notify ? await this.fetchDocById(parsed.id) : null;
 			this.ctx.storage.sql.exec(`DELETE FROM documents WHERE id = ?`, parsed.id);
+			if (notify && before) await this.notifySubscribers(before, null);
 			return;
 		}
-		if (parsed.image) this.applyDocImage(JSON.parse(parsed.image) as DbDocument);
+		if (!parsed.image) return;
+		const after = JSON.parse(parsed.image) as DbDocument;
+		const before = notify ? await this.fetchDocById(after.id) : null;
+		this.applyDocImage(after);
+		if (notify) await this.notifySubscribers(before, after);
 	}
 
 	/** Idempotent image upsert - ids, owners, and timestamps verbatim. */
@@ -1120,6 +1226,33 @@ export class DbCollection extends LiveShard {
 
 	protected writeShardEvent(eventType: string): void {
 		this.writeDbEvent(eventType);
+	}
+
+	/** Replicas freshen before serving a subscribe snapshot. */
+	protected async beforeSnapshot(): Promise<void> {
+		if (this.role.kind === 'replica') await this.ensureReplica(0);
+	}
+
+	/** Track what the primary believes; flip only on transitions. */
+	private pushWanted: boolean | null = null;
+
+	protected async onSubscriptionsChanged(count: number): Promise<void> {
+		if (this.role.kind !== 'replica') return;
+		const want = count > 0;
+		if (this.pushWanted === want) return;
+		const role = this.role as ReplicaRole;
+		try {
+			await this.primaryStub().repSetPush({
+				replicaId: role.replicaId,
+				region: role.region,
+				push: want,
+			});
+			this.pushWanted = want;
+		} catch {
+			// Unknown at the primary: the next transition (or a stop answer to
+			// a stray push) reconciles it.
+			this.pushWanted = null;
+		}
 	}
 
 	// -------------------------------------------------------------------------
