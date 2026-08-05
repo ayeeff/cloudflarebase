@@ -252,8 +252,8 @@ opt-out). ~~PITR/export/import parity for tables~~ (shipped 2026-08-05:
 public `/tables/:name/export`, the six admin actions generalized over one
 kind adapter, the shared `pitr.ts` restore sequence, SDK `exportRows`, and
 the tables workspace export/import/rollback UI over the shared dialog).
-Remaining: docs (README), landing-page comparison table (variant picker
-first).
+~~Docs~~ (CLAUDE.mds + README updated with it). Remaining: landing-page
+comparison table (variant picker first).
 
 ## Non-goals
 
