@@ -153,10 +153,17 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		return resolve(event);
 	}
 
-	// The bare /dashboard entry decides for itself: in demo mode it hands the
-	// visitor a throwaway project, otherwise its loader lists real ones and so
-	// still needs a session.
+	// The bare /dashboard entry decides for itself: in demo mode it hands an
+	// anonymous visitor a throwaway project, while a signed-in operator gets
+	// the real project list. Its loader branches on consoleUser, so the
+	// session must be resolved here too (getConsoleSession no-ops without a
+	// cookie, keeping the first-time demo visit free of a session lookup).
 	if (event.locals.demoMode && access.kind === 'page' && !access.projectId) {
+		event.locals.consoleUser = await getConsoleSession(
+			event.platform,
+			event.url.origin,
+			event.request.headers.get('cookie')
+		);
 		return resolve(event);
 	}
 

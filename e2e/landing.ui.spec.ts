@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('landing page (frontend)', () => {
+	// The landing page and the demo hand-off are the ANONYMOUS surface. With
+	// an operator session, /dashboard lists real projects instead of minting
+	// a demo, so these tests must not carry the console storage state.
+	test.use({ storageState: { cookies: [], origins: [] } });
 	test('renders the hero and the live feature grid', async ({ page }) => {
 		await page.goto('/');
 
