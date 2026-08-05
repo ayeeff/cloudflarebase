@@ -20,6 +20,11 @@ import { orderComparator } from './query';
  * Subscriptions always use the direct `/agents/...` path - WebSockets bypass
  * the REST proxy exactly like the dashboard's own realtime - so a proxy base
  * is rewritten for the socket URL.
+ *
+ * Collections and tables share ONE handle implementation (`ShardHandle`):
+ * CRUD, query, and subscribe are identical by construction - a row is the
+ * document envelope with `data` as the column map. Collections add
+ * aggregate/count/export; tables gain their extras in later phases.
  */
 
 export interface DbClientOptions {
@@ -30,19 +35,22 @@ export interface DbClientOptions {
 	maxBackoffMs?: number;
 }
 
-export interface QueryResult {
-	docs: DbDocument[];
+/** A row/document whose data map is typed. Compile-time only. */
+export type Typed<T extends Record<string, unknown>> = Omit<DbDocument, 'data'> & { data: T };
+
+export interface QueryResult<T extends Record<string, unknown> = Record<string, unknown>> {
+	docs: Typed<T>[];
 	nextCursor?: string;
 }
 
-export interface DocChange {
+export interface DocChange<T extends Record<string, unknown> = Record<string, unknown>> {
 	kind: 'added' | 'modified' | 'removed';
-	doc: DbDocument;
+	doc: Typed<T>;
 }
 
-export interface SubscribeHandlers {
-	onSnapshot?: (docs: DbDocument[]) => void;
-	onChange?: (change: DocChange, docs: DbDocument[]) => void;
+export interface SubscribeHandlers<T extends Record<string, unknown> = Record<string, unknown>> {
+	onSnapshot?: (docs: Typed<T>[]) => void;
+	onChange?: (change: DocChange<T>, docs: Typed<T>[]) => void;
 	onError?: (code: string, message: string) => void;
 }
 
@@ -63,127 +71,101 @@ export function createDbClient(options: DbClientOptions) {
 		collection(name: string) {
 			return new CollectionHandle(baseUrl, name, options);
 		},
+		/**
+		 * A typed-column SQL table. Same handle surface as collections (CRUD,
+		 * query, subscribe) over `/tables/<name>/rows`; the optional type
+		 * parameter types `data` end to end at zero runtime cost. Tables are
+		 * schema-first - declare columns from the dashboard (or the admin API)
+		 * before writing.
+		 */
+		table<T extends Record<string, unknown> = Record<string, unknown>>(name: string) {
+			return new TableHandle<T>(baseUrl, name, options);
+		},
 	};
 }
 
-class CollectionHandle {
+interface ShardPaths {
+	/** URL segment under the agent base: collections | tables. */
+	shard: 'collections' | 'tables';
+	/** Item segment under the shard: documents | rows. */
+	item: 'documents' | 'rows';
+}
+
+class ShardHandle<T extends Record<string, unknown> = Record<string, unknown>> {
 	private socket: WebSocket | null = null;
 	private subscribers = new Map<
 		string,
-		{ query: Query; handlers: SubscribeHandlers; docs: DbDocument[] }
+		{ query: Query; handlers: SubscribeHandlers<T>; docs: Typed<T>[] }
 	>();
 	private nextSubId = 1;
 	private backoffMs = 500;
 	private closedByUser = false;
 
 	constructor(
-		private readonly baseUrl: string,
-		private readonly name: string,
-		private readonly options: DbClientOptions,
+		protected readonly baseUrl: string,
+		protected readonly name: string,
+		protected readonly options: DbClientOptions,
+		protected readonly paths: ShardPaths,
 	) {}
 
-	private url(subPath: string): string {
-		return `${this.baseUrl}/collections/${this.name}${subPath}`;
+	protected url(subPath: string): string {
+		return `${this.baseUrl}/${this.paths.shard}/${this.name}${subPath}`;
 	}
 
-	private async headers(): Promise<Record<string, string>> {
+	protected async headers(): Promise<Record<string, string>> {
 		const headers: Record<string, string> = { 'content-type': 'application/json' };
 		const token = await this.options.getToken?.();
 		if (token) headers.authorization = `Bearer ${token}`;
 		return headers;
 	}
 
-	private async request<T>(method: string, subPath: string, body?: unknown): Promise<T> {
+	protected async request<R>(method: string, subPath: string, body?: unknown): Promise<R> {
 		const response = await fetch(this.url(subPath), {
 			method,
 			headers: await this.headers(),
 			body: body === undefined ? undefined : JSON.stringify(body),
 		});
-		const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
+		const payload = (await response.json().catch(() => null)) as (R & { error?: string }) | null;
 		if (!response.ok) {
 			throw new DbError(response.status, payload?.error ?? `request failed (${response.status})`);
 		}
-		return payload as T;
+		return payload as R;
 	}
 
-	async create(data: Record<string, unknown>, options: { id?: string } = {}): Promise<DbDocument> {
-		return this.request('POST', '/documents', { id: options.id, data });
+	async create(data: T, options: { id?: string } = {}): Promise<Typed<T>> {
+		return this.request('POST', `/${this.paths.item}`, { id: options.id, data });
 	}
 
-	async get(id: string): Promise<DbDocument> {
-		return this.request('GET', `/documents/${encodeURIComponent(id)}`);
+	async get(id: string): Promise<Typed<T>> {
+		return this.request('GET', `/${this.paths.item}/${encodeURIComponent(id)}`);
 	}
 
 	/** Full replace of `data`. */
-	async update(id: string, data: Record<string, unknown>): Promise<DbDocument> {
-		return this.request('PUT', `/documents/${encodeURIComponent(id)}`, data);
+	async update(id: string, data: T): Promise<Typed<T>> {
+		return this.request('PUT', `/${this.paths.item}/${encodeURIComponent(id)}`, data);
 	}
 
-	/** Shallow merge into `data`. */
-	async patch(id: string, partial: Record<string, unknown>): Promise<DbDocument> {
-		return this.request('PATCH', `/documents/${encodeURIComponent(id)}`, partial);
+	/** Shallow merge into `data` (tables: set the named columns). */
+	async patch(id: string, partial: Partial<T>): Promise<Typed<T>> {
+		return this.request('PATCH', `/${this.paths.item}/${encodeURIComponent(id)}`, partial);
 	}
 
 	async delete(id: string): Promise<void> {
-		await this.request('DELETE', `/documents/${encodeURIComponent(id)}`);
+		await this.request('DELETE', `/${this.paths.item}/${encodeURIComponent(id)}`);
 	}
 
-	async query(query: Query = {}): Promise<QueryResult> {
+	async query(query: Query = {}): Promise<QueryResult<T>> {
 		return this.request('POST', '/query', querySchema.parse(query));
 	}
 
-	/** count/sum/avg over the collection; sum/avg skip non-numeric values. */
-	async aggregate(request: AggregateRequest): Promise<Record<string, number | null>> {
-		const { results } = await this.request<{ results: Record<string, number | null> }>(
-			'POST',
-			'/aggregate',
-			aggregateRequestSchema.parse(request),
-		);
-		return results;
-	}
-
-	/** Matching-document count (all documents when `where` is omitted). */
-	async count(where?: AggregateRequest['where']): Promise<number> {
-		const results = await this.aggregate({ where, aggregates: { total: { op: 'count' } } });
-		return results.total ?? 0;
-	}
-
 	/**
-	 * Stream every readable document (owner-mode collections yield only
-	 * yours). The server sends NDJSON in id order; documents materialize one
-	 * at a time, so a large collection never has to fit in memory.
-	 */
-	async *exportDocuments(): AsyncGenerator<DbDocument, void, undefined> {
-		const response = await fetch(this.url('/export'), { headers: await this.headers() });
-		if (!response.ok || !response.body) {
-			const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-			throw new DbError(response.status, payload?.error ?? `export failed (${response.status})`);
-		}
-
-		const reader = response.body.getReader();
-		const decoder = new TextDecoder();
-		let buffer = '';
-		for (;;) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			buffer += decoder.decode(value, { stream: true });
-			const lines = buffer.split('\n');
-			buffer = lines.pop() ?? '';
-			for (const line of lines) {
-				if (line.trim()) yield JSON.parse(line) as DbDocument;
-			}
-		}
-		if (buffer.trim()) yield JSON.parse(buffer) as DbDocument;
-	}
-
-	/**
-	 * Live query. Returns an unsubscribe function. One socket per collection
-	 * handle; subscriptions are multiplexed by id. On reconnect every active
+	 * Live query. Returns an unsubscribe function. One socket per handle;
+	 * subscriptions are multiplexed by id. On reconnect every active
 	 * subscription is re-sent and receives a fresh snapshot (the server keeps
 	 * no resume state). Local doc order is maintained with the same
 	 * comparator the server's ORDER BY compiles to.
 	 */
-	subscribe(query: Query, handlers: SubscribeHandlers): () => void {
+	subscribe(query: Query, handlers: SubscribeHandlers<T>): () => void {
 		const parsed = querySchema.parse(query);
 		const subId = `s${this.nextSubId++}`;
 		this.subscribers.set(subId, { query: parsed, handlers, docs: [] });
@@ -208,7 +190,7 @@ class CollectionHandle {
 	private wsUrl(): string {
 		// A console-proxy base rewrites to the direct agent path for the socket.
 		const direct = this.baseUrl.replace(/\/api\/projects\/([^/]+)\/db$/, '/agents/db-agent/$1');
-		return `${direct.replace(/^http/, 'ws')}/collections/${this.name}/subscribe`;
+		return `${direct.replace(/^http/, 'ws')}/${this.paths.shard}/${this.name}/subscribe`;
 	}
 
 	private ensureSocket(): Promise<WebSocket | null> {
@@ -293,21 +275,78 @@ class CollectionHandle {
 		const compare = orderComparator(entry.query);
 
 		if (frame.type === 'snapshot') {
-			entry.docs = [...frame.docs].sort(compare);
+			entry.docs = [...(frame.docs as Typed<T>[])].sort(compare);
 			entry.handlers.onSnapshot?.(entry.docs);
 			return;
 		}
 
+		const doc = frame.doc as Typed<T>;
 		if (frame.kind === 'removed') {
-			entry.docs = entry.docs.filter((doc) => doc.id !== frame.doc.id);
+			entry.docs = entry.docs.filter((existing) => existing.id !== doc.id);
 		} else {
-			entry.docs = [...entry.docs.filter((doc) => doc.id !== frame.doc.id), frame.doc].sort(
-				compare,
-			);
+			entry.docs = [...entry.docs.filter((existing) => existing.id !== doc.id), doc].sort(compare);
 			if (entry.query.limit !== undefined) {
 				entry.docs = entry.docs.slice(0, entry.query.limit);
 			}
 		}
-		entry.handlers.onChange?.({ kind: frame.kind, doc: frame.doc }, entry.docs);
+		entry.handlers.onChange?.({ kind: frame.kind, doc }, entry.docs);
+	}
+}
+
+export class CollectionHandle extends ShardHandle {
+	constructor(baseUrl: string, name: string, options: DbClientOptions) {
+		super(baseUrl, name, options, { shard: 'collections', item: 'documents' });
+	}
+
+	/** count/sum/avg over the collection; sum/avg skip non-numeric values. */
+	async aggregate(request: AggregateRequest): Promise<Record<string, number | null>> {
+		const { results } = await this.request<{ results: Record<string, number | null> }>(
+			'POST',
+			'/aggregate',
+			aggregateRequestSchema.parse(request),
+		);
+		return results;
+	}
+
+	/** Matching-document count (all documents when `where` is omitted). */
+	async count(where?: AggregateRequest['where']): Promise<number> {
+		const results = await this.aggregate({ where, aggregates: { total: { op: 'count' } } });
+		return results.total ?? 0;
+	}
+
+	/**
+	 * Stream every readable document (owner-mode collections yield only
+	 * yours). The server sends NDJSON in id order; documents materialize one
+	 * at a time, so a large collection never has to fit in memory.
+	 */
+	async *exportDocuments(): AsyncGenerator<DbDocument, void, undefined> {
+		const response = await fetch(this.url('/export'), { headers: await this.headers() });
+		if (!response.ok || !response.body) {
+			const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+			throw new DbError(response.status, payload?.error ?? `export failed (${response.status})`);
+		}
+
+		const reader = response.body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			buffer = lines.pop() ?? '';
+			for (const line of lines) {
+				if (line.trim()) yield JSON.parse(line) as DbDocument;
+			}
+		}
+		if (buffer.trim()) yield JSON.parse(buffer) as DbDocument;
+	}
+}
+
+export class TableHandle<
+	T extends Record<string, unknown> = Record<string, unknown>,
+> extends ShardHandle<T> {
+	constructor(baseUrl: string, name: string, options: DbClientOptions) {
+		super(baseUrl, name, options, { shard: 'tables', item: 'rows' });
 	}
 }

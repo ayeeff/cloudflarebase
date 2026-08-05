@@ -45,11 +45,11 @@ in every region and live queries on both models, out of the box.
    tractable. No cross-shard joins/transactions (same v1 stance as
    cross-collection).
 3. **Replication = D1's published model, deliberately**: row-image change log
-   + LSN at the primary, full-copy replicas per region, session bookmarks,
-   sequential consistency, writes always to the primary. "Same consistency
-   model as D1, more regions" — and D1-complement positioning everywhere: D1
-   is your shared relational database (we use it for our own control plane);
-   `DbTable` is realtime-first, per-tenant, isolated SQL.
+   - LSN at the primary, full-copy replicas per region, session bookmarks,
+     sequential consistency, writes always to the primary. "Same consistency
+     model as D1, more regions" — and D1-complement positioning everywhere: D1
+     is your shared relational database (we use it for our own control plane);
+     `DbTable` is realtime-first, per-tenant, isolated SQL.
 4. **Replicas ARE the fan-out layer.** No separate socket-shard class:
    subscribers land on their region's replica, which evaluates their live
    queries locally; under socket pressure a region spawns sibling replicas.
@@ -76,11 +76,11 @@ in every region and live queries on both models, out of the box.
 
 ## Architecture
 
-| Class          | Role                                                                                                                                             |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DbAgent`      | coordinator, unchanged; registry gains `kind: 'collection' \| 'table'` and per-shard replication config                                          |
-| `DbCollection` | documents; gains primary role (log writer) and replica role (log applier + local live-query evaluation)                                          |
-| `DbTable`      | **new** — SQL tables; same primary/replica roles over the same substrate                                                                         |
+| Class          | Role                                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------------------- |
+| `DbAgent`      | coordinator, unchanged; registry gains `kind: 'collection' \| 'table'` and per-shard replication config |
+| `DbCollection` | documents; gains primary role (log writer) and replica role (log applier + local live-query evaluation) |
+| `DbTable`      | **new** — SQL tables; same primary/replica roles over the same substrate                                |
 
 Instance naming: primaries stay `<pid>:<name>` (per class namespace); replicas
 add a reserved suffix `…:r:<region>[:<n>]` (delimiter reserved against user
@@ -102,7 +102,7 @@ shard names — design-doc detail). A project with 3 collections and 2 tables is
 - **Sessions**: the SDK carries a bookmark (last-seen LSN). A replica serves a
   read only once `applied_lsn >= bookmark` — brief wait, then proxy to the
   primary. Writes go to the primary and return the new LSN. Read-your-writes
-  + monotonic reads (sequential consistency).
+  - monotonic reads (sequential consistency).
 - **Routing**: the worker entrypoint maps `request.cf` → region; reads and
   `/subscribe` go to the region replica when replication is on, writes and all
   `/admin/*` to the primary. No client-side routing.
@@ -140,7 +140,7 @@ resume is a later protocol-compatible upgrade since replicas hold the log tail.
 - **RLS without a policy language**: access modes `public|auth|owner`; `owner`
   adds an implicit indexed `_owner` column auto-scoped on public reads/writes;
   `readPermission`/`writePermission` reuse `rules.ts` unchanged; column types
-  + checks replace document validators.
+  - checks replace document validators.
 - **Live SQL queries**: single-table ⇒ the existing algorithm generalizes
   (predicate diff on row images; windowed re-run + membership diff).
   `query.ts` splits into a shared core + two compilers under the same
@@ -150,13 +150,13 @@ resume is a later protocol-compatible upgrade since replicas hold the log tail.
 
 ### Ceilings after (the `/limits` page content)
 
-| Dimension   | Today                      | After                                             |
-| ----------- | -------------------------- | ------------------------------------------------- |
-| Reads       | ~1k req/s per shard        | ~1k req/s × replica count                         |
-| Realtime    | ~32k sockets, one matcher  | ~25k sockets × replica count, matching distributed |
-| Storage     | 10 GB per shard            | 10 GB unique per shard (replicas copy it — billed) |
-| Writes      | ~1k req/s single primary   | **unchanged** — the honest remaining ceiling      |
-| Consistency | single object, strong      | sequential + read-your-writes via bookmarks       |
+| Dimension   | Today                     | After                                              |
+| ----------- | ------------------------- | -------------------------------------------------- |
+| Reads       | ~1k req/s per shard       | ~1k req/s × replica count                          |
+| Realtime    | ~32k sockets, one matcher | ~25k sockets × replica count, matching distributed |
+| Storage     | 10 GB per shard           | 10 GB unique per shard (replicas copy it — billed) |
+| Writes      | ~1k req/s single primary  | **unchanged** — the honest remaining ceiling       |
+| Consistency | single object, strong     | sequential + read-your-writes via bookmarks        |
 
 "Unlimited users" means unlimited readers and subscribers; write throughput
 scales by adding shards, not within one.
@@ -164,8 +164,8 @@ scales by adding shards, not within one.
 ## Marketing pages
 
 - **`/pricing`** — frame: "Our price is $0. This calculator estimates your
-  Cloudflare bill." Preset chips (*Side project / Growing startup / 1M-user
-  app*) fill 4–5 sliders (MAU, GB stored, writes/month, concurrent realtime,
+  Cloudflare bill." Preset chips (_Side project / Growing startup / 1M-user
+  app_) fill 4–5 sliders (MAU, GB stored, writes/month, concurrent realtime,
   replica regions); output is one monthly number + a cost-breakdown bar +
   a same-workload-on-Firebase comparison line. Pricing constants live in one
   module with source URLs and an as-of date — fetched from current Cloudflare
@@ -272,7 +272,7 @@ scaling is out of scope.
 6. SELECT-only SQL validation robustness — parser allowlist, replicas-only
    blast radius, never the primary.
 7. Reserved replica-name delimiter vs user shard names (design-doc detail).
-8. The write ceiling stays; all copy must say unlimited *readers/subscribers*.
+8. The write ceiling stays; all copy must say unlimited _readers/subscribers_.
 
 ## Sources (as of 2026-08-04)
 

@@ -851,7 +851,11 @@
 		'collection.configured': ShieldCheck,
 		'collection.restored': History,
 		'documents.changed': FileText,
-		'documents.imported': Upload
+		'documents.imported': Upload,
+		'table.created': FolderPlus,
+		'table.configured': ShieldCheck,
+		'table.deleted': Trash2,
+		'rows.changed': FileText
 	} as const;
 
 	const stats = $derived([

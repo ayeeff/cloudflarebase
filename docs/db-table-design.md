@@ -27,7 +27,7 @@ What makes a table a table:
   table is named after the declared table and the system columns are plain
   reserved names - `id`, `owner`, `created_at`, `updated_at`, refused as
   user column names - so ORM-generated SQL (`select "id", "title" from
-  "todos"`) reads and writes the real schema unmodified. Naming lands in S1
+"todos"`) reads and writes the real schema unmodified. Naming lands in S1
   because renaming later is a data migration; the SQL execution surface
   itself is S2 (§13).
 - **Schema-first, never auto-created.** Unlike collections (first write
@@ -89,7 +89,7 @@ introspection, because `pragma_table_info()` is blocked (`SQLITE_AUTH`)**.
 or a refusal, and is unit-tested exhaustively:
 
 - New column → `ALTER TABLE "<table>" ADD COLUMN "name" TYPE [NOT NULL
-  DEFAULT lit]`. SQLite requires a default to backfill NOT NULL adds; the
+DEFAULT lit]`. SQLite requires a default to backfill NOT NULL adds; the
   PLANNER refuses that pairing's absence (the zod layer deliberately allows
   NOT-NULL-without-default - it is the "required on write" declaration for
   columns present since creation).
@@ -139,8 +139,8 @@ compiled queries, not on document specifics.
 Structurally `DbCollection` with the document specifics swapped out:
 
 - **Physical schema**: `"<table>"(id TEXT PRIMARY KEY, owner TEXT,
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, ...declared
-  columns)` created on first `configure()`; `owner` and `updated_at` get
+created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, ...declared
+columns)` created on first `configure()`; `owner` and `updated_at` get
   their indexes at creation. Ids are ULIDs from the existing `ulid.ts`
   (chronological default order).
 - **HTTP surface** (hot path `/agents/db-agent/<pid>/tables/<t>/**`):
@@ -159,7 +159,7 @@ Structurally `DbCollection` with the document specifics swapped out:
 - **RPC surface**: `configure()` (applies the DDL plan before persisting
   meta; a DDL failure throws so the parent can surface it and the registry
   row keeps the previous columns), `adminQuery`, `adminPut(id, data,
-  ifAbsent)` with the same 409 contract, `adminDelete`, `getRowCount`,
+ifAbsent)` with the same 409 contract, `adminDelete`, `getRowCount`,
   `destroy()` (close sockets → deleteAll → deleteAlarm → deferred abort,
   verbatim). The `DbDocument`-in-RPC `never`-collapse gotcha applies to
   `DbRow` returns identically - same documented casts at the call sites.
@@ -209,7 +209,7 @@ Structurally `DbCollection` with the document specifics swapped out:
   packed-tarball double-add test in D-phase style verifies a consumer
   upgrade lands `DbTable` as v2 without touching v1.
 - **Manifest**: `durableObjects` += `{ "class": "DbTable", "scope":
-  "perTable" }`, routes += `{ "path": "/tables/*", "access": "public" }`.
+"perTable" }`, routes += `{ "path": "/tables/*", "access": "public" }`.
   The `scope` enum widens in BOTH schema copies (app `agent-registry.ts`,
   CLI `manifest.ts`) in the same release - an old copy refusing the new
   value is exactly the drift the single-sourcing exists to catch.

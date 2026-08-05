@@ -16,6 +16,8 @@ import {
 	dbRestoreResultSchema,
 	dbServerFrameSchema,
 	dbSubscribeFrameSchema,
+	dbTableColumnSchema,
+	dbTableConfigSchema,
 	dbValidatorSchema,
 	dbWriteRequestSchema
 } from '$lib/agents';
@@ -33,7 +35,16 @@ const collectionParam = {
 	description:
 		'Collection name. Unknown collections auto-create with `auth`/`auth` modes on first use.'
 };
+const tableParam = {
+	name: 'table',
+	in: 'path',
+	required: true,
+	schema: { type: 'string', pattern: '^[a-z][a-z0-9_-]{0,63}$' },
+	description:
+		'Table name. Tables are schema-first: declare columns via the admin surface before writing.'
+};
 const docIdParam = { name: 'docId', in: 'path', required: true, schema: { type: 'string' } };
+const rowIdParam = { name: 'rowId', in: 'path', required: true, schema: { type: 'string' } };
 const PUBLIC_SECURITY = [{ bearerAuth: [] }];
 
 export const dbOpenApi: AgentOpenApiModule = {
@@ -41,16 +52,21 @@ export const dbOpenApi: AgentOpenApiModule = {
 		{
 			name: DB_TAG,
 			description: [
-				'Firestore-style JSON documents with live queries, one isolated Durable Object per collection.',
+				'Two data models, one database: Firestore-style JSON documents AND SQL tables with typed',
+				'columns - each collection or table its own isolated Durable Object, both with live queries.',
 				'',
-				'Access is per collection: `public` needs nothing, `auth` needs a project JWT from `/auth/token`,',
-				'`owner` additionally scopes every read and write to the token subject. Collections can also',
-				'require a permission key on the JWT (granted via auth roles) and enforce document rules',
-				'(`DbValidator`) on public writes.',
+				'Access is per collection/table: `public` needs nothing, `auth` needs a project JWT from',
+				'`/auth/token`, `owner` additionally scopes every read and write to the token subject. Both can',
+				'also require a permission key on the JWT (granted via auth roles); collections can enforce',
+				'document rules (`DbValidator`) on public writes, tables enforce their declared column schema.',
 				'',
 				'**Live queries**: open a WebSocket to `/agents/db-agent/{projectId}/collections/{collection}/subscribe`',
-				'and send a `DbSubscribeFrame`; the server answers with a `DbServerFrame` snapshot in query order,',
-				'then pushes added/modified/removed deltas as writes happen (see those schemas below).',
+				'(or `/tables/{table}/subscribe`) and send a `DbSubscribeFrame`; the server answers with a',
+				'`DbServerFrame` snapshot in query order, then pushes added/modified/removed deltas as writes happen.',
+				'',
+				'**Tables are schema-first**: declare typed columns (`DbTableConfig`) before writing; rows share',
+				'the document envelope with `data` as the column map. The physical storage uses real columns',
+				'(`id`, `owner`, `created_at`, `updated_at` + yours), so ORM-generated SQL matches it.',
 				'',
 				'**Aggregations**: `POST /collections/{collection}/aggregate` computes count/sum/avg server-side.',
 				'',
@@ -68,6 +84,8 @@ export const dbOpenApi: AgentOpenApiModule = {
 		dbFieldRuleSchema,
 		dbValidatorSchema,
 		dbCollectionConfigSchema,
+		dbTableColumnSchema,
+		dbTableConfigSchema,
 		dbAggregateRequestSchema,
 		dbAggregateResultSchema,
 		dbImportReportSchema,
@@ -179,6 +197,89 @@ export const dbOpenApi: AgentOpenApiModule = {
 				responses: {
 					'200': { description: 'An application/x-ndjson stream of DbDocument lines.' },
 					'401': { description: 'The collection requires a project token.' }
+				}
+			}
+		},
+		'/db/tables/{table}/rows': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'Insert a row',
+				parameters: [tableParam],
+				security: PUBLIC_SECURITY,
+				requestBody: jsonBody(
+					dbCreateRequestSchema,
+					'Row data (the column map) with an optional id. Missing columns take their defaults.'
+				),
+				responses: {
+					'201': jsonResponse(dbDocumentSchema, 'The inserted row (data = column map).'),
+					'400': { description: 'The row failed the declared schema (issues array).' },
+					'401': { description: 'The table requires a project token.' },
+					'404': { description: 'No such table - tables are schema-first.' },
+					'409': { description: 'Duplicate id or unique-column value.' },
+					'429': { description: 'A demo table reached its row ceiling.' }
+				}
+			}
+		},
+		'/db/tables/{table}/rows/{rowId}': {
+			get: {
+				tags: [DB_TAG],
+				summary: 'Read a row',
+				parameters: [tableParam, rowIdParam],
+				security: PUBLIC_SECURITY,
+				responses: {
+					'200': jsonResponse(dbDocumentSchema, 'The row.'),
+					'404': { description: 'No such row (or not yours, in owner mode).' }
+				}
+			},
+			put: {
+				tags: [DB_TAG],
+				summary: 'Replace a row',
+				parameters: [tableParam, rowIdParam],
+				security: PUBLIC_SECURITY,
+				requestBody: jsonBody(dbWriteRequestSchema, 'The full replacement column map.'),
+				responses: {
+					'200': jsonResponse(dbDocumentSchema, 'The updated row.'),
+					'400': { description: 'The row failed the declared schema.' },
+					'404': { description: 'No such row.' },
+					'409': { description: 'Unique-column conflict.' }
+				}
+			},
+			patch: {
+				tags: [DB_TAG],
+				summary: 'Update columns of a row',
+				parameters: [tableParam, rowIdParam],
+				security: PUBLIC_SECURITY,
+				requestBody: jsonBody(dbWriteRequestSchema, 'Columns to set; the rest keep their values.'),
+				responses: {
+					'200': jsonResponse(dbDocumentSchema, 'The updated row.'),
+					'400': { description: 'The merged row failed the declared schema.' },
+					'404': { description: 'No such row.' },
+					'409': { description: 'Unique-column conflict.' }
+				}
+			},
+			delete: {
+				tags: [DB_TAG],
+				summary: 'Delete a row',
+				parameters: [tableParam, rowIdParam],
+				security: PUBLIC_SECURITY,
+				responses: {
+					'200': { description: 'Deleted.' },
+					'404': { description: 'No such row.' }
+				}
+			}
+		},
+		'/db/tables/{table}/query': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'Run a filtered query over typed columns',
+				description:
+					'The same query DSL as collections, compiled against declared columns. Dotted field paths reach into `json` columns.',
+				parameters: [tableParam],
+				security: PUBLIC_SECURITY,
+				requestBody: jsonBody(dbQuerySchema, 'The query.'),
+				responses: {
+					'200': jsonResponse(dbQueryResultSchema, 'Matching rows in query order.'),
+					'400': { description: 'Invalid query, unknown column, or illegal dotted path.' }
 				}
 			}
 		},
@@ -337,6 +438,70 @@ export const dbOpenApi: AgentOpenApiModule = {
 				}
 			}
 		},
+		'/db/admin/tables/{name}': {
+			put: {
+				tags: [DB_TAG],
+				summary: 'Declare or alter a table',
+				description:
+					'The full desired schema in. Additive changes (new columns, index toggles) apply as DDL; destructive changes are refused with 400. Uniquifying a column holding duplicate data fails with 409.',
+				security: [{ sessionCookie: [] }],
+				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
+				requestBody: jsonBody(dbTableConfigSchema, 'Access modes and the declared columns.'),
+				responses: {
+					'200': { description: 'Table declared or altered.' },
+					'400': { description: 'Invalid or destructive schema change.' },
+					'401': UNAUTHORIZED,
+					'409': { description: 'Name in use by a collection, or the DDL failed.' },
+					'429': { description: 'Shard cap reached (collections + tables share the pool).' }
+				}
+			},
+			delete: {
+				tags: [DB_TAG],
+				summary: 'Delete a table and every row in it',
+				security: [{ sessionCookie: [] }],
+				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
+				responses: {
+					'200': { description: 'Table erased.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such table.' }
+				}
+			}
+		},
+		'/db/admin/tables/{name}/rows/{rowId}': {
+			put: {
+				tags: [DB_TAG],
+				summary: 'Operator row upsert',
+				description:
+					'Structure (types, NOT NULL) always validates; policy rules (bounds, enum) are bypassed like document validators. `?ifAbsent=1` refuses taken ids with 409.',
+				security: [{ sessionCookie: [] }],
+				parameters: [
+					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+					{ name: 'rowId', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				requestBody: jsonBody(dbWriteRequestSchema, 'The row data, wrapped as { data }.'),
+				responses: {
+					'200': jsonResponse(dbDocumentSchema, 'The written row.'),
+					'400': { description: 'The row failed the declared schema.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such table.' },
+					'409': { description: 'Id or unique-column conflict.' }
+				}
+			},
+			delete: {
+				tags: [DB_TAG],
+				summary: 'Operator row delete',
+				security: [{ sessionCookie: [] }],
+				parameters: [
+					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+					{ name: 'rowId', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				responses: {
+					'200': { description: 'Deleted.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such table or row.' }
+				}
+			}
+		},
 		'/db/admin/aggregate': {
 			post: {
 				tags: [DB_TAG],
@@ -369,19 +534,20 @@ export const dbOpenApi: AgentOpenApiModule = {
 		'/db/admin/query': {
 			post: {
 				tags: [DB_TAG],
-				summary: 'Operator query over any collection',
-				description: 'Drives the dashboard browser; bypasses access modes.',
+				summary: 'Operator query over any collection or table',
+				description:
+					'Drives the dashboard browser; bypasses access modes. Name exactly one of `collection` or `table`.',
 				security: [{ sessionCookie: [] }],
 				requestBody: {
-					description: 'The collection and query.',
+					description: 'The collection or table, and the query.',
 					required: true,
 					content: {
 						'application/json': {
 							schema: {
 								type: 'object',
-								required: ['collection'],
 								properties: {
 									collection: { type: 'string' },
+									table: { type: 'string' },
 									query: { $ref: '#/components/schemas/DbQuery' }
 								}
 							}
@@ -389,9 +555,10 @@ export const dbOpenApi: AgentOpenApiModule = {
 					}
 				},
 				responses: {
-					'200': jsonResponse(dbQueryResultSchema, 'Matching documents.'),
+					'200': jsonResponse(dbQueryResultSchema, 'Matching documents or rows.'),
+					'400': { description: 'Neither or both names, or a table compile refusal.' },
 					'401': UNAUTHORIZED,
-					'404': { description: 'No such collection.' }
+					'404': { description: 'No such collection or table.' }
 				}
 			}
 		}

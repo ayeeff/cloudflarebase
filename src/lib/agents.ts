@@ -354,12 +354,65 @@ export const dbActivityEventSchema = z
 			'collection.configured',
 			'collection.restored',
 			'documents.changed',
-			'documents.imported'
+			'documents.imported',
+			'table.created',
+			'table.configured',
+			'table.deleted',
+			'rows.changed'
 		]),
 		message: z.string(),
 		at: z.iso.datetime()
 	})
 	.meta({ id: 'DbActivityEvent' });
+
+// --- Tables (phase S1 of docs/db-scale-plan.md) ---
+
+export const dbColumnTypeSchema = z.enum(['text', 'integer', 'real', 'boolean', 'json']);
+
+export const dbTableColumnSchema = z
+	.object({
+		name: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+		type: dbColumnTypeSchema,
+		nullable: z.boolean().optional(),
+		default: dbScalar.optional(),
+		unique: z.boolean().optional(),
+		index: z.boolean().optional(),
+		maxLength: z.number().int().min(0).optional(),
+		min: z.number().optional(),
+		max: z.number().optional(),
+		enum: z.array(dbScalar).min(1).max(20).optional()
+	})
+	.meta({
+		id: 'DbTableColumn',
+		description:
+			'One declared column. Types are enforced on write; `id`, `owner`, `created_at`, and `updated_at` are reserved system columns. NOT NULL without a default means required-on-write.'
+	});
+
+export const dbTableConfigSchema = z
+	.object({
+		readAccess: dbAccessModeSchema,
+		writeAccess: dbAccessModeSchema,
+		readPermission: dbPermissionKeySchema.nullable().optional(),
+		writePermission: dbPermissionKeySchema.nullable().optional(),
+		columns: z.array(dbTableColumnSchema).min(1).max(64)
+	})
+	.meta({
+		id: 'DbTableConfig',
+		description:
+			'The full desired table schema plus access modes. Additive changes apply as DDL; destructive changes (drop/retype/renullability) are refused - export, recreate, and import instead.'
+	});
+
+export const dbTableSummarySchema = z
+	.object({
+		name: z.string(),
+		readAccess: dbAccessModeSchema,
+		writeAccess: dbAccessModeSchema,
+		readPermission: z.string().nullable().catch(null),
+		writePermission: z.string().nullable().catch(null),
+		columns: z.array(dbTableColumnSchema).catch([]),
+		rows: z.number()
+	})
+	.meta({ id: 'DbTableSummary' });
 
 export const dbAggregateRequestSchema = z
 	.object({
@@ -444,7 +497,11 @@ export const dbAgentStateSchema = z
 		provisionedAt: z.iso.datetime().nullable(),
 		allowedOrigins: z.array(z.string()),
 		collections: z.array(dbCollectionSummarySchema),
+		// Tolerant like the summary fields: state persisted before tables
+		// existed still parses (the agent re-syncs on its next wake).
+		tables: z.array(dbTableSummarySchema).catch([]),
 		totalDocs: z.number(),
+		totalRows: z.number().catch(0),
 		rev: z.number(),
 		totalEvents: z.number(),
 		lastEventAt: z.iso.datetime().nullable(),
@@ -459,6 +516,7 @@ export const dbOverviewSchema = z
 	.object({
 		projectId: z.string(),
 		collections: z.array(dbCollectionSummarySchema),
+		tables: z.array(dbTableSummarySchema).catch([]),
 		state: dbAgentStateSchema
 	})
 	.meta({ id: 'DbOverview' });
@@ -521,6 +579,10 @@ export type DbQueryResult = z.infer<typeof dbQueryResultSchema>;
 export type DbFieldRule = z.infer<typeof dbFieldRuleSchema>;
 export type DbValidator = z.infer<typeof dbValidatorSchema>;
 export type DbCollectionSummary = z.infer<typeof dbCollectionSummarySchema>;
+export type DbColumnType = z.infer<typeof dbColumnTypeSchema>;
+export type DbTableColumn = z.infer<typeof dbTableColumnSchema>;
+export type DbTableConfig = z.infer<typeof dbTableConfigSchema>;
+export type DbTableSummary = z.infer<typeof dbTableSummarySchema>;
 export type DbActivityEvent = z.infer<typeof dbActivityEventSchema>;
 export type DbAgentState = z.infer<typeof dbAgentStateSchema>;
 export type DbOverview = z.infer<typeof dbOverviewSchema>;
