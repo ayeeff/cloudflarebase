@@ -293,9 +293,11 @@
 					<p>
 						Rates as of {PRICING_AS_OF}, from
 						{#each PRICING_SOURCES as source, index (source.url)}
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- external pricing sources -->
 							<a class="underline underline-offset-2 hover:text-foreground" href={source.url}
 								>{source.label}</a
 							>{index < PRICING_SOURCES.length - 1 ? ', ' : '.'}
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						{/each}
 						Both bills are estimates - measure before you commit either way.
 					</p>
