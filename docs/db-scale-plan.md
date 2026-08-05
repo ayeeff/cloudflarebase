@@ -108,7 +108,9 @@ shard names — design-doc detail). A project with 3 collections and 2 tables is
   `/admin/*` to the primary. No client-side routing.
 - **Config per shard**: `replication: 'off' | 'auto'` (auto = materialize
   replicas only where traffic exists — unlike D1 we pay replica storage).
-  Demo projects: forced off.
+  Auto is the default for every shard, demo projects included — the demo IS
+  the pitch; `off` is the explicit single-region opt-out (Access tab / table
+  designer / admin API).
 - **Transport is a module.** If Cloudflare ships native DO replication, the
   log-shipping transport is replaced; sessions, routing, and live-query layers
   survive unchanged.
@@ -244,9 +246,11 @@ adapter follows.
 
 ### T3 — parity + default-on
 
-Replication `auto` by default for tables; PITR/export/import parity for
-tables; docs (`agents/db/CLAUDE.md`, root `CLAUDE.md`, README), landing-page
-comparison table.
+~~Replication `auto` by default~~ (shipped early, after T2: auto for every
+shard including demos, with the dashboard Replication globe tab and per-shard
+opt-out). Remaining: PITR/export/import parity for tables; docs
+(`agents/db/CLAUDE.md`, root `CLAUDE.md`, README), landing-page comparison
+table.
 
 ## Non-goals
 

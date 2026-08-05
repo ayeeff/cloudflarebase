@@ -49,7 +49,10 @@
 ## 1. Shape
 
 Replication is per shard (one collection or table), configured
-`replication: 'off' | 'auto'`, default off in REP1 (T3 flips tables to auto).
+`replication: 'off' | 'auto'`. Shipped default off in REP1; now **auto by
+default for every shard, demo projects included** (the demo is the pitch for
+this feature) - `off` is the explicit single-region opt-out, set per
+collection in the dashboard's Access tab or per table in the table designer.
 The SAME DO classes host both roles; the instance name decides:
 
 | Role    | Instance name                   | Holds                                                                   |
@@ -208,34 +211,34 @@ replicas: [{ region, n, appliedLsn, lagLsn, lastSeenAt }] }`.
 
 ## 9. File plan (REP1)
 
-| File                                       | Change                                                                                                                                                                              |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agents/db/src/replication.ts`             | NEW pure-ish module: log append/prune, apply(entry), feed client (bootstrap/pull), freshness bookkeeping - shared by both classes                                                   |
-| `agents/db/src/db/schema.ts` + migrations  | `changelog`, `replicas`, `replica_meta` (applied lsn/epoch, single row) tables                                                                                                      |
-| `agents/db/src/live.ts` (`LiveShard`)      | role detection from the instance name; primary/replica branch points                                                                                                                |
-| `agents/db/src/collection.ts` / `table.ts` | write path logs images inside `transactionSync`; replica role serves reads from local data; forward-to-primary fallback                                                             |
-| `agents/db/src/agent.ts`                   | `replication` in both config shapes + registry column; `getShardRouting`; `/admin/replication/:name`; disable/erase fan-out via primary                                             |
-| `agents/db/src/region.ts`                  | NEW static continent/country → hint map                                                                                                                                             |
-| `agents/db/src/index.ts`                   | read routing to `…:r:<region>:1` behind the flag cache; test region header                                                                                                          |
-| `agents/db/src/schemas.ts` + app mirrors   | config field, status DTOs, `cfb-lsn` header names as constants                                                                                                                      |
-| `agents/db/src/client.ts`                  | session bookmark capture + `cfb-min-lsn` on reads                                                                                                                                   |
-| dashboard db page                          | replica map panel (Tables + Collections), replication toggle in the designer/access surfaces                                                                                        |
-| e2e                                        | `db-replication.api.spec.ts`: enable → routed read via forced region serves from replica; bookmark read-your-writes; horizon resync; disable destroys replicas; demo refuses `auto` |
+| File                                       | Change                                                                                                                                                                                                                                                                   |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agents/db/src/replication.ts`             | NEW pure-ish module: log append/prune, apply(entry), feed client (bootstrap/pull), freshness bookkeeping - shared by both classes                                                                                                                                        |
+| `agents/db/src/db/schema.ts` + migrations  | `changelog`, `replicas`, `replica_meta` (applied lsn/epoch, single row) tables                                                                                                                                                                                           |
+| `agents/db/src/live.ts` (`LiveShard`)      | role detection from the instance name; primary/replica branch points                                                                                                                                                                                                     |
+| `agents/db/src/collection.ts` / `table.ts` | write path logs images inside `transactionSync`; replica role serves reads from local data; forward-to-primary fallback                                                                                                                                                  |
+| `agents/db/src/agent.ts`                   | `replication` in both config shapes + registry column; `getShardRouting`; `/admin/replication/:name`; disable/erase fan-out via primary                                                                                                                                  |
+| `agents/db/src/region.ts`                  | NEW static continent/country → hint map                                                                                                                                                                                                                                  |
+| `agents/db/src/index.ts`                   | read routing to `…:r:<region>:1` behind the flag cache; test region header                                                                                                                                                                                               |
+| `agents/db/src/schemas.ts` + app mirrors   | config field, status DTOs, `cfb-lsn` header names as constants                                                                                                                                                                                                           |
+| `agents/db/src/client.ts`                  | session bookmark capture + `cfb-min-lsn` on reads                                                                                                                                                                                                                        |
+| dashboard db page                          | replica map panel (Tables + Collections), replication toggle in the designer/access surfaces                                                                                                                                                                             |
+| e2e                                        | `db-replication.api.spec.ts`: routed read via forced region serves from replica; bookmark read-your-writes; horizon resync; disable destroys replicas; opt-out shards never advertise bookmarks (default is auto - demos included, pinned by `demo-project.api.spec.ts`) |
 
 ## 10. Non-goals (REP1)
 
-Live queries on replicas and sibling spawn (REP2); default-on (T3); pinned
-region lists; cross-shard anything; write forwarding as a FEATURE (it is a
-correctness net, not an API); replica-aware aggregate consistency beyond the
-bookmark rule; multi-primary or partitioned writes (post-v2, the log/LSN
-composes).
+Live queries on replicas and sibling spawn (REP2); pinned region lists;
+cross-shard anything; write forwarding as a FEATURE (it is a correctness net,
+not an API); replica-aware aggregate consistency beyond the bookmark rule;
+multi-primary or partitioned writes (post-v2, the log/LSN composes).
+(Default-on shipped after REP2, ahead of the original T3 slot.)
 
 ## 11. Risks
 
 1. **Write amplification**: every logged write costs an extra row write
-   (+1/M rows written per M writes) and log churn; `off` stays the default
-   until T3 and the pricing page's model constants gain the replica terms
-   then.
+   (+1/M rows written per M writes) and log churn. Accepted with default-on:
+   replicas themselves stay lazy (no region reads = no replica), and the
+   pricing page's model constants gain the replica terms with M2.
 2. **transactionSync + drizzle**: collections write via drizzle's async API;
    the log append must join the same atomic scope. If drizzle's driver
    fights `transactionSync`, the fallback is ordering (data write, then log
