@@ -1,8 +1,8 @@
 # Project branches
 
-Status: IMPLEMENTED, control plane (drafted 2026-08-05; approved and built
-2026-08-05 - the dashboard switcher and overview grouping are pending a
-design-variant pick)
+Status: IMPLEMENTED (drafted 2026-08-05; approved and built 2026-08-05;
+dashboard switcher built same day after a variant pick - header branch
+dropdown, PlanetScale-style)
 
 > **Deviations and specifics from the draft, for future readers:**
 >
@@ -30,6 +30,17 @@ design-variant pick)
 > - The root-delete cascade deletes branch rows and runs a full per-branch
 >   erase fan-out child-first, exactly as designed; erase failures are
 >   reported per branch id in the delete warning.
+> - **Dashboard** (the picked variant): a `⎇ <branch>` dropdown beside the
+>   header project badge - `main` plus the root's branches, checkmark on the
+>   current one, and a `New branch…` dialog with a live `<root>--<name>`
+>   preview and a combined-ceiling-aware length budget. Switching swaps only
+>   the project segment of the URL, so the operator stays on the same tool
+>   page across branches. Data comes from `getBranchContext` in the
+>   `[projectId]` layout server load; it is null (control hidden) on demo
+>   ids, unregistered projects, and an unreachable control plane. The
+>   projects overview groups branches as indented child rows under their
+>   root (parentId decides, never id shape; an orphaned branch degrades to a
+>   top-level row). Pinned by `e2e/branches.ui.spec.ts`.
 
 Every project gets named **branches** (`main`, `staging`, `preview-42`, …) -
 PlanetScale's mental model applied to the whole backend, not just the
