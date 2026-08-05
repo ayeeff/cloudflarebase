@@ -520,7 +520,10 @@ export type DbRow = DbDocument;
 
 const sqlStatementSchema = z.strictObject({
 	sql: z.string().min(1).max(10_000),
-	params: z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])).max(100).optional(),
+	params: z
+		.array(z.union([z.string(), z.number(), z.boolean(), z.null()]))
+		.max(100)
+		.optional(),
 });
 
 /** One statement, or an atomic batch (transactionSync under the hood). */

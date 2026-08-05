@@ -151,11 +151,9 @@ test('planDdl: full create emits table, system indexes, column indexes', () => {
 	const plan = planDdl('users', null, withIndexes);
 	assert.equal(plan.ok, true);
 	if (!plan.ok) return;
-	assert.equal(
+	assert.match(
 		plan.statements[0],
-		'CREATE TABLE IF NOT EXISTS "users" (' +
-			'"id" TEXT PRIMARY KEY, "owner" TEXT, "created_at" INTEGER NOT NULL, ' +
-			'"updated_at" INTEGER NOT NULL, "email" TEXT, "age" INTEGER)',
+		/^CREATE TABLE IF NOT EXISTS "users" \("id" TEXT PRIMARY KEY, "owner" TEXT, "created_at" INTEGER NOT NULL DEFAULT \(CAST.*"updated_at" INTEGER NOT NULL DEFAULT \(CAST.*"email" TEXT, "age" INTEGER\)$/,
 	);
 	assert.ok(
 		plan.statements.includes('CREATE INDEX IF NOT EXISTS "idx_users_owner" ON "users" ("owner")'),

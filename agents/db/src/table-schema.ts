@@ -186,10 +186,16 @@ export function planDdl(
 ): DdlPlan {
 	if (!applied) {
 		const defs = declared.map(columnDef);
+		// The timestamp defaults are what let RAW SQL (ORMs) insert without
+		// knowing about system columns - ms-epoch, computed by SQLite itself.
+		// (Raw UPDATEs should set updated_at themselves; the typed API always
+		// maintains it.)
+		const nowMs = `(CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))`;
 		const statements = [
 			`CREATE TABLE IF NOT EXISTS ${quoteIdent(table)} (` +
 				`"id" TEXT PRIMARY KEY, "owner" TEXT, ` +
-				`"created_at" INTEGER NOT NULL, "updated_at" INTEGER NOT NULL` +
+				`"created_at" INTEGER NOT NULL DEFAULT ${nowMs}, ` +
+				`"updated_at" INTEGER NOT NULL DEFAULT ${nowMs}` +
 				(defs.length ? `, ${defs.join(', ')}` : '') +
 				`)`,
 			...systemIndexStatements(table),

@@ -442,6 +442,11 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			return this.adminReplicationStatus(decodeURIComponent(replicationStatus[1]));
 		}
 
+		const tableSql = subPath.match(/^\/admin\/tables\/([^/]+)\/sql$/);
+		if (tableSql && request.method === 'POST') {
+			return this.adminTableSql(request, decodeURIComponent(tableSql[1]));
+		}
+
 		const tableRow = subPath.match(/^\/admin\/tables\/([^/]+)\/rows\/([^/]+)$/);
 		if (tableRow) {
 			return this.adminTableRowWrite(
@@ -538,20 +543,57 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return row && row.kind === 'table' ? row : null;
 	}
 
+	/** One operator aggregate surface for both engines (T2): the body names
+	 * exactly one of `collection` or `table`, like /admin/query. */
 	private async adminAggregate(request: Request): Promise<Response> {
 		const body = (await request.json().catch(() => null)) as {
 			collection?: unknown;
+			table?: unknown;
 			aggregate?: unknown;
 		} | null;
-		const name = collectionNameSchema.safeParse(body?.collection);
 		const aggregate = aggregateRequestSchema.safeParse(body?.aggregate);
-		if (!name.success || !aggregate.success) {
-			return Response.json({ error: 'invalid collection or aggregate request' }, { status: 400 });
+		const hasCollection = body?.collection !== undefined;
+		const hasTable = body?.table !== undefined;
+		if (!aggregate.success || hasCollection === hasTable) {
+			return Response.json(
+				{ error: 'name exactly one of collection or table, plus a valid aggregate request' },
+				{ status: 400 },
+			);
 		}
+
+		if (hasTable) {
+			const name = collectionNameSchema.safeParse(body?.table);
+			if (!name.success) return Response.json({ error: 'invalid table name' }, { status: 400 });
+			if (!(await this.tableRow(name.data))) {
+				return Response.json({ error: 'no such table' }, { status: 404 });
+			}
+			const result = (await this.tableStub(name.data).adminAggregate(
+				aggregate.data,
+			)) as unknown as Awaited<ReturnType<DbTable['adminAggregate']>>;
+			if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
+			return Response.json({ results: result.results });
+		}
+
+		const name = collectionNameSchema.safeParse(body?.collection);
+		if (!name.success) return Response.json({ error: 'invalid collection name' }, { status: 400 });
 		if (!(await this.collectionRow(name.data))) {
 			return Response.json({ error: 'no such collection' }, { status: 404 });
 		}
 		return Response.json(await this.childStub(name.data).adminAggregate(aggregate.data));
+	}
+
+	/** Operator SQL over one table - the dashboard console and the copilot's
+	 * read tool ride this; the statement gate is the same table-sql.ts. */
+	private async adminTableSql(request: Request, name: string): Promise<Response> {
+		if (!(await this.tableRow(name))) {
+			return Response.json({ error: 'no such table' }, { status: 404 });
+		}
+		const body = await request.json().catch(() => null);
+		const result = (await this.tableStub(name).adminSql(body)) as unknown as Awaited<
+			ReturnType<DbTable['adminSql']>
+		>;
+		if (!result.ok) return Response.json({ success: false, error: result.error }, { status: 400 });
+		return Response.json({ success: true, batch: result.batch });
 	}
 
 	/** Operator NDJSON export, streamed chunk by chunk over child RPC. */

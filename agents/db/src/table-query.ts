@@ -173,8 +173,7 @@ export interface CompiledTableAggregate {
 }
 
 export type TableAggregateResult =
-	| { ok: true; compiled: CompiledTableAggregate }
-	| { ok: false; error: string };
+	{ ok: true; compiled: CompiledTableAggregate } | { ok: false; error: string };
 
 /**
  * count/sum/avg over typed columns - the document aggregate's twin. Typed

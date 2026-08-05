@@ -679,9 +679,7 @@ export class DbTable extends LiveShard {
 			return this.guarded(request, 'read', config, (owner) => this.handleQuery(request, owner));
 		}
 		if (subPath === '/aggregate' && request.method === 'POST') {
-			return this.guarded(request, 'read', config, (owner) =>
-				this.handleAggregate(request, owner),
-			);
+			return this.guarded(request, 'read', config, (owner) => this.handleAggregate(request, owner));
 		}
 		if (subPath === '/sql' && request.method === 'POST') {
 			return this.handleSql(request, config);
@@ -951,7 +949,11 @@ export class DbTable extends LiveShard {
 	 * log entries are appended in the same transaction, notifications are
 	 * collected for after the commit. */
 	private runSqlStatements(
-		statements: { kind: 'select' | 'insert' | 'update' | 'delete'; sql: string; params: unknown[] }[],
+		statements: {
+			kind: 'select' | 'insert' | 'update' | 'delete';
+			sql: string;
+			params: unknown[];
+		}[],
 	): {
 		results: TableSqlResult[];
 		notifications: { kind: 'upsert' | 'delete'; row: DbRow }[];

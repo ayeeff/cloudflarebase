@@ -77,6 +77,8 @@ test.describe('openapi document', () => {
 			'/db/tables/{table}/rows',
 			'/db/tables/{table}/rows/{rowId}',
 			'/db/tables/{table}/query',
+			'/db/tables/{table}/aggregate',
+			'/db/tables/{table}/sql',
 			'/db/admin/tables/{name}',
 			'/db/admin/tables/{name}/rows/{rowId}'
 		]) {

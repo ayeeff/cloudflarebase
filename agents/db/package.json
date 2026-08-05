@@ -35,6 +35,10 @@
 			"types": "./dist/client.d.ts",
 			"default": "./dist/client.js"
 		},
+		"./drizzle": {
+			"types": "./dist/drizzle.d.ts",
+			"default": "./dist/drizzle.js"
+		},
 		"./wrangler-fragment.jsonc": "./template/wrangler-fragment.jsonc",
 		"./cloudflarebase.agent.json": "./cloudflarebase.agent.json",
 		"./package.json": "./package.json"

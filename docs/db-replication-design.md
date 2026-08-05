@@ -52,9 +52,9 @@ Replication is per shard (one collection or table), configured
 `replication: 'off' | 'auto'`, default off in REP1 (T3 flips tables to auto).
 The SAME DO classes host both roles; the instance name decides:
 
-| Role    | Instance name                   | Holds                                                                 |
-| ------- | ------------------------------- | --------------------------------------------------------------------- |
-| primary | `<pid>:<name>`                  | authoritative data + the change log + the replica registry            |
+| Role    | Instance name                   | Holds                                                                   |
+| ------- | ------------------------------- | ----------------------------------------------------------------------- |
+| primary | `<pid>:<name>`                  | authoritative data + the change log + the replica registry              |
 | replica | `<pid>:<name>:r:<region>[:<n>]` | a full copy, applied from the log; serves reads (REP2: + subscriptions) |
 
 `:` cannot appear in project or shard names, so the `:r:` suffix is

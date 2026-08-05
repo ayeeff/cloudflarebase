@@ -283,6 +283,64 @@ export const dbOpenApi: AgentOpenApiModule = {
 				}
 			}
 		},
+		'/db/tables/{table}/aggregate': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'count/sum/avg over typed columns',
+				parameters: [tableParam],
+				security: PUBLIC_SECURITY,
+				requestBody: jsonBody(dbAggregateRequestSchema, 'Aggregates keyed by result alias.'),
+				responses: {
+					'200': jsonResponse(dbAggregateResultSchema, 'Aggregate values by alias.'),
+					'400': { description: 'Unknown column or non-numeric sum/avg target.' },
+					'401': { description: 'The table requires a project token.' }
+				}
+			}
+		},
+		'/db/tables/{table}/sql': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'Run single-table SQL (ORM-grade, D1-shaped)',
+				description:
+					'One SELECT/INSERT/UPDATE/DELETE (or an atomic `batch`) over this table alone - what `@cloudflarebase/db/drizzle` drives. DML gains automatic RETURNING and feeds the change log and live queries. ALWAYS requires a project JWT (public modes never open raw SQL); owner-scoped tables refuse it. Results carry objects plus `raw` value arrays with `columns` order for drivers. SELECTs serve from region replicas when replication is on.',
+				parameters: [tableParam],
+				security: PUBLIC_SECURITY,
+				requestBody: {
+					description: '`{ sql, params? }` or `{ batch: [{ sql, params? }, ...] }`.',
+					required: true,
+					content: {
+						'application/json': {
+							schema: {
+								type: 'object',
+								properties: {
+									sql: { type: 'string' },
+									params: { type: 'array', items: {} },
+									batch: {
+										type: 'array',
+										items: {
+											type: 'object',
+											required: ['sql'],
+											properties: { sql: { type: 'string' }, params: { type: 'array', items: {} } }
+										}
+									}
+								}
+							}
+						}
+					}
+				},
+				responses: {
+					'200': {
+						description:
+							'`{ success, result }` (or `batch: [...]`), each with `results`, `columns`, `raw`, and D1-style `meta`.'
+					},
+					'400': {
+						description: 'Statement refused by the gate, or a SQL error (batches roll back whole).'
+					},
+					'401': { description: 'Raw SQL requires a project token.' },
+					'403': { description: 'Owner-scoped table, or missing permission key.' }
+				}
+			}
+		},
 		'/db/overview': {
 			get: {
 				tags: [DB_TAG],

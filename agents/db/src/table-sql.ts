@@ -27,9 +27,7 @@ import type { TableColumn } from './schemas';
 
 export type SqlKind = 'select' | 'insert' | 'update' | 'delete';
 
-export type PreparedSql =
-	| { ok: true; kind: SqlKind; sql: string }
-	| { ok: false; error: string };
+export type PreparedSql = { ok: true; kind: SqlKind; sql: string } | { ok: false; error: string };
 
 /** Internal storage no raw statement may name, whatever the casing. */
 const INTERNAL_NAMES = [
@@ -92,7 +90,11 @@ export function prepareTableSql(
 		return { ok: false, error: 'sqlite internals are not queryable here' };
 	}
 	// `pragma\w*` also catches the function forms (pragma_table_info & co).
-	if (/\b(pragma\w*|attach|detach|vacuum|reindex|alter|create|drop|begin|commit|rollback|savepoint)\b/.test(lowered)) {
+	if (
+		/\b(pragma\w*|attach|detach|vacuum|reindex|alter|create|drop|begin|commit|rollback|savepoint)\b/.test(
+			lowered,
+		)
+	) {
 		return {
 			ok: false,
 			error: 'only plain SELECT/INSERT/UPDATE/DELETE statements run here',
@@ -107,7 +109,10 @@ export function prepareTableSql(
 
 	// DML must target THIS table by its unquoted or quoted name.
 	const t = `("?)${escapeRegExp(table)}\\1`;
-	if (kind === 'insert' && !new RegExp(`^insert\\s+(or\\s+\\w+\\s+)?into\\s+${t}\\b`, 'i').test(sql)) {
+	if (
+		kind === 'insert' &&
+		!new RegExp(`^insert\\s+(or\\s+\\w+\\s+)?into\\s+${t}\\b`, 'i').test(sql)
+	) {
 		return { ok: false, error: `inserts must target "${table}"` };
 	}
 	if (kind === 'update' && !new RegExp(`^update\\s+(or\\s+\\w+\\s+)?${t}\\b`, 'i').test(sql)) {

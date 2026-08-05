@@ -172,6 +172,23 @@ class ShardHandle<T extends Record<string, unknown> = Record<string, unknown>> {
 		return this.request('POST', '/query', querySchema.parse(query));
 	}
 
+	/** count/sum/avg server-side; sum/avg skip non-numeric values. Both
+	 * engines serve it (tables compile against declared columns). */
+	async aggregate(request: AggregateRequest): Promise<Record<string, number | null>> {
+		const { results } = await this.request<{ results: Record<string, number | null> }>(
+			'POST',
+			'/aggregate',
+			aggregateRequestSchema.parse(request),
+		);
+		return results;
+	}
+
+	/** Matching count (everything readable when `where` is omitted). */
+	async count(where?: AggregateRequest['where']): Promise<number> {
+		const results = await this.aggregate({ where, aggregates: { total: { op: 'count' } } });
+		return results.total ?? 0;
+	}
+
 	/**
 	 * Live query. Returns an unsubscribe function. One socket per handle;
 	 * subscriptions are multiplexed by id. On reconnect every active
@@ -310,22 +327,6 @@ class ShardHandle<T extends Record<string, unknown> = Record<string, unknown>> {
 export class CollectionHandle extends ShardHandle {
 	constructor(baseUrl: string, name: string, options: DbClientOptions) {
 		super(baseUrl, name, options, { shard: 'collections', item: 'documents' });
-	}
-
-	/** count/sum/avg over the collection; sum/avg skip non-numeric values. */
-	async aggregate(request: AggregateRequest): Promise<Record<string, number | null>> {
-		const { results } = await this.request<{ results: Record<string, number | null> }>(
-			'POST',
-			'/aggregate',
-			aggregateRequestSchema.parse(request),
-		);
-		return results;
-	}
-
-	/** Matching-document count (all documents when `where` is omitted). */
-	async count(where?: AggregateRequest['where']): Promise<number> {
-		const results = await this.aggregate({ where, aggregates: { total: { op: 'count' } } });
-		return results.total ?? 0;
 	}
 
 	/**

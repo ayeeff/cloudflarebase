@@ -161,6 +161,11 @@ async function fetchAgentTool(
 	return truncate(text, TOOL_RESULT_MAX_CHARS);
 }
 
+const dbSqlArgsSchema = z.object({
+	table: z.string().min(1).max(64),
+	sql: z.string().min(1).max(4000)
+});
+
 const dbQueryArgsSchema = z
 	.object({
 		collection: z.string().min(1).max(64).optional(),
@@ -261,6 +266,42 @@ const COPILOT_TOOLS: CopilotTool[] = [
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(collection ? { collection, query } : { table, query })
 			});
+		}
+	},
+	{
+		name: 'db_sql',
+		description:
+			'Run ONE read-only SQL SELECT over one SQL table - for sums, grouping, and shapes the query DSL cannot express. Single-table only; get table names and columns from db_overview first. Double-quote identifiers; always add a LIMIT.',
+		parameters: {
+			type: 'object',
+			properties: {
+				table: { type: 'string', description: 'SQL table name from db_overview.' },
+				sql: {
+					type: 'string',
+					description:
+						'One SELECT statement over that table, e.g. SELECT "status", COUNT(*) AS n FROM "orders" GROUP BY "status" LIMIT 20.'
+				}
+			},
+			required: ['table', 'sql']
+		},
+		execute: async (args, ctx) => {
+			const parsed = dbSqlArgsSchema.safeParse(args);
+			if (!parsed.success) return 'invalid arguments - table and sql are required strings';
+			// The copilot is a read-only surface: refuse DML before it ever
+			// reaches the endpoint (which would happily run it as an operator).
+			if (!/^\s*(select|with)\b/i.test(parsed.data.sql)) {
+				return 'refused: only SELECT statements are allowed from the copilot';
+			}
+			return fetchAgentTool(
+				ctx,
+				AGENT_REGISTRY.db,
+				`/admin/tables/${encodeURIComponent(parsed.data.table)}/sql`,
+				{
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ sql: parsed.data.sql })
+				}
+			);
 		}
 	}
 ];

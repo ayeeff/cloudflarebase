@@ -13,7 +13,7 @@ function cols(...input: Record<string, unknown>[]): TableColumn[] {
 const TODO = cols(
 	{ name: 'title', type: 'text' },
 	{ name: 'votes', type: 'integer' },
-	{ name: 'meta', type: 'json' }
+	{ name: 'meta', type: 'json' },
 );
 
 function ok(sql: string) {
@@ -35,7 +35,10 @@ test('sql gate: plain statements pass and DML gains RETURNING', () => {
 
 	const insert = ok(`INSERT INTO todos (id, title, votes) VALUES (?, ?, ?);`);
 	assert.equal(insert.kind, 'insert');
-	assert.match(insert.sql, /RETURNING "id", "owner", "created_at", "updated_at", "title", "votes", "meta"$/);
+	assert.match(
+		insert.sql,
+		/RETURNING "id", "owner", "created_at", "updated_at", "title", "votes", "meta"$/,
+	);
 
 	const update = ok(`update "todos" set votes = votes + 1 where id = ?`);
 	assert.equal(update.kind, 'update');
@@ -74,21 +77,26 @@ test('sql gate: DML must target this table; RETURNING is ours to add', () => {
 	refused('INSERT INTO todos (id) VALUES (?) RETURNING id', 'added automatically');
 	refused('WITH x AS (SELECT 1) INSERT INTO todos (id) SELECT * FROM x', 'CTEs');
 	// A CTE-fronted SELECT is legitimate ORM output.
-	const cte = ok('WITH ranked AS (SELECT id, votes FROM todos) SELECT * FROM ranked WHERE votes > ?');
+	const cte = ok(
+		'WITH ranked AS (SELECT id, votes FROM todos) SELECT * FROM ranked WHERE votes > ?',
+	);
 	assert.equal(cte.kind, 'select');
 });
 
 test('table aggregates: typed columns sum directly, json paths stay gated', () => {
 	const typed = compileTableAggregate(
 		'todos',
-		{ where: [{ field: 'title', op: '==', value: 'x' }], aggregates: { total: { op: 'count' }, v: { op: 'sum', field: 'votes' } } },
-		TODO
+		{
+			where: [{ field: 'title', op: '==', value: 'x' }],
+			aggregates: { total: { op: 'count' }, v: { op: 'sum', field: 'votes' } },
+		},
+		TODO,
 	);
 	assert.equal(typed.ok, true, !typed.ok ? new Error(typed.error) : undefined);
 	if (typed.ok) {
 		assert.equal(
 			typed.compiled.sql,
-			`SELECT COUNT(*) AS agg_0, COALESCE(SUM("votes"), 0) AS agg_1 FROM "todos" WHERE "title" = ?`
+			`SELECT COUNT(*) AS agg_0, COALESCE(SUM("votes"), 0) AS agg_1 FROM "todos" WHERE "title" = ?`,
 		);
 		assert.deepEqual(typed.compiled.aliases, ['total', 'v']);
 	}
@@ -96,15 +104,24 @@ test('table aggregates: typed columns sum directly, json paths stay gated', () =
 	const json = compileTableAggregate(
 		'todos',
 		{ aggregates: { avg: { op: 'avg', field: 'meta.score' } } },
-		TODO
+		TODO,
 	);
 	assert.equal(json.ok, true);
-	if (json.ok) assert.match(json.compiled.sql, /json_type\("meta", '\$\.score'\) IN \('integer', 'real'\)/);
+	if (json.ok)
+		assert.match(json.compiled.sql, /json_type\("meta", '\$\.score'\) IN \('integer', 'real'\)/);
 
-	const text = compileTableAggregate('todos', { aggregates: { s: { op: 'sum', field: 'title' } } }, TODO);
+	const text = compileTableAggregate(
+		'todos',
+		{ aggregates: { s: { op: 'sum', field: 'title' } } },
+		TODO,
+	);
 	assert.equal(text.ok, false);
 	if (!text.ok) assert.match(text.error, /text column/);
 
-	const unknown = compileTableAggregate('todos', { aggregates: { s: { op: 'sum', field: 'ghost' } } }, TODO);
+	const unknown = compileTableAggregate(
+		'todos',
+		{ aggregates: { s: { op: 'sum', field: 'ghost' } } },
+		TODO,
+	);
 	assert.equal(unknown.ok, false);
 });

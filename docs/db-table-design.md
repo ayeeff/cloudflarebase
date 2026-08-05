@@ -24,6 +24,39 @@
 >   ("Can't read from request stream after response has been sent"). Every DO
 >   fetch/onRequest path and the entry worker now drain unread bodies
 >   (`drainUnusedBody` in access.ts) - this fix covers collections too.
+>
+> **T2 implemented 2026-08-05** (the §10 SQL surface). Decisions and
+> deviations:
+>
+> - `POST /tables/:name/sql`: one SELECT/INSERT/UPDATE/DELETE or an atomic
+>   `batch` (transactionSync - a failing batch rolls back whole, matching
+>   D1's batch atomicity after all). The gate (`table-sql.ts`) refuses second
+>   statements, DDL/PRAGMA/transactions, internal-table references (string
+>   literals included - bind them), foreign-table DML, and user RETURNING;
+>   DML gains automatic `RETURNING <full row>`, which is what feeds the
+>   change log and the live engine.
+> - **Raw SQL always requires a project JWT** - public access modes open the
+>   typed API, never arbitrary SQL - and owner-scoped tables refuse it (403):
+>   arbitrary SQL cannot be owner-scoped without rewriting it. SELECT binds
+>   readPermission, DML binds writePermission; DML is operator-grade
+>   (structure via the schema itself, policy bounds not re-applied).
+> - `created_at`/`updated_at` gained SQL-level ms-epoch DEFAULTs at CREATE
+>   TABLE (the e2e caught that no ORM insert could ever satisfy them). Raw
+>   UPDATEs should set `updated_at` themselves; the typed API maintains it.
+> - **Documented live-delivery limitation**: raw-SQL UPDATEs notify with
+>   before=null, so predicate-EXIT deltas are not emitted for them (windowed
+>   subscriptions stay fully correct via membership diff; replication images
+>   are complete either way). The typed API remains the full-fidelity path.
+> - Replicas serve all-SELECT sql requests locally (bookmark rules apply)
+>   and forward anything with DML to the primary.
+> - `@cloudflarebase/db/drizzle` ships as a thin `drizzle-orm/sqlite-proxy`
+>   driver over the endpoint (single + atomic batch). **Schema codegen is
+>   deferred** - the CLI has no console-auth story yet; revisit with it.
+> - Aggregates: `POST /tables/:name/aggregate` (typed columns sum directly,
+>   json paths keep the json_type gate, non-numeric targets are compile-time
+>   refusals) plus `table` support on `/admin/aggregate`, and the operator
+>   `/admin/tables/:name/sql` console route the copilot's read-only `db_sql`
+>   tool rides.
 
 ## 1. Shape
 
