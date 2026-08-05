@@ -8,12 +8,12 @@ Also read [AGENTS.md](AGENTS.md). Cloudflare APIs change frequently; retrieve cu
 
 Separate npm projects with separate Wrangler configs and generated `Env` types. Never import runtime code or generated Worker types across them. Shared DTOs are deliberately copied and must be kept in sync.
 
-| Path          | Worker                                                         | Purpose                                                                                                     |
-| ------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `/`           | `cloudflarebase` (`cloudflarebase-com` in `env.production`)    | SvelteKit 2/Svelte 5 dashboard and marketing site, shadcn-svelte, Tailwind v4, Cloudflare adapter           |
-| `agents/auth` | `auth-agent` (`-local`, `-test`, or `-preview` by environment) | `AuthAgent` Durable Object, one per project; Better Auth and Drizzle over embedded DO SQLite                |
+| Path          | Worker                                                         | Purpose                                                                                                                                                                   |
+| ------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`           | `cloudflarebase` (`cloudflarebase-com` in `env.production`)    | SvelteKit 2/Svelte 5 dashboard and marketing site, shadcn-svelte, Tailwind v4, Cloudflare adapter                                                                         |
+| `agents/auth` | `auth-agent` (`-local`, `-test`, or `-preview` by environment) | `AuthAgent` Durable Object, one per project; Better Auth and Drizzle over embedded DO SQLite                                                                              |
 | `agents/db`   | `db-agent` (`-local`, `-test`, or `-preview` by environment)   | `DbAgent` (coordinator, one per project) + `DbCollection` (one per collection) + `DbTable` (one per SQL table): documents and typed-column tables, both with live queries |
-| `cli`         | none (Node on the consumer's machine)                          | `@cloudflarebase/cli`, the `cloudflarebase` bin: `init` / `add <agent>` / `deploy`                          |
+| `cli`         | none (Node on the consumer's machine)                          | `@cloudflarebase/cli`, the `cloudflarebase` bin: `init` / `add <agent>` / `deploy`                                                                                        |
 
 The root Worker binds `AUTH_AGENT` + `DB_AGENT` (agent services) and `DB` (control-plane D1). Agent instances live at `/agents/<worker>/<projectId>/...`.
 
