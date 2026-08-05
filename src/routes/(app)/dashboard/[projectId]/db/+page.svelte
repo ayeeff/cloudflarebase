@@ -39,6 +39,7 @@
 		Activity,
 		BookmarkPlus,
 		Calendar as CalendarIcon,
+		ChevronRight,
 		Database,
 		Download,
 		EllipsisVertical,
@@ -119,6 +120,13 @@
 	let docsLoaded = $state(false);
 	let docsError = $state<string | null>(null);
 	let actionError = $state<string | null>(null);
+	// Third Miller column: which document's fields are open.
+	let selectedDoc = $state<string | null>(null);
+	const selectedDocData = $derived(documents.find((doc) => doc.id === selectedDoc) ?? null);
+
+	function selectDocument(id: string) {
+		selectedDoc = selectedDoc === id ? null : id;
+	}
 
 	// Keep the snapshot in sync with the load, but only reset the browser when
 	// the PROJECT actually changes - on first mount this effect runs after
@@ -190,6 +198,9 @@
 				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
 			}
 			documents = result.docs;
+			if (selectedDoc && !result.docs.some((doc) => doc.id === selectedDoc)) {
+				selectedDoc = null;
+			}
 			docsError = null;
 		} catch (error) {
 			if (selected !== collection) return;
@@ -201,6 +212,7 @@
 
 	function closeBrowser() {
 		selected = null;
+		selectedDoc = null;
 		documents = [];
 		docsLoaded = false;
 		docsError = null;
@@ -1026,416 +1038,476 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 					{/each}
 				</div>
 
-				<div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
-					<Card.Root class="min-w-0 lg:col-span-2" data-testid="db-collections-card">
-						<Card.Header>
-							<Card.Title>Collections</Card.Title>
-							<Card.Description>Click a collection to browse its documents.</Card.Description>
-						</Card.Header>
-						<Card.Content>
-							{#if agentState.collections.length === 0}
-								<p
-									class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
+				<!-- Firestore-style Miller-column browser: collections | documents |
+				     fields, with the breadcrumb path across the top. -->
+				<Card.Root class="min-w-0" data-testid="db-documents-card">
+					<Card.Header class="border-b">
+						<Card.Title class="flex min-w-0 items-center gap-1.5 font-mono text-sm font-normal">
+							<Database class="h-4 w-4 shrink-0 text-primary" />
+							<button
+								type="button"
+								class="text-muted-foreground transition-colors hover:text-foreground"
+								onclick={closeBrowser}
+							>
+								{data.projectId}
+							</button>
+							{#if selected}
+								<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+								<span class="truncate font-medium">{selected}</span>
+							{/if}
+							{#if selectedDocData}
+								<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+								<span class="truncate text-muted-foreground">{selectedDocData.id}</span>
+							{/if}
+						</Card.Title>
+					</Card.Header>
+					<Card.Content class="p-0">
+						<div
+							class="grid grid-cols-1 max-lg:divide-y lg:min-h-[26rem] lg:grid-cols-[minmax(13rem,0.9fr)_minmax(0,1.1fr)_minmax(0,1.4fr)] lg:divide-x"
+						>
+							<!-- Column 1: collections -->
+							<div class="flex min-w-0 flex-col">
+								<div class="flex items-center justify-between border-b px-3 py-2">
+									<span class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+										Collections
+									</span>
+									<span class="text-xs text-muted-foreground tabular-nums">
+										{agentState.collections.length}
+									</span>
+								</div>
+								<div
+									class="min-h-0 flex-1 overflow-y-auto p-1.5"
+									data-testid="db-collections-table"
 								>
-									No collections yet - create the first one below.
-								</p>
-							{:else}
-								<Table.Root class="min-w-[36rem]" data-testid="db-collections-table">
-									<Table.Header>
-										<Table.Row>
-											<Table.Head>Name</Table.Head>
-											<Table.Head>Read</Table.Head>
-											<Table.Head>Write</Table.Head>
-											<Table.Head class="text-right">Documents</Table.Head>
-										</Table.Row>
-									</Table.Header>
-									<Table.Body>
+									{#if agentState.collections.length === 0}
+										<p class="px-2 py-6 text-center text-sm text-muted-foreground">
+											No collections yet - create the first one below.
+										</p>
+									{:else}
 										{#each agentState.collections as collection (collection.name)}
-											<Table.Row
-												class={['cursor-pointer', selected === collection.name && 'bg-muted/50']}
+											<button
+												type="button"
+												class={[
+													'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+													selected === collection.name
+														? 'bg-muted font-medium text-foreground'
+														: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+												]}
 												data-testid={`db-collection-${collection.name}`}
 												onclick={() => selectCollection(collection.name)}
 											>
-												<Table.Cell>
-													<div class="flex items-center gap-2">
-														<div
-															class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
-														>
-															<Database class="h-3.5 w-3.5" />
-														</div>
-														<span class="font-mono text-sm font-medium">{collection.name}</span>
-													</div>
-												</Table.Cell>
-												<Table.Cell>
-													<Badge variant="outline" class="font-mono text-[11px]">
-														{collection.readAccess}
-													</Badge>
-												</Table.Cell>
-												<Table.Cell>
-													<Badge variant="outline" class="font-mono text-[11px]">
-														{collection.writeAccess}
-													</Badge>
-												</Table.Cell>
-												<Table.Cell class="text-right text-sm tabular-nums">
-													{collection.docs}
-												</Table.Cell>
-											</Table.Row>
+												<Database class="h-3.5 w-3.5 shrink-0" />
+												<span class="min-w-0 flex-1 truncate font-mono">{collection.name}</span>
+												<span class="text-xs tabular-nums">{collection.docs}</span>
+												{#if selected === collection.name}
+													<ChevronRight class="h-3.5 w-3.5 shrink-0" />
+												{/if}
+											</button>
 										{/each}
-									</Table.Body>
-								</Table.Root>
-							{/if}
-
-							<form
-								class="mt-4 flex flex-wrap items-end gap-3 rounded-lg border bg-muted/20 p-4"
-								data-testid="db-create-collection"
-								onsubmit={createCollection}
-							>
-								<div class="min-w-40 flex-1 space-y-2">
-									<Label for="new-collection-name">New collection</Label>
-									<Input
-										id="new-collection-name"
-										class="font-mono"
-										placeholder="collection name…"
-										bind:value={newCollectionName}
-									/>
+									{/if}
 								</div>
-								<div class="space-y-2">
-									<Label>Read</Label>
-									<Select.Root
-										type="single"
-										value={newReadAccess}
-										onValueChange={(value) => (newReadAccess = toAccessMode(value))}
-									>
-										<Select.Trigger
-											class="min-w-24 font-mono"
-											size="sm"
-											aria-label="Read access for the new collection"
-										>
-											{newReadAccess}
-										</Select.Trigger>
-										<Select.Content>
-											{#each accessModes as mode (mode)}
-												<Select.Item value={mode} label={mode} class="font-mono" />
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								</div>
-								<div class="space-y-2">
-									<Label>Write</Label>
-									<Select.Root
-										type="single"
-										value={newWriteAccess}
-										onValueChange={(value) => (newWriteAccess = toAccessMode(value))}
-									>
-										<Select.Trigger
-											class="min-w-24 font-mono"
-											size="sm"
-											aria-label="Write access for the new collection"
-										>
-											{newWriteAccess}
-										</Select.Trigger>
-										<Select.Content>
-											{#each accessModes as mode (mode)}
-												<Select.Item value={mode} label={mode} class="font-mono" />
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								</div>
-								<Button type="submit" size="sm" class="gap-1.5" disabled={busy}>
-									<Plus class="h-4 w-4" /> Create
-								</Button>
-								{#if createError}
-									<p class="basis-full text-sm text-destructive" data-testid="db-create-error">
-										{createError}
-									</p>
-								{/if}
-							</form>
-						</Card.Content>
-					</Card.Root>
 
-					<Card.Root data-testid="db-activity">
-						<Card.Header>
-							<Card.Title class="flex items-center gap-2">
-								<Radio class="h-4 w-4 text-primary" /> Live activity
-							</Card.Title>
-							<Card.Description>Streamed from the agent via WebSocket state sync.</Card.Description>
-						</Card.Header>
-						<Card.Content>
-							{#if agentState.events.length === 0}
-								<p class="py-6 text-center text-sm text-muted-foreground">Nothing yet.</p>
-							{:else}
-								<ScrollArea class="h-72 pr-3" type="always">
-									<ol class="space-y-4">
-										{#each agentState.events as event (event.id)}
-											{@const Icon = eventIcons[event.type] ?? Activity}
-											<li class="flex gap-3">
-												<div
-													class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
-												>
-													<Icon class="h-3.5 w-3.5" />
-												</div>
-												<div class="min-w-0">
-													<p class="text-sm leading-snug">{event.message}</p>
-													<p class="mt-0.5 font-mono text-[11px] text-muted-foreground">
-														{event.type} · {timeAgo(event.at)}
-													</p>
-												</div>
-											</li>
-										{/each}
-									</ol>
-								</ScrollArea>
-							{/if}
-						</Card.Content>
-					</Card.Root>
-				</div>
-
-				{#if selected}
-					<Card.Root data-testid="db-documents-card">
-						<Card.Header>
-							<Card.Title class="font-mono">{selected}</Card.Title>
-							<Card.Description>
-								Up to 50 documents in id order, refetched on every change. Adding refuses an id that
-								already exists; editing a row replaces it.
-							</Card.Description>
-							<!-- Desktop: labeled row beside the title; mobile drops the row
-							     UNDER the header full-width with Add document stretched.
-							     Export/import/delete live in the three-dots menu. -->
-							<Card.Action
-								class="flex flex-wrap items-center gap-2 self-center max-md:col-span-2 max-md:col-start-1 max-md:row-span-1 max-md:row-start-auto max-md:mt-2 max-md:w-full max-md:justify-self-stretch"
-							>
-								<Button
-									size="sm"
-									class="gap-1.5 max-md:flex-1"
-									data-testid="db-add-document"
-									aria-label="Add document"
-									onclick={() => {
-										editorOpen = !editorOpen;
-										editingExisting = false;
-										docIdInput = '';
-										docError = null;
-									}}
-								>
-									<Plus class="h-4 w-4" />Add document
-								</Button>
-								<input
-									bind:this={importInput}
-									type="file"
-									accept=".ndjson,.jsonl,.txt,application/x-ndjson"
-									class="hidden"
-									onchange={importFile}
-								/>
-								<Button
-									size="sm"
-									variant="outline"
-									class="gap-1.5"
-									data-testid="db-rollback"
-									aria-label="Roll back in time"
-									onclick={openRollback}
-								>
-									<History class="h-4 w-4" /><span class="max-md:sr-only">Roll back</span>
-								</Button>
-								<DropdownMenu.Root>
-									<DropdownMenu.Trigger>
-										{#snippet child({ props })}
-											<Button
-												{...props}
-												size="icon"
-												variant="outline"
-												class="h-8 w-8"
-												aria-label="More collection actions"
-												data-testid="db-actions-menu"
-											>
-												<EllipsisVertical class="h-4 w-4" />
-											</Button>
-										{/snippet}
-									</DropdownMenu.Trigger>
-									<DropdownMenu.Content align="end">
-										<DropdownMenu.Item
-											data-testid="db-export"
-											onclick={() =>
-												selected &&
-												(window.location.href = `${adminBase}/${encodeURIComponent(selected)}/export`)}
-										>
-											<Download class="h-4 w-4" /> Export NDJSON
-										</DropdownMenu.Item>
-										<DropdownMenu.Item
-											data-testid="db-import"
-											disabled={importBusy}
-											onclick={() => importInput?.click()}
-										>
-											<Upload class="h-4 w-4" />
-											{importBusy ? 'Importing…' : 'Import NDJSON'}
-										</DropdownMenu.Item>
-										<DropdownMenu.Separator />
-										<DropdownMenu.Item
-											variant="destructive"
-											data-testid="db-delete-collection"
-											onclick={() => {
-												deletePanelOpen = true;
-												deleteConfirmInput = '';
-												deleteError = null;
-											}}
-										>
-											<Trash2 class="h-4 w-4" /> Delete
-										</DropdownMenu.Item>
-									</DropdownMenu.Content>
-								</DropdownMenu.Root>
-								<Button
-									variant="ghost"
-									size="icon"
-									class="h-8 w-8"
-									aria-label="Close document browser"
-									onclick={closeBrowser}
-								>
-									<X class="h-4 w-4" />
-								</Button>
-							</Card.Action>
-						</Card.Header>
-						<Card.Content>
-							{#if editorOpen}
 								<form
-									class="mb-4 space-y-3 rounded-lg border bg-muted/20 p-4"
-									data-testid="db-doc-editor"
-									onsubmit={saveDocument}
+									class="flex flex-wrap items-end gap-2 border-t p-3"
+									data-testid="db-create-collection"
+									onsubmit={createCollection}
 								>
-									<div class="grid gap-3 sm:grid-cols-2">
-										<div class="space-y-2">
-											<Label for="doc-id">
-												{editingExisting
-													? 'Document id (fixed while editing)'
-													: 'Document id (optional)'}
-											</Label>
-											<!-- Locked during edit: PUT is an upsert, so a changed id would
-											     CREATE a second document and leave the original behind. -->
-											<Input
-												id="doc-id"
-												class="font-mono"
-												placeholder="auto-generated"
-												disabled={editingExisting}
-												bind:value={docIdInput}
-											/>
-										</div>
-									</div>
-									<div class="space-y-2">
-										<Label for="doc-json">Data (JSON object)</Label>
-										<Textarea
-											id="doc-json"
-											class="min-h-32 font-mono text-xs"
-											bind:value={docJsonInput}
+									<div class="min-w-40 flex-1 space-y-2">
+										<Label for="new-collection-name">New collection</Label>
+										<Input
+											id="new-collection-name"
+											class="font-mono"
+											placeholder="collection name…"
+											bind:value={newCollectionName}
 										/>
 									</div>
-									{#if docError}
-										<p class="text-sm text-destructive" data-testid="db-doc-error">{docError}</p>
-									{/if}
-									<div class="flex gap-2">
-										<Button type="submit" size="sm" disabled={busy}>Save document</Button>
-										<Button
-											type="button"
-											variant="ghost"
-											size="sm"
-											onclick={() => (editorOpen = false)}
+									<div class="space-y-2">
+										<Label>Read</Label>
+										<Select.Root
+											type="single"
+											value={newReadAccess}
+											onValueChange={(value) => (newReadAccess = toAccessMode(value))}
 										>
-											Cancel
-										</Button>
+											<Select.Trigger
+												class="min-w-24 font-mono"
+												size="sm"
+												aria-label="Read access for the new collection"
+											>
+												{newReadAccess}
+											</Select.Trigger>
+											<Select.Content>
+												{#each accessModes as mode (mode)}
+													<Select.Item value={mode} label={mode} class="font-mono" />
+												{/each}
+											</Select.Content>
+										</Select.Root>
 									</div>
+									<div class="space-y-2">
+										<Label>Write</Label>
+										<Select.Root
+											type="single"
+											value={newWriteAccess}
+											onValueChange={(value) => (newWriteAccess = toAccessMode(value))}
+										>
+											<Select.Trigger
+												class="min-w-24 font-mono"
+												size="sm"
+												aria-label="Write access for the new collection"
+											>
+												{newWriteAccess}
+											</Select.Trigger>
+											<Select.Content>
+												{#each accessModes as mode (mode)}
+													<Select.Item value={mode} label={mode} class="font-mono" />
+												{/each}
+											</Select.Content>
+										</Select.Root>
+									</div>
+									<Button type="submit" size="sm" class="gap-1.5" disabled={busy}>
+										<Plus class="h-4 w-4" /> Create
+									</Button>
+									{#if createError}
+										<p class="basis-full text-sm text-destructive" data-testid="db-create-error">
+											{createError}
+										</p>
+									{/if}
 								</form>
-							{/if}
+							</div>
 
-							{#if actionError}
-								<p class="mb-3 text-sm text-destructive" data-testid="db-action-error">
-									{actionError}
-								</p>
-							{/if}
-							{#if docsError}
-								<p class="mb-3 text-sm text-destructive" data-testid="db-docs-error">{docsError}</p>
-							{/if}
-							{#if importError}
-								<p class="mb-3 text-sm text-destructive" data-testid="db-import-error">
-									{importError}
-								</p>
-							{/if}
-							{#if importReport}
-								<p class="mb-3 text-sm text-muted-foreground" data-testid="db-import-result">
-									Imported {importReport.imported} new and replaced {importReport.updated} documents{importReport
-										.errors.length
-										? `; ${importReport.errors.length} lines failed (first: line ${importReport.errors[0].line} - ${importReport.errors[0].error})`
-										: '.'}
-								</p>
-							{/if}
-
-							{#if !docsLoaded}
-								<p class="py-6 text-center text-sm text-muted-foreground">Loading documents…</p>
-							{:else if documents.length === 0}
-								<p
-									class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
-								>
-									No documents yet - add the first one.
-								</p>
-							{:else}
-								<Table.Root class="min-w-[42rem]" data-testid="db-documents-table">
-									<Table.Header>
-										<Table.Row>
-											<Table.Head>Id</Table.Head>
-											<Table.Head>Data</Table.Head>
-											<Table.Head>Owner</Table.Head>
-											<Table.Head class="text-right">Updated</Table.Head>
-											<Table.Head class="w-12"><span class="sr-only">Actions</span></Table.Head>
-										</Table.Row>
-									</Table.Header>
-									<Table.Body>
-										{#each documents as doc (doc.id)}
-											<Table.Row>
-												<Table.Cell class="max-w-40 truncate font-mono text-xs" title={doc.id}>
-													{doc.id}
-												</Table.Cell>
-												<Table.Cell class="max-w-80">
-													<code
-														class="block truncate font-mono text-xs text-muted-foreground"
-														title={JSON.stringify(doc.data)}
+							<!-- Column 2: documents of the selected collection -->
+							<div class="flex min-w-0 flex-col">
+								{#if selected}
+									<div class="flex items-center justify-between gap-1 border-b px-3 py-1.5">
+										<span
+											class="min-w-0 truncate text-xs font-medium tracking-wide text-muted-foreground uppercase"
+										>
+											Documents
+										</span>
+										<div class="flex shrink-0 items-center">
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-7 w-7"
+												data-testid="db-add-document"
+												aria-label="Add document"
+												onclick={() => {
+													editorOpen = !editorOpen;
+													editingExisting = false;
+													docIdInput = '';
+													docError = null;
+												}}
+											>
+												<Plus class="h-4 w-4" />
+											</Button>
+											<input
+												bind:this={importInput}
+												type="file"
+												accept=".ndjson,.jsonl,.txt,application/x-ndjson"
+												class="hidden"
+												onchange={importFile}
+											/>
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-7 w-7"
+												data-testid="db-rollback"
+												aria-label="Roll back in time"
+												onclick={openRollback}
+											>
+												<History class="h-4 w-4" />
+											</Button>
+											<DropdownMenu.Root>
+												<DropdownMenu.Trigger>
+													{#snippet child({ props })}
+														<Button
+															{...props}
+															variant="ghost"
+															size="icon"
+															class="h-7 w-7"
+															aria-label="More collection actions"
+															data-testid="db-actions-menu"
+														>
+															<EllipsisVertical class="h-4 w-4" />
+														</Button>
+													{/snippet}
+												</DropdownMenu.Trigger>
+												<DropdownMenu.Content align="end">
+													<DropdownMenu.Item
+														data-testid="db-export"
+														onclick={() =>
+															selected &&
+															(window.location.href = `${adminBase}/${encodeURIComponent(selected)}/export`)}
 													>
-														{JSON.stringify(doc.data)}
-													</code>
-												</Table.Cell>
-												<Table.Cell
-													class="max-w-32 truncate font-mono text-xs text-muted-foreground"
-													title={doc.owner ?? ''}
+														<Download class="h-4 w-4" /> Export NDJSON
+													</DropdownMenu.Item>
+													<DropdownMenu.Item
+														data-testid="db-import"
+														disabled={importBusy}
+														onclick={() => importInput?.click()}
+													>
+														<Upload class="h-4 w-4" />
+														{importBusy ? 'Importing…' : 'Import NDJSON'}
+													</DropdownMenu.Item>
+													<DropdownMenu.Separator />
+													<DropdownMenu.Item
+														variant="destructive"
+														data-testid="db-delete-collection"
+														onclick={() => {
+															deletePanelOpen = true;
+															deleteConfirmInput = '';
+															deleteError = null;
+														}}
+													>
+														<Trash2 class="h-4 w-4" /> Delete
+													</DropdownMenu.Item>
+												</DropdownMenu.Content>
+											</DropdownMenu.Root>
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-7 w-7"
+												aria-label="Close document browser"
+												onclick={closeBrowser}
+											>
+												<X class="h-4 w-4" />
+											</Button>
+										</div>
+									</div>
+
+									{#if editorOpen}
+										<form
+											class="space-y-3 border-b bg-muted/20 p-3"
+											data-testid="db-doc-editor"
+											onsubmit={saveDocument}
+										>
+											<div class="space-y-2">
+												<Label for="doc-id">
+													{editingExisting
+														? 'Document id (fixed while editing)'
+														: 'Document id (optional)'}
+												</Label>
+												<!-- Locked during edit: PUT is an upsert, so a changed id would
+												     CREATE a second document and leave the original behind. -->
+												<Input
+													id="doc-id"
+													class="font-mono"
+													placeholder="auto-generated"
+													disabled={editingExisting}
+													bind:value={docIdInput}
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label for="doc-json">Data (JSON object)</Label>
+												<Textarea
+													id="doc-json"
+													class="min-h-28 font-mono text-xs"
+													bind:value={docJsonInput}
+												/>
+											</div>
+											{#if docError}
+												<p class="text-sm text-destructive" data-testid="db-doc-error">
+													{docError}
+												</p>
+											{/if}
+											<div class="flex gap-2">
+												<Button type="submit" size="sm" disabled={busy}>Save document</Button>
+												<Button
+													type="button"
+													variant="ghost"
+													size="sm"
+													onclick={() => (editorOpen = false)}
 												>
-													{doc.owner ?? '—'}
-												</Table.Cell>
-												<Table.Cell class="text-right text-xs text-muted-foreground">
-													{timeAgo(doc.updatedAt)}
-												</Table.Cell>
-												<Table.Cell>
+													Cancel
+												</Button>
+											</div>
+										</form>
+									{/if}
+
+									<div
+										class="min-h-0 flex-1 overflow-y-auto p-1.5"
+										data-testid="db-documents-table"
+									>
+										{#if actionError}
+											<p class="px-2 py-1 text-sm text-destructive" data-testid="db-action-error">
+												{actionError}
+											</p>
+										{/if}
+										{#if docsError}
+											<p class="px-2 py-1 text-sm text-destructive" data-testid="db-docs-error">
+												{docsError}
+											</p>
+										{/if}
+										{#if importError}
+											<p class="px-2 py-1 text-sm text-destructive" data-testid="db-import-error">
+												{importError}
+											</p>
+										{/if}
+										{#if importReport}
+											<p
+												class="px-2 py-1 text-sm text-muted-foreground"
+												data-testid="db-import-result"
+											>
+												Imported {importReport.imported} new and replaced {importReport.updated} documents{importReport
+													.errors.length
+													? `; ${importReport.errors.length} lines failed (first: line ${importReport.errors[0].line} - ${importReport.errors[0].error})`
+													: '.'}
+											</p>
+										{/if}
+										{#if !docsLoaded}
+											<p class="py-6 text-center text-sm text-muted-foreground">
+												Loading documents…
+											</p>
+										{:else if documents.length === 0}
+											<p class="px-2 py-6 text-center text-sm text-muted-foreground">
+												No documents yet - add the first one.
+											</p>
+										{:else}
+											{#each documents as doc (doc.id)}
+												<div
+													class={[
+														'group flex w-full items-center gap-1 rounded-md transition-colors',
+														selectedDoc === doc.id ? 'bg-muted' : 'hover:bg-muted/50'
+													]}
+												>
+													<button
+														type="button"
+														class="min-w-0 flex-1 px-2 py-1 text-left"
+														title={doc.id}
+														onclick={() => selectDocument(doc.id)}
+													>
+														<span
+															class={[
+																'block truncate font-mono text-xs',
+																selectedDoc === doc.id
+																	? 'font-medium text-foreground'
+																	: 'text-muted-foreground group-hover:text-foreground'
+															]}
+														>
+															{doc.id}
+														</span>
+														<!-- Data preview line: keeps content assertions honest and the
+														     list scannable without opening the third column. -->
+														<span
+															class="block truncate font-mono text-[10px] text-muted-foreground/70"
+														>
+															{JSON.stringify(doc.data)}
+														</span>
+													</button>
 													<Button
 														variant="ghost"
 														size="icon"
-														class="h-8 w-8 text-muted-foreground hover:text-foreground"
+														class="h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
 														disabled={busy}
 														aria-label={`Edit document ${doc.id}`}
 														data-testid={`db-edit-${doc.id}`}
 														onclick={() => editDocument(doc)}
 													>
-														<Pencil class="h-4 w-4" />
+														<Pencil class="h-3 w-3" />
 													</Button>
 													<Button
 														variant="ghost"
 														size="icon"
-														class="h-8 w-8 text-muted-foreground hover:text-destructive"
+														class="mr-1 h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
 														disabled={busy}
 														aria-label={`Delete document ${doc.id}`}
 														onclick={() => deleteDocument(doc.id)}
 													>
-														<Trash2 class="h-4 w-4" />
+														<Trash2 class="h-3 w-3" />
 													</Button>
-												</Table.Cell>
-											</Table.Row>
-										{/each}
-									</Table.Body>
-								</Table.Root>
-							{/if}
-						</Card.Content>
-					</Card.Root>
-				{/if}
+													{#if selectedDoc === doc.id}
+														<ChevronRight class="mr-1 h-3.5 w-3.5 shrink-0" />
+													{/if}
+												</div>
+											{/each}
+										{/if}
+									</div>
+								{:else}
+									<p class="m-auto px-4 py-10 text-center text-sm text-muted-foreground">
+										Select a collection to browse its documents.
+									</p>
+								{/if}
+							</div>
+
+							<!-- Column 3: the selected document's fields -->
+							<div class="flex min-w-0 flex-col">
+								{#if selectedDocData}
+									<div class="flex items-center justify-between gap-2 border-b px-3 py-2">
+										<span
+											class="min-w-0 truncate font-mono text-xs text-muted-foreground"
+											title={selectedDocData.id}
+										>
+											{selectedDocData.id}
+										</span>
+										<span class="shrink-0 text-xs text-muted-foreground">
+											{timeAgo(selectedDocData.updatedAt)}
+										</span>
+									</div>
+									<div class="min-h-0 flex-1 overflow-y-auto p-3" data-testid="db-doc-fields">
+										<dl class="space-y-1.5">
+											{#each Object.entries(selectedDocData.data) as [field, value] (field)}
+												<div class="flex items-baseline gap-2 text-xs">
+													<dt class="shrink-0 font-mono font-medium">{field}</dt>
+													<dd
+														class="min-w-0 flex-1 truncate text-right font-mono text-muted-foreground"
+														title={JSON.stringify(value)}
+													>
+														{JSON.stringify(value)}
+													</dd>
+												</div>
+											{/each}
+										</dl>
+										{#if selectedDocData.owner}
+											<p class="mt-3 border-t pt-2 text-xs text-muted-foreground">
+												owner <span class="font-mono">{selectedDocData.owner}</span>
+											</p>
+										{/if}
+									</div>
+								{:else}
+									<p class="m-auto px-4 py-10 text-center text-sm text-muted-foreground">
+										{selected
+											? 'Select a document to inspect its fields.'
+											: 'Fields appear here once a document is open.'}
+									</p>
+								{/if}
+							</div>
+						</div>
+					</Card.Content>
+				</Card.Root>
+
+				<Card.Root data-testid="db-activity">
+					<Card.Header>
+						<Card.Title class="flex items-center gap-2">
+							<Radio class="h-4 w-4 text-primary" /> Live activity
+						</Card.Title>
+						<Card.Description>Streamed from the agent via WebSocket state sync.</Card.Description>
+					</Card.Header>
+					<Card.Content>
+						{#if agentState.events.length === 0}
+							<p class="py-6 text-center text-sm text-muted-foreground">Nothing yet.</p>
+						{:else}
+							<ScrollArea class="h-72 pr-3" type="always">
+								<ol class="space-y-4">
+									{#each agentState.events as event (event.id)}
+										{@const Icon = eventIcons[event.type] ?? Activity}
+										<li class="flex gap-3">
+											<div
+												class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+											>
+												<Icon class="h-3.5 w-3.5" />
+											</div>
+											<div class="min-w-0">
+												<p class="text-sm leading-snug">{event.message}</p>
+												<p class="mt-0.5 font-mono text-[11px] text-muted-foreground">
+													{event.type} · {timeAgo(event.at)}
+												</p>
+											</div>
+										</li>
+									{/each}
+								</ol>
+							</ScrollArea>
+						{/if}
+					</Card.Content>
+				</Card.Root>
 			</div>
 		{/if}
 
