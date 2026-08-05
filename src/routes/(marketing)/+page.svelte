@@ -30,7 +30,8 @@
 		Boxes,
 		Zap,
 		HardDrive,
-		Clock
+		Clock,
+		Minus
 	} from '@lucide/svelte';
 
 	type MenuItem = { name: string; href: string };
@@ -38,6 +39,7 @@
 		{ name: 'API', href: '#api' },
 		{ name: 'Live today', href: '#live' },
 		{ name: 'Architecture', href: '#architecture' },
+		{ name: 'Compare', href: '#compare' },
 		{ name: 'Pricing', href: '/pricing' },
 		{ name: 'Roadmap', href: '#roadmap' },
 		{ name: 'FAQ', href: '#faq' }
@@ -54,6 +56,67 @@
 		'Drizzle ORM',
 		'Workers AI',
 		'Analytics Engine'
+	];
+
+	// The comparison matrix. Cells are a rating plus a short receipt - never a
+	// bare checkmark. Competitor cells stay qualitative on purpose: exact
+	// prices live once, with dated sources, on /pricing.
+	type CompareCell = { mark: 'yes' | 'no' | 'partial'; note: string };
+	type CompareRow = {
+		capability: string;
+		cfb: CompareCell;
+		firebase: CompareCell;
+		supabase: CompareCell;
+	};
+	const compareRows: CompareRow[] = [
+		{
+			capability: 'Authentication',
+			cfb: { mark: 'yes', note: 'Better Auth in a per-project agent' },
+			firebase: { mark: 'yes', note: 'Firebase Auth' },
+			supabase: { mark: 'yes', note: 'Supabase Auth' }
+		},
+		{
+			capability: 'Documents with live queries',
+			cfb: { mark: 'yes', note: 'a Durable Object per collection' },
+			firebase: { mark: 'yes', note: 'Firestore' },
+			supabase: { mark: 'partial', note: 'JSONB columns + realtime channels' }
+		},
+		{
+			capability: 'Typed SQL tables',
+			cfb: { mark: 'yes', note: 'ORM-ready schema, gated raw SQL' },
+			firebase: { mark: 'no', note: 'documents only' },
+			supabase: { mark: 'yes', note: 'Postgres' }
+		},
+		{
+			capability: 'Branching',
+			cfb: { mark: 'yes', note: 'the whole backend - auth included - free' },
+			firebase: { mark: 'no', note: 'clone the project by hand' },
+			supabase: { mark: 'partial', note: 'database only, paid' }
+		},
+		{
+			capability: 'Read replicas near users',
+			cfb: { mark: 'yes', note: 'on by default, per collection' },
+			firebase: { mark: 'partial', note: 'region fixed at create' },
+			supabase: { mark: 'partial', note: 'paid add-on' }
+		},
+		{
+			capability: 'Point-in-time restore',
+			cfb: { mark: 'yes', note: '30 days, built in' },
+			firebase: { mark: 'partial', note: 'paid, up to 7 days' },
+			supabase: { mark: 'partial', note: 'paid add-on' }
+		},
+		{
+			capability: 'Egress fees',
+			cfb: { mark: 'yes', note: '$0 bandwidth' },
+			firebase: { mark: 'no', note: 'metered per GB' },
+			supabase: { mark: 'partial', note: 'metered past the cap' }
+		},
+		{
+			capability: 'Open source + self-hosting',
+			cfb: { mark: 'yes', note: 'Apache-2.0, deploys to your account' },
+			firebase: { mark: 'no', note: 'proprietary' },
+			supabase: { mark: 'yes', note: 'their cloud or yours' }
+		}
 	];
 
 	// Everything in this grid is live in the demo today - auth and database both.
@@ -795,6 +858,75 @@
 						</div>
 					{/each}
 				</div>
+			</div>
+		</section>
+
+		<!-- COMPARE -->
+		<section id="compare" class="px-4 py-16 sm:px-8 sm:py-24">
+			<div class="mx-auto max-w-6xl">
+				<div class="mb-10 max-w-xl">
+					<span
+						class="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
+						>Compare</span
+					>
+					<h2 class="mt-4 text-3xl font-bold md:text-4xl">Same primitives. Different physics.</h2>
+					<p class="mt-3 text-muted-foreground">
+						Firebase's DX, Supabase's openness, Cloudflare's network. Every row is a reason this
+						exists.
+					</p>
+				</div>
+				<div class="overflow-x-auto rounded-2xl border border-border">
+					<table
+						class="w-full min-w-[720px] border-collapse bg-card text-left text-sm"
+						data-testid="comparison-table"
+					>
+						<thead>
+							<tr class="border-b border-border">
+								<th class="p-4 font-medium text-muted-foreground">Capability</th>
+								<th class="bg-primary/[0.06] p-4">
+									<span class="flex items-center gap-2 font-semibold">
+										<img src="/brand/mark.svg" alt="" class="h-4 w-4" /> Cloudflarebase
+									</span>
+								</th>
+								<th class="p-4 font-medium text-muted-foreground">Firebase</th>
+								<th class="p-4 font-medium text-muted-foreground">Supabase</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each compareRows as row (row.capability)}
+								<tr class="border-b border-border last:border-0">
+									<th scope="row" class="p-4 align-top font-medium">{row.capability}</th>
+									{#each [row.cfb, row.firebase, row.supabase] as cell, i (i)}
+										<td class={cn('p-4 align-top', i === 0 && 'bg-primary/[0.06]')}>
+											<span class="flex items-start gap-2">
+												{#if cell.mark === 'yes'}
+													<Check class="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+												{:else if cell.mark === 'partial'}
+													<Minus class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70" />
+												{:else}
+													<X class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50" />
+												{/if}
+												<span
+													class={cn(
+														'text-xs leading-relaxed',
+														i === 0 ? 'text-foreground' : 'text-muted-foreground'
+													)}>{cell.note}</span
+												>
+											</span>
+										</td>
+									{/each}
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				<p class="mt-3 text-xs text-muted-foreground/70">
+					Competitor capabilities as publicly documented; exact prices with dated sources live on
+					the
+					<a href={resolve('/(marketing)/pricing')} class="underline hover:text-foreground"
+						>pricing page</a
+					>.
+				</p>
 			</div>
 		</section>
 

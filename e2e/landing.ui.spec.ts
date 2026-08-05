@@ -28,6 +28,22 @@ test.describe('landing page (frontend)', () => {
 		await expect(page.getByText('AuthAgent · DO SQLite')).toBeVisible();
 	});
 
+	test('the comparison table states the trade-offs', async ({ page }) => {
+		await page.goto('/');
+		await expect(
+			page.getByRole('heading', { name: 'Same primitives. Different physics.' })
+		).toBeVisible();
+
+		const table = page.getByTestId('comparison-table');
+		for (const name of ['Cloudflarebase', 'Firebase', 'Supabase']) {
+			await expect(table.getByRole('columnheader', { name })).toBeVisible();
+		}
+		// The branching row is the pitch in one line.
+		const branching = table.getByRole('row', { name: /Branching/ });
+		await expect(branching).toContainText('the whole backend');
+		await expect(branching).toContainText('database only, paid');
+	});
+
 	test('"Open the live demo" leads to the demo project dashboard', async ({ page }) => {
 		await page.goto('/');
 
