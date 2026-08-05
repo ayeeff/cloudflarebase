@@ -32,6 +32,7 @@ import {
 	encodeCursor,
 	type DecodedCursor,
 } from './query';
+import { shardBookmarkForTime, shardCurrentBookmark, shardRestoreTo } from './pitr';
 import { validateDocument } from './rules';
 import { ulid } from './ulid';
 import {
@@ -42,7 +43,6 @@ import {
 	importLineSchema,
 	logEntrySchema,
 	querySchema,
-	restoreRequestSchema,
 	storedConfigSchema,
 	repApplyInputSchema,
 	repPullInputSchema,
@@ -93,8 +93,6 @@ import { isDurableObjectReset, type DbAgent } from './agent';
  * what heals a parent-side row whose config push failed.
  */
 
-/** Local dev keeps no durable change log; workerd phrases it several ways. */
-const UNSUPPORTED_PITR_PATTERN = /does not implement|not (yet )?(supported|implemented|available)/i;
 const DEMO_MAX_DOCS_PER_COLLECTION = 200;
 const DEMO_MAX_DOC_BYTES = 8 * 1024;
 /**
@@ -252,111 +250,23 @@ export class DbCollection extends LiveShard {
 		return report;
 	}
 
-	/**
-	 * Point-in-time restore over the platform's SQLite bookmarks. The restore
-	 * takes effect at the START of the next session, so this closes every
-	 * subscriber (reconnects get fresh snapshots against the restored data)
-	 * and aborts a tick later; the returned undo bookmark reverses the whole
-	 * thing via another restore. Local development keeps no durable change
-	 * log, so the API reports unsupported there.
-	 */
+	/** Point-in-time restore over the platform's SQLite bookmarks - the shared
+	 * sequence lives in pitr.ts; see shardRestoreTo for the contract. */
 	async restoreTo(input: unknown): Promise<RestoreOutcome> {
-		const parsed = restoreRequestSchema.parse(input);
-		const storage = this.ctx.storage;
-		if (
-			typeof storage.getBookmarkForTime !== 'function' ||
-			typeof storage.onNextSessionRestoreBookmark !== 'function'
-		) {
-			return { ok: false, code: 'unsupported' };
-		}
-
-		try {
-			const bookmark =
-				parsed.bookmark ?? (await storage.getBookmarkForTime(new Date(parsed.timestamp ?? 0)));
-			const undoBookmark = await storage.onNextSessionRestoreBookmark(bookmark);
-			for (const ws of this.ctx.getWebSockets()) {
-				try {
-					ws.close(1012, 'collection restored');
-				} catch {
-					// a half-dead socket must not block the restore
-				}
-			}
-			setTimeout(() => this.ctx.abort(), 0);
-			return { ok: true, undoBookmark };
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			// Miniflare implements the methods but rejects the calls - observed:
-			// "This Durable Object's storage back-end does not implement
-			// point-in-time recovery." A real platform failure (e.g. a bookmark
-			// past the 30-day window) reports as failed with its message.
-			if (UNSUPPORTED_PITR_PATTERN.test(message)) return { ok: false, code: 'unsupported' };
-			// Restore is the last-resort recovery path; a genuine failure here
-			// must not look like local dev's missing change log.
-			try {
-				Sentry.captureException(error, {
-					level: 'error',
-					tags: { collection: this.config?.collection ?? 'unknown', operation: 'pitr-restore' },
-				});
-			} catch {
-				// reporting must never replace the outcome
-			}
-			return { ok: false, code: 'failed', message: message.slice(0, 256) };
-		}
+		return shardRestoreTo(this.ctx, input, {
+			label: this.config?.collection ?? 'unknown',
+			closeReason: 'collection restored',
+		});
 	}
 
-	/**
-	 * The bookmark for this exact moment - the parent persists these as named
-	 * restore points (manual checkpoints, before imports, before rollbacks)
-	 * and doubles this call as the PITR support probe. No side effects.
-	 *
-	 * The probe exercises getBookmarkForTime, not just getCurrentBookmark:
-	 * local workerd serves the latter while refusing the rest of the PITR API,
-	 * and "supported" must mean a restore would actually work. Only the
-	 * back-end's "does not implement" answer counts as unsupported - a young
-	 * DO can reject a specific timestamp (its change log may postdate it)
-	 * while PITR itself is fully available.
-	 */
+	/** The current-moment bookmark, doubling as the PITR support probe. */
 	async currentBookmark(): Promise<{ ok: true; bookmark: string } | { ok: false }> {
-		const storage = this.ctx.storage;
-		if (
-			typeof storage.getCurrentBookmark !== 'function' ||
-			typeof storage.getBookmarkForTime !== 'function'
-		) {
-			return { ok: false };
-		}
-		try {
-			const bookmark = await storage.getCurrentBookmark();
-			try {
-				await storage.getBookmarkForTime(new Date());
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				if (UNSUPPORTED_PITR_PATTERN.test(message)) return { ok: false };
-			}
-			return { ok: true, bookmark };
-		} catch {
-			return { ok: false };
-		}
+		return shardCurrentBookmark(this.ctx);
 	}
 
-	/**
-	 * D1-restore-style resolution: a wall-clock time in, the closest available
-	 * bookmark out - shown to the operator BEFORE anything is restored. No
-	 * side effects.
-	 */
+	/** D1-restore-style timestamp -> closest-available-bookmark resolution. */
 	async bookmarkForTime(input: unknown): Promise<BookmarkOutcome> {
-		const timestamp = z.iso.datetime().parse(input);
-		const storage = this.ctx.storage;
-		if (typeof storage.getBookmarkForTime !== 'function') {
-			return { ok: false, code: 'unsupported' };
-		}
-		try {
-			return { ok: true, bookmark: await storage.getBookmarkForTime(new Date(timestamp)) };
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			return UNSUPPORTED_PITR_PATTERN.test(message)
-				? { ok: false, code: 'unsupported' }
-				: { ok: false, code: 'failed', message: message.slice(0, 256) };
-		}
+		return shardBookmarkForTime(this.ctx, input);
 	}
 
 	/**

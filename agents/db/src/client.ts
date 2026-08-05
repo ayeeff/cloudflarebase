@@ -322,19 +322,13 @@ class ShardHandle<T extends Record<string, unknown> = Record<string, unknown>> {
 		}
 		entry.handlers.onChange?.({ kind: frame.kind, doc }, entry.docs);
 	}
-}
-
-export class CollectionHandle extends ShardHandle {
-	constructor(baseUrl: string, name: string, options: DbClientOptions) {
-		super(baseUrl, name, options, { shard: 'collections', item: 'documents' });
-	}
 
 	/**
-	 * Stream every readable document (owner-mode collections yield only
-	 * yours). The server sends NDJSON in id order; documents materialize one
-	 * at a time, so a large collection never has to fit in memory.
+	 * The shared NDJSON export stream both handles expose under their own
+	 * names. Items materialize one line at a time, so a large shard never has
+	 * to fit in memory.
 	 */
-	async *exportDocuments(): AsyncGenerator<DbDocument, void, undefined> {
+	protected async *exportShard(): AsyncGenerator<DbDocument, void, undefined> {
 		const response = await fetch(this.url('/export'), { headers: await this.headers() });
 		if (!response.ok || !response.body) {
 			const payload = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -358,10 +352,31 @@ export class CollectionHandle extends ShardHandle {
 	}
 }
 
+export class CollectionHandle extends ShardHandle {
+	constructor(baseUrl: string, name: string, options: DbClientOptions) {
+		super(baseUrl, name, options, { shard: 'collections', item: 'documents' });
+	}
+
+	/**
+	 * Stream every readable document (owner-mode collections yield only
+	 * yours). The server sends NDJSON in id order; documents materialize one
+	 * at a time, so a large collection never has to fit in memory.
+	 */
+	async *exportDocuments(): AsyncGenerator<DbDocument, void, undefined> {
+		yield* this.exportShard();
+	}
+}
+
 export class TableHandle<
 	T extends Record<string, unknown> = Record<string, unknown>,
 > extends ShardHandle<T> {
 	constructor(baseUrl: string, name: string, options: DbClientOptions) {
 		super(baseUrl, name, options, { shard: 'tables', item: 'rows' });
+	}
+
+	/** Stream every readable row - the collection export contract on typed
+	 * rows (owner-mode tables yield only yours; NDJSON in id order). */
+	async *exportRows(): AsyncGenerator<Typed<T>, void, undefined> {
+		yield* this.exportShard() as AsyncGenerator<Typed<T>, void, undefined>;
 	}
 }

@@ -26,11 +26,15 @@ import {
 	MAX_IMPORT_DOCS,
 	MAX_RESTORE_POINTS,
 	type AccessMode,
+	type BookmarkOutcome,
 	type CollectionConfig,
 	type CollectionValidator,
+	type DbDocument,
 	type ImportLine,
 	type ImportReport,
+	type RestoreOutcome,
 	type RestorePoint,
+	type RestoreRequest,
 	type TableColumn,
 	type TableConfig,
 } from './schemas';
@@ -91,6 +95,24 @@ function parseStoredColumns(raw: string | null): TableColumn[] {
 	}
 }
 
+/**
+ * The kind-specific surface behind the shared shard admin actions (export,
+ * import, PITR). Both engines expose the same RPC contract; the adapter is
+ * what keeps the six admin routes single-sourced instead of copied per kind.
+ */
+interface ShardAdminOps {
+	kind: 'collection' | 'table';
+	row(): Promise<typeof collections.$inferSelect | null>;
+	notFound(): Response;
+	exportChunk(afterId?: string): Promise<{ docs: DbDocument[]; nextAfterId: string | null }>;
+	importChunk(lines: ImportLine[]): Promise<ImportReport>;
+	currentBookmark(): Promise<{ ok: true; bookmark: string } | { ok: false }>;
+	bookmarkForTime(iso: string): Promise<BookmarkOutcome>;
+	restoreTo(body: RestoreRequest): Promise<RestoreOutcome>;
+	reconcileCount(): Promise<void>;
+	pushShardConfig(row: typeof collections.$inferSelect): Promise<void>;
+}
+
 export interface DbActivityEvent {
 	id: string;
 	type:
@@ -104,7 +126,9 @@ export interface DbActivityEvent {
 		| 'table.created'
 		| 'table.configured'
 		| 'table.deleted'
-		| 'rows.changed';
+		| 'table.restored'
+		| 'rows.changed'
+		| 'rows.imported';
 	message: string;
 	at: string;
 }
@@ -409,29 +433,30 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			);
 		}
 
-		const collectionAction = subPath.match(
-			/^\/admin\/collections\/([^/]+)\/(export|import|restore|restore-points|checkpoint|bookmark)$/,
+		const shardAction = subPath.match(
+			/^\/admin\/(collections|tables)\/([^/]+)\/(export|import|restore|restore-points|checkpoint|bookmark)$/,
 		);
-		if (collectionAction) {
-			const name = decodeURIComponent(collectionAction[1]);
-			switch (collectionAction[2]) {
+		if (shardAction) {
+			const kind = shardAction[1] === 'tables' ? ('table' as const) : ('collection' as const);
+			const name = decodeURIComponent(shardAction[2]);
+			switch (shardAction[3]) {
 				case 'export':
-					if (request.method === 'GET') return this.adminExport(name);
+					if (request.method === 'GET') return this.adminExport(kind, name);
 					break;
 				case 'import':
-					if (request.method === 'POST') return this.adminImport(request, name);
+					if (request.method === 'POST') return this.adminImport(request, kind, name);
 					break;
 				case 'restore':
-					if (request.method === 'POST') return this.adminRestore(request, name);
+					if (request.method === 'POST') return this.adminRestore(request, kind, name);
 					break;
 				case 'restore-points':
-					if (request.method === 'GET') return this.adminRestorePoints(name);
+					if (request.method === 'GET') return this.adminRestorePoints(kind, name);
 					break;
 				case 'checkpoint':
-					if (request.method === 'POST') return this.adminCheckpoint(request, name);
+					if (request.method === 'POST') return this.adminCheckpoint(request, kind, name);
 					break;
 				case 'bookmark':
-					if (request.method === 'GET') return this.adminBookmarkForTime(url, name);
+					if (request.method === 'GET') return this.adminBookmarkForTime(url, kind, name);
 					break;
 			}
 			return Response.json({ error: 'not found' }, { status: 404 });
@@ -604,12 +629,56 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return Response.json({ success: true, batch: result.batch });
 	}
 
-	/** Operator NDJSON export, streamed chunk by chunk over child RPC. */
-	private async adminExport(name: string): Promise<Response> {
-		if (!(await this.collectionRow(name))) {
-			return Response.json({ error: 'no such collection' }, { status: 404 });
+	/**
+	 * The kind adapter behind the shared admin actions. The exportChunk casts
+	 * mirror the DurableObjectNamespace<any> gotcha: DbDocument carries
+	 * Record<string, unknown>, and `unknown` fails the stub's Rpc.Serializable
+	 * transform, collapsing the return type to never. The values are plain
+	 * JSON objects; only the type system objects.
+	 */
+	private shardOps(kind: 'collection' | 'table', name: string): ShardAdminOps {
+		if (kind === 'table') {
+			const stub = () => this.tableStub(name);
+			return {
+				kind,
+				row: () => this.tableRow(name),
+				notFound: () => Response.json({ error: 'no such table' }, { status: 404 }),
+				exportChunk: async (afterId?: string) =>
+					(await stub().exportChunk(afterId)) as unknown as Awaited<
+						ReturnType<DbTable['exportChunk']>
+					>,
+				importChunk: (lines: ImportLine[]) => stub().importRows(lines),
+				currentBookmark: () => stub().currentBookmark(),
+				bookmarkForTime: (iso: string) => stub().bookmarkForTime(iso),
+				restoreTo: (body: RestoreRequest) => stub().restoreTo(body),
+				reconcileCount: async () =>
+					this.reportTableStats(name, { rows: await stub().getRowCount() }),
+				pushShardConfig: (row) => this.pushTableConfig(row),
+			};
 		}
-		const child = this.childStub(name);
+		const stub = () => this.childStub(name);
+		return {
+			kind,
+			row: () => this.collectionRow(name),
+			notFound: () => Response.json({ error: 'no such collection' }, { status: 404 }),
+			exportChunk: async (afterId?: string) =>
+				(await stub().exportChunk(afterId)) as unknown as Awaited<
+					ReturnType<DbCollection['exportChunk']>
+				>,
+			importChunk: (lines: ImportLine[]) => stub().importDocs(lines),
+			currentBookmark: () => stub().currentBookmark(),
+			bookmarkForTime: (iso: string) => stub().bookmarkForTime(iso),
+			restoreTo: (body: RestoreRequest) => stub().restoreTo(body),
+			reconcileCount: async () =>
+				this.reportCollectionStats(name, { docs: await stub().getDocCount() }),
+			pushShardConfig: (row) => this.pushConfig(row),
+		};
+	}
+
+	/** Operator NDJSON export, streamed chunk by chunk over child RPC. */
+	private async adminExport(kind: 'collection' | 'table', name: string): Promise<Response> {
+		const ops = this.shardOps(kind, name);
+		if (!(await ops.row())) return ops.notFound();
 		const encoder = new TextEncoder();
 		let afterId: string | undefined;
 		let done = false;
@@ -617,13 +686,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		const stream = new ReadableStream<Uint8Array>({
 			async pull(controller) {
 				if (done) return;
-				// The cast mirrors the DurableObjectNamespace<any> gotcha: DbDocument
-				// carries Record<string, unknown>, and `unknown` fails the stub's
-				// Rpc.Serializable transform, collapsing the return type to never.
-				// The value is a plain JSON object; only the type system objects.
-				const chunk = (await child.exportChunk(afterId)) as unknown as Awaited<
-					ReturnType<DbCollection['exportChunk']>
-				>;
+				const chunk = await ops.exportChunk(afterId);
 				for (const doc of chunk.docs) {
 					controller.enqueue(encoder.encode(`${JSON.stringify(doc)}\n`));
 				}
@@ -665,11 +728,15 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return { bookmark, reason, capturedAt: capturedAt.toISOString() };
 	}
 
-	/** Capture the collection's current-moment bookmark; null when the
-	 * environment has no PITR (local dev) - callers degrade gracefully. */
-	private async captureRestorePoint(name: string, reason: string): Promise<RestorePoint | null> {
+	/** Capture the shard's current-moment bookmark; null when the environment
+	 * has no PITR (local dev) - callers degrade gracefully. */
+	private async captureRestorePoint(
+		ops: ShardAdminOps,
+		name: string,
+		reason: string,
+	): Promise<RestorePoint | null> {
 		try {
-			const current = await this.probeBookmark(name);
+			const current = await this.probeBookmark(ops);
 			if (!current.ok) return null;
 			return await this.saveRestorePoint(name, current.bookmark, reason);
 		} catch {
@@ -681,11 +748,11 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	 * The child's current bookmark, retried once on an abort-reset: a restore
 	 * leaves that instance resetting for a tick, and without the retry a
 	 * capture or a support probe in that window reports "unsupported" for a
-	 * collection whose PITR is perfectly fine. The async wrapper is also what
+	 * shard whose PITR is perfectly fine. The async wrapper is also what
 	 * collapses the RPC stub's union return type for inference.
 	 */
-	private async probeBookmark(name: string) {
-		const probe = async () => this.childStub(name).currentBookmark();
+	private async probeBookmark(ops: ShardAdminOps) {
+		const probe = async () => ops.currentBookmark();
 		try {
 			return await probe();
 		} catch (error) {
@@ -699,11 +766,10 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	 * environment supports PITR at all, so the dialog can explain up front
 	 * instead of failing after a submit.
 	 */
-	private async adminRestorePoints(name: string): Promise<Response> {
-		if (!(await this.collectionRow(name))) {
-			return Response.json({ error: 'no such collection' }, { status: 404 });
-		}
-		const probe = await this.probeBookmark(name);
+	private async adminRestorePoints(kind: 'collection' | 'table', name: string): Promise<Response> {
+		const ops = this.shardOps(kind, name);
+		if (!(await ops.row())) return ops.notFound();
+		const probe = await this.probeBookmark(ops);
 		// The platform window is 30 days; older markers are dead weight.
 		await this.db
 			.delete(restorePoints)
@@ -732,7 +798,11 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	 * D1-restore-style: `?at=<ISO time>` in, the closest available bookmark
 	 * out - the dialog shows it BEFORE the operator commits to a restore.
 	 */
-	private async adminBookmarkForTime(url: URL, name: string): Promise<Response> {
+	private async adminBookmarkForTime(
+		url: URL,
+		kind: 'collection' | 'table',
+		name: string,
+	): Promise<Response> {
 		const at = url.searchParams.get('at') ?? '';
 		const target = new Date(at).getTime();
 		const now = Date.now();
@@ -742,12 +812,10 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				{ status: 400 },
 			);
 		}
-		if (!(await this.collectionRow(name))) {
-			return Response.json({ error: 'no such collection' }, { status: 404 });
-		}
+		const ops = this.shardOps(kind, name);
+		if (!(await ops.row())) return ops.notFound();
 
-		const resolve = async () =>
-			this.childStub(name).bookmarkForTime(new Date(target).toISOString());
+		const resolve = async () => ops.bookmarkForTime(new Date(target).toISOString());
 		let outcome;
 		try {
 			outcome = await resolve();
@@ -773,7 +841,11 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	}
 
 	/** Manual checkpoint: capture "now" as a named restore point. */
-	private async adminCheckpoint(request: Request, name: string): Promise<Response> {
+	private async adminCheckpoint(
+		request: Request,
+		kind: 'collection' | 'table',
+		name: string,
+	): Promise<Response> {
 		const body = checkpointRequestSchema.safeParse(await request.json().catch(() => ({})));
 		if (!body.success) {
 			return Response.json(
@@ -781,10 +853,13 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				{ status: 400 },
 			);
 		}
-		if (!(await this.collectionRow(name))) {
-			return Response.json({ error: 'no such collection' }, { status: 404 });
-		}
-		const point = await this.captureRestorePoint(name, body.data.reason ?? 'manual checkpoint');
+		const ops = this.shardOps(kind, name);
+		if (!(await ops.row())) return ops.notFound();
+		const point = await this.captureRestorePoint(
+			ops,
+			name,
+			body.data.reason ?? 'manual checkpoint',
+		);
 		if (!point) {
 			return Response.json(
 				{
@@ -803,10 +878,13 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	 * reported with their 1-based line number, good ones still land), then
 	 * feed the children in RPC-sized chunks and merge their reports.
 	 */
-	private async adminImport(request: Request, name: string): Promise<Response> {
-		if (!(await this.collectionRow(name))) {
-			return Response.json({ error: 'no such collection' }, { status: 404 });
-		}
+	private async adminImport(
+		request: Request,
+		kind: 'collection' | 'table',
+		name: string,
+	): Promise<Response> {
+		const ops = this.shardOps(kind, name);
+		if (!(await ops.row())) return ops.notFound();
 		const text = await request.text().catch(() => '');
 		if (new TextEncoder().encode(text).byteLength > MAX_IMPORT_BYTES) {
 			return Response.json(
@@ -827,7 +905,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		}
 
 		// A free undo for the whole import (deployed stacks; local has no PITR).
-		await this.captureRestorePoint(name, 'before import');
+		await this.captureRestorePoint(ops, name, 'before import');
 
 		const report: ImportReport = { imported: 0, updated: 0, errors: [] };
 		const valid: { line: number; parsed: ImportLine }[] = [];
@@ -847,10 +925,9 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			valid.push({ line: index + 1, parsed: parsed.data });
 		}
 
-		const child = this.childStub(name);
 		for (let start = 0; start < valid.length; start += IMPORT_RPC_CHUNK) {
 			const chunk = valid.slice(start, start + IMPORT_RPC_CHUNK);
-			const chunkReport = await child.importDocs(chunk.map((entry) => entry.parsed));
+			const chunkReport = await ops.importChunk(chunk.map((entry) => entry.parsed));
 			report.imported += chunkReport.imported;
 			report.updated += chunkReport.updated;
 			for (const error of chunkReport.errors) {
@@ -858,16 +935,18 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			}
 		}
 
-		this.writeDbEvent('documents.imported');
+		const noun = kind === 'table' ? 'rows' : 'documents';
+		const importedEvent = kind === 'table' ? ('rows.imported' as const) : ('documents.imported' as const);
+		this.writeDbEvent(importedEvent);
 		this.recordEvent(
-			'documents.imported',
-			`imported ${report.imported + report.updated} documents into "${name}"` +
+			importedEvent,
+			`imported ${report.imported + report.updated} ${noun} into "${name}"` +
 				(report.errors.length ? ` (${report.errors.length} lines failed)` : ''),
 		);
 		// Immediate count reconcile so the dashboard reflects the import now
 		// rather than after the next organic write.
 		try {
-			await this.reportCollectionStats(name, { docs: await child.getDocCount() });
+			await ops.reconcileCount();
 		} catch {
 			// best-effort: the count self-heals on the next write
 		}
@@ -875,12 +954,16 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	}
 
 	/**
-	 * Point-in-time rollback of ONE collection. The child validates support
-	 * and performs the platform restore; this route owns the 30-day window
-	 * check and the operator-facing error shapes (501 = the environment has
-	 * no durable change log, i.e. local development).
+	 * Point-in-time rollback of ONE shard (either kind). The child validates
+	 * support and performs the platform restore; this route owns the 30-day
+	 * window check and the operator-facing error shapes (501 = the environment
+	 * has no durable change log, i.e. local development).
 	 */
-	private async adminRestore(request: Request, name: string): Promise<Response> {
+	private async adminRestore(
+		request: Request,
+		kind: 'collection' | 'table',
+		name: string,
+	): Promise<Response> {
 		const parsed = restoreRequestSchema.safeParse(await request.json().catch(() => null));
 		if (!parsed.success) {
 			return Response.json(
@@ -898,18 +981,17 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				);
 			}
 		}
-		if (!(await this.collectionRow(name))) {
-			return Response.json({ error: 'no such collection' }, { status: 404 });
-		}
+		const ops = this.shardOps(kind, name);
+		if (!(await ops.row())) return ops.notFound();
 
 		// Capture the undo point BEFORE the restore: the child aborts a tick
 		// after arming it, and in production that abort can outrace the RPC
 		// reply. With the pre-restore bookmark already persisted, an
 		// abort-reset error still reports success with a working undo.
-		const undoPoint = await this.captureRestorePoint(name, 'before rollback');
-		let outcome: Awaited<ReturnType<DbCollection['restoreTo']>>;
+		const undoPoint = await this.captureRestorePoint(ops, name, 'before rollback');
+		let outcome: RestoreOutcome;
 		try {
-			outcome = await this.childStub(name).restoreTo(parsed.data);
+			outcome = await ops.restoreTo(parsed.data);
 		} catch (error) {
 			if (!isDurableObjectReset(error)) throw error;
 			// An abort-reset here is ambiguous: THIS restore's abort raced its
@@ -918,7 +1000,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			// against the fresh instance - re-arming the same bookmark is
 			// idempotent - and only a second race counts as armed-and-raced.
 			try {
-				outcome = await this.childStub(name).restoreTo(parsed.data);
+				outcome = await ops.restoreTo(parsed.data);
 			} catch (retryError) {
 				if (!isDurableObjectReset(retryError)) throw retryError;
 				outcome = { ok: true, undoBookmark: undoPoint?.bookmark ?? '' };
@@ -938,26 +1020,28 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			return Response.json({ error: outcome.message ?? 'restore failed' }, { status: 400 });
 		}
 
-		this.writeDbEvent('collection.restored');
+		const restoredEvent =
+			kind === 'table' ? ('table.restored' as const) : ('collection.restored' as const);
+		this.writeDbEvent(restoredEvent);
 		this.recordEvent(
-			'collection.restored',
+			restoredEvent,
 			parsed.data.timestamp
-				? `collection "${name}" rolled back to ${parsed.data.timestamp}`
-				: `collection "${name}" restored to a bookmark`,
+				? `${kind} "${name}" rolled back to ${parsed.data.timestamp}`
+				: `${kind} "${name}" restored to a bookmark`,
 		);
 		// A restore rewinds the primary's storage INCLUDING its change log, so
 		// the epoch that tells replicas to discard and re-bootstrap must live
 		// here, in the parent. Bump it and push the config carrying it.
-		const restoredRow = await this.collectionRow(name);
+		const restoredRow = await ops.row();
 		if (restoredRow && this.shardReplication(restoredRow) === 'auto') {
 			await this.db
 				.update(collections)
 				.set({ repEpoch: restoredRow.repEpoch + 1 })
 				.where(eq(collections.name, name));
-			const bumped = await this.collectionRow(name);
+			const bumped = await ops.row();
 			if (bumped) {
 				try {
-					await this.pushConfig(bumped);
+					await ops.pushShardConfig(bumped);
 				} catch {
 					// the child heals via lazy pull; replicas resync on next pull
 				}
@@ -969,7 +1053,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		// moment, then reconcile the count. Best-effort - the count self-heals.
 		try {
 			await new Promise((resolve) => setTimeout(resolve, 250));
-			await this.reportCollectionStats(name, { docs: await this.childStub(name).getDocCount() });
+			await ops.reconcileCount();
 		} catch {
 			// the restored instance reports on its next write
 		}
@@ -1228,6 +1312,8 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		// Child first, registry second - the collection erase discipline.
 		await this.destroyChild('table', name);
 		await this.db.delete(collections).where(eq(collections.name, name));
+		// A deliberate erase must stay erased - drop its restore markers too.
+		await this.db.delete(restorePoints).where(eq(restorePoints.collection, name));
 
 		this.writeDbEvent('table.deleted');
 		this.recordEvent('table.deleted', `table "${name}" deleted`);

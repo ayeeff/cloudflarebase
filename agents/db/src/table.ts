@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
+import { z } from 'zod';
 import migrations from './migrations';
 import { checkAccess, corsHeadersFor, drainUnusedBody, withCors } from './access';
 import { collectionMeta } from './db/schema';
@@ -24,6 +25,7 @@ import {
 	type ReplicaRole,
 } from './replication';
 import { getPath, encodeCursor, decodeCursor, type DecodedCursor } from './query';
+import { shardBookmarkForTime, shardCurrentBookmark, shardRestoreTo } from './pitr';
 import { hasPermission } from './rules';
 import { prepareTableSql } from './table-sql';
 import {
@@ -43,6 +45,7 @@ import {
 	aggregateRequestSchema,
 	createDocumentSchema,
 	documentDataSchema,
+	importLineSchema,
 	logEntrySchema,
 	querySchema,
 	repApplyInputSchema,
@@ -52,6 +55,7 @@ import {
 	tableConfigSchema,
 	tableSqlRequestSchema,
 	EXPORT_CHUNK,
+	IMPORT_RPC_CHUNK,
 	LSN_HEADER,
 	MAX_DOC_BYTES,
 	MAX_REGION_SIBLINGS,
@@ -62,9 +66,12 @@ import {
 	socketReportStep,
 	type AggregateRequest,
 	type AggregateResult,
+	type BookmarkOutcome,
 	type DbRow,
+	type ImportReport,
 	type LogEntry,
 	type Query,
+	type RestoreOutcome,
 	type RepApplyResult,
 	type RepPullResult,
 	type RepStatus,
@@ -246,6 +253,93 @@ export class DbTable extends LiveShard {
 		return row?.n ?? 0;
 	}
 
+	/** Operator export chunk (parent-forwarded; no owner scoping). Same page
+	 * shape as the collection twin; the optional-string parameter rule from
+	 * exportChunk there applies here too. */
+	async exportChunk(afterId?: string): Promise<{ docs: DbRow[]; nextAfterId: string | null }> {
+		const docs = this.exportTableRows(afterId ?? null, EXPORT_CHUNK, null);
+		return { docs, nextAfterId: docs.length < EXPORT_CHUNK ? null : docs[docs.length - 1].id };
+	}
+
+	/**
+	 * Operator import chunk (parent-forwarded), the collection contract on
+	 * typed rows: upserts by id preserving owner and timestamps, so exported
+	 * lines round-trip exactly. STRUCTURE always validates - the schema is
+	 * the storage - but policy bounds are bypassed like every operator
+	 * surface; per-line failures (bad types, UNIQUE violations, demo caps)
+	 * are reported rather than fatal.
+	 */
+	async importRows(input: unknown): Promise<ImportReport> {
+		const lines = z.array(importLineSchema).max(IMPORT_RPC_CHUNK).parse(input);
+		const report: ImportReport = { imported: 0, updated: 0, errors: [] };
+
+		for (const [index, line] of lines.entries()) {
+			try {
+				const full = applyColumnDefaults(this.columns, line.data);
+				const sizeIssue = this.rowSizeIssue(full);
+				if (sizeIssue) {
+					report.errors.push({ line: index, error: sizeIssue });
+					continue;
+				}
+				const issues = validateRow(this.columns, full, { skipPolicy: true });
+				if (issues.length) {
+					report.errors.push({ line: index, error: issues.join('; ') });
+					continue;
+				}
+				const id = line.id ?? ulid();
+				const existing = this.rowById(id);
+				if (
+					!existing &&
+					this.config?.demo &&
+					(await this.getRowCount()) >= DEMO_MAX_ROWS_PER_TABLE
+				) {
+					report.errors.push({
+						line: index,
+						error: `demo tables are capped at ${DEMO_MAX_ROWS_PER_TABLE} rows`,
+					});
+					continue;
+				}
+				await this.writeRow(id, full, {
+					owner: line.owner ?? null,
+					createdAt: line.createdAt ? Date.parse(line.createdAt) : undefined,
+					updatedAt: line.updatedAt ? Date.parse(line.updatedAt) : undefined,
+					replaceOwner: line.owner !== undefined,
+				});
+				if (existing) report.updated += 1;
+				else report.imported += 1;
+			} catch (error) {
+				const column = uniqueViolationColumn(error);
+				report.errors.push({
+					line: index,
+					error: column
+						? `a row with that ${column} already exists (unique column)`
+						: error instanceof Error
+							? error.message
+							: String(error),
+				});
+			}
+		}
+		return report;
+	}
+
+	/** Point-in-time restore - the shared pitr.ts sequence, table-labeled. */
+	async restoreTo(input: unknown): Promise<RestoreOutcome> {
+		return shardRestoreTo(this.ctx, input, {
+			label: this.config?.table ?? 'unknown',
+			closeReason: 'table restored',
+		});
+	}
+
+	/** The current-moment bookmark, doubling as the PITR support probe. */
+	async currentBookmark(): Promise<{ ok: true; bookmark: string } | { ok: false }> {
+		return shardCurrentBookmark(this.ctx);
+	}
+
+	/** D1-restore-style timestamp -> closest-available-bookmark resolution. */
+	async bookmarkForTime(input: unknown): Promise<BookmarkOutcome> {
+		return shardBookmarkForTime(this.ctx, input);
+	}
+
 	/** Erase this table - the collection destroy sequence verbatim, with a
 	 * primary destroying its registered replicas first. */
 	async destroy(): Promise<void> {
@@ -383,19 +477,37 @@ export class DbTable extends LiveShard {
 		return { ok: true, config, epoch: config.repEpoch, lsn: lastLsn(this.ctx.storage.sql) };
 	}
 
-	/** Snapshot page for replica bootstrap, keyset over the primary key. */
+	/** Snapshot page for replica bootstrap - the export pager verbatim. */
 	async repSnapshotChunk(afterId?: string): Promise<{ docs: DbRow[]; nextAfterId: string | null }> {
+		return this.exportChunk(afterId);
+	}
+
+	/**
+	 * Keyset page in id order for exports and replica snapshots. Not a
+	 * point-in-time snapshot: writes racing the export may or may not appear,
+	 * but keyset pagination guarantees each id shows up at most once.
+	 */
+	private exportTableRows(afterId: string | null, limit: number, owner: string | null): DbRow[] {
 		const table = this.requireTableName();
+		const conditions: string[] = [];
+		const params: unknown[] = [];
+		if (afterId !== null) {
+			conditions.push('"id" > ?');
+			params.push(afterId);
+		}
+		if (owner) {
+			conditions.push('"owner" = ?');
+			params.push(owner);
+		}
 		const rows = this.ctx.storage.sql
 			.exec(
 				`SELECT ${selectList(this.columns)} FROM ${quoteIdent(table)}` +
-					(afterId !== undefined ? ` WHERE "id" > ?` : '') +
+					` WHERE ${conditions.length ? conditions.join(' AND ') : '1=1'}` +
 					` ORDER BY "id" ASC LIMIT ?`,
-				...(afterId !== undefined ? [afterId, EXPORT_CHUNK] : [EXPORT_CHUNK]),
+				...([...params, limit] as (string | number | null)[]),
 			)
 			.toArray() as Record<string, unknown>[];
-		const docs = rows.map((row) => this.toDto(row));
-		return { docs, nextAfterId: docs.length < EXPORT_CHUNK ? null : docs[docs.length - 1].id };
+		return rows.map((row) => this.toDto(row));
 	}
 
 	async repPull(input: unknown): Promise<RepPullResult> {
@@ -710,6 +822,11 @@ export class DbTable extends LiveShard {
 		if (subPath === '/sql' && request.method === 'POST') {
 			return this.handleSql(request, config);
 		}
+		if (subPath === '/export' && request.method === 'GET') {
+			return this.guarded(request, 'read', config, (owner) =>
+				Promise.resolve(this.handleExport(owner)),
+			);
+		}
 
 		const row = subPath.match(/^\/rows\/([^/]+)$/);
 		if (row) {
@@ -842,6 +959,40 @@ export class DbTable extends LiveShard {
 			}
 			throw error;
 		}
+	}
+
+	/**
+	 * NDJSON export of every readable row, gated exactly like a query (owner
+	 * mode exports only the caller's rows). Streamed in keyset pages so a
+	 * 10 GB table never materializes in memory.
+	 */
+	private handleExport(owner: string | null): Response {
+		const table = this.requireTableName();
+		const encoder = new TextEncoder();
+		const nextRows = (after: string | null) => this.exportTableRows(after, EXPORT_CHUNK, owner);
+		let afterId: string | null = null;
+		let done = false;
+
+		const stream = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				if (done) return;
+				const rows = nextRows(afterId);
+				for (const row of rows) controller.enqueue(encoder.encode(`${JSON.stringify(row)}\n`));
+				if (rows.length < EXPORT_CHUNK) {
+					done = true;
+					controller.close();
+				} else {
+					afterId = rows[rows.length - 1].id;
+				}
+			},
+		});
+
+		return new Response(stream, {
+			headers: {
+				'content-type': 'application/x-ndjson',
+				'content-disposition': `attachment; filename="${table}.ndjson"`,
+			},
+		});
 	}
 
 	private async handleAggregate(request: Request, owner: string | null): Promise<Response> {
@@ -1071,19 +1222,20 @@ export class DbTable extends LiveShard {
 
 	/** Row size + schema validation; null when the row passes. */
 	private checkRow(data: Record<string, unknown>): Response | null {
-		const bytes = new TextEncoder().encode(JSON.stringify(data)).byteLength;
-		const cap = this.config?.demo ? DEMO_MAX_ROW_BYTES : MAX_DOC_BYTES;
-		if (bytes > cap) {
-			return Response.json(
-				{
-					error: `row data is limited to ${cap} bytes${this.config?.demo ? ' in demo projects' : ''}`,
-				},
-				{ status: 413 },
-			);
-		}
+		const sizeIssue = this.rowSizeIssue(data);
+		if (sizeIssue) return Response.json({ error: sizeIssue }, { status: 413 });
 		const issues = validateRow(this.columns, data);
 		if (issues.length) {
 			return Response.json({ error: 'row failed validation', issues }, { status: 400 });
+		}
+		return null;
+	}
+
+	private rowSizeIssue(data: Record<string, unknown>): string | null {
+		const bytes = new TextEncoder().encode(JSON.stringify(data)).byteLength;
+		const cap = this.config?.demo ? DEMO_MAX_ROW_BYTES : MAX_DOC_BYTES;
+		if (bytes > cap) {
+			return `row data is limited to ${cap} bytes${this.config?.demo ? ' in demo projects' : ''}`;
 		}
 		return null;
 	}
@@ -1108,7 +1260,14 @@ export class DbTable extends LiveShard {
 	private async writeRow(
 		id: string,
 		data: Record<string, unknown>,
-		options: { owner: string | null | undefined },
+		options: {
+			owner: string | null | undefined;
+			/** Import fidelity: keep the exported timestamps instead of now. */
+			createdAt?: number;
+			updatedAt?: number;
+			/** Import fidelity: overwrite the owner column on update too. */
+			replaceOwner?: boolean;
+		},
 	): Promise<DbRow> {
 		const table = this.requireTableName();
 		const before = this.rowById(id);
@@ -1121,11 +1280,13 @@ export class DbTable extends LiveShard {
 		if (before) {
 			this.ctx.storage.sql.exec(
 				`UPDATE ${quoteIdent(table)} SET "updated_at" = ?` +
+					(options.replaceOwner ? `, "owner" = ?` : '') +
 					(declaredNames.length
 						? `, ${declaredNames.map((name) => `${name} = ?`).join(', ')}`
 						: '') +
 					` WHERE "id" = ?`,
-				now,
+				options.updatedAt ?? now,
+				...(options.replaceOwner ? [options.owner ?? null] : []),
 				...values,
 				id,
 			);
@@ -1136,8 +1297,8 @@ export class DbTable extends LiveShard {
 					`) VALUES (?, ?, ?, ?${declaredNames.length ? `, ${declaredNames.map(() => '?').join(', ')}` : ''})`,
 				id,
 				options.owner ?? null,
-				now,
-				now,
+				options.createdAt ?? now,
+				options.updatedAt ?? now,
 				...values,
 			);
 		}
