@@ -264,7 +264,9 @@ async function writerLoop(writerIndex) {
 	while (!stopTraffic) {
 		const id = `w${writerIndex}-${RUN}-${seq}`;
 		const canaryWrite = seq % 10 === 0;
-		const cohort = canaryWrite ? `canary-${RUN}` : `bulk-${RUN}-${(seq * WRITERS + writerIndex) % 97}`;
+		const cohort = canaryWrite
+			? `canary-${RUN}`
+			: `bulk-${RUN}-${(seq * WRITERS + writerIndex) % 97}`;
 		const created = await api('doc-create', 'POST', `/collections/${COLLECTION}/documents`, {
 			id,
 			data: { cohort, writer: writerIndex, seq, sentAt: Date.now() }
@@ -393,7 +395,9 @@ async function main() {
 		await Promise.all(batch);
 		process.stdout.write(`\r  ramp: ${Math.min(start + BATCH, CCU)}/${CCU} sockets`);
 	}
-	console.log(`\n  fleet up: ${fleet.filter((s) => s.snapshotAt !== null).length}/${CCU} subscribed`);
+	console.log(
+		`\n  fleet up: ${fleet.filter((s) => s.snapshotAt !== null).length}/${CCU} subscribed`
+	);
 
 	// 3. Traffic.
 	const loops = [

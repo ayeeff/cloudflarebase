@@ -23,28 +23,28 @@ The root Worker binds `AUTH_AGENT` + `DB_AGENT` (agent services) and `DB` (contr
 
 ## Commands
 
-| Location      | Command                               | Purpose                                                                                   |
-| ------------- | ------------------------------------- | ----------------------------------------------------------------------------------------- |
-| root          | `npm run dev`                         | Auth Agent on :8788, DB Agent on :8789, then Vite on :5173                                |
-| root          | `npm run check` / `npm run lint`      | Svelte diagnostics / Prettier and ESLint                                                  |
-| root          | `npm run demo:video`                  | Self-driving demo tour for screen recording (`--check` for headless validation)           |
-| root          | `npm run demo:live`                   | Same seeding + live traffic, no choreography: opens a browser you drive yourself          |
-| root          | `npm run build`                       | Production SvelteKit Cloudflare build                                                     |
-| root          | `npm test` / `npm run test:e2e`       | Full Playwright suite against Workers on :8797/:8798/:8799 (`test:e2e:ui` for the UI)     |
-| root          | `npm run cf-typegen`                  | Regenerate `src/worker-configuration.d.ts` after binding changes                          |
+| Location      | Command                                      | Purpose                                                                                                                                                              |
+| ------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| root          | `npm run dev`                                | Auth Agent on :8788, DB Agent on :8789, then Vite on :5173                                                                                                           |
+| root          | `npm run check` / `npm run lint`             | Svelte diagnostics / Prettier and ESLint                                                                                                                             |
+| root          | `npm run demo:video`                         | Self-driving demo tour for screen recording (`--check` for headless validation)                                                                                      |
+| root          | `npm run demo:live`                          | Same seeding + live traffic, no choreography: opens a browser you drive yourself                                                                                     |
+| root          | `npm run build`                              | Production SvelteKit Cloudflare build                                                                                                                                |
+| root          | `npm test` / `npm run test:e2e`              | Full Playwright suite against Workers on :8797/:8798/:8799 (`test:e2e:ui` for the UI)                                                                                |
+| root          | `npm run cf-typegen`                         | Regenerate `src/worker-configuration.d.ts` after binding changes                                                                                                     |
 | root          | `node scripts/db-load.mjs --target <origin>` | DB load harness: CCU subscriber fleet + mixed R/W with live-delivery, read-your-writes, and hibernation checks (flags in the file header; shardable across machines) |
-| root          | `npm run deploy`                      | Deploy the self-hosted default (workers.dev, no demo mode)                                |
-| root          | `npm run deploy:all`                  | Deploy agent then dashboard in order (the service binding needs the agent to exist first) |
-| root          | `npm run deploy:production`           | Deploy cloudflarebase.com (`--env production`)                                            |
-| `agents/auth` | `npx tsc --noEmit`                    | Typecheck the Auth Agent                                                                  |
-| `agents/auth` | `npm run migrations`                  | Generate migrations after schema edits, then inline them into `src/migrations.ts`         |
-| `agents/auth` | `npx wrangler types`                  | Regenerate Auth Agent Worker types                                                        |
-| `agents/auth` | `npm run build`                       | Emit `dist/` for the published `@cloudflarebase/auth` package                             |
-| `agents/db`   | `npx tsc --noEmit`                    | Typecheck the DB Agent (includes the binding-contract test-d negatives)                   |
-| `agents/db`   | `npm run test:unit`                   | Query-engine parity tests (SQL compiler vs JS matcher) under node:test                    |
-| `agents/db`   | `npm run migrations`                  | Generate migrations after schema edits, then inline them into `src/migrations.ts`         |
-| `agents/db`   | `npm run build`                       | Emit `dist/` for the published `@cloudflarebase/db` package (includes `./client`)         |
-| `cli`         | `npm run build` / `npm run typecheck` | Emit / typecheck the published `@cloudflarebase/cli` package                              |
+| root          | `npm run deploy`                             | Deploy the self-hosted default (workers.dev, no demo mode)                                                                                                           |
+| root          | `npm run deploy:all`                         | Deploy agent then dashboard in order (the service binding needs the agent to exist first)                                                                            |
+| root          | `npm run deploy:production`                  | Deploy cloudflarebase.com (`--env production`)                                                                                                                       |
+| `agents/auth` | `npx tsc --noEmit`                           | Typecheck the Auth Agent                                                                                                                                             |
+| `agents/auth` | `npm run migrations`                         | Generate migrations after schema edits, then inline them into `src/migrations.ts`                                                                                    |
+| `agents/auth` | `npx wrangler types`                         | Regenerate Auth Agent Worker types                                                                                                                                   |
+| `agents/auth` | `npm run build`                              | Emit `dist/` for the published `@cloudflarebase/auth` package                                                                                                        |
+| `agents/db`   | `npx tsc --noEmit`                           | Typecheck the DB Agent (includes the binding-contract test-d negatives)                                                                                              |
+| `agents/db`   | `npm run test:unit`                          | Query-engine parity tests (SQL compiler vs JS matcher) under node:test                                                                                               |
+| `agents/db`   | `npm run migrations`                         | Generate migrations after schema edits, then inline them into `src/migrations.ts`                                                                                    |
+| `agents/db`   | `npm run build`                              | Emit `dist/` for the published `@cloudflarebase/db` package (includes `./client`)                                                                                    |
+| `cli`         | `npm run build` / `npm run typecheck`        | Emit / typecheck the published `@cloudflarebase/cli` package                                                                                                         |
 
 ## Architecture decisions
 

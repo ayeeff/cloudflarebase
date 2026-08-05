@@ -24,7 +24,7 @@ key on the project id.
   `myapp--staging` is already a valid instance name end to end. Zero agent
   releases, zero migration, zero new schema fields in `@cloudflarebase/auth`
   or `@cloudflarebase/db`.
-- Isolation is *structural*, not policy: a branch cannot leak into another
+- Isolation is _structural_, not policy: a branch cannot leak into another
   because nothing is shared - not a row, not a JWKS keypair, not a replica.
   `myapp--staging` JWTs cannot verify against `myapp`: different agents,
   different keys. The strongest boundary the platform has is the DO
