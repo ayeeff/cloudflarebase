@@ -72,8 +72,9 @@ export const dbOpenApi: AgentOpenApiModule = {
 				'',
 				'**Aggregations**: `POST /collections/{collection}/aggregate` computes count/sum/avg server-side.',
 				'',
-				'**Backup**: `GET /collections/{collection}/export` streams NDJSON; operators can also export,',
-				'import, and roll a collection back to any point in the past 30 days from the admin surface.'
+				'**Backup**: `GET /collections/{collection}/export` and `GET /tables/{table}/export` stream',
+				'NDJSON; operators can also export, import, and roll either kind back to any point in the past',
+				'30 days from the admin surface.'
 			].join('\n')
 		}
 	],
@@ -345,6 +346,20 @@ export const dbOpenApi: AgentOpenApiModule = {
 				}
 			}
 		},
+		'/db/tables/{table}/export': {
+			get: {
+				tags: [DB_TAG],
+				summary: 'Export rows as NDJSON',
+				description:
+					'Streams every readable row (owner mode: only yours) in id order, one JSON row per line.',
+				parameters: [tableParam],
+				security: PUBLIC_SECURITY,
+				responses: {
+					'200': { description: 'An application/x-ndjson stream of row lines.' },
+					'401': { description: 'The table requires a project token.' }
+				}
+			}
+		},
 		'/db/overview': {
 			get: {
 				tags: [DB_TAG],
@@ -576,6 +591,120 @@ export const dbOpenApi: AgentOpenApiModule = {
 					'200': { description: 'Deleted.' },
 					'401': UNAUTHORIZED,
 					'404': { description: 'No such table or row.' }
+				}
+			}
+		},
+		'/db/admin/tables/{name}/export': {
+			get: {
+				tags: [DB_TAG],
+				summary: 'Operator NDJSON export (table)',
+				description: 'Streams every row regardless of access modes.',
+				security: [{ sessionCookie: [] }],
+				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
+				responses: {
+					'200': { description: 'An application/x-ndjson stream of row lines.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such table.' }
+				}
+			}
+		},
+		'/db/admin/tables/{name}/import': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'Operator NDJSON import (table)',
+				description:
+					'Upserts one row per NDJSON line (up to 1000 per request); exported lines round-trip with id, owner, and timestamps preserved. Structure (types, NOT NULL) always validates; policy bounds do not apply - this is an operator surface.',
+				security: [{ sessionCookie: [] }],
+				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
+				requestBody: {
+					description: 'application/x-ndjson row lines.',
+					required: true,
+					content: { 'application/x-ndjson': { schema: { type: 'string' } } }
+				},
+				responses: {
+					'200': jsonResponse(dbImportReportSchema, 'What landed and what failed, per line.'),
+					'400': { description: 'No lines, or over the per-request row cap.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such table.' },
+					'413': { description: 'Import body over the byte cap.' }
+				}
+			}
+		},
+		'/db/admin/tables/{name}/restore': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'Roll the table back in time',
+				description:
+					'Point-in-time recovery over Durable Object SQLite bookmarks (30-day window) - the collection contract on tables. Unavailable in local development (501).',
+				security: [{ sessionCookie: [] }],
+				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
+				requestBody: jsonBody(dbRestoreRequestSchema, 'A timestamp or an exact bookmark.'),
+				responses: {
+					'200': jsonResponse(dbRestoreResultSchema, 'Restored; keep the undo bookmark.'),
+					'400': { description: 'Invalid request, or the platform refused the restore.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such table.' },
+					'501': { description: 'This environment has no point-in-time recovery.' }
+				}
+			}
+		},
+		'/db/admin/tables/{name}/restore-points': {
+			get: {
+				tags: [DB_TAG],
+				summary: 'List captured restore points (table)',
+				security: [{ sessionCookie: [] }],
+				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
+				responses: {
+					'200': jsonResponse(dbRestorePointsSchema, 'Support flag and captured points.'),
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such table.' }
+				}
+			}
+		},
+		'/db/admin/tables/{name}/checkpoint': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'Capture a restore point now (table)',
+				security: [{ sessionCookie: [] }],
+				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
+				requestBody: {
+					description: 'Optional reason label.',
+					required: false,
+					content: {
+						'application/json': {
+							schema: { type: 'object', properties: { reason: { type: 'string', maxLength: 80 } } }
+						}
+					}
+				},
+				responses: {
+					'200': jsonResponse(dbRestorePointSchema, 'The captured point.'),
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such table.' },
+					'501': { description: 'This environment has no point-in-time recovery.' }
+				}
+			}
+		},
+		'/db/admin/tables/{name}/bookmark': {
+			get: {
+				tags: [DB_TAG],
+				summary: 'Resolve a time to its closest bookmark (table)',
+				description: 'D1-restore-style: pass ?at=<ISO time> within the past 30 days.',
+				security: [{ sessionCookie: [] }],
+				parameters: [
+					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+					{
+						name: 'at',
+						in: 'query',
+						required: true,
+						schema: { type: 'string', format: 'date-time' }
+					}
+				],
+				responses: {
+					'200': jsonResponse(dbBookmarkResolutionSchema, 'The closest available bookmark.'),
+					'400': { description: 'Missing/invalid ?at, or outside the 30-day window.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such table.' },
+					'501': { description: 'This environment has no point-in-time recovery.' }
 				}
 			}
 		},

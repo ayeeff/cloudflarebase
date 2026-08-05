@@ -362,7 +362,9 @@ export const dbActivityEventSchema = z
 			'table.created',
 			'table.configured',
 			'table.deleted',
-			'rows.changed'
+			'table.restored',
+			'rows.changed',
+			'rows.imported'
 		]),
 		message: z.string(),
 		at: z.iso.datetime()

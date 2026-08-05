@@ -2,21 +2,36 @@
 	import type {
 		DbColumnType,
 		DbDocument,
+		DbImportReport,
 		DbQueryResult,
 		DbReplicationMode,
 		DbTableColumn,
 		DbTableSummary
 	} from '$lib/agents';
+	import RollbackDialog from './rollback-dialog.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { ulid } from '$lib/ulid';
-	import { Columns3, Pencil, Play, Plus, Table2, Trash2, X } from '@lucide/svelte';
+	import {
+		Columns3,
+		Download,
+		EllipsisVertical,
+		History,
+		Pencil,
+		Play,
+		Plus,
+		Table2,
+		Trash2,
+		Upload,
+		X
+	} from '@lucide/svelte';
 
 	/**
 	 * The Tables tab: schema-first SQL tables beside the document collections.
@@ -455,6 +470,44 @@
 	}
 
 	// -------------------------------------------------------------------------
+	// Export / import / rollback: the collection operator surfaces, table-side.
+
+	let importBusy = $state(false);
+	let importReport = $state<DbImportReport | null>(null);
+	let importError = $state<string | null>(null);
+	let importInput = $state<HTMLInputElement | null>(null);
+	let rollbackOpen = $state(false);
+
+	async function importTableFile(event: Event) {
+		const table = selected;
+		const file = (event.target as HTMLInputElement).files?.[0];
+		if (!table || !file) return;
+		importBusy = true;
+		importError = null;
+		importReport = null;
+		try {
+			const response = await fetch(`${adminBase}/tables/${encodeURIComponent(table)}/import`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/x-ndjson' },
+				body: await file.text()
+			});
+			const result = (await response.json().catch(() => null)) as
+				(DbImportReport & { error?: string }) | null;
+			if (!response.ok || !result) {
+				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
+			}
+			importReport = result;
+			await refresh();
+			await loadRows(table);
+		} catch (error) {
+			importError = error instanceof Error ? error.message : String(error);
+		} finally {
+			importBusy = false;
+			if (importInput) importInput.value = '';
+		}
+	}
+
+	// -------------------------------------------------------------------------
 	// Delete table (typed-name confirmation, like the collections panel)
 
 	let deleteOpen = $state(false);
@@ -819,6 +872,56 @@
 						<Button
 							size="sm"
 							variant="outline"
+							data-testid="db-table-rollback"
+							aria-label="Roll back in time"
+							onclick={() => (rollbackOpen = true)}
+						>
+							<History class="h-3.5 w-3.5" /><span class="max-md:sr-only">Roll back</span>
+						</Button>
+						<input
+							bind:this={importInput}
+							type="file"
+							accept=".ndjson,.jsonl,.txt,application/x-ndjson"
+							class="hidden"
+							onchange={importTableFile}
+						/>
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										size="icon"
+										variant="outline"
+										class="h-8 w-8"
+										aria-label="More table actions"
+										data-testid="db-table-actions"
+									>
+										<EllipsisVertical class="h-4 w-4" />
+									</Button>
+								{/snippet}
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Content align="end">
+								<DropdownMenu.Item
+									data-testid="db-table-export"
+									onclick={() =>
+										selected &&
+										(window.location.href = `${adminBase}/tables/${encodeURIComponent(selected)}/export`)}
+								>
+									<Download class="h-4 w-4" /> Export NDJSON
+								</DropdownMenu.Item>
+								<DropdownMenu.Item
+									data-testid="db-table-import"
+									disabled={importBusy}
+									onclick={() => importInput?.click()}
+								>
+									<Upload class="h-4 w-4" />
+									{importBusy ? 'Importing…' : 'Import NDJSON'}
+								</DropdownMenu.Item>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+						<Button
+							size="sm"
+							variant="outline"
 							class="text-destructive"
 							data-testid="db-delete-table"
 							onclick={() => {
@@ -896,6 +999,19 @@
 					{:else}
 						{#if rowsError}
 							<p class="mb-3 text-sm text-destructive" data-testid="db-rows-error">{rowsError}</p>
+						{/if}
+						{#if importError}
+							<p class="mb-3 text-sm text-destructive" data-testid="db-table-import-error">
+								{importError}
+							</p>
+						{/if}
+						{#if importReport}
+							<p class="mb-3 text-sm text-muted-foreground" data-testid="db-table-import-result">
+								Imported {importReport.imported} new and replaced {importReport.updated} rows{importReport
+									.errors.length
+									? `; ${importReport.errors.length} lines failed (first: line ${importReport.errors[0].line} - ${importReport.errors[0].error})`
+									: '.'}
+							</p>
 						{/if}
 						{#if !rowsLoaded}
 							<p class="py-6 text-center text-sm text-muted-foreground">Loading rows…</p>
@@ -1024,3 +1140,16 @@
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
+
+{#if selected}
+	<RollbackDialog
+		bind:open={rollbackOpen}
+		base={`${adminBase}/tables/${encodeURIComponent(selected)}`}
+		shardName={selected}
+		noun="table"
+		onRestored={async () => {
+			await refresh();
+			if (selected) await loadRows(selected);
+		}}
+	/>
+{/if}

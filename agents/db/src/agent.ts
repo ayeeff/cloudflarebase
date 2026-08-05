@@ -936,7 +936,8 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		}
 
 		const noun = kind === 'table' ? 'rows' : 'documents';
-		const importedEvent = kind === 'table' ? ('rows.imported' as const) : ('documents.imported' as const);
+		const importedEvent =
+			kind === 'table' ? ('rows.imported' as const) : ('documents.imported' as const);
 		this.writeDbEvent(importedEvent);
 		this.recordEvent(
 			importedEvent,
