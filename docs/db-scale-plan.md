@@ -248,9 +248,12 @@ adapter follows.
 
 ~~Replication `auto` by default~~ (shipped early, after T2: auto for every
 shard including demos, with the dashboard Replication globe tab and per-shard
-opt-out). Remaining: PITR/export/import parity for tables; docs
-(`agents/db/CLAUDE.md`, root `CLAUDE.md`, README), landing-page comparison
-table.
+opt-out). ~~PITR/export/import parity for tables~~ (shipped 2026-08-05:
+public `/tables/:name/export`, the six admin actions generalized over one
+kind adapter, the shared `pitr.ts` restore sequence, SDK `exportRows`, and
+the tables workspace export/import/rollback UI over the shared dialog).
+Remaining: docs (README), landing-page comparison table (variant picker
+first).
 
 ## Non-goals
 
