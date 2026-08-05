@@ -1,6 +1,35 @@
 # Project branches
 
-Status: PROPOSED (drafted 2026-08-05, awaiting approval)
+Status: IMPLEMENTED, control plane (drafted 2026-08-05; approved and built
+2026-08-05 - the dashboard switcher and overview grouping are pending a
+design-variant pick)
+
+> **Deviations and specifics from the draft, for future readers:**
+>
+> - **Routes**: `POST` + `GET /api/projects/:id/branches` (the GET is the
+>   switcher's data source), operator-only via the console guard's default.
+>   Deleting a branch IS `DELETE /api/registry/projects/<root>--<branch>`,
+>   as designed.
+> - **Refusal contract** (pinned by `e2e/branches.api.spec.ts`): unknown
+>   root 404; branch-of-branch, `main` (it would alias the bare id), demo
+>   roots, malformed names, and a combined id past the 32-char ceiling all
+>   400; duplicate branch 409. The `MAX_PROJECTS` installation ceiling
+>   counts branches - a branch is a full row.
+> - **A branch row's display name** is `<root name> (<branch>)`; the DTO
+>   (`RegistryProject`, mirrored in `src/lib/agents.ts`) gained `parentId`
+>   and `branchName`, null on roots.
+> - **Schema shipping**: `parent_id`/`branch_name` land via the runtime
+>   CREATE for fresh installs plus duplicate-column-tolerant ALTERs in
+>   `src/lib/server/db/index.ts` (the control plane applies its schema at
+>   runtime; no migration files exist to carry it).
+> - **OpenAPI**: the per-project document gained a console-plane module
+>   (`src/lib/openapi/console.ts` - not an agent module; branches are
+>   minted by the registry) documenting `/branches` under the Console tag,
+>   with `CreateBranchRequest`/`RegistryProject`/`ProjectBranches`
+>   components.
+> - The root-delete cascade deletes branch rows and runs a full per-branch
+>   erase fan-out child-first, exactly as designed; erase failures are
+>   reported per branch id in the delete warning.
 
 Every project gets named **branches** (`main`, `staging`, `preview-42`, …) -
 PlanetScale's mental model applied to the whole backend, not just the
