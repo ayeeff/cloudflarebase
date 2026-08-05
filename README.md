@@ -16,9 +16,11 @@
 
 An open-source Firebase alternative that runs entirely on your Cloudflare
 account. Each project gets isolated Durable Objects - Better Auth on embedded
-SQLite, and a document database with Firestore-style live queries where every
-collection is its own DO - plus a dashboard with live counters, analytics, an
-AI copilot, and a generated API reference.
+SQLite, and a database with two models and live queries on both: Firestore-style
+JSON documents and typed-column SQL tables you can drive with an ORM. Every
+collection and table is its own DO with per-region read replicas out of the box,
+NDJSON export/import, and 30-day point-in-time rollback - plus a dashboard with
+live counters, analytics, an AI copilot, and a generated API reference.
 
 Auth and Database are live. Storage, functions, and the rest will follow the
 same agent shape.
@@ -82,7 +84,7 @@ npm install -g @cloudflarebase/cli
 
 cloudflarebase init my-backend   # scaffolds a Worker with auth
 cd my-backend
-cloudflarebase add db            # Firestore-style documents + live queries
+cloudflarebase add db            # documents + SQL tables, live queries on both
 npx wrangler login
 cloudflarebase deploy            # sign-in and live queries work right away
 ```
@@ -131,6 +133,20 @@ posts.subscribe(
 	}
 );
 ```
+
+SQL tables use the same handle surface over declared typed columns - subscribe
+included - and take raw single-table SQL, so drizzle works against them via
+`@cloudflarebase/db/drizzle`:
+
+```ts
+const todos = db.table<{ title: string; done: boolean }>('todos');
+await todos.create({ title: 'Ship it', done: false });
+```
+
+Reads are served from a replica in the reader's region (writes stay on the
+shard's primary, and session bookmarks keep read-your-writes); every collection
+and table can be exported, imported, and rolled back to any point in the past
+30 days from the dashboard.
 
 Each project also serves an OpenAPI 3.1 document at
 `/api/projects/<id>/openapi.json`, rendered in the dashboard under API
