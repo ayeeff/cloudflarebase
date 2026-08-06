@@ -11,6 +11,7 @@
 	import CodeExamples from '$lib/components/code-examples.svelte';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
 	import { buildDbIntegrationExamples, buildIntegrationExamples } from '$lib/integration-examples';
+	import PricingCalculator from '$lib/components/pricing-calculator.svelte';
 	import { cn } from '$lib/utils';
 	import {
 		Menu,
@@ -22,11 +23,8 @@
 		GitFork,
 		KeyRound,
 		Globe,
-		Lock,
 		Radio,
-		Bot,
 		Star,
-		UserRound,
 		Boxes,
 		Zap,
 		HardDrive,
@@ -34,13 +32,14 @@
 		Minus
 	} from '@lucide/svelte';
 
+	// Deliberately short: the header is not a table of contents. Everything
+	// else stays reachable by scroll and the footer links.
 	type MenuItem = { name: string; href: string };
 	let menuItems: MenuItem[] = [
-		{ name: 'API', href: '#api' },
-		{ name: 'Live today', href: '#live' },
-		{ name: 'Architecture', href: '#architecture' },
+		{ name: 'Pricing', href: '#pricing' },
 		{ name: 'Compare', href: '#compare' },
-		{ name: 'Pricing', href: '/pricing' },
+		{ name: 'API', href: '#api' },
+		{ name: 'Architecture', href: '#architecture' },
 		{ name: 'Roadmap', href: '#roadmap' },
 		{ name: 'FAQ', href: '#faq' }
 	];
@@ -116,40 +115,6 @@
 			cfb: { mark: 'yes', note: 'Apache-2.0, deploys to your account' },
 			firebase: { mark: 'no', note: 'proprietary' },
 			supabase: { mark: 'yes', note: 'their cloud or yours' }
-		}
-	];
-
-	// Everything in this grid is live in the demo today - auth and database both.
-	const liveFeatures = [
-		{
-			icon: KeyRound,
-			title: 'Email & password',
-			desc: 'Signup, signin, signout, and session lookup through Better Auth routes.'
-		},
-		{
-			icon: Database,
-			title: 'JSON documents',
-			desc: 'Firestore-style collections - and every collection is its own Durable Object with 10 GB of SQLite.'
-		},
-		{
-			icon: Radio,
-			title: 'Live queries',
-			desc: 'Subscribe to a filtered query; added, modified, and removed deltas push to every open screen as writes happen.'
-		},
-		{
-			icon: UserRound,
-			title: 'Guest sessions',
-			desc: 'Anonymous sessions and social sign-in, so people can try your app before handing over an email.'
-		},
-		{
-			icon: Lock,
-			title: 'Access modes & JWTs',
-			desc: 'public, auth, or owner per collection - verified against project-signed JWTs from the auth agent.'
-		},
-		{
-			icon: Bot,
-			title: 'AI copilot',
-			desc: "Workers AI chat that reads your project's auth and database state through tools - ask it anything about your backend."
 		}
 	];
 
@@ -442,13 +407,13 @@
 							class="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 font-mono text-xs text-muted-foreground/70"
 						>
 							<span class="flex items-center gap-1.5">
-								<Star class="h-3.5 w-3.5 text-primary" /> 151 stars on GitHub
+								<Star class="h-3.5 w-3.5 text-primary" /> 192 stars on GitHub
 							</span>
 							<span class="flex items-center gap-1.5">
-								<GitFork class="h-3.5 w-3.5" /> 9 forks
+								<GitFork class="h-3.5 w-3.5" /> 10 forks
 							</span>
 							<span class="flex items-center gap-1.5">
-								<Boxes class="h-3.5 w-3.5" /> 415 demo backends created
+								<Boxes class="h-3.5 w-3.5" /> 538 demo backends created
 							</span>
 						</div>
 						<p class="mt-3 font-mono text-xs text-muted-foreground/70">
@@ -704,6 +669,102 @@
 			</div>
 		</section>
 
+		<!-- PRICING: the real /pricing calculator, embedded - straight above
+		     the API section on purpose, with /pricing's own hero copy. -->
+		<section id="pricing" class="border-y border-border bg-card px-4 py-16 sm:px-8 sm:py-24">
+			<div class="mx-auto max-w-6xl">
+				<div class="mb-10 max-w-3xl">
+					<span
+						class="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
+						>Pricing</span
+					>
+					<h2 class="mt-4 text-3xl font-bold md:text-4xl">
+						Our price: <span class="text-primary">$0</span>.
+					</h2>
+					<p class="mt-3 text-muted-foreground">
+						Cloudflarebase is open source and runs on your own Cloudflare account - there is no
+						middleman bill, and Durable Objects sit on the
+						<a
+							class="underline underline-offset-2 hover:text-foreground"
+							href="https://developers.cloudflare.com/durable-objects/platform/pricing/"
+							>Workers free tier</a
+						>, so small projects run at $0. This estimates what a workload costs on your account,
+						next to the same app on Firebase and Supabase.
+					</p>
+				</div>
+				<PricingCalculator />
+			</div>
+		</section>
+
+		<!-- COMPARE -->
+		<section id="compare" class="px-4 py-16 sm:px-8 sm:py-24">
+			<div class="mx-auto max-w-6xl">
+				<div class="mb-10 max-w-xl">
+					<span
+						class="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
+						>Compare</span
+					>
+					<h2 class="mt-4 text-3xl font-bold md:text-4xl">Same primitives. Different physics.</h2>
+					<p class="mt-3 text-muted-foreground">
+						Firebase's DX, Supabase's openness, Cloudflare's network. Every row is a reason this
+						exists.
+					</p>
+				</div>
+				<div class="overflow-x-auto rounded-2xl border border-border">
+					<table
+						class="w-full min-w-[720px] border-collapse bg-card text-left text-sm"
+						data-testid="comparison-table"
+					>
+						<thead>
+							<tr class="border-b border-border">
+								<th class="p-4 font-medium text-muted-foreground">Capability</th>
+								<th class="bg-primary/[0.06] p-4">
+									<span class="flex items-center gap-2 font-semibold">
+										<img src="/brand/mark.svg" alt="" class="h-4 w-4" /> Cloudflarebase
+									</span>
+								</th>
+								<th class="p-4 font-medium text-muted-foreground">Firebase</th>
+								<th class="p-4 font-medium text-muted-foreground">Supabase</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each compareRows as row (row.capability)}
+								<tr class="border-b border-border last:border-0">
+									<th scope="row" class="p-4 align-top font-medium">{row.capability}</th>
+									{#each [row.cfb, row.firebase, row.supabase] as cell, i (i)}
+										<td class={cn('p-4 align-top', i === 0 && 'bg-primary/[0.06]')}>
+											<span class="flex items-start gap-2">
+												{#if cell.mark === 'yes'}
+													<Check class="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+												{:else if cell.mark === 'partial'}
+													<Minus class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70" />
+												{:else}
+													<X class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50" />
+												{/if}
+												<span
+													class={cn(
+														'text-xs leading-relaxed',
+														i === 0 ? 'text-foreground' : 'text-muted-foreground'
+													)}>{cell.note}</span
+												>
+											</span>
+										</td>
+									{/each}
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				<p class="mt-3 text-xs text-muted-foreground/70">
+					Competitor capabilities as publicly documented; exact prices with dated sources live on
+					the
+					<a href={resolve('/(marketing)/pricing')} class="underline hover:text-foreground"
+						>pricing page</a
+					>.
+				</p>
+			</div>
+		</section>
+
 		<!-- API -->
 		<section id="api" class="border-y border-border bg-card px-4 py-16 sm:px-8 sm:py-24">
 			<div class="mx-auto grid max-w-7xl grid-cols-1 items-center gap-14 md:grid-cols-[2fr_3fr]">
@@ -788,44 +849,9 @@
 			</div>
 		</section>
 
-		<!-- LIVE TODAY -->
-		<section id="live" class="px-4 py-16 sm:px-8 sm:py-24">
-			<div class="mx-auto max-w-6xl">
-				<div class="mb-14 max-w-xl">
-					<span
-						class="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
-					>
-						<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-primary"></span>
-						Live today
-					</span>
-					<h2 class="mt-4 text-3xl font-bold md:text-4xl">
-						Auth shipped first. Database just followed.
-					</h2>
-					<p class="mt-3 text-muted-foreground">
-						Not a waitlist, not a mockup. Open the demo and a real, isolated project - with its own
-						Durable Object - spins up for your browser.
-					</p>
-				</div>
-				<div
-					class="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border bg-border md:grid-cols-3"
-				>
-					{#each liveFeatures as f (f.title)}
-						<div class="bg-card p-7 transition-colors hover:bg-accent/40">
-							<div
-								class="mb-4 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"
-							>
-								<f.icon class="h-[18px] w-[18px]" strokeWidth={1.8} />
-							</div>
-							<h3 class="mb-1.5 font-semibold">{f.title}</h3>
-							<p class="text-sm leading-relaxed text-muted-foreground">{f.desc}</p>
-						</div>
-					{/each}
-				</div>
-			</div>
-		</section>
-
-		<!-- ARCHITECTURE -->
-		<section id="architecture" class="border-y border-border bg-card px-4 py-14 sm:px-8 sm:py-20">
+		<!-- ARCHITECTURE (white band: keeps the section backgrounds alternating
+		     card/white now that the pricing band sits above the API card) -->
+		<section id="architecture" class="px-4 py-14 sm:px-8 sm:py-20">
 			<div class="mx-auto max-w-6xl">
 				<div class="mb-10 max-w-xl">
 					<span
@@ -861,77 +887,8 @@
 			</div>
 		</section>
 
-		<!-- COMPARE -->
-		<section id="compare" class="px-4 py-16 sm:px-8 sm:py-24">
-			<div class="mx-auto max-w-6xl">
-				<div class="mb-10 max-w-xl">
-					<span
-						class="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
-						>Compare</span
-					>
-					<h2 class="mt-4 text-3xl font-bold md:text-4xl">Same primitives. Different physics.</h2>
-					<p class="mt-3 text-muted-foreground">
-						Firebase's DX, Supabase's openness, Cloudflare's network. Every row is a reason this
-						exists.
-					</p>
-				</div>
-				<div class="overflow-x-auto rounded-2xl border border-border">
-					<table
-						class="w-full min-w-[720px] border-collapse bg-card text-left text-sm"
-						data-testid="comparison-table"
-					>
-						<thead>
-							<tr class="border-b border-border">
-								<th class="p-4 font-medium text-muted-foreground">Capability</th>
-								<th class="bg-primary/[0.06] p-4">
-									<span class="flex items-center gap-2 font-semibold">
-										<img src="/brand/mark.svg" alt="" class="h-4 w-4" /> Cloudflarebase
-									</span>
-								</th>
-								<th class="p-4 font-medium text-muted-foreground">Firebase</th>
-								<th class="p-4 font-medium text-muted-foreground">Supabase</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each compareRows as row (row.capability)}
-								<tr class="border-b border-border last:border-0">
-									<th scope="row" class="p-4 align-top font-medium">{row.capability}</th>
-									{#each [row.cfb, row.firebase, row.supabase] as cell, i (i)}
-										<td class={cn('p-4 align-top', i === 0 && 'bg-primary/[0.06]')}>
-											<span class="flex items-start gap-2">
-												{#if cell.mark === 'yes'}
-													<Check class="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-												{:else if cell.mark === 'partial'}
-													<Minus class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70" />
-												{:else}
-													<X class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50" />
-												{/if}
-												<span
-													class={cn(
-														'text-xs leading-relaxed',
-														i === 0 ? 'text-foreground' : 'text-muted-foreground'
-													)}>{cell.note}</span
-												>
-											</span>
-										</td>
-									{/each}
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-				<p class="mt-3 text-xs text-muted-foreground/70">
-					Competitor capabilities as publicly documented; exact prices with dated sources live on
-					the
-					<a href={resolve('/(marketing)/pricing')} class="underline hover:text-foreground"
-						>pricing page</a
-					>.
-				</p>
-			</div>
-		</section>
-
 		<!-- ROADMAP -->
-		<section id="roadmap" class="px-4 py-16 sm:px-8 sm:py-24">
+		<section id="roadmap" class="border-y border-border bg-card px-4 py-16 sm:px-8 sm:py-24">
 			<div class="mx-auto max-w-6xl">
 				<div class="mb-14 max-w-xl">
 					<span
@@ -980,7 +937,7 @@
 		</section>
 
 		<!-- FAQ -->
-		<section id="faq" class="border-t border-border bg-card px-4 py-16 sm:px-8 sm:py-24">
+		<section id="faq" class="px-4 py-16 sm:px-8 sm:py-24">
 			<div class="mx-auto max-w-3xl">
 				<div class="mb-12 text-center">
 					<span
@@ -989,7 +946,7 @@
 					>
 					<h2 class="mt-4 text-3xl font-bold md:text-4xl">Questions, answered plainly.</h2>
 				</div>
-				<div class="divide-y divide-border rounded-xl border border-border bg-background">
+				<div class="divide-y divide-border rounded-xl border border-border bg-card">
 					{#each faqs as item, i (item.q)}
 						<div>
 							<button
@@ -1013,8 +970,8 @@
 			</div>
 		</section>
 
-		<!-- CTA BAND -->
-		<section class="px-4 py-20 text-center sm:px-8 sm:py-28">
+		<!-- CTA BAND (card band: closes out the alternation after the white FAQ) -->
+		<section class="border-t border-border bg-card px-4 py-20 text-center sm:px-8 sm:py-28">
 			<span
 				class="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
 			>
@@ -1063,8 +1020,9 @@
 						<h4 class="mb-3.5 font-mono text-xs tracking-wide text-muted-foreground/70 uppercase">
 							Product
 						</h4>
-						<a href="#live" class="mb-2.5 block text-sm text-muted-foreground hover:text-foreground"
-							>Live today</a
+						<a
+							href="#pricing"
+							class="mb-2.5 block text-sm text-muted-foreground hover:text-foreground">Pricing</a
 						>
 						<a href="#api" class="mb-2.5 block text-sm text-muted-foreground hover:text-foreground"
 							>API</a

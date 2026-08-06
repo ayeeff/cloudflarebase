@@ -9,17 +9,42 @@ import { expect, test } from '@playwright/test';
 test.describe('pricing page (frontend)', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
 
-	test('renders both bills and the breakdown for the default workload', async ({ page }) => {
+	test('renders all three bills and the breakdown for the default workload', async ({ page }) => {
 		await page.goto('/pricing');
 		await expect(page.getByRole('heading', { name: /Our price/ })).toBeVisible();
 
 		await expect(page.getByTestId('pricing-total-cf')).toContainText('$');
 		await expect(page.getByTestId('pricing-total-fb')).toContainText('$');
+		await expect(page.getByTestId('pricing-total-sb')).toContainText('$');
 		await expect(page.getByTestId('pricing-breakdown')).toBeVisible();
+
+		// The 1M-user preset is the default - the divergence is the point - so
+		// the multiplier shows without touching anything.
+		await expect(page.getByTestId('pricing-preset-scale')).toHaveAttribute('data-active', 'true');
+		await expect(page.getByTestId('pricing-multiplier')).toContainText('×');
 
 		// The itemized legend carries the values (text tokens, not marks).
 		await expect(page.getByTestId('pricing-cloudflare')).toContainText('Workers Paid base');
 		await expect(page.getByTestId('pricing-cloudflare')).toContainText('$5.00');
+
+		// MAU is a shared input; the competitor cards carry auth lines, and the
+		// Supabase card names its structural caveat (compute is not metered
+		// per operation).
+		await expect(page.getByTestId('pricing-value-mau')).toBeVisible();
+		await expect(page.getByTestId('pricing-firebase')).toContainText('Auth MAU');
+		await expect(page.getByTestId('pricing-supabase')).toContainText('compute');
+	});
+
+	test('the side-project preset fits the Workers free tier', async ({ page }) => {
+		await page.goto('/pricing');
+		await page.getByTestId('pricing-preset-side').click();
+
+		// Durable Objects are on the free plan - a small workload has no bill,
+		// and the same workload honestly fits Supabase's Free plan too.
+		await expect(page.getByTestId('pricing-free-tier')).toBeVisible();
+		await expect(page.getByTestId('pricing-total-cf')).toContainText('$0.00');
+		await expect(page.getByTestId('pricing-total-sb')).toContainText('$0.00');
+		await expect(page.getByTestId('pricing-supabase-free')).toBeVisible();
 	});
 
 	test('presets move the numbers', async ({ page }) => {

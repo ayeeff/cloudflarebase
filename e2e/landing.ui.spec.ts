@@ -5,15 +5,12 @@ test.describe('landing page (frontend)', () => {
 	// an operator session, /dashboard lists real projects instead of minting
 	// a demo, so these tests must not carry the console storage state.
 	test.use({ storageState: { cookies: [], origins: [] } });
-	test('renders the hero and the live feature grid', async ({ page }) => {
+	test('renders the hero and the roadmap', async ({ page }) => {
 		await page.goto('/');
 
 		await expect(page.getByRole('heading', { level: 1 })).toContainText(
 			'The open-source Firebase for Cloudflare'
 		);
-		await expect(
-			page.getByRole('heading', { name: 'Auth shipped first. Database just followed.' })
-		).toBeVisible();
 		await expect(
 			page.getByRole('heading', { name: 'Every Firebase primitive. One agent at a time.' })
 		).toBeVisible();
@@ -28,8 +25,11 @@ test.describe('landing page (frontend)', () => {
 		await expect(page.getByText('AuthAgent · DO SQLite')).toBeVisible();
 	});
 
-	test('the comparison table states the trade-offs', async ({ page }) => {
+	test('the pricing story and comparison table state the trade-offs', async ({ page }) => {
 		await page.goto('/');
+		await expect(page.getByRole('heading', { name: /Our price/ })).toBeVisible();
+		// The real calculator is embedded on the landing page, not linked away.
+		await expect(page.getByTestId('pricing-total-cf')).toContainText('$');
 		await expect(
 			page.getByRole('heading', { name: 'Same primitives. Different physics.' })
 		).toBeVisible();
