@@ -19,6 +19,20 @@
 	const projectId = $derived(page.params.projectId ?? '');
 	const specUrl = $derived(resolve('/api/projects/[projectId]/openapi.json', { projectId }));
 
+	/** Sidebar operations grouped by verb - all GETs, then POSTs, and so on -
+	 * with path order breaking ties inside a verb. */
+	const METHOD_ORDER = ['get', 'post', 'put', 'patch', 'delete'];
+	function methodRank(method: string): number {
+		const rank = METHOD_ORDER.indexOf(method.toLowerCase());
+		return rank === -1 ? METHOD_ORDER.length : rank;
+	}
+	function operationsSorter(
+		a: { method: string; path: string },
+		b: { method: string; path: string }
+	): number {
+		return methodRank(a.method) - methodRank(b.method) || a.path.localeCompare(b.path);
+	}
+
 	let container = $state<HTMLDivElement | null>(null);
 	let reference: { destroy?: () => void } | null = null;
 
@@ -40,6 +54,7 @@
 				// Authentication and Database both open on load (tag order comes
 				// from the OpenAPI document) instead of only the first section.
 				defaultOpenAllTags: true,
+				operationsSorter,
 				mcp: undefined,
 				agent: {
 					disabled: true
