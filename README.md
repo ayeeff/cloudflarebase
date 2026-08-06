@@ -14,11 +14,13 @@
   <a href="../../actions/workflows/e2e.yaml"><img alt="E2E" src="../../actions/workflows/e2e.yaml/badge.svg" /></a>
 </p>
 
-An open-source Firebase alternative that runs entirely on your Cloudflare
+The open-source Firebase for Cloudflare - it runs entirely on your own
 account. Each project gets isolated Durable Objects - Better Auth on embedded
-SQLite, and a document database with Firestore-style live queries where every
-collection is its own DO - plus a dashboard with live counters, analytics, an
-AI copilot, and a generated API reference.
+SQLite, and a database with two models and live queries on both: Firestore-style
+JSON documents and typed-column SQL tables you can drive with an ORM. Every
+collection and table is its own DO with per-region read replicas out of the box,
+NDJSON export/import, and 30-day point-in-time rollback - plus a dashboard with
+live counters, analytics, an AI copilot, and a generated API reference.
 
 Auth and Database are live. Storage, functions, and the rest will follow the
 same agent shape.
@@ -82,7 +84,7 @@ npm install -g @cloudflarebase/cli
 
 cloudflarebase init my-backend   # scaffolds a Worker with auth
 cd my-backend
-cloudflarebase add db            # Firestore-style documents + live queries
+cloudflarebase add db            # documents + SQL tables, live queries on both
 npx wrangler login
 cloudflarebase deploy            # sign-in and live queries work right away
 ```
@@ -110,7 +112,10 @@ await authClient.signUp.email({ name, email, password });
 Browsers get a cookie; everything else uses the `set-auth-token` bearer token.
 Add your app's origin under the project's Settings tab first.
 
-The database has a typed client with Firestore-style live queries:
+The database is one typed client with two models - JSON documents and typed
+SQL rows - and live queries on both.
+
+**Documents** need no schema; a collection exists the moment you write to it:
 
 ```ts
 import { createDbClient } from '@cloudflarebase/db/client';
@@ -122,7 +127,40 @@ const db = createDbClient({
 const posts = db.collection('posts');
 await posts.create({ title: 'Hello', votes: 1 });
 
-// A snapshot now, then added/modified/removed deltas as writes happen.
+const front = await posts.query({
+	orderBy: [{ field: 'votes', direction: 'desc' }],
+	limit: 25
+});
+```
+
+**Tables** are schema-first: declare typed columns once (the dashboard's table
+designer, or `cloudflarebase schema apply` from a `cloudflarebase.schema.jsonc`
+after `cloudflarebase login`), then the same handle surface returns typed rows:
+
+```ts
+const todos = db.table<{ title: string; done: boolean }>('todos');
+await todos.create({ title: 'Ship it', done: false });
+```
+
+Prefer a real ORM? `cloudflarebase schema generate` emits the drizzle schema
+from your declared columns, and `@cloudflarebase/db/drizzle` runs actual SQL
+over the gated single-table endpoint (DDL-free, JWT-required):
+
+```ts
+import { drizzleTable } from '@cloudflarebase/db/drizzle';
+import { desc } from 'drizzle-orm';
+import { todos } from './cloudflarebase.schema'; // emitted by schema generate
+
+const sql = drizzleTable({ baseUrl, table: 'todos', getToken });
+const open = await sql.select().from(todos).orderBy(desc(todos.created_at));
+```
+
+**Realtime** is a `subscribe` on any collection or table query: a snapshot
+first, then added/modified/removed deltas pushed as writes happen - windowed
+queries handle displacement correctly. The SDK multiplexes every subscription
+in the client over one WebSocket to a gateway in the subscriber's region:
+
+```ts
 posts.subscribe(
 	{ orderBy: [{ field: 'votes', direction: 'desc' }], limit: 25 },
 	{
@@ -130,7 +168,17 @@ posts.subscribe(
 		onChange: (change, docs) => render(docs)
 	}
 );
+
+todos.subscribe(
+	{ where: [{ field: 'done', op: '==', value: false }] },
+	{ onSnapshot: (rows) => render(rows), onChange: (change, rows) => render(rows) }
+);
 ```
+
+Reads are served from a replica in the reader's region (writes stay on the
+shard's primary, and session bookmarks keep read-your-writes); every collection
+and table can be exported, imported, and rolled back to any point in the past
+30 days from the dashboard.
 
 Each project also serves an OpenAPI 3.1 document at
 `/api/projects/<id>/openapi.json`, rendered in the dashboard under API

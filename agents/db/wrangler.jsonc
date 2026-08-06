@@ -12,6 +12,14 @@
 			"new_sqlite_classes": ["DbAgent", "DbCollection"],
 			"tag": "v1",
 		},
+		{
+			"new_sqlite_classes": ["DbTable"],
+			"tag": "v2",
+		},
+		{
+			"new_sqlite_classes": ["DbGateway"],
+			"tag": "v3",
+		},
 	],
 	"durable_objects": {
 		"bindings": [
@@ -22,6 +30,14 @@
 			{
 				"class_name": "DbCollection",
 				"name": "DbCollection",
+			},
+			{
+				"class_name": "DbTable",
+				"name": "DbTable",
+			},
+			{
+				"class_name": "DbGateway",
+				"name": "DbGateway",
 			},
 		],
 	},
@@ -107,6 +123,14 @@
 						"class_name": "DbCollection",
 						"name": "DbCollection",
 					},
+					{
+						"class_name": "DbTable",
+						"name": "DbTable",
+					},
+					{
+						"class_name": "DbGateway",
+						"name": "DbGateway",
+					},
 				],
 			},
 
@@ -150,6 +174,14 @@
 						"class_name": "DbCollection",
 						"name": "DbCollection",
 					},
+					{
+						"class_name": "DbTable",
+						"name": "DbTable",
+					},
+					{
+						"class_name": "DbGateway",
+						"name": "DbGateway",
+					},
 				],
 			},
 
@@ -191,6 +223,14 @@
 						"class_name": "DbCollection",
 						"name": "DbCollection",
 					},
+					{
+						"class_name": "DbTable",
+						"name": "DbTable",
+					},
+					{
+						"class_name": "DbGateway",
+						"name": "DbGateway",
+					},
 				],
 			},
 
@@ -204,6 +244,15 @@
 				// demo-named test project as throwaway. A real demo deployment sets
 				// both.
 				"TRUSTED_ORIGINS": "http://localhost:8797,http://127.0.0.1:8797",
+				// Lets specs pin region routing on a single-colo local stack by
+				// sending x-cfb-region. Test env only - never in production.
+				"REGION_OVERRIDE_HEADER": "true",
+				// Sibling-spawn knobs: force a spawn at 2 sockets and expire the
+				// worker's sibling routing cache fast enough for specs to observe
+				// the second sibling. Production uses the compiled defaults
+				// (24k sockets, 60s TTL).
+				"SIBLING_SPAWN_SOCKETS": "2",
+				"SIBLING_ROUTING_TTL_MS": "250",
 			},
 
 			"analytics_engine_datasets": [
@@ -233,6 +282,14 @@
 					{
 						"class_name": "DbCollection",
 						"name": "DbCollection",
+					},
+					{
+						"class_name": "DbTable",
+						"name": "DbTable",
+					},
+					{
+						"class_name": "DbGateway",
+						"name": "DbGateway",
 					},
 				],
 			},

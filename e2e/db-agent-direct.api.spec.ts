@@ -46,7 +46,7 @@ test.describe('db-agent worker (direct)', () => {
 		// pins that body validation is agent-side (an auth-mode collection would
 		// 401 before the query parser ever ran).
 		const provision = await agent.put(`${base}/admin/collections/probe`, {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 

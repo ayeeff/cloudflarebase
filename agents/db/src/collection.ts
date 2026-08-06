@@ -1,38 +1,63 @@
-import * as Sentry from '@sentry/cloudflare';
-import { DurableObject } from 'cloudflare:workers';
-import { and, count, eq } from 'drizzle-orm';
-import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
+﻿import * as Sentry from '@sentry/cloudflare';
+import { count, eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import { z } from 'zod';
 import migrations from './migrations';
-import * as schema from './db/schema';
-import { collectionMeta, documents, subscriptions } from './db/schema';
+import { checkAccess, corsHeadersFor, drainUnusedBody, withCors } from './access';
+import { primaryLocation } from './colo';
+import { collectionMeta, documents } from './db/schema';
 import { ProjectJwtVerifier } from './jwt';
+import { LiveShard, type LiveGate } from './live';
+import {
+	appendLog,
+	clearReplicas,
+	horizonLsn,
+	lastLsn,
+	listPushReplicas,
+	listReplicas,
+	pickSubscribeSibling,
+	readReplicaMeta,
+	regionSocketCounts,
+	registerReplica,
+	serveRepPull,
+	setReplicaPush,
+	truncateLog,
+	writeReplicaMeta,
+	type ReplicaMeta,
+	type ReplicaRole,
+} from './replication';
 import {
 	compileAggregate,
 	compileQuery,
 	decodeCursor,
 	encodeCursor,
-	isWindowed,
-	matchesQuery,
 	type DecodedCursor,
 } from './query';
-import { hasPermission, validateDocument } from './rules';
-import { ulid } from './ulid';
+import { shardBookmarkForTime, shardCurrentBookmark, shardRestoreTo } from './pitr';
+import { validateDocument } from './rules';
+import { v7 as uuidv7 } from 'uuid';
 import {
 	aggregateRequestSchema,
-	clientFrameSchema,
 	collectionConfigSchema,
 	createDocumentSchema,
 	documentDataSchema,
 	importLineSchema,
+	logEntrySchema,
 	querySchema,
-	restoreRequestSchema,
 	storedConfigSchema,
-	subscribeFrameSchema,
+	repApplyInputSchema,
+	repPullInputSchema,
+	repSetPushInputSchema,
 	EXPORT_CHUNK,
 	IMPORT_RPC_CHUNK,
+	LSN_HEADER,
 	MAX_DOC_BYTES,
+	MAX_REGION_SIBLINGS,
+	MAX_REPLICA_LAG_MS,
+	MIN_LSN_HEADER,
+	REPLICATION_PULL_CHUNK,
+	SIBLING_SPAWN_SOCKETS,
+	socketReportStep,
 	type AccessMode,
 	type AggregateRequest,
 	type AggregateResult,
@@ -40,11 +65,14 @@ import {
 	type CollectionConfig,
 	type DbDocument,
 	type ImportReport,
+	type LogEntry,
 	type Query,
+	type RepApplyResult,
+	type RepPullResult,
+	type RepStatus,
 	type RestoreOutcome,
-	type ServerFrame,
 } from './schemas';
-import type { DbAgent } from './agent';
+import { isDurableObjectReset, type DbAgent } from './agent';
 
 /**
  * One collection's documents, query engine, and live-query subscriptions.
@@ -66,10 +94,6 @@ import type { DbAgent } from './agent';
  * what heals a parent-side row whose config push failed.
  */
 
-export const MAX_SUBSCRIPTIONS_PER_CONNECTION = 10;
-/** Local dev keeps no durable change log; workerd phrases it several ways. */
-const UNSUPPORTED_PITR_PATTERN = /does not implement|not (yet )?(supported|implemented|available)/i;
-const DEMO_MAX_SUBSCRIPTIONS_PER_CONNECTION = 5;
 const DEMO_MAX_DOCS_PER_COLLECTION = 200;
 const DEMO_MAX_DOC_BYTES = 8 * 1024;
 /**
@@ -83,16 +107,16 @@ const STATS_REPORT_MS = 500;
 
 type DocumentRow = typeof documents.$inferSelect;
 
-export class DbCollection extends DurableObject<Env> {
-	private db: DrizzleSqliteDODatabase<typeof schema>;
+export class DbCollection extends LiveShard {
 	private config: CollectionConfig | null = null;
 	private verifier: ProjectJwtVerifier | null = null;
 	private statsTimer: ReturnType<typeof setTimeout> | null = null;
 	private localAnalyticsReady = false;
+	/** LSN of the current request's write, surfaced as the session bookmark. */
+	private pendingLsn: number | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		this.db = drizzle(ctx.storage, { schema });
 		// Idempotent - drizzle tracks applied migrations in its own table.
 		// Tables the parent class owns simply stay empty here.
 		ctx.blockConcurrencyWhile(async () => {
@@ -122,10 +146,12 @@ export class DbCollection extends DurableObject<Env> {
 	// -------------------------------------------------------------------------
 	// RPC surface (parent and worker entrypoint only - never public HTTP)
 
-	/** Parent push on create/config change. Stale versions are ignored. */
+	/** Parent push on create/config change (replicas run it applying `cfg`
+	 * log entries and during bootstrap). Stale versions are ignored. */
 	async configure(input: unknown): Promise<void> {
 		const parsed = collectionConfigSchema.parse(input);
 		if (this.config && parsed.configVersion < this.config.configVersion) return;
+		const previous = this.config;
 		this.config = parsed;
 		this.verifier = null;
 		await this.db
@@ -135,6 +161,17 @@ export class DbCollection extends DurableObject<Env> {
 				target: collectionMeta.id,
 				set: { config: JSON.stringify(parsed), updatedAt: new Date() },
 			});
+
+		if (this.role.kind === 'primary') {
+			if (parsed.replication === 'auto') {
+				// Config changes replicate IN WRITE ORDER with the data.
+				const image = JSON.stringify(parsed);
+				const lsn = appendLog(this.ctx.storage.sql, 'cfg', '', image);
+				this.schedulePush({ lsn, op: 'cfg', id: '', image, ts: Date.now() });
+			} else if (previous?.replication === 'auto') {
+				await this.repDisable();
+			}
+		}
 	}
 
 	/** Operator query over the dashboard proxy (parent-forwarded). */
@@ -177,7 +214,7 @@ export class DbCollection extends DurableObject<Env> {
 					report.errors.push({ line: index, error: sizeIssue });
 					continue;
 				}
-				const id = line.id ?? ulid();
+				const id = line.id ?? uuidv7();
 				const [existing] = await this.db
 					.select()
 					.from(documents)
@@ -214,111 +251,23 @@ export class DbCollection extends DurableObject<Env> {
 		return report;
 	}
 
-	/**
-	 * Point-in-time restore over the platform's SQLite bookmarks. The restore
-	 * takes effect at the START of the next session, so this closes every
-	 * subscriber (reconnects get fresh snapshots against the restored data)
-	 * and aborts a tick later; the returned undo bookmark reverses the whole
-	 * thing via another restore. Local development keeps no durable change
-	 * log, so the API reports unsupported there.
-	 */
+	/** Point-in-time restore over the platform's SQLite bookmarks - the shared
+	 * sequence lives in pitr.ts; see shardRestoreTo for the contract. */
 	async restoreTo(input: unknown): Promise<RestoreOutcome> {
-		const parsed = restoreRequestSchema.parse(input);
-		const storage = this.ctx.storage;
-		if (
-			typeof storage.getBookmarkForTime !== 'function' ||
-			typeof storage.onNextSessionRestoreBookmark !== 'function'
-		) {
-			return { ok: false, code: 'unsupported' };
-		}
-
-		try {
-			const bookmark =
-				parsed.bookmark ?? (await storage.getBookmarkForTime(new Date(parsed.timestamp ?? 0)));
-			const undoBookmark = await storage.onNextSessionRestoreBookmark(bookmark);
-			for (const ws of this.ctx.getWebSockets()) {
-				try {
-					ws.close(1012, 'collection restored');
-				} catch {
-					// a half-dead socket must not block the restore
-				}
-			}
-			setTimeout(() => this.ctx.abort(), 0);
-			return { ok: true, undoBookmark };
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			// Miniflare implements the methods but rejects the calls - observed:
-			// "This Durable Object's storage back-end does not implement
-			// point-in-time recovery." A real platform failure (e.g. a bookmark
-			// past the 30-day window) reports as failed with its message.
-			if (UNSUPPORTED_PITR_PATTERN.test(message)) return { ok: false, code: 'unsupported' };
-			// Restore is the last-resort recovery path; a genuine failure here
-			// must not look like local dev's missing change log.
-			try {
-				Sentry.captureException(error, {
-					level: 'error',
-					tags: { collection: this.config?.collection ?? 'unknown', operation: 'pitr-restore' },
-				});
-			} catch {
-				// reporting must never replace the outcome
-			}
-			return { ok: false, code: 'failed', message: message.slice(0, 256) };
-		}
+		return shardRestoreTo(this.ctx, input, {
+			label: this.config?.collection ?? 'unknown',
+			closeReason: 'collection restored',
+		});
 	}
 
-	/**
-	 * The bookmark for this exact moment - the parent persists these as named
-	 * restore points (manual checkpoints, before imports, before rollbacks)
-	 * and doubles this call as the PITR support probe. No side effects.
-	 *
-	 * The probe exercises getBookmarkForTime, not just getCurrentBookmark:
-	 * local workerd serves the latter while refusing the rest of the PITR API,
-	 * and "supported" must mean a restore would actually work. Only the
-	 * back-end's "does not implement" answer counts as unsupported - a young
-	 * DO can reject a specific timestamp (its change log may postdate it)
-	 * while PITR itself is fully available.
-	 */
+	/** The current-moment bookmark, doubling as the PITR support probe. */
 	async currentBookmark(): Promise<{ ok: true; bookmark: string } | { ok: false }> {
-		const storage = this.ctx.storage;
-		if (
-			typeof storage.getCurrentBookmark !== 'function' ||
-			typeof storage.getBookmarkForTime !== 'function'
-		) {
-			return { ok: false };
-		}
-		try {
-			const bookmark = await storage.getCurrentBookmark();
-			try {
-				await storage.getBookmarkForTime(new Date());
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				if (UNSUPPORTED_PITR_PATTERN.test(message)) return { ok: false };
-			}
-			return { ok: true, bookmark };
-		} catch {
-			return { ok: false };
-		}
+		return shardCurrentBookmark(this.ctx);
 	}
 
-	/**
-	 * D1-restore-style resolution: a wall-clock time in, the closest available
-	 * bookmark out - shown to the operator BEFORE anything is restored. No
-	 * side effects.
-	 */
+	/** D1-restore-style timestamp -> closest-available-bookmark resolution. */
 	async bookmarkForTime(input: unknown): Promise<BookmarkOutcome> {
-		const timestamp = z.iso.datetime().parse(input);
-		const storage = this.ctx.storage;
-		if (typeof storage.getBookmarkForTime !== 'function') {
-			return { ok: false, code: 'unsupported' };
-		}
-		try {
-			return { ok: true, bookmark: await storage.getBookmarkForTime(new Date(timestamp)) };
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			return UNSUPPORTED_PITR_PATTERN.test(message)
-				? { ok: false, code: 'unsupported' }
-				: { ok: false, code: 'failed', message: message.slice(0, 256) };
-		}
+		return shardBookmarkForTime(this.ctx, input);
 	}
 
 	/**
@@ -356,12 +305,18 @@ export class DbCollection extends DurableObject<Env> {
 	}
 
 	/**
-	 * Erase this collection. deleteAll leaves any alarm armed; this class
+	 * Erase this collection. A PRIMARY destroys its registered replicas first
+	 * - the parent's children-before-registry contract extends one level down,
+	 * and the `replicas` table (populated before any pull is served) is what
+	 * makes the fan-out complete. deleteAll leaves any alarm armed; this class
 	 * schedules none, but deleteAlarm is kept for symmetry with the auth
 	 * agent's hard-won sequence. The deferred abort preserves the RPC's own
 	 * response - aborting synchronously would fail every successful erase.
 	 */
 	async destroy(): Promise<void> {
+		if (this.role.kind === 'primary') {
+			await this.destroyReplicaInstances();
+		}
 		for (const ws of this.ctx.getWebSockets()) {
 			try {
 				ws.close(1001, 'collection erased');
@@ -375,13 +330,414 @@ export class DbCollection extends DurableObject<Env> {
 	}
 
 	// -------------------------------------------------------------------------
+	// Replication: the primary's feed (docs/db-replication-design.md)
+
+	/** Append to the change log in the SAME task as the data write, then
+	 * schedule the live push to any replica holding subscribers. */
+	private logChange(op: 'put' | 'del', id: string, image: string | null): void {
+		if (this.role.kind !== 'primary' || this.config?.replication !== 'auto') return;
+		const lsn = appendLog(this.ctx.storage.sql, op, id, image);
+		this.pendingLsn = lsn;
+		this.schedulePush({ lsn, op, id, image, ts: Date.now() });
+	}
+
+	/**
+	 * REP2 delivery: an RPC per push-flagged replica, AFTER the response
+	 * (waitUntil). RPC wakes a hibernated replica, which applies the entry
+	 * and notifies its own subscribers - no sockets, no keep-alive fights.
+	 * Failures are absorbed: the pull path heals gaps, and a replica that
+	 * reports no subscribers left gets its flag flipped off.
+	 */
+	private schedulePush(entry: LogEntry): void {
+		const config = this.config;
+		const name = this.ctx.id.name;
+		if (!config || !name) return;
+		const targets = listPushReplicas(this.ctx.storage.sql);
+		if (!targets.length) return;
+
+		const namespace = this.env.DbCollection as unknown as DurableObjectNamespace<DbCollection>;
+		this.ctx.waitUntil(
+			(async () => {
+				for (const replica of targets) {
+					try {
+						const stub = namespace.get(namespace.idFromName(`${name}:${replica.id}`));
+						const result = (await stub.repApply({
+							entries: [entry],
+							epoch: config.repEpoch,
+						})) as RepApplyResult;
+						if ('stop' in result) {
+							setReplicaPush(this.ctx.storage.sql, replica.id, replica.region, { push: false });
+						}
+					} catch {
+						// best-effort: the replica's pull path heals on next touch
+					}
+				}
+			})(),
+		);
+	}
+
+	/** A replica reports push transitions and socket counts as they move. */
+	async repSetPush(input: unknown): Promise<void> {
+		if (this.role.kind !== 'primary') return;
+		const parsed = repSetPushInputSchema.parse(input);
+		setReplicaPush(this.ctx.storage.sql, parsed.replicaId, parsed.region, {
+			push: parsed.push,
+			sockets: parsed.sockets,
+		});
+	}
+
+	/**
+	 * Which sibling a NEW subscriber in `region` should land on - the worker
+	 * asks (60s isolate cache) before naming the instance. Non-primary,
+	 * non-replicated, and demo shards always answer 1: demo subscription caps
+	 * make sibling pressure unreachable, and a throwaway project must not be
+	 * able to spawn data copies.
+	 */
+	async repSubscribeTarget(region: string): Promise<number> {
+		if (this.role.kind !== 'primary' || this.config?.replication !== 'auto' || this.config.demo) {
+			return 1;
+		}
+		return pickSubscribeSibling(
+			regionSocketCounts(this.ctx.storage.sql, region),
+			this.spawnThreshold(),
+			MAX_REGION_SIBLINGS,
+		);
+	}
+
+	/** Env-overridable so the e2e stack can force spawn with 2 sockets. */
+	private spawnThreshold(): number {
+		return Number(this.env.SIBLING_SPAWN_SOCKETS ?? '') || SIBLING_SPAWN_SOCKETS;
+	}
+
+	/**
+	 * Primary -> replica live delivery. Entries at or below the applied
+	 * position are already-haves; a gap or epoch mismatch triggers a healing
+	 * pull (which notifies subscribers too); with no subscribers left the
+	 * primary is told to stop pushing.
+	 */
+	async repApply(input: unknown): Promise<RepApplyResult> {
+		if (this.role.kind !== 'replica') return { ok: true };
+		const parsed = repApplyInputSchema.parse(input);
+		if ((await this.subscriptionCount()) === 0) return { stop: true };
+
+		const sql = this.ctx.storage.sql;
+		const meta = readReplicaMeta(sql);
+		if (!meta || parsed.epoch !== meta.epoch) {
+			await this.replicaPullLoop(meta ?? { epoch: parsed.epoch, appliedLsn: 0, pulledAt: 0 });
+			return { healed: true };
+		}
+
+		const fresh = parsed.entries.filter((entry) => entry.lsn > meta.appliedLsn);
+		if (!fresh.length) return { ok: true };
+		if (fresh[0].lsn !== meta.appliedLsn + 1) {
+			await this.replicaPullLoop(meta);
+			return { healed: true };
+		}
+
+		for (const entry of fresh) await this.applyLogEntry(entry, true);
+		writeReplicaMeta(sql, {
+			epoch: meta.epoch,
+			appliedLsn: fresh[fresh.length - 1].lsn,
+			pulledAt: Date.now(),
+		});
+		return { ok: true };
+	}
+
+	/** Attach the session bookmark to a write response, when one was logged. */
+	private withLsn(response: Response): Response {
+		if (this.pendingLsn === null) return response;
+		const headers = new Headers(response.headers);
+		headers.set(LSN_HEADER, String(this.pendingLsn));
+		this.pendingLsn = null;
+		return new Response(response.body, {
+			status: response.status,
+			statusText: response.statusText,
+			headers,
+		});
+	}
+
+	/** Replica bootstrap: config + the log position the snapshot starts from.
+	 * The caller is registered BEFORE any data leaves - the erase fan-out
+	 * iterates that registry, so a bootstrapped replica is never an orphan.
+	 * A disabled shard answers `ok: false` (never a throw: stale routing hits
+	 * this constantly right after a disable, and it is not an error). */
+	async repBootstrap(
+		input: unknown,
+	): Promise<{ ok: true; config: CollectionConfig; epoch: number; lsn: number } | { ok: false }> {
+		const caller = repPullInputSchema.parse(input);
+		const config = this.config;
+		if (this.role.kind !== 'primary' || !config || config.replication !== 'auto') {
+			return { ok: false };
+		}
+		registerReplica(this.ctx.storage.sql, caller.replicaId, caller.region, caller.since);
+		return { ok: true, config, epoch: config.repEpoch, lsn: lastLsn(this.ctx.storage.sql) };
+	}
+
+	/** Replica catch-up; registers the caller durably before serving data. */
+	async repPull(input: unknown): Promise<RepPullResult> {
+		const parsed = repPullInputSchema.parse(input);
+		const config = this.config;
+		if (this.role.kind !== 'primary' || !config || config.replication !== 'auto') {
+			// Disabled mid-flight: force the replica to notice via resync; the
+			// disable path destroys it moments later anyway.
+			return { resync: true, epoch: this.config?.repEpoch ?? 0 };
+		}
+		return serveRepPull(this.ctx.storage.sql, parsed, config.repEpoch);
+	}
+
+	/** Observability for /admin/replication/:name and the copilot. */
+	async repStatus(): Promise<RepStatus> {
+		const sql = this.ctx.storage.sql;
+		const enabled = this.role.kind === 'primary' && this.config?.replication === 'auto';
+		const last = enabled ? lastLsn(sql) : 0;
+		return {
+			enabled,
+			epoch: this.config?.repEpoch ?? 0,
+			lastLsn: last,
+			horizonLsn: enabled ? horizonLsn(sql) : 0,
+			primary: await primaryLocation(),
+			replicas: enabled
+				? listReplicas(sql).map((replica) => ({
+						id: replica.id,
+						region: replica.region,
+						appliedLsn: replica.appliedLsn,
+						lagLsn: Math.max(0, last - replica.appliedLsn),
+						push: replica.push,
+						sockets: replica.sockets,
+						lastSeenAt: new Date(replica.lastSeenAt).toISOString(),
+					}))
+				: [],
+		};
+	}
+
+	/** Turn replication off: destroy every registered replica, drop the log. */
+	async repDisable(): Promise<void> {
+		if (this.role.kind !== 'primary') return;
+		await this.destroyReplicaInstances();
+		const sql = this.ctx.storage.sql;
+		truncateLog(sql);
+		clearReplicas(sql);
+	}
+
+	private async destroyReplicaInstances(): Promise<void> {
+		const name = this.ctx.id.name;
+		if (!name) return;
+		const namespace = this.env.DbCollection as unknown as DurableObjectNamespace<DbCollection>;
+		for (const replica of listReplicas(this.ctx.storage.sql)) {
+			const stub = namespace.get(namespace.idFromName(`${name}:${replica.id}`));
+			try {
+				await stub.destroy();
+			} catch (error) {
+				// The deferred-abort race again; an empty replica proves the wipe.
+				if (!isDurableObjectReset(error)) throw error;
+			}
+		}
+	}
+
+	// -------------------------------------------------------------------------
+	// Replication: the replica role
+
+	private primaryStub() {
+		const namespace = this.env.DbCollection as unknown as DurableObjectNamespace<DbCollection>;
+		return namespace.get(namespace.idFromName((this.role as ReplicaRole).primaryName));
+	}
+
+	/** Anything that is not a replicated read belongs to the primary. */
+	private async forwardToPrimary(request: Request): Promise<Response> {
+		const namespace = this.env.DbCollection as unknown as DurableObjectNamespace;
+		const stub = namespace.get(namespace.idFromName((this.role as ReplicaRole).primaryName));
+		return (await stub.fetch(request)) as unknown as Response;
+	}
+
+	/**
+	 * Replica request handling: reads serve locally (bounded staleness +
+	 * session bookmarks), everything else forwards - correctness never
+	 * depends on the worker's routing cache being fresh.
+	 */
+	private async replicaDispatch(request: Request, url: URL, subPath: string): Promise<Response> {
+		// REP2: subscribers land HERE - the replica runs the live engine over
+		// its local copy, fed by primary pushes.
+		if (request.method === 'GET' && subPath === '/subscribe') {
+			const ready = await this.ensureReplica(0);
+			if (!ready || !this.config) return this.forwardToPrimary(request);
+			return this.acceptSubscriber(request);
+		}
+
+		const isRead =
+			request.method === 'GET' ||
+			(request.method === 'POST' && (subPath === '/query' || subPath === '/aggregate'));
+		if (!isRead) return this.forwardToPrimary(request);
+
+		const minLsn = Number(request.headers.get(MIN_LSN_HEADER) ?? 0) || 0;
+		const ready = await this.ensureReplica(minLsn);
+		// An unsatisfiable bookmark (or a failed bootstrap) is answered with
+		// the primary's truth rather than an error or stale data.
+		if (!ready || !this.config) return this.forwardToPrimary(request);
+
+		const cors = this.corsHeaders(request);
+		if (request.headers.get('origin') && !cors) {
+			return Response.json({ error: 'origin is not trusted' }, { status: 403 });
+		}
+		return withCors(await this.route(request, url, subPath, this.config), cors);
+	}
+
+	/** Bootstrapped and fresh enough for this request's bookmark? */
+	private async ensureReplica(minLsn: number): Promise<boolean> {
+		const sql = this.ctx.storage.sql;
+		let meta = readReplicaMeta(sql);
+		if (!meta || !this.config) {
+			if (!(await this.replicaBootstrap())) return false;
+			meta = readReplicaMeta(sql);
+			if (!meta) return false;
+		}
+		const stale = Date.now() - meta.pulledAt > MAX_REPLICA_LAG_MS;
+		if (stale || minLsn > meta.appliedLsn) {
+			meta = await this.replicaPullLoop(meta);
+		}
+		return minLsn <= meta.appliedLsn;
+	}
+
+	/** Full state transfer: config, snapshot pages, applied position. */
+	private async replicaBootstrap(): Promise<boolean> {
+		const role = this.role as ReplicaRole;
+		try {
+			const primary = this.primaryStub();
+			const boot = (await primary.repBootstrap({
+				since: 0,
+				replicaId: role.replicaId,
+				region: role.region,
+			})) as unknown as Awaited<ReturnType<DbCollection['repBootstrap']>>;
+			if (!boot.ok) return false;
+			await this.configure(boot.config);
+			await this.db.delete(documents);
+
+			let afterId: string | undefined;
+			for (;;) {
+				const chunk = (await primary.exportChunk(afterId)) as unknown as Awaited<
+					ReturnType<DbCollection['exportChunk']>
+				>;
+				for (const doc of chunk.docs) this.applyDocImage(doc);
+				if (chunk.nextAfterId === null) break;
+				afterId = chunk.nextAfterId;
+			}
+
+			writeReplicaMeta(this.ctx.storage.sql, {
+				epoch: boot.epoch,
+				appliedLsn: boot.lsn,
+				pulledAt: Date.now(),
+			});
+			this.writeDbEvent('replica.bootstrap');
+			return true;
+		} catch (error) {
+			try {
+				Sentry.captureException(error, {
+					level: 'error',
+					tags: { operation: 'replica-bootstrap', shard: this.ctx.id.name ?? 'unknown' },
+				});
+			} catch {
+				// reporting must never break the request path
+			}
+			return false;
+		}
+	}
+
+	/**
+	 * Catch up from the primary's log. A pull failure returns the old meta -
+	 * bounded staleness is acceptable, and the caller's bookmark check is
+	 * what decides between serving and forwarding. A resync answer or an
+	 * epoch change (post-restore) discards everything and re-bootstraps.
+	 */
+	private async replicaPullLoop(meta: ReplicaMeta): Promise<ReplicaMeta> {
+		const role = this.role as ReplicaRole;
+		const sql = this.ctx.storage.sql;
+		try {
+			const primary = this.primaryStub();
+			// Subscribers must see pull-healed changes as deltas too.
+			const notify = (await this.subscriptionCount()) > 0;
+			let current = meta;
+			for (;;) {
+				const result = (await primary.repPull({
+					since: current.appliedLsn,
+					replicaId: role.replicaId,
+					region: role.region,
+				})) as RepPullResult;
+				if (result.resync || result.epoch !== current.epoch) {
+					this.writeDbEvent('replica.resync');
+					if (!(await this.replicaBootstrap())) return current;
+					return readReplicaMeta(sql) ?? current;
+				}
+				for (const entry of result.entries) await this.applyLogEntry(entry, notify);
+				current = {
+					epoch: result.epoch,
+					appliedLsn: result.entries.length
+						? result.entries[result.entries.length - 1].lsn
+						: current.appliedLsn,
+					pulledAt: Date.now(),
+				};
+				writeReplicaMeta(sql, current);
+				if (result.entries.length < REPLICATION_PULL_CHUNK) return current;
+			}
+		} catch {
+			return meta;
+		}
+	}
+
+	/** Apply one entry; with `notify` the local live engine fires deltas, so
+	 * subscribers see pull-healed changes too, not only pushed ones. */
+	private async applyLogEntry(entry: LogEntry, notify = false): Promise<void> {
+		const parsed = logEntrySchema.parse(entry);
+		if (parsed.op === 'cfg') {
+			if (parsed.image) await this.configure(JSON.parse(parsed.image));
+			return;
+		}
+		if (parsed.op === 'del') {
+			const before = notify ? await this.fetchDocById(parsed.id) : null;
+			this.ctx.storage.sql.exec(`DELETE FROM documents WHERE id = ?`, parsed.id);
+			if (notify && before) await this.notifySubscribers(before, null);
+			return;
+		}
+		if (!parsed.image) return;
+		const after = JSON.parse(parsed.image) as DbDocument;
+		const before = notify ? await this.fetchDocById(after.id) : null;
+		this.applyDocImage(after);
+		if (notify) await this.notifySubscribers(before, after);
+	}
+
+	/** Idempotent image upsert - ids, owners, and timestamps verbatim. */
+	private applyDocImage(doc: DbDocument): void {
+		this.ctx.storage.sql.exec(
+			`INSERT INTO documents (id, data, owner, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET data = excluded.data, owner = excluded.owner,
+			   created_at = excluded.created_at, updated_at = excluded.updated_at`,
+			doc.id,
+			JSON.stringify(doc.data),
+			doc.owner,
+			Date.parse(doc.createdAt),
+			Date.parse(doc.updatedAt),
+		);
+	}
+
+	// -------------------------------------------------------------------------
 	// HTTP surface: /agents/db-agent/<pid>/collections/<name>/...
 
 	async fetch(request: Request): Promise<Response> {
+		// EVERY exit drains an unread body first - see drainUnusedBody.
+		const response = await this.dispatch(request);
+		await drainUnusedBody(request);
+		return response;
+	}
+
+	private async dispatch(request: Request): Promise<Response> {
 		const url = new URL(request.url);
 		const match = url.pathname.match(/^\/agents\/[^/]+\/([^/]+)\/collections\/([^/]+)(\/.*)?$/);
 		if (!match) return Response.json({ error: 'not found' }, { status: 404 });
 		const subPath = match[3] ?? '/';
+
+		// Replicas never consult the parent - their config arrives from the
+		// primary's feed, and everything non-read forwards to the primary.
+		if (this.role.kind === 'replica') {
+			return this.replicaDispatch(request, url, subPath);
+		}
 
 		const config = await this.ensureConfig(match[1], match[2]);
 		if (!config) {
@@ -400,15 +756,7 @@ export class DbCollection extends DurableObject<Env> {
 			return Response.json({ error: 'origin is not trusted' }, { status: 403 });
 		}
 
-		const response = await this.route(request, url, subPath, config);
-		if (!cors) return response;
-		const headers = new Headers(response.headers);
-		cors.forEach((value, key) => headers.set(key, value));
-		return new Response(response.body, {
-			status: response.status,
-			statusText: response.statusText,
-			headers,
-		});
+		return withCors(await this.route(request, url, subPath, config), cors);
 	}
 
 	private async route(
@@ -466,10 +814,9 @@ export class DbCollection extends DurableObject<Env> {
 	}
 
 	/**
-	 * Access-mode gate. `owner` is null for public/auth requests and the JWT
-	 * subject for owner-mode ones (which scopes every read and write). A
-	 * required permission is checked against the verified token's claim -
-	 * public mode never sees a token, so permissions only bind auth/owner.
+	 * Access-mode gate over the shared checkAccess (see access.ts). `owner`
+	 * is null for public/auth requests and the JWT subject for owner-mode
+	 * ones, which scopes every read and write.
 	 */
 	private async guarded(
 		request: Request,
@@ -477,32 +824,9 @@ export class DbCollection extends DurableObject<Env> {
 		permission: string | null,
 		handler: (owner: string | null) => Promise<Response>,
 	): Promise<Response> {
-		if (mode === 'public') return handler(null);
-
-		const header = request.headers.get('authorization');
-		const token = header?.match(/^Bearer (.+)$/i)?.[1];
-		if (!token) {
-			return Response.json({ error: 'a project token is required' }, { status: 401 });
-		}
-
-		const verifier = this.getVerifier();
-		const result = await verifier.verify(token);
-		if (!result.ok) {
-			if (result.code === 'not-configured') {
-				return Response.json({ error: 'auth verification is not configured' }, { status: 503 });
-			}
-			return Response.json({ error: 'invalid or expired token' }, { status: 401 });
-		}
-
-		// 403, not 401: the token is valid, it just lacks the right.
-		if (!hasPermission(permission, result.claims.permissions)) {
-			return Response.json(
-				{ error: 'the token does not carry the required permission' },
-				{ status: 403 },
-			);
-		}
-
-		return handler(mode === 'owner' ? result.claims.sub : null);
+		const decision = await checkAccess(request, mode, permission, this.getVerifier());
+		if (!decision.ok) return decision.response;
+		return handler(decision.owner);
 	}
 
 	// -------------------------------------------------------------------------
@@ -532,10 +856,10 @@ export class DbCollection extends DurableObject<Env> {
 			}
 		}
 
-		// ULID, not UUID: ids sort chronologically, so id order - the default
+		// UUIDv7: ids sort chronologically, so id order - the default
 		// for exports, cursor pages, and the dashboard browser - reads oldest
 		// first with no orderBy.
-		const id = body.data.id ?? ulid();
+		const id = body.data.id ?? uuidv7();
 		const [existing] = await this.db.select().from(documents).where(eq(documents.id, id)).limit(1);
 		if (existing) {
 			return Response.json({ error: 'a document with that id already exists' }, { status: 409 });
@@ -546,7 +870,7 @@ export class DbCollection extends DurableObject<Env> {
 			owner,
 			upsert: true,
 		});
-		return Response.json(written, { status: 201 });
+		return this.withLsn(Response.json(written, { status: 201 }));
 	}
 
 	private async handleGet(docId: string, owner: string | null): Promise<Response> {
@@ -593,13 +917,13 @@ export class DbCollection extends DurableObject<Env> {
 			owner: existing.owner,
 			upsert: false,
 		});
-		return Response.json(written);
+		return this.withLsn(Response.json(written));
 	}
 
 	private async handleDelete(docId: string, owner: string | null): Promise<Response> {
 		const deleted = await this.deleteDocument(docId, owner);
 		if (!deleted) return Response.json({ error: 'no such document' }, { status: 404 });
-		return Response.json({ deleted: true });
+		return this.withLsn(Response.json({ deleted: true }));
 	}
 
 	private async handleQuery(request: Request, owner: string | null): Promise<Response> {
@@ -726,8 +1050,11 @@ export class DbCollection extends DurableObject<Env> {
 				.returning();
 		}
 
+		// Log BEFORE any await: DO write coalescing commits the data row and
+		// its log entry atomically only while no I/O yield separates them.
+		this.logChange('put', id, JSON.stringify(toDto(row)));
 		this.writeDbEvent(before ? 'doc.updated' : 'doc.created');
-		await this.notifySubscribers(before ?? null, row);
+		await this.notifySubscribers(before ? toDto(before) : null, toDto(row));
 		this.scheduleStatsReport();
 		return toDto(row);
 	}
@@ -737,8 +1064,9 @@ export class DbCollection extends DurableObject<Env> {
 		if (!before || (owner && before.owner !== owner)) return false;
 
 		await this.db.delete(documents).where(eq(documents.id, id));
+		this.logChange('del', id, null);
 		this.writeDbEvent('doc.deleted');
-		await this.notifySubscribers(before, null);
+		await this.notifySubscribers(toDto(before), null);
 		this.scheduleStatsReport();
 		return true;
 	}
@@ -816,287 +1144,94 @@ export class DbCollection extends DurableObject<Env> {
 	}
 
 	// -------------------------------------------------------------------------
-	// Live queries
+	// The LiveShard surface (the engine itself lives in live.ts)
 
-	private async acceptSubscriber(request: Request): Promise<Response> {
-		if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
-			return Response.json({ error: 'expected a WebSocket upgrade' }, { status: 426 });
-		}
-
-		const pair = new WebSocketPair();
-		const connId = crypto.randomUUID();
-		// The tag is the connection id; the attachment carries nothing else.
-		// Everything a woken instance needs lives in the subscriptions table.
-		this.ctx.acceptWebSocket(pair[1], [connId]);
-		pair[1].serializeAttachment({ connId });
-
-		return new Response(null, { status: 101, webSocket: pair[0] });
+	protected liveGate(): LiveGate | null {
+		return this.config
+			? {
+					readAccess: this.config.readAccess,
+					readPermission: this.config.readPermission,
+					demo: this.config.demo,
+				}
+			: null;
 	}
 
-	async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-		const connId = this.connIdOf(ws);
-		if (!connId) return;
-
-		let frame;
-		try {
-			frame = clientFrameSchema.parse(JSON.parse(typeof raw === 'string' ? raw : ''));
-		} catch {
-			this.send(ws, {
-				type: 'error',
-				code: 'invalid-frame',
-				message: 'frames are JSON subscribe/unsubscribe messages',
-			});
-			return;
-		}
-
-		if (frame.type === 'unsubscribe') {
-			await this.db
-				.delete(subscriptions)
-				.where(and(eq(subscriptions.connId, connId), eq(subscriptions.subId, frame.id)));
-			this.send(ws, { type: 'unsubscribed', id: frame.id });
-			return;
-		}
-
-		await this.handleSubscribe(ws, connId, frame);
-	}
-
-	private async handleSubscribe(
-		ws: WebSocket,
-		connId: string,
-		frame: (typeof subscribeFrameSchema)['_output'],
-	): Promise<void> {
-		const config = this.config;
-		if (!config) {
-			this.send(ws, { type: 'error', id: frame.id, code: 'internal', message: 'not configured' });
-			return;
-		}
-
-		// Read-mode gate, mirroring the REST guard.
-		let ownerSub: string | null = null;
-		let tokenExp: number | null = null;
-		if (config.readAccess !== 'public') {
-			if (!frame.token) {
-				this.send(ws, {
-					type: 'error',
-					id: frame.id,
-					code: 'unauthorized',
-					message: 'this collection requires a project token to subscribe',
-				});
-				return;
-			}
-			const result = await this.getVerifier().verify(frame.token);
-			if (!result.ok) {
-				this.send(ws, {
-					type: 'error',
-					id: frame.id,
-					code: 'unauthorized',
-					message:
-						result.code === 'not-configured'
-							? 'auth verification is not configured'
-							: 'invalid or expired token',
-				});
-				return;
-			}
-			// Mirror the REST guard: a required permission binds subscriptions too.
-			if (!hasPermission(config.readPermission, result.claims.permissions)) {
-				this.send(ws, {
-					type: 'error',
-					id: frame.id,
-					code: 'unauthorized',
-					message: 'the token does not carry the required permission',
-				});
-				return;
-			}
-			ownerSub = config.readAccess === 'owner' ? result.claims.sub : null;
-			tokenExp = result.exp;
-		}
-
-		const cap = config.demo
-			? DEMO_MAX_SUBSCRIPTIONS_PER_CONNECTION
-			: MAX_SUBSCRIPTIONS_PER_CONNECTION;
-		const [existing] = await this.db
-			.select({ value: count() })
-			.from(subscriptions)
-			.where(eq(subscriptions.connId, connId));
-		if ((existing?.value ?? 0) >= cap) {
-			this.send(ws, {
-				type: 'error',
-				id: frame.id,
-				code: 'subscription-limit',
-				message: `a connection is limited to ${cap} subscriptions`,
-			});
-			return;
-		}
-
-		const snapshot = await this.runQuery(frame.query, ownerSub);
-		this.send(ws, { type: 'snapshot', id: frame.id, docs: snapshot.docs });
-
-		await this.db
-			.insert(subscriptions)
-			.values({
-				connId,
-				subId: frame.id,
-				query: JSON.stringify(frame.query),
-				ownerSub,
-				tokenExp,
-				lastMembership: isWindowed(frame.query)
-					? JSON.stringify(snapshot.docs.map((doc) => doc.id))
-					: null,
-				createdAt: new Date(),
-			})
-			.onConflictDoUpdate({
-				target: [subscriptions.connId, subscriptions.subId],
-				set: {
-					query: JSON.stringify(frame.query),
-					ownerSub,
-					tokenExp,
-					lastMembership: isWindowed(frame.query)
-						? JSON.stringify(snapshot.docs.map((doc) => doc.id))
-						: null,
-				},
-			});
-
-		this.writeDbEvent('subscription.opened');
-	}
-
-	async webSocketClose(ws: WebSocket): Promise<void> {
-		await this.dropConnection(ws);
-	}
-
-	async webSocketError(ws: WebSocket): Promise<void> {
-		await this.dropConnection(ws);
-	}
-
-	private async dropConnection(ws: WebSocket): Promise<void> {
-		const connId = this.connIdOf(ws);
-		if (!connId) return;
-		await this.db.delete(subscriptions).where(eq(subscriptions.connId, connId));
-		this.writeDbEvent('subscription.closed');
-	}
-
-	private connIdOf(ws: WebSocket): string | null {
-		const attachment = ws.deserializeAttachment() as { connId?: string } | null;
-		return attachment?.connId ?? null;
-	}
-
-	private send(ws: WebSocket, frame: ServerFrame): void {
-		try {
-			ws.send(JSON.stringify(frame));
-		} catch {
-			// a half-closed socket: close cleanup will prune its rows
-		}
-	}
-
-	/**
-	 * The matching pass every mutation pays. Unlimited queries diff the
-	 * predicate on old/new. Windowed queries (orderBy+limit) re-run the query
-	 * only when the write could have changed membership, then diff the id set
-	 * against lastMembership - which is what gets displacement right: a doc
-	 * pushed out by an insert emits `removed`, one pulled in by a delete
-	 * emits `added`.
-	 */
-	private async notifySubscribers(
-		before: DocumentRow | null,
-		after: DocumentRow | null,
-	): Promise<void> {
-		const rows = await this.db.select().from(subscriptions);
-		if (!rows.length) return;
-
-		const nowSeconds = Math.floor(Date.now() / 1000);
-		const beforeDoc = before ? toDto(before) : null;
-		const afterDoc = after ? toDto(after) : null;
-
-		for (const sub of rows) {
-			const sockets = this.ctx.getWebSockets(sub.connId);
-			if (!sockets.length) {
-				// Connection died without a close event (eviction); prune lazily.
-				await this.db.delete(subscriptions).where(eq(subscriptions.connId, sub.connId));
-				continue;
-			}
-			const ws = sockets[0];
-
-			if (sub.tokenExp && sub.tokenExp < nowSeconds) {
-				this.send(ws, {
-					type: 'error',
-					id: sub.subId,
-					code: 'token-expired',
-					message: 'the token this subscription was opened with has expired',
-				});
-				await this.db
-					.delete(subscriptions)
-					.where(and(eq(subscriptions.connId, sub.connId), eq(subscriptions.subId, sub.subId)));
-				continue;
-			}
-
-			let query: Query;
-			try {
-				query = querySchema.parse(JSON.parse(sub.query));
-			} catch {
-				continue;
-			}
-
-			const matchedBefore = beforeDoc ? matchesQuery(query, beforeDoc, sub.ownerSub) : false;
-			const matchedAfter = afterDoc ? matchesQuery(query, afterDoc, sub.ownerSub) : false;
-			if (!matchedBefore && !matchedAfter) continue;
-
-			if (isWindowed(query)) {
-				await this.notifyWindowed(ws, sub.connId, sub.subId, query, sub, afterDoc, beforeDoc);
-				continue;
-			}
-
-			if (!matchedBefore && matchedAfter && afterDoc) {
-				this.send(ws, { type: 'change', id: sub.subId, kind: 'added', doc: afterDoc });
-			} else if (matchedBefore && matchedAfter && afterDoc) {
-				this.send(ws, { type: 'change', id: sub.subId, kind: 'modified', doc: afterDoc });
-			} else if (matchedBefore && !matchedAfter && beforeDoc) {
-				this.send(ws, { type: 'change', id: sub.subId, kind: 'removed', doc: beforeDoc });
-			}
-		}
-	}
-
-	private async notifyWindowed(
-		ws: WebSocket,
-		connId: string,
-		subId: string,
+	protected async runLiveQuery(
 		query: Query,
-		sub: typeof subscriptions.$inferSelect,
-		afterDoc: DbDocument | null,
-		beforeDoc: DbDocument | null,
-	): Promise<void> {
-		const fresh = await this.runQuery(query, sub.ownerSub);
-		const freshIds = fresh.docs.map((doc) => doc.id);
-		const freshSet = new Set(freshIds);
-		const previous: string[] = sub.lastMembership ? JSON.parse(sub.lastMembership) : [];
-		const previousSet = new Set(previous);
-		const byId = new Map(fresh.docs.map((doc) => [doc.id, doc]));
-
-		for (const id of freshIds) {
-			if (!previousSet.has(id)) {
-				const doc = byId.get(id);
-				if (doc) this.send(ws, { type: 'change', id: subId, kind: 'added', doc });
-			}
-		}
-		for (const id of previous) {
-			if (!freshSet.has(id)) {
-				// Displaced out of the window, or deleted. Prefer the written doc's
-				// old value; otherwise fetch the still-existing displaced doc.
-				const doc = beforeDoc?.id === id ? beforeDoc : ((await this.fetchDoc(id)) ?? beforeDoc);
-				if (doc) this.send(ws, { type: 'change', id: subId, kind: 'removed', doc });
-			}
-		}
-		if (afterDoc && freshSet.has(afterDoc.id) && previousSet.has(afterDoc.id)) {
-			this.send(ws, { type: 'change', id: subId, kind: 'modified', doc: afterDoc });
-		}
-
-		await this.db
-			.update(subscriptions)
-			.set({ lastMembership: JSON.stringify(freshIds) })
-			.where(and(eq(subscriptions.connId, connId), eq(subscriptions.subId, subId)));
+		ownerSub: string | null,
+	): Promise<{ docs: DbDocument[] }> {
+		return this.runQuery(query, ownerSub);
 	}
 
-	private async fetchDoc(id: string): Promise<DbDocument | null> {
+	protected async fetchDocById(id: string): Promise<DbDocument | null> {
 		const [row] = await this.db.select().from(documents).where(eq(documents.id, id)).limit(1);
 		return row ? toDto(row) : null;
+	}
+
+	protected writeShardEvent(eventType: string): void {
+		this.writeDbEvent(eventType);
+	}
+
+	/** Replicas freshen before serving a subscribe snapshot. */
+	protected async beforeSnapshot(): Promise<void> {
+		if (this.role.kind === 'replica') await this.ensureReplica(0);
+	}
+
+	/** RPC-path readiness (the gateway's remoteSubscribe arrives without the
+	 * HTTP path's lazy-config heal): primaries pull config from the parent on
+	 * first touch - auto-creating exactly like a first write - and replicas
+	 * ensure their local copy. */
+	protected async ensureShardReady(): Promise<void> {
+		if (this.role.kind === 'replica') {
+			await this.ensureReplica(0);
+			return;
+		}
+		const name = this.ctx.id.name;
+		if (!this.config && name) {
+			const [projectId, collection] = name.split(':');
+			if (projectId && collection) await this.ensureConfig(projectId, collection);
+		}
+	}
+
+	/** Track what the primary believes; flip only on transitions. */
+	private pushWanted: boolean | null = null;
+	/** Last socket count reported. In-memory on purpose: hibernation resets
+	 * it to null and the next accepted socket re-reports - self-healing. */
+	private lastReportedSockets: number | null = null;
+
+	protected async onSubscriptionsChanged(count: number): Promise<void> {
+		if (this.role.kind !== 'replica') return;
+		const want = count > 0;
+		if (this.pushWanted === want) return;
+		// Transitions carry the socket count for free.
+		await this.reportToPrimary({ push: want, sockets: this.ctx.getWebSockets().length });
+	}
+
+	protected async onSocketAccepted(count: number): Promise<void> {
+		if (this.role.kind !== 'replica') return;
+		const step = socketReportStep(this.spawnThreshold());
+		if (this.lastReportedSockets !== null && Math.abs(count - this.lastReportedSockets) < step) {
+			return;
+		}
+		await this.reportToPrimary({ sockets: count });
+	}
+
+	private async reportToPrimary(update: { push?: boolean; sockets?: number }): Promise<void> {
+		const role = this.role as ReplicaRole;
+		try {
+			await this.primaryStub().repSetPush({
+				replicaId: role.replicaId,
+				region: role.region,
+				...update,
+			});
+			if (update.push !== undefined) this.pushWanted = update.push;
+			if (update.sockets !== undefined) this.lastReportedSockets = update.sockets;
+		} catch {
+			// Unknown at the primary: the next transition (or a stop answer to
+			// a stray push) reconciles it.
+			if (update.push !== undefined) this.pushWanted = null;
+			if (update.sockets !== undefined) this.lastReportedSockets = null;
+		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -1135,7 +1270,7 @@ export class DbCollection extends DurableObject<Env> {
 		return namespace.get(namespace.idFromName(projectId));
 	}
 
-	private getVerifier(): ProjectJwtVerifier {
+	protected getVerifier(): ProjectJwtVerifier {
 		if (!this.verifier) {
 			this.verifier = new ProjectJwtVerifier(
 				this.ctx.storage,
@@ -1147,23 +1282,7 @@ export class DbCollection extends DurableObject<Env> {
 	}
 
 	private corsHeaders(request: Request): Headers | null {
-		const origin = request.headers.get('origin');
-		const sameOrigin = origin === new URL(request.url).origin;
-		const trusted = [
-			...(this.env.TRUSTED_ORIGINS ?? '')
-				.split(',')
-				.map((entry) => entry.trim())
-				.filter(Boolean),
-			...(this.config?.allowedOrigins ?? []),
-		];
-		if (!origin || (!sameOrigin && !trusted.includes(origin))) return null;
-		return new Headers({
-			'access-control-allow-origin': origin,
-			'access-control-allow-credentials': 'true',
-			'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-			'access-control-allow-headers': 'authorization, content-type',
-			vary: 'Origin',
-		});
+		return corsHeadersFor(request, this.env.TRUSTED_ORIGINS, this.config?.allowedOrigins ?? []);
 	}
 
 	/** Best-effort analytics; a metrics failure never fails the operation. */

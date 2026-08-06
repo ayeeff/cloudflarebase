@@ -5,27 +5,29 @@
 	import type {
 		DbAccessMode,
 		DbAgentState,
+		DbReplicationMode,
 		DbDocument,
 		DbFieldRule,
 		DbImportReport,
 		DbOverview,
 		DbQueryResult,
-		DbRestorePoint,
-		DbRestorePoints,
 		DbValidator
 	} from '$lib/agents';
 	import { dbAccessModeSchema, dbValidatorSchema } from '$lib/agents';
+	import { buildConsoleNav } from '$lib/agent-registry';
 	import CodeExamples from '$lib/components/code-examples.svelte';
-	import { ulid } from '$lib/ulid';
+	import ToolTabs from '$lib/components/tool-tabs.svelte';
+	import ReplicationTab from '../replication-tab.svelte';
+	import RollbackDialog from '../rollback-dialog.svelte';
+	import SqlEditor from '../sql-editor.svelte';
+	import TablesTab from '../tables-tab.svelte';
+	import { v7 as uuidv7 } from 'uuid';
 	import type { CodeExample } from '$lib/integration-examples';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Calendar } from '$lib/components/ui/calendar';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import * as Popover from '$lib/components/ui/popover';
-	import { getLocalTimeZone, parseDate, today } from '@internationalized/date';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
@@ -34,8 +36,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
 		Activity,
-		BookmarkPlus,
-		Calendar as CalendarIcon,
+		ChevronRight,
 		Database,
 		Download,
 		EllipsisVertical,
@@ -57,10 +58,9 @@
 	let { data } = $props();
 	let hydrated = $state(false);
 
-	// Tab and browsed collection restore from the query string AT INIT, not in
+	// The browsed collection restores from the query string AT INIT, not in
 	// onMount: page.url is the request URL during SSR, so the server already
-	// renders the right tab and the reload never flashes the default first.
-	const initialTab = page.url.searchParams.get('tab');
+	// renders the right state and the reload never flashes the default first.
 	const initialCollection = page.url.searchParams.get('collection');
 
 	onMount(() => {
@@ -84,11 +84,6 @@
 		}
 	}
 
-	function setActiveTab(tab: string) {
-		activeTab = tab;
-		persistQueryParam('tab', tab === 'collections' ? null : tab);
-	}
-
 	// Initial values from the server load; kept in sync on navigation by the
 	// $effect below and updated live via WebSocket state sync.
 	// svelte-ignore state_referenced_locally
@@ -96,9 +91,48 @@
 	// svelte-ignore state_referenced_locally
 	let agentState = $state<DbAgentState>(data.overview.state);
 	let live = $state(false);
-	let activeTab = $state(
-		initialTab === 'access' || initialTab === 'setup' ? initialTab : 'collections'
+	// Page-per-tool (Neon-style): the tool IS the route - /db is the
+	// collections browser, /db/tables, /db/sql, /db/access, /db/replication,
+	// and /db/integration are sidebar siblings. Old ?tab= links redirect in
+	// the server load.
+	const activeTab = $derived(page.params.tool ?? 'collections');
+	/** Desktop quick-switcher over this agent's tool pages (sidebar stays canonical). */
+	const toolTabs = $derived(
+		buildConsoleNav(data.projectId)
+			.flatMap((section) => section.items)
+			.filter((item) => item.href.startsWith(`/dashboard/${data.projectId}/db`))
 	);
+	const toolMeta: Record<string, { title: string; blurb: string }> = {
+		collections: {
+			title: 'Collections',
+			blurb:
+				'Like Firestore, but every collection is its own Durable Object - JSON documents, queries, and onSnapshot-style live subscriptions.'
+		},
+		tables: {
+			title: 'Tables',
+			blurb:
+				'Schema-first SQL tables - typed columns, ORM-compatible storage, and the same live queries as collections.'
+		},
+		sql: {
+			title: 'SQL Editor',
+			blurb:
+				'Operator SQL against a declared table - single statement or atomic batch, single-table, no DDL: the column DSL owns the schema.'
+		},
+		access: {
+			title: 'Access',
+			blurb: 'Per-shard access modes, permission keys, document rules, and replication opt-outs.'
+		},
+		replication: {
+			title: 'Replication',
+			blurb:
+				'Where reads are served from right now - replicas materialize per region, on by default.'
+		},
+		integration: {
+			title: 'Integration',
+			blurb:
+				'Connect your application: REST, the typed client SDK, the Drizzle driver, or a raw live-query WebSocket.'
+		}
+	};
 	let busy = $state(false);
 
 	// Document browser: which collection is open, and its latest page of docs.
@@ -111,6 +145,13 @@
 	let docsLoaded = $state(false);
 	let docsError = $state<string | null>(null);
 	let actionError = $state<string | null>(null);
+	// Third Miller column: which document's fields are open.
+	let selectedDoc = $state<string | null>(null);
+	const selectedDocData = $derived(documents.find((doc) => doc.id === selectedDoc) ?? null);
+
+	function selectDocument(id: string) {
+		selectedDoc = selectedDoc === id ? null : id;
+	}
 
 	// Keep the snapshot in sync with the load, but only reset the browser when
 	// the PROJECT actually changes - on first mount this effect runs after
@@ -182,6 +223,9 @@
 				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
 			}
 			documents = result.docs;
+			if (selectedDoc && !result.docs.some((doc) => doc.id === selectedDoc)) {
+				selectedDoc = null;
+			}
 			docsError = null;
 		} catch (error) {
 			if (selected !== collection) return;
@@ -193,6 +237,7 @@
 
 	function closeBrowser() {
 		selected = null;
+		selectedDoc = null;
 		documents = [];
 		docsLoaded = false;
 		docsError = null;
@@ -285,6 +330,7 @@
 			readPermission?: string | null;
 			writePermission?: string | null;
 			validator?: DbValidator | null;
+			replication?: DbReplicationMode;
 		}
 	): Promise<string | null> {
 		try {
@@ -345,6 +391,7 @@
 		writeAccess: DbAccessMode;
 		readPermission: string;
 		writePermission: string;
+		replication: DbReplicationMode;
 	};
 	let accessEdits = $state<Record<string, AccessEdit>>({});
 	let accessFeedback = $state<Record<string, { ok: boolean; message: string }>>({});
@@ -356,7 +403,8 @@
 				readAccess: summary?.readAccess ?? 'owner',
 				writeAccess: summary?.writeAccess ?? 'owner',
 				readPermission: summary?.readPermission ?? '',
-				writePermission: summary?.writePermission ?? ''
+				writePermission: summary?.writePermission ?? '',
+				replication: summary?.replication ?? 'auto'
 			}
 		);
 	}
@@ -384,7 +432,11 @@
 				: pending.writeAccess === 'auth'
 					? `any signed-in user${withKey(pending.writePermission)} can create, edit, and delete any document`
 					: `signed-in users${withKey(pending.writePermission)} can create documents but edit or delete only their own`;
-		return `Read: ${read}. Write: ${write}.${hasRules ? ' New writes must also pass the document rules.' : ''}`;
+		const replication =
+			pending.replication === 'auto'
+				? ' Reads are served from a replica in the reader’s region.'
+				: ' Replication is off - every read travels to the primary.';
+		return `Read: ${read}. Write: ${write}.${hasRules ? ' New writes must also pass the document rules.' : ''}${replication}`;
 	}
 
 	async function applyAccess(name: string) {
@@ -394,7 +446,8 @@
 			readAccess: pending.readAccess,
 			writeAccess: pending.writeAccess,
 			readPermission: pending.readPermission.trim() || null,
-			writePermission: pending.writePermission.trim() || null
+			writePermission: pending.writePermission.trim() || null,
+			replication: pending.replication
 		});
 		busy = false;
 		if (message) {
@@ -550,171 +603,12 @@
 		}
 	}
 
-	// Point-in-time rollback, mimicking Cloudflare D1's restore flow: a
-	// Date | Bookmark toggle where a picked time resolves to the CLOSEST
-	// AVAILABLE BOOKMARK before anything is restored, plus captured named
-	// points (checkpoints, before-import, before-rollback) as one-click
-	// fills. Local development has no durable change log; the dialog says so
-	// up front instead of failing after a submit.
+	// Point-in-time rollback: the D1-style flow lives in the shared
+	// rollback-dialog.svelte (the Tables workspace mounts its own instance).
 	let rollbackOpen = $state(false);
-	let rollbackInfo = $state<DbRestorePoints | null>(null);
-	let rollbackMode = $state<'date' | 'bookmark'>('date');
-	// Date and clock are separate fields (Firefox has no datetime-local
-	// picker); they combine into one local Date at resolve time.
-	let rollbackDate = $state('');
-	let rollbackClock = $state('');
-	let rollbackBookmarkInput = $state('');
-	let resolvedBookmark = $state<string | null>(null);
-	let resolveBusy = $state(false);
-	let resolveError = $state<string | null>(null);
-	let rollbackConfirmInput = $state('');
-	let rollbackError = $state<string | null>(null);
-	let rollbackUndo = $state<string | null>(null);
-	/** The most recent manual save, surfaced so the bookmark can be copied. */
-	let lastCaptured = $state<DbRestorePoint | null>(null);
-	let resolveTimer: ReturnType<typeof setTimeout> | null = null;
-
-	/** What a submit would restore to, whichever tab is active. */
-	const rollbackTarget = $derived(
-		rollbackMode === 'date' ? resolvedBookmark : rollbackBookmarkInput.trim() || null
-	);
 
 	function openRollback() {
-		rollbackInfo = null;
-		rollbackMode = 'date';
-		rollbackDate = '';
-		rollbackClock = '';
-		rollbackBookmarkInput = '';
-		resolvedBookmark = null;
-		resolveError = null;
-		rollbackConfirmInput = '';
-		rollbackError = null;
-		rollbackUndo = null;
-		lastCaptured = null;
 		rollbackOpen = true;
-		void refreshRestorePoints();
-	}
-
-	async function refreshRestorePoints() {
-		const name = selected;
-		if (!name) return;
-		try {
-			const response = await fetch(`${adminBase}/${encodeURIComponent(name)}/restore-points`);
-			const result = (await response.json().catch(() => null)) as DbRestorePoints | null;
-			rollbackInfo = response.ok && result ? result : { supported: false, points: [] };
-		} catch {
-			rollbackInfo = { supported: false, points: [] };
-		}
-	}
-
-	/** Debounced D1-style resolution: time in, closest bookmark out. */
-	function scheduleResolve(date: string, clock: string) {
-		rollbackDate = date;
-		rollbackClock = clock;
-		resolvedBookmark = null;
-		resolveError = null;
-		if (resolveTimer) clearTimeout(resolveTimer);
-		// A date alone resolves against midnight; the clock refines it.
-		if (!date || !selected) return;
-		resolveTimer = setTimeout(() => void resolveBookmark(), 350);
-	}
-
-	let datePickerOpen = $state(false);
-	const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' });
-	/** The picked day as the Calendar's DateValue, or undefined when unset. */
-	const calendarValue = $derived(rollbackDate ? parseDate(rollbackDate) : undefined);
-
-	/** The two fields as one local Date, or null when unusable. */
-	function rollbackMoment(): Date | null {
-		if (!rollbackDate) return null;
-		const at = new Date(`${rollbackDate}T${rollbackClock || '00:00:00'}`);
-		return Number.isNaN(at.getTime()) ? null : at;
-	}
-
-	async function resolveBookmark() {
-		const name = selected;
-		const at = rollbackMoment();
-		if (!name || !at) return;
-		if (at.getTime() > Date.now()) {
-			resolveError = 'Pick a moment in the past.';
-			return;
-		}
-		resolveBusy = true;
-		try {
-			const response = await fetch(
-				`${adminBase}/${encodeURIComponent(name)}/bookmark?at=${encodeURIComponent(at.toISOString())}`
-			);
-			const result = (await response.json().catch(() => null)) as {
-				bookmark?: string;
-				error?: string;
-			} | null;
-			if (!response.ok || !result?.bookmark) {
-				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
-			}
-			resolvedBookmark = result.bookmark;
-			resolveError = null;
-		} catch (error) {
-			resolveError = error instanceof Error ? error.message : String(error);
-		} finally {
-			resolveBusy = false;
-		}
-	}
-
-	/** Bookmark this exact moment so it can be rolled back to later. */
-	async function capturePoint() {
-		const name = selected;
-		if (!name) return;
-		busy = true;
-		rollbackError = null;
-		try {
-			const response = await fetch(`${adminBase}/${encodeURIComponent(name)}/checkpoint`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ reason: 'saved by operator' })
-			});
-			const result = (await response.json().catch(() => null)) as
-				(DbRestorePoint & { error?: string }) | null;
-			if (!response.ok || !result?.bookmark) {
-				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
-			}
-			lastCaptured = result;
-			await refreshRestorePoints();
-		} catch (error) {
-			rollbackError = error instanceof Error ? error.message : String(error);
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function rollback(body: { bookmark: string }) {
-		const name = selected;
-		if (!name) return;
-		busy = true;
-		rollbackError = null;
-		try {
-			const response = await fetch(`${adminBase}/${encodeURIComponent(name)}/restore`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify(body)
-			});
-			const result = (await response.json().catch(() => null)) as {
-				restored?: boolean;
-				undoBookmark?: string;
-				error?: string;
-			} | null;
-			if (!response.ok || !result?.restored) {
-				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
-			}
-			rollbackUndo = result.undoBookmark ?? null;
-			rollbackConfirmInput = '';
-			await refreshData(data.projectId);
-			// The undo bookmark is persisted server-side as "before rollback".
-			await refreshRestorePoints();
-		} catch (error) {
-			rollbackError = error instanceof Error ? error.message : String(error);
-		} finally {
-			busy = false;
-		}
 	}
 
 	// Inline document editor (PUT replaces an existing id, so it doubles as edit).
@@ -784,7 +678,7 @@
 		}
 		busy = true;
 		try {
-			const id = docIdInput.trim() || ulid();
+			const id = docIdInput.trim() || uuidv7();
 			// ADD refuses a taken id (409) so a typo cannot silently overwrite;
 			// EDIT keeps the deliberate replace semantics.
 			const guard = editingExisting ? '' : '?ifAbsent=1';
@@ -851,7 +745,13 @@
 		'collection.configured': ShieldCheck,
 		'collection.restored': History,
 		'documents.changed': FileText,
-		'documents.imported': Upload
+		'documents.imported': Upload,
+		'table.created': FolderPlus,
+		'table.configured': ShieldCheck,
+		'table.deleted': Trash2,
+		'table.restored': History,
+		'rows.changed': FileText,
+		'rows.imported': Upload
 	} as const;
 
 	const stats = $derived([
@@ -920,6 +820,58 @@ const unsubscribe = posts.subscribe(
 );`
 		},
 		{
+			id: 'tables',
+			label: 'SQL tables',
+			lang: 'typescript',
+			code: `import { createDbClient } from '@cloudflarebase/db/client';
+
+const db = createDbClient({
+	baseUrl: '${dbBase}',
+	getToken: async () => {
+		const response = await fetch('${origin}/api/projects/${data.projectId}/auth/token');
+		return (await response.json()).token;
+	}
+});
+
+// Typed rows on a declared schema - the same handle surface as collections.
+const todos = db.table<{ title: string; done: boolean }>('todos');
+await todos.create({ title: 'ship it', done: false });
+
+// Tables have live queries too: typed rows, same frames, same socket.
+todos.subscribe(
+	{ where: [{ field: 'done', op: '==', value: false }] },
+	{ onSnapshot: (rows) => render(rows), onChange: (change, rows) => render(rows) }
+);`
+		},
+		{
+			id: 'drizzle',
+			label: 'Drizzle',
+			lang: 'typescript',
+			code: `import { drizzleTable } from '@cloudflarebase/db/drizzle';
+import { desc } from 'drizzle-orm';
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+
+// \`cloudflarebase schema generate\` emits this from your declared columns.
+const todos = sqliteTable('todos', {
+	id: text('id').primaryKey(),
+	title: text('title').notNull(),
+	votes: integer('votes')
+});
+
+// Real SQL over the gated /tables/todos/sql endpoint - a project JWT is
+// required; the gate keeps statements single-table and DDL-free.
+const db = drizzleTable({
+	baseUrl: '${dbBase}',
+	table: 'todos',
+	getToken: async () => {
+		const response = await fetch('${origin}/api/projects/${data.projectId}/auth/token');
+		return (await response.json()).token;
+	}
+});
+await db.insert(todos).values({ id: '1', title: 'ship it' });
+const top = await db.select().from(todos).orderBy(desc(todos.votes)).limit(10);`
+		},
+		{
 			id: 'ws',
 			label: 'Raw WebSocket',
 			lang: 'javascript',
@@ -946,12 +898,13 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 	data-testid="db-page"
 	data-hydrated={hydrated}
 >
+	<ToolTabs items={toolTabs} />
+
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<div>
-			<h1 class="text-2xl font-semibold">Database</h1>
+			<h1 class="text-2xl font-semibold">{toolMeta[activeTab]?.title ?? 'Database'}</h1>
 			<p class="mt-1 text-sm text-muted-foreground">
-				Like Firestore, but every collection is its own Durable Object - JSON documents, queries,
-				and onSnapshot-style live subscriptions.
+				{toolMeta[activeTab]?.blurb}
 			</p>
 		</div>
 		<Badge variant="outline" class="gap-1.5" data-testid="connection-status">
@@ -966,23 +919,6 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 	</div>
 
 	<div>
-		<div class="flex h-10 max-w-full gap-1 overflow-x-auto border-b px-1" role="tablist">
-			{#each [['collections', 'Collections'], ['access', 'Access'], ['setup', 'Integration']] as tab (tab[0])}
-				<button
-					type="button"
-					role="tab"
-					aria-selected={activeTab === tab[0]}
-					class={[
-						'relative flex-none px-3.5 text-sm font-medium transition-colors',
-						activeTab === tab[0]
-							? 'text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary'
-							: 'text-muted-foreground hover:text-foreground'
-					]}
-					onclick={() => setActiveTab(tab[0])}>{tab[1]}</button
-				>
-			{/each}
-		</div>
-
 		<!-- COLLECTIONS -->
 		{#if activeTab === 'collections'}
 			<div class="mt-4 space-y-5 sm:space-y-6">
@@ -1006,420 +942,499 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 					{/each}
 				</div>
 
-				<div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
-					<Card.Root class="min-w-0 lg:col-span-2" data-testid="db-collections-card">
-						<Card.Header>
-							<Card.Title>Collections</Card.Title>
-							<Card.Description>Click a collection to browse its documents.</Card.Description>
-						</Card.Header>
-						<Card.Content>
-							{#if agentState.collections.length === 0}
-								<p
-									class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
+				<!-- Firestore-style Miller-column browser: collections | documents |
+				     fields, with the breadcrumb path across the top. -->
+				<Card.Root class="min-w-0" data-testid="db-documents-card">
+					<Card.Header class="border-b">
+						<Card.Title class="flex min-w-0 items-center gap-1.5 font-mono text-sm font-normal">
+							<Database class="h-4 w-4 shrink-0 text-primary" />
+							<button
+								type="button"
+								class="text-muted-foreground transition-colors hover:text-foreground"
+								onclick={closeBrowser}
+							>
+								{data.projectId}
+							</button>
+							{#if selected}
+								<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+								<span class="truncate font-medium">{selected}</span>
+							{/if}
+							{#if selectedDocData}
+								<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+								<span class="truncate text-muted-foreground">{selectedDocData.id}</span>
+							{/if}
+						</Card.Title>
+					</Card.Header>
+					<Card.Content class="p-0">
+						<div
+							class="grid grid-cols-1 max-lg:divide-y lg:min-h-[26rem] lg:grid-cols-[minmax(13rem,0.9fr)_minmax(0,1.1fr)_minmax(0,1.4fr)] lg:divide-x"
+						>
+							<!-- Column 1: collections -->
+							<div class="flex min-w-0 flex-col">
+								<div class="flex items-center justify-between border-b px-3 py-2">
+									<span class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+										Collections
+									</span>
+									<span class="text-xs text-muted-foreground tabular-nums">
+										{agentState.collections.length}
+									</span>
+								</div>
+								<div
+									class="min-h-0 flex-1 overflow-y-auto p-1.5"
+									data-testid="db-collections-table"
 								>
-									No collections yet - create the first one below.
-								</p>
-							{:else}
-								<Table.Root class="min-w-[36rem]" data-testid="db-collections-table">
-									<Table.Header>
-										<Table.Row>
-											<Table.Head>Name</Table.Head>
-											<Table.Head>Read</Table.Head>
-											<Table.Head>Write</Table.Head>
-											<Table.Head class="text-right">Documents</Table.Head>
-										</Table.Row>
-									</Table.Header>
-									<Table.Body>
+									{#if agentState.collections.length === 0}
+										<p class="px-2 py-6 text-center text-sm text-muted-foreground">
+											No collections yet - create the first one below.
+										</p>
+									{:else}
 										{#each agentState.collections as collection (collection.name)}
-											<Table.Row
-												class={['cursor-pointer', selected === collection.name && 'bg-muted/50']}
+											<button
+												type="button"
+												class={[
+													'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+													selected === collection.name
+														? 'bg-muted font-medium text-foreground'
+														: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+												]}
 												data-testid={`db-collection-${collection.name}`}
 												onclick={() => selectCollection(collection.name)}
 											>
-												<Table.Cell>
-													<div class="flex items-center gap-2">
-														<div
-															class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
-														>
-															<Database class="h-3.5 w-3.5" />
-														</div>
-														<span class="font-mono text-sm font-medium">{collection.name}</span>
-													</div>
-												</Table.Cell>
-												<Table.Cell>
-													<Badge variant="outline" class="font-mono text-[11px]">
-														{collection.readAccess}
-													</Badge>
-												</Table.Cell>
-												<Table.Cell>
-													<Badge variant="outline" class="font-mono text-[11px]">
-														{collection.writeAccess}
-													</Badge>
-												</Table.Cell>
-												<Table.Cell class="text-right text-sm tabular-nums">
-													{collection.docs}
-												</Table.Cell>
-											</Table.Row>
+												<Database class="h-3.5 w-3.5 shrink-0" />
+												<span class="min-w-0 flex-1 truncate font-mono">{collection.name}</span>
+												<span class="text-xs tabular-nums">{collection.docs}</span>
+												{#if selected === collection.name}
+													<ChevronRight class="h-3.5 w-3.5 shrink-0" />
+												{/if}
+											</button>
 										{/each}
-									</Table.Body>
-								</Table.Root>
-							{/if}
-
-							<form
-								class="mt-4 flex flex-wrap items-end gap-3 rounded-lg border bg-muted/20 p-4"
-								data-testid="db-create-collection"
-								onsubmit={createCollection}
-							>
-								<div class="min-w-40 flex-1 space-y-2">
-									<Label for="new-collection-name">New collection</Label>
-									<Input
-										id="new-collection-name"
-										class="font-mono"
-										placeholder="collection name…"
-										bind:value={newCollectionName}
-									/>
+									{/if}
 								</div>
-								<div class="space-y-2">
-									<Label>Read</Label>
-									<Select.Root
-										type="single"
-										value={newReadAccess}
-										onValueChange={(value) => (newReadAccess = toAccessMode(value))}
-									>
-										<Select.Trigger
-											class="min-w-24 font-mono"
-											size="sm"
-											aria-label="Read access for the new collection"
-										>
-											{newReadAccess}
-										</Select.Trigger>
-										<Select.Content>
-											{#each accessModes as mode (mode)}
-												<Select.Item value={mode} label={mode} class="font-mono" />
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								</div>
-								<div class="space-y-2">
-									<Label>Write</Label>
-									<Select.Root
-										type="single"
-										value={newWriteAccess}
-										onValueChange={(value) => (newWriteAccess = toAccessMode(value))}
-									>
-										<Select.Trigger
-											class="min-w-24 font-mono"
-											size="sm"
-											aria-label="Write access for the new collection"
-										>
-											{newWriteAccess}
-										</Select.Trigger>
-										<Select.Content>
-											{#each accessModes as mode (mode)}
-												<Select.Item value={mode} label={mode} class="font-mono" />
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								</div>
-								<Button type="submit" size="sm" class="gap-1.5" disabled={busy}>
-									<Plus class="h-4 w-4" /> Create
-								</Button>
-								{#if createError}
-									<p class="basis-full text-sm text-destructive" data-testid="db-create-error">
-										{createError}
-									</p>
-								{/if}
-							</form>
-						</Card.Content>
-					</Card.Root>
 
-					<Card.Root data-testid="db-activity">
-						<Card.Header>
-							<Card.Title class="flex items-center gap-2">
-								<Radio class="h-4 w-4 text-primary" /> Live activity
-							</Card.Title>
-							<Card.Description>Streamed from the agent via WebSocket state sync.</Card.Description>
-						</Card.Header>
-						<Card.Content>
-							{#if agentState.events.length === 0}
-								<p class="py-6 text-center text-sm text-muted-foreground">Nothing yet.</p>
-							{:else}
-								<ScrollArea class="h-72 pr-3" type="always">
-									<ol class="space-y-4">
-										{#each agentState.events as event (event.id)}
-											{@const Icon = eventIcons[event.type] ?? Activity}
-											<li class="flex gap-3">
-												<div
-													class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
-												>
-													<Icon class="h-3.5 w-3.5" />
-												</div>
-												<div class="min-w-0">
-													<p class="text-sm leading-snug">{event.message}</p>
-													<p class="mt-0.5 font-mono text-[11px] text-muted-foreground">
-														{event.type} · {timeAgo(event.at)}
-													</p>
-												</div>
-											</li>
-										{/each}
-									</ol>
-								</ScrollArea>
-							{/if}
-						</Card.Content>
-					</Card.Root>
-				</div>
-
-				{#if selected}
-					<Card.Root data-testid="db-documents-card">
-						<Card.Header>
-							<Card.Title class="font-mono">{selected}</Card.Title>
-							<Card.Description>
-								Up to 50 documents in id order, refetched on every change. Adding refuses an id that
-								already exists; editing a row replaces it.
-							</Card.Description>
-							<!-- Desktop: labeled row beside the title; mobile drops the row
-							     UNDER the header full-width with Add document stretched.
-							     Export/import/delete live in the three-dots menu. -->
-							<Card.Action
-								class="flex flex-wrap items-center gap-2 self-center max-md:col-span-2 max-md:col-start-1 max-md:row-span-1 max-md:row-start-auto max-md:mt-2 max-md:w-full max-md:justify-self-stretch"
-							>
-								<Button
-									size="sm"
-									class="gap-1.5 max-md:flex-1"
-									data-testid="db-add-document"
-									aria-label="Add document"
-									onclick={() => {
-										editorOpen = !editorOpen;
-										editingExisting = false;
-										docIdInput = '';
-										docError = null;
-									}}
-								>
-									<Plus class="h-4 w-4" />Add document
-								</Button>
-								<input
-									bind:this={importInput}
-									type="file"
-									accept=".ndjson,.jsonl,.txt,application/x-ndjson"
-									class="hidden"
-									onchange={importFile}
-								/>
-								<Button
-									size="sm"
-									variant="outline"
-									class="gap-1.5"
-									data-testid="db-rollback"
-									aria-label="Roll back in time"
-									onclick={openRollback}
-								>
-									<History class="h-4 w-4" /><span class="max-md:sr-only">Roll back</span>
-								</Button>
-								<DropdownMenu.Root>
-									<DropdownMenu.Trigger>
-										{#snippet child({ props })}
-											<Button
-												{...props}
-												size="icon"
-												variant="outline"
-												class="h-8 w-8"
-												aria-label="More collection actions"
-												data-testid="db-actions-menu"
-											>
-												<EllipsisVertical class="h-4 w-4" />
-											</Button>
-										{/snippet}
-									</DropdownMenu.Trigger>
-									<DropdownMenu.Content align="end">
-										<DropdownMenu.Item
-											data-testid="db-export"
-											onclick={() =>
-												selected &&
-												(window.location.href = `${adminBase}/${encodeURIComponent(selected)}/export`)}
-										>
-											<Download class="h-4 w-4" /> Export NDJSON
-										</DropdownMenu.Item>
-										<DropdownMenu.Item
-											data-testid="db-import"
-											disabled={importBusy}
-											onclick={() => importInput?.click()}
-										>
-											<Upload class="h-4 w-4" />
-											{importBusy ? 'Importing…' : 'Import NDJSON'}
-										</DropdownMenu.Item>
-										<DropdownMenu.Separator />
-										<DropdownMenu.Item
-											variant="destructive"
-											data-testid="db-delete-collection"
-											onclick={() => {
-												deletePanelOpen = true;
-												deleteConfirmInput = '';
-												deleteError = null;
-											}}
-										>
-											<Trash2 class="h-4 w-4" /> Delete
-										</DropdownMenu.Item>
-									</DropdownMenu.Content>
-								</DropdownMenu.Root>
-								<Button
-									variant="ghost"
-									size="icon"
-									class="h-8 w-8"
-									aria-label="Close document browser"
-									onclick={closeBrowser}
-								>
-									<X class="h-4 w-4" />
-								</Button>
-							</Card.Action>
-						</Card.Header>
-						<Card.Content>
-							{#if editorOpen}
 								<form
-									class="mb-4 space-y-3 rounded-lg border bg-muted/20 p-4"
-									data-testid="db-doc-editor"
-									onsubmit={saveDocument}
+									class="flex flex-wrap items-end gap-2 border-t p-3"
+									data-testid="db-create-collection"
+									onsubmit={createCollection}
 								>
-									<div class="grid gap-3 sm:grid-cols-2">
-										<div class="space-y-2">
-											<Label for="doc-id">
-												{editingExisting
-													? 'Document id (fixed while editing)'
-													: 'Document id (optional)'}
-											</Label>
-											<!-- Locked during edit: PUT is an upsert, so a changed id would
-											     CREATE a second document and leave the original behind. -->
-											<Input
-												id="doc-id"
-												class="font-mono"
-												placeholder="auto-generated"
-												disabled={editingExisting}
-												bind:value={docIdInput}
-											/>
-										</div>
-									</div>
-									<div class="space-y-2">
-										<Label for="doc-json">Data (JSON object)</Label>
-										<Textarea
-											id="doc-json"
-											class="min-h-32 font-mono text-xs"
-											bind:value={docJsonInput}
+									<div class="min-w-40 flex-1 space-y-2">
+										<Label for="new-collection-name">New collection</Label>
+										<Input
+											id="new-collection-name"
+											class="font-mono"
+											placeholder="collection name…"
+											bind:value={newCollectionName}
 										/>
 									</div>
-									{#if docError}
-										<p class="text-sm text-destructive" data-testid="db-doc-error">{docError}</p>
-									{/if}
-									<div class="flex gap-2">
-										<Button type="submit" size="sm" disabled={busy}>Save document</Button>
-										<Button
-											type="button"
-											variant="ghost"
-											size="sm"
-											onclick={() => (editorOpen = false)}
+									<div class="space-y-2">
+										<Label>Read</Label>
+										<Select.Root
+											type="single"
+											value={newReadAccess}
+											onValueChange={(value) => (newReadAccess = toAccessMode(value))}
 										>
-											Cancel
-										</Button>
+											<Select.Trigger
+												class="min-w-24 font-mono"
+												size="sm"
+												aria-label="Read access for the new collection"
+											>
+												{newReadAccess}
+											</Select.Trigger>
+											<Select.Content>
+												{#each accessModes as mode (mode)}
+													<Select.Item value={mode} label={mode} class="font-mono" />
+												{/each}
+											</Select.Content>
+										</Select.Root>
 									</div>
+									<div class="space-y-2">
+										<Label>Write</Label>
+										<Select.Root
+											type="single"
+											value={newWriteAccess}
+											onValueChange={(value) => (newWriteAccess = toAccessMode(value))}
+										>
+											<Select.Trigger
+												class="min-w-24 font-mono"
+												size="sm"
+												aria-label="Write access for the new collection"
+											>
+												{newWriteAccess}
+											</Select.Trigger>
+											<Select.Content>
+												{#each accessModes as mode (mode)}
+													<Select.Item value={mode} label={mode} class="font-mono" />
+												{/each}
+											</Select.Content>
+										</Select.Root>
+									</div>
+									<Button type="submit" size="sm" class="gap-1.5" disabled={busy}>
+										<Plus class="h-4 w-4" /> Create
+									</Button>
+									{#if createError}
+										<p class="basis-full text-sm text-destructive" data-testid="db-create-error">
+											{createError}
+										</p>
+									{/if}
 								</form>
-							{/if}
+							</div>
 
-							{#if actionError}
-								<p class="mb-3 text-sm text-destructive" data-testid="db-action-error">
-									{actionError}
-								</p>
-							{/if}
-							{#if docsError}
-								<p class="mb-3 text-sm text-destructive" data-testid="db-docs-error">{docsError}</p>
-							{/if}
-							{#if importError}
-								<p class="mb-3 text-sm text-destructive" data-testid="db-import-error">
-									{importError}
-								</p>
-							{/if}
-							{#if importReport}
-								<p class="mb-3 text-sm text-muted-foreground" data-testid="db-import-result">
-									Imported {importReport.imported} new and replaced {importReport.updated} documents{importReport
-										.errors.length
-										? `; ${importReport.errors.length} lines failed (first: line ${importReport.errors[0].line} - ${importReport.errors[0].error})`
-										: '.'}
-								</p>
-							{/if}
-
-							{#if !docsLoaded}
-								<p class="py-6 text-center text-sm text-muted-foreground">Loading documents…</p>
-							{:else if documents.length === 0}
-								<p
-									class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
-								>
-									No documents yet - add the first one.
-								</p>
-							{:else}
-								<Table.Root class="min-w-[42rem]" data-testid="db-documents-table">
-									<Table.Header>
-										<Table.Row>
-											<Table.Head>Id</Table.Head>
-											<Table.Head>Data</Table.Head>
-											<Table.Head>Owner</Table.Head>
-											<Table.Head class="text-right">Updated</Table.Head>
-											<Table.Head class="w-12"><span class="sr-only">Actions</span></Table.Head>
-										</Table.Row>
-									</Table.Header>
-									<Table.Body>
-										{#each documents as doc (doc.id)}
-											<Table.Row>
-												<Table.Cell class="max-w-40 truncate font-mono text-xs" title={doc.id}>
-													{doc.id}
-												</Table.Cell>
-												<Table.Cell class="max-w-80">
-													<code
-														class="block truncate font-mono text-xs text-muted-foreground"
-														title={JSON.stringify(doc.data)}
+							<!-- Column 2: documents of the selected collection -->
+							<div class="flex min-w-0 flex-col">
+								{#if selected}
+									<div class="flex items-center justify-between gap-1 border-b px-3 py-1.5">
+										<span
+											class="min-w-0 truncate text-xs font-medium tracking-wide text-muted-foreground uppercase"
+										>
+											Documents
+										</span>
+										<div class="flex shrink-0 items-center">
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-7 w-7"
+												data-testid="db-add-document"
+												aria-label="Add document"
+												onclick={() => {
+													editorOpen = !editorOpen;
+													editingExisting = false;
+													docIdInput = '';
+													docError = null;
+												}}
+											>
+												<Plus class="h-4 w-4" />
+											</Button>
+											<input
+												bind:this={importInput}
+												type="file"
+												accept=".ndjson,.jsonl,.txt,application/x-ndjson"
+												class="hidden"
+												onchange={importFile}
+											/>
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-7 w-7"
+												data-testid="db-rollback"
+												aria-label="Roll back in time"
+												onclick={openRollback}
+											>
+												<History class="h-4 w-4" />
+											</Button>
+											<DropdownMenu.Root>
+												<DropdownMenu.Trigger>
+													{#snippet child({ props })}
+														<Button
+															{...props}
+															variant="ghost"
+															size="icon"
+															class="h-7 w-7"
+															aria-label="More collection actions"
+															data-testid="db-actions-menu"
+														>
+															<EllipsisVertical class="h-4 w-4" />
+														</Button>
+													{/snippet}
+												</DropdownMenu.Trigger>
+												<DropdownMenu.Content align="end">
+													<DropdownMenu.Item
+														data-testid="db-export"
+														onclick={() =>
+															selected &&
+															(window.location.href = `${adminBase}/${encodeURIComponent(selected)}/export`)}
 													>
-														{JSON.stringify(doc.data)}
-													</code>
-												</Table.Cell>
-												<Table.Cell
-													class="max-w-32 truncate font-mono text-xs text-muted-foreground"
-													title={doc.owner ?? ''}
+														<Download class="h-4 w-4" /> Export NDJSON
+													</DropdownMenu.Item>
+													<DropdownMenu.Item
+														data-testid="db-import"
+														disabled={importBusy}
+														onclick={() => importInput?.click()}
+													>
+														<Upload class="h-4 w-4" />
+														{importBusy ? 'Importing…' : 'Import NDJSON'}
+													</DropdownMenu.Item>
+													<DropdownMenu.Separator />
+													<DropdownMenu.Item
+														variant="destructive"
+														data-testid="db-delete-collection"
+														onclick={() => {
+															deletePanelOpen = true;
+															deleteConfirmInput = '';
+															deleteError = null;
+														}}
+													>
+														<Trash2 class="h-4 w-4" /> Delete
+													</DropdownMenu.Item>
+												</DropdownMenu.Content>
+											</DropdownMenu.Root>
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-7 w-7"
+												aria-label="Close document browser"
+												onclick={closeBrowser}
+											>
+												<X class="h-4 w-4" />
+											</Button>
+										</div>
+									</div>
+
+									{#if editorOpen}
+										<form
+											class="space-y-3 border-b bg-muted/20 p-3"
+											data-testid="db-doc-editor"
+											onsubmit={saveDocument}
+										>
+											<div class="space-y-2">
+												<Label for="doc-id">
+													{editingExisting
+														? 'Document id (fixed while editing)'
+														: 'Document id (optional)'}
+												</Label>
+												<!-- Locked during edit: PUT is an upsert, so a changed id would
+												     CREATE a second document and leave the original behind. -->
+												<Input
+													id="doc-id"
+													class="font-mono"
+													placeholder="auto-generated"
+													disabled={editingExisting}
+													bind:value={docIdInput}
+												/>
+											</div>
+											<div class="space-y-2">
+												<Label for="doc-json">Data (JSON object)</Label>
+												<Textarea
+													id="doc-json"
+													class="min-h-28 font-mono text-xs"
+													bind:value={docJsonInput}
+												/>
+											</div>
+											{#if docError}
+												<p class="text-sm text-destructive" data-testid="db-doc-error">
+													{docError}
+												</p>
+											{/if}
+											<div class="flex gap-2">
+												<Button type="submit" size="sm" disabled={busy}>Save document</Button>
+												<Button
+													type="button"
+													variant="ghost"
+													size="sm"
+													onclick={() => (editorOpen = false)}
 												>
-													{doc.owner ?? '—'}
-												</Table.Cell>
-												<Table.Cell class="text-right text-xs text-muted-foreground">
-													{timeAgo(doc.updatedAt)}
-												</Table.Cell>
-												<Table.Cell>
+													Cancel
+												</Button>
+											</div>
+										</form>
+									{/if}
+
+									<div
+										class="min-h-0 flex-1 overflow-y-auto p-1.5"
+										data-testid="db-documents-table"
+									>
+										{#if actionError}
+											<p class="px-2 py-1 text-sm text-destructive" data-testid="db-action-error">
+												{actionError}
+											</p>
+										{/if}
+										{#if docsError}
+											<p class="px-2 py-1 text-sm text-destructive" data-testid="db-docs-error">
+												{docsError}
+											</p>
+										{/if}
+										{#if importError}
+											<p class="px-2 py-1 text-sm text-destructive" data-testid="db-import-error">
+												{importError}
+											</p>
+										{/if}
+										{#if importReport}
+											<p
+												class="px-2 py-1 text-sm text-muted-foreground"
+												data-testid="db-import-result"
+											>
+												Imported {importReport.imported} new and replaced {importReport.updated} documents{importReport
+													.errors.length
+													? `; ${importReport.errors.length} lines failed (first: line ${importReport.errors[0].line} - ${importReport.errors[0].error})`
+													: '.'}
+											</p>
+										{/if}
+										{#if !docsLoaded}
+											<p class="py-6 text-center text-sm text-muted-foreground">
+												Loading documents…
+											</p>
+										{:else if documents.length === 0}
+											<p class="px-2 py-6 text-center text-sm text-muted-foreground">
+												No documents yet - add the first one.
+											</p>
+										{:else}
+											{#each documents as doc (doc.id)}
+												<div
+													class={[
+														'group flex w-full items-center gap-1 rounded-md transition-colors',
+														selectedDoc === doc.id ? 'bg-muted' : 'hover:bg-muted/50'
+													]}
+												>
+													<button
+														type="button"
+														class="min-w-0 flex-1 px-2 py-1 text-left"
+														title={doc.id}
+														onclick={() => selectDocument(doc.id)}
+													>
+														<span
+															class={[
+																'block truncate font-mono text-xs',
+																selectedDoc === doc.id
+																	? 'font-medium text-foreground'
+																	: 'text-muted-foreground group-hover:text-foreground'
+															]}
+														>
+															{doc.id}
+														</span>
+														<!-- Data preview line: keeps content assertions honest and the
+														     list scannable without opening the third column. -->
+														<span
+															class="block truncate font-mono text-[10px] text-muted-foreground/70"
+														>
+															{JSON.stringify(doc.data)}
+														</span>
+													</button>
 													<Button
 														variant="ghost"
 														size="icon"
-														class="h-8 w-8 text-muted-foreground hover:text-foreground"
+														class="h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
 														disabled={busy}
 														aria-label={`Edit document ${doc.id}`}
 														data-testid={`db-edit-${doc.id}`}
 														onclick={() => editDocument(doc)}
 													>
-														<Pencil class="h-4 w-4" />
+														<Pencil class="h-3 w-3" />
 													</Button>
 													<Button
 														variant="ghost"
 														size="icon"
-														class="h-8 w-8 text-muted-foreground hover:text-destructive"
+														class="mr-1 h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
 														disabled={busy}
 														aria-label={`Delete document ${doc.id}`}
 														onclick={() => deleteDocument(doc.id)}
 													>
-														<Trash2 class="h-4 w-4" />
+														<Trash2 class="h-3 w-3" />
 													</Button>
-												</Table.Cell>
-											</Table.Row>
-										{/each}
-									</Table.Body>
-								</Table.Root>
-							{/if}
-						</Card.Content>
-					</Card.Root>
-				{/if}
+													{#if selectedDoc === doc.id}
+														<ChevronRight class="mr-1 h-3.5 w-3.5 shrink-0" />
+													{/if}
+												</div>
+											{/each}
+										{/if}
+									</div>
+								{:else}
+									<p class="m-auto px-4 py-10 text-center text-sm text-muted-foreground">
+										Select a collection to browse its documents.
+									</p>
+								{/if}
+							</div>
+
+							<!-- Column 3: the selected document's fields -->
+							<div class="flex min-w-0 flex-col">
+								{#if selectedDocData}
+									<div class="flex items-center justify-between gap-2 border-b px-3 py-2">
+										<span
+											class="min-w-0 truncate font-mono text-xs text-muted-foreground"
+											title={selectedDocData.id}
+										>
+											{selectedDocData.id}
+										</span>
+										<span class="shrink-0 text-xs text-muted-foreground">
+											{timeAgo(selectedDocData.updatedAt)}
+										</span>
+									</div>
+									<div class="min-h-0 flex-1 overflow-y-auto p-3" data-testid="db-doc-fields">
+										<dl class="space-y-1.5">
+											{#each Object.entries(selectedDocData.data) as [field, value] (field)}
+												<div class="flex items-baseline gap-2 text-xs">
+													<dt class="shrink-0 font-mono font-medium">{field}</dt>
+													<dd
+														class="min-w-0 flex-1 truncate text-right font-mono text-muted-foreground"
+														title={JSON.stringify(value)}
+													>
+														{JSON.stringify(value)}
+													</dd>
+												</div>
+											{/each}
+										</dl>
+										{#if selectedDocData.owner}
+											<p class="mt-3 border-t pt-2 text-xs text-muted-foreground">
+												owner <span class="font-mono">{selectedDocData.owner}</span>
+											</p>
+										{/if}
+									</div>
+								{:else}
+									<p class="m-auto px-4 py-10 text-center text-sm text-muted-foreground">
+										{selected
+											? 'Select a document to inspect its fields.'
+											: 'Fields appear here once a document is open.'}
+									</p>
+								{/if}
+							</div>
+						</div>
+					</Card.Content>
+				</Card.Root>
+
+				<Card.Root data-testid="db-activity">
+					<Card.Header>
+						<Card.Title class="flex items-center gap-2">
+							<Radio class="h-4 w-4 text-primary" /> Live activity
+						</Card.Title>
+						<Card.Description>Streamed from the agent via WebSocket state sync.</Card.Description>
+					</Card.Header>
+					<Card.Content>
+						{#if agentState.events.length === 0}
+							<p class="py-6 text-center text-sm text-muted-foreground">Nothing yet.</p>
+						{:else}
+							<ScrollArea class="h-72 pr-3" type="always">
+								<ol class="space-y-4">
+									{#each agentState.events as event (event.id)}
+										{@const Icon = eventIcons[event.type] ?? Activity}
+										<li class="flex gap-3">
+											<div
+												class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+											>
+												<Icon class="h-3.5 w-3.5" />
+											</div>
+											<div class="min-w-0">
+												<p class="text-sm leading-snug">{event.message}</p>
+												<p class="mt-0.5 font-mono text-[11px] text-muted-foreground">
+													{event.type} · {timeAgo(event.at)}
+												</p>
+											</div>
+										</li>
+									{/each}
+								</ol>
+							</ScrollArea>
+						{/if}
+					</Card.Content>
+				</Card.Root>
 			</div>
 		{/if}
 
 		<!-- ACCESS -->
+		<!-- TABLES -->
+		{#if activeTab === 'tables'}
+			<TablesTab
+				projectId={data.projectId}
+				tables={agentState.tables ?? []}
+				totalRows={agentState.totalRows ?? 0}
+				{permissionOptions}
+				refresh={() => refreshData(data.projectId)}
+			/>
+		{/if}
+
+		{#if activeTab === 'replication'}
+			<ReplicationTab
+				projectId={data.projectId}
+				collections={agentState.collections}
+				tables={agentState.tables ?? []}
+			/>
+		{/if}
+
 		{#if activeTab === 'access'}
 			<div class="mt-4">
 				<Card.Root data-testid="db-access-modes">
@@ -1448,7 +1463,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 								No collections yet - create one under Collections.
 							</p>
 						{:else}
-							<Table.Root class="min-w-[54rem]">
+							<Table.Root class="min-w-[60rem]">
 								<Table.Header>
 									<Table.Row>
 										<Table.Head>Collection</Table.Head>
@@ -1457,6 +1472,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 										<Table.Head>Read permission</Table.Head>
 										<Table.Head>Write permission</Table.Head>
 										<Table.Head>Rules</Table.Head>
+										<Table.Head>Replication</Table.Head>
 										<Table.Head class="w-40 text-right">
 											<span class="sr-only">Actions</span>
 										</Table.Head>
@@ -1586,6 +1602,32 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 												</Button>
 											</Table.Cell>
 											<Table.Cell>
+												<Select.Root
+													type="single"
+													value={pending.replication}
+													onValueChange={(value) =>
+														setAccessField(
+															collection.name,
+															'replication',
+															value === 'off' ? 'off' : 'auto'
+														)}
+												>
+													<Select.Trigger
+														class="min-w-24 font-mono"
+														size="sm"
+														disabled={busy}
+														aria-label={`Replication for ${collection.name}`}
+														data-testid={`db-replication-${collection.name}`}
+													>
+														{pending.replication}
+													</Select.Trigger>
+													<Select.Content>
+														<Select.Item value="auto" label="auto" class="font-mono" />
+														<Select.Item value="off" label="off" class="font-mono" />
+													</Select.Content>
+												</Select.Root>
+											</Table.Cell>
+											<Table.Cell>
 												<div class="flex items-center justify-end gap-2">
 													{#if feedback}
 														<span
@@ -1614,7 +1656,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 										     edits BEFORE Apply - the tab's teaching device. -->
 										<Table.Row class="border-b hover:bg-transparent">
 											<Table.Cell
-												colspan={7}
+												colspan={8}
 												class="pt-2 pb-3 text-xs whitespace-normal text-muted-foreground"
 												data-testid={`db-access-summary-${collection.name}`}
 											>
@@ -1631,14 +1673,25 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 			</div>
 		{/if}
 
+		<!-- SQL EDITOR -->
+		{#if activeTab === 'sql'}
+			<div class="mt-4">
+				<SqlEditor
+					projectId={data.projectId}
+					tables={agentState.tables?.map((table) => table.name) ?? []}
+				/>
+			</div>
+		{/if}
+
 		<!-- INTEGRATION -->
-		{#if activeTab === 'setup'}
+		{#if activeTab === 'integration'}
 			<div class="mt-4">
 				<Card.Root data-testid="db-integration">
 					<Card.Header>
 						<Card.Title>Connect your application</Card.Title>
 						<Card.Description>
-							REST with project JWTs, the typed client SDK, or a raw live-query WebSocket.
+							REST with project JWTs, the typed client SDK, SQL tables with the Drizzle driver, or a
+							raw live-query WebSocket.
 						</Card.Description>
 					</Card.Header>
 					<Card.Content class="space-y-5">
@@ -1734,234 +1787,12 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 	</Dialog.Content>
 </Dialog.Root>
 
-<!-- Point-in-time rollback, D1-restore-style: Date resolves to the closest
-     available bookmark before anything is committed; Bookmark takes one
-     directly, with captured points as one-click fills. -->
-<Dialog.Root bind:open={rollbackOpen}>
-	<Dialog.Content class="sm:max-w-lg" data-testid="db-rollback-panel">
-		<Dialog.Header>
-			<Dialog.Title>Roll back {selected}?</Dialog.Title>
-			<Dialog.Description>
-				Restores <span class="font-mono font-semibold">{selected}</span> to an earlier moment - any point
-				in the past 30 days.
-			</Dialog.Description>
-		</Dialog.Header>
-		{#if rollbackInfo && !rollbackInfo.supported}
-			<p
-				class="rounded-lg border border-dashed p-3 text-sm text-muted-foreground"
-				data-testid="db-rollback-unsupported"
-			>
-				Point-in-time recovery is not available in this environment - local development keeps no
-				durable change log. On a deployed stack every collection can roll back to any moment in the
-				past 30 days.
-			</p>
-		{:else}
-			<div class="space-y-3">
-				<!-- Saving the current state is useful in BOTH modes (and before
-				     anything risky), so it sits above the Date|Bookmark toggle
-				     rather than inside one tab. -->
-				<div
-					class="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3"
-				>
-					<div class="min-w-0">
-						<p class="text-sm font-medium">Save this moment</p>
-						<p class="text-xs text-muted-foreground">
-							Bookmark the collection as it is right now, so you can roll back to it later.
-						</p>
-					</div>
-					<Button
-						size="sm"
-						variant="outline"
-						class="gap-1.5"
-						data-testid="db-capture-point"
-						disabled={busy}
-						onclick={() => void capturePoint()}
-					>
-						<BookmarkPlus class="h-4 w-4" /> Save bookmark
-					</Button>
-					{#if lastCaptured}
-						<code
-							class="block w-full overflow-x-auto rounded border bg-muted/50 p-2 text-xs"
-							data-testid="db-captured-bookmark">{lastCaptured.bookmark}</code
-						>
-					{/if}
-				</div>
-				<div class="flex w-fit gap-1 rounded-lg border p-1" role="tablist">
-					<Button
-						size="sm"
-						variant={rollbackMode === 'date' ? 'secondary' : 'ghost'}
-						data-testid="db-rollback-mode-date"
-						onclick={() => (rollbackMode = 'date')}
-					>
-						Date
-					</Button>
-					<Button
-						size="sm"
-						variant={rollbackMode === 'bookmark' ? 'secondary' : 'ghost'}
-						data-testid="db-rollback-mode-bookmark"
-						onclick={() => (rollbackMode = 'bookmark')}
-					>
-						Bookmark
-					</Button>
-				</div>
-
-				{#if rollbackMode === 'date'}
-					<div class="space-y-2">
-						<Label for="rollback-date">Select a date and time</Label>
-						<!-- shadcn date-picker (Popover + Calendar) rather than a bare
-						     datetime-local: Firefox renders no picker for that type, so
-						     the field degrades to a text box. The clock stays a native
-						     time input, which every browser does support. -->
-						<div class="flex gap-2">
-							<Popover.Root bind:open={datePickerOpen}>
-								<Popover.Trigger id="rollback-date" data-testid="db-rollback-date">
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											variant="outline"
-											class={[
-												'flex-1 justify-start text-left font-normal',
-												!rollbackDate && 'text-muted-foreground'
-											]}
-										>
-											<CalendarIcon class="mr-2 h-4 w-4" />
-											{rollbackDate
-												? dateFormatter.format(new Date(`${rollbackDate}T00:00:00`))
-												: 'Pick a date'}
-										</Button>
-									{/snippet}
-								</Popover.Trigger>
-								<Popover.Content class="w-auto p-0">
-									<Calendar
-										type="single"
-										value={calendarValue}
-										maxValue={today(getLocalTimeZone())}
-										onValueChange={(value) => {
-											datePickerOpen = false;
-											scheduleResolve(value ? value.toString() : '', rollbackClock);
-										}}
-									/>
-								</Popover.Content>
-							</Popover.Root>
-							<Input
-								id="rollback-clock"
-								type="time"
-								step="1"
-								class="w-36"
-								data-testid="db-rollback-time"
-								value={rollbackClock}
-								oninput={(event) => scheduleResolve(rollbackDate, event.currentTarget.value)}
-							/>
-						</div>
-					</div>
-					<div class="space-y-2">
-						<Label>Closest available bookmark</Label>
-						{#if resolveBusy}
-							<p class="text-xs text-muted-foreground">Resolving…</p>
-						{:else if resolveError}
-							<p class="text-xs text-destructive" data-testid="db-resolve-error">{resolveError}</p>
-						{:else if resolvedBookmark}
-							<code
-								class="block overflow-x-auto rounded border bg-muted/50 p-2 text-xs"
-								data-testid="db-resolved-bookmark"
-							>
-								{resolvedBookmark}
-							</code>
-						{:else}
-							<p class="text-xs text-muted-foreground">Pick a time above to resolve one.</p>
-						{/if}
-					</div>
-				{:else}
-					<div class="space-y-2">
-						<Label for="rollback-bookmark">Bookmark</Label>
-						<Input
-							id="rollback-bookmark"
-							class="font-mono text-xs"
-							placeholder="0000ba73-00000006-…"
-							data-testid="db-rollback-bookmark"
-							bind:value={rollbackBookmarkInput}
-						/>
-					</div>
-					<div class="space-y-2">
-						<Label>Captured points</Label>
-						{#if rollbackInfo === null}
-							<p class="text-xs text-muted-foreground">Loading captured points…</p>
-						{:else if rollbackInfo.points.length === 0}
-							<p class="text-xs text-muted-foreground">
-								None yet - imports and rollbacks capture one automatically.
-							</p>
-						{:else}
-							<div class="max-h-36 space-y-1 overflow-y-auto rounded-lg border p-1">
-								{#each rollbackInfo.points as point, index (point.bookmark + point.capturedAt)}
-									<button
-										type="button"
-										class={[
-											'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted',
-											rollbackBookmarkInput === point.bookmark && 'bg-muted'
-										]}
-										data-testid={`db-restore-point-${index}`}
-										onclick={() => (rollbackBookmarkInput = point.bookmark)}
-									>
-										<span>{point.reason}</span>
-										<span class="shrink-0 text-muted-foreground">{timeAgo(point.capturedAt)}</span>
-									</button>
-								{/each}
-							</div>
-						{/if}
-					</div>
-				{/if}
-
-				<div class="space-y-2">
-					<Label for="rollback-confirm">Type the collection name to confirm</Label>
-					<Input
-						id="rollback-confirm"
-						class="font-mono"
-						placeholder={selected}
-						data-testid="db-rollback-confirm"
-						bind:value={rollbackConfirmInput}
-					/>
-				</div>
-				<p class="text-xs text-muted-foreground">
-					Restoring overwrites the collection's current contents; live subscribers reconnect against
-					the restored data. Every restore returns an undo bookmark.
-				</p>
-			</div>
-		{/if}
-		{#if rollbackError}
-			<p class="text-sm text-destructive" data-testid="db-rollback-error">{rollbackError}</p>
-		{/if}
-		{#if rollbackUndo}
-			<div class="space-y-2 rounded-lg border bg-muted/20 p-3" data-testid="db-rollback-done">
-				<p class="text-sm">Rolled back. To reverse it, restore to this bookmark:</p>
-				<code class="block overflow-x-auto rounded border bg-muted/50 p-2 text-xs">
-					{rollbackUndo}
-				</code>
-				<Button
-					size="sm"
-					variant="outline"
-					disabled={busy}
-					onclick={() => rollbackUndo && void rollback({ bookmark: rollbackUndo })}
-				>
-					Undo the rollback
-				</Button>
-			</div>
-		{/if}
-		<Dialog.Footer>
-			<Button variant="ghost" onclick={() => (rollbackOpen = false)}>
-				{rollbackUndo ? 'Close' : 'Cancel'}
-			</Button>
-			<Button
-				variant="destructive"
-				data-testid="db-rollback-submit"
-				disabled={busy ||
-					!selected ||
-					!rollbackInfo?.supported ||
-					!rollbackTarget ||
-					rollbackConfirmInput.trim() !== selected}
-				onclick={() => rollbackTarget && void rollback({ bookmark: rollbackTarget })}
-			>
-				Roll back
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+{#if selected}
+	<RollbackDialog
+		bind:open={rollbackOpen}
+		base={`${adminBase}/${encodeURIComponent(selected)}`}
+		shardName={selected}
+		noun="collection"
+		onRestored={() => refreshData(data.projectId)}
+	/>
+{/if}

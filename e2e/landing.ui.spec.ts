@@ -1,15 +1,16 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('landing page (frontend)', () => {
-	test('renders the hero and the live feature grid', async ({ page }) => {
+	// The landing page and the demo hand-off are the ANONYMOUS surface. With
+	// an operator session, /dashboard lists real projects instead of minting
+	// a demo, so these tests must not carry the console storage state.
+	test.use({ storageState: { cookies: [], origins: [] } });
+	test('renders the hero and the roadmap', async ({ page }) => {
 		await page.goto('/');
 
 		await expect(page.getByRole('heading', { level: 1 })).toContainText(
 			'The open-source Firebase for Cloudflare'
 		);
-		await expect(
-			page.getByRole('heading', { name: 'Auth shipped first. Database just followed.' })
-		).toBeVisible();
 		await expect(
 			page.getByRole('heading', { name: 'Every Firebase primitive. One agent at a time.' })
 		).toBeVisible();
@@ -24,15 +25,34 @@ test.describe('landing page (frontend)', () => {
 		await expect(page.getByText('AuthAgent · DO SQLite')).toBeVisible();
 	});
 
+	test('the pricing story and comparison table state the trade-offs', async ({ page }) => {
+		await page.goto('/');
+		await expect(page.getByRole('heading', { name: /Our price/ })).toBeVisible();
+		// The real calculator is embedded on the landing page, not linked away.
+		await expect(page.getByTestId('pricing-total-cf')).toContainText('$');
+		await expect(
+			page.getByRole('heading', { name: 'Same primitives. Different physics.' })
+		).toBeVisible();
+
+		const table = page.getByTestId('comparison-table');
+		for (const name of ['Cloudflarebase', 'Firebase', 'Supabase']) {
+			await expect(table.getByRole('columnheader', { name })).toBeVisible();
+		}
+		// The branching row is the pitch in one line.
+		const branching = table.getByRole('row', { name: /Branching/ });
+		await expect(branching).toContainText('the whole backend');
+		await expect(branching).toContainText('database only, paid');
+	});
+
 	test('"Open the live demo" leads to the demo project dashboard', async ({ page }) => {
 		await page.goto('/');
 
 		await page.getByRole('link', { name: 'Open the live demo' }).first().click();
 
-		await expect(page).toHaveURL(/\/dashboard\/demo-[a-f0-9]{20}$/);
+		await expect(page).toHaveURL(/\/dashboard\/demo-[a-f0-9]{12}$/);
 		await expect(page.getByRole('heading', { name: 'Project Overview' })).toBeVisible();
 		const projectId = (await page.getByTestId('project-badge').textContent())!;
-		expect(projectId).toMatch(/^demo-[a-f0-9]{20}$/);
+		expect(projectId).toMatch(/^demo-[a-f0-9]{12}$/);
 		await expect(page.getByTestId('project-copilot')).toBeVisible();
 
 		// The Firebase-style sidebar navigates into Authentication.

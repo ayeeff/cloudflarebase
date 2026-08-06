@@ -18,7 +18,12 @@ export const projectIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/);
 /** Collection names become Durable Object name suffixes - keep them tame. */
 export const collectionNameSchema = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
 
-export const DEMO_PROJECT_PATTERN = /^demo-[a-f0-9]{20}$/;
+// Demo roots are demo-<12..20 hex>; a demo BRANCH is demo-<hex>--<branch>
+// (branches-design.md), and the whole family must share demo caps, TTL
+// erasure, and the sibling-spawn exclusion - a branch escaping this pattern
+// would be an uncapped anonymous instance. Mirrored in the console's
+// $lib/console.ts and agents/auth.
+export const DEMO_PROJECT_PATTERN = /^demo-[a-f0-9]{12,20}(?:--[a-z0-9][a-z0-9-]{0,15})?$/;
 
 /** Bad env degrades to 24h instead of throwing in onStart. */
 export const demoTtlHoursSchema = z.coerce.number().int().min(1).max(720).catch(24);
@@ -177,6 +182,107 @@ export interface DbDocument {
 }
 
 // ---------------------------------------------------------------------------
+// Replication (phase REP1 of docs/db-scale-plan.md; docs/db-replication-design.md)
+
+export const replicationModeSchema = z.enum(['off', 'auto']);
+export type ReplicationMode = z.infer<typeof replicationModeSchema>;
+
+/** Session bookmark headers - the D1 Sessions contract, LSN-shaped. Writes
+ * on a replicated primary answer with LSN_HEADER; clients echo the highest
+ * seen value on reads via MIN_LSN_HEADER for read-your-writes on replicas. */
+export const LSN_HEADER = 'cfb-lsn';
+export const MIN_LSN_HEADER = 'cfb-min-lsn';
+
+/** One change-log row (row images, never statements - deterministic apply,
+ * engine-agnostic: the same substrate replicates documents and typed rows). */
+export const logEntrySchema = z.object({
+	lsn: z.number().int().min(1),
+	op: z.enum(['put', 'del', 'cfg']),
+	id: z.string(),
+	/** DTO JSON for put, config JSON for cfg, null tombstone for del. */
+	image: z.string().nullable(),
+	ts: z.number(),
+});
+export type LogEntry = z.infer<typeof logEntrySchema>;
+
+export const REPLICATION_PULL_CHUNK = 500;
+/** Log retention; a replica behind the horizon is FORCED to re-bootstrap. */
+export const MAX_LOG_ROWS = 100_000;
+/** REP1 freshness window: replica reads may lag this far unless the session
+ * bookmark demands newer. Matches the dashboard's own polling cadence. */
+export const MAX_REPLICA_LAG_MS = 3_000;
+
+/** Sibling spawn: a region replica this close to the ~32k hibernatable-socket
+ * ceiling stops taking NEW subscribers - the worker routes them to the next
+ * sibling (`:r:<region>:2`…). 75% leaves headroom for one routing-cache TTL
+ * of herd. Overridable per environment (env.test sets it to 2). */
+export const SIBLING_SPAWN_SOCKETS = 24_000;
+/** Sibling cap per region: bounds a socket-flood to this many data copies. */
+export const MAX_REGION_SIBLINGS = 8;
+/** Replicas report socket counts when they move at least this much - one
+ * report per ~6% of the threshold keeps the primary current without a write
+ * per socket. Always >= 1 so tiny test thresholds still report. */
+export function socketReportStep(spawnAt: number): number {
+	return Math.max(1, Math.floor(spawnAt / 16));
+}
+
+export type RepPullResult =
+	| { resync: true; epoch: number }
+	| { resync: false; entries: LogEntry[]; lastLsn: number; epoch: number };
+
+export const repPullInputSchema = z.strictObject({
+	since: z.number().int().min(0),
+	replicaId: z.string().regex(/^r:[a-z-]+:\d+$/),
+	region: z.string().min(1).max(16),
+});
+
+/** Primary -> replica push (REP2): entries applied live, or a healing hint. */
+export const repApplyInputSchema = z.strictObject({
+	entries: z.array(logEntrySchema).min(1).max(REPLICATION_PULL_CHUNK),
+	epoch: z.number().int().min(0),
+});
+export type RepApplyResult =
+	/** Applied (or already had them) - keep pushing. */
+	| { ok: true }
+	/** Out of order / wrong epoch; the replica pulled to heal. */
+	| { healed: true }
+	/** No subscribers left here - stop pushing until they return. */
+	| { stop: true };
+
+export const repSetPushInputSchema = z.strictObject({
+	replicaId: z.string().regex(/^r:[a-z-]+:\d+$/),
+	region: z.string().min(1).max(16),
+	/** Omitted = leave the push flag alone (a sockets-only report). */
+	push: z.boolean().optional(),
+	/** Hibernatable-socket count, reported step-debounced for sibling spawn. */
+	sockets: z.number().int().min(0).optional(),
+});
+
+/** Observability payloads (`/admin/replication/:name`, the replica map). */
+export interface RepReplicaStatus {
+	id: string;
+	region: string;
+	appliedLsn: number;
+	lagLsn: number;
+	/** Receiving live pushes (it holds subscribers). */
+	push: boolean;
+	/** Last reported hibernatable-socket count (drives sibling spawn). */
+	sockets: number;
+	lastSeenAt: string;
+}
+export interface RepStatus {
+	enabled: boolean;
+	epoch: number;
+	lastLsn: number;
+	horizonLsn: number;
+	replicas: RepReplicaStatus[];
+	/** The answering primary's own location (/cdn-cgi/trace; null in local
+	 * dev), so the dashboard's map can place the hub where the DO really
+	 * lives instead of guessing. */
+	primary?: { colo: string | null; country: string | null };
+}
+
+// ---------------------------------------------------------------------------
 // Collection configuration
 
 export const accessModeSchema = z.enum(['public', 'auth', 'owner']);
@@ -193,6 +299,8 @@ export const collectionModesSchema = z.strictObject({
 	readPermission: permissionKeySchema.nullable().optional(),
 	writePermission: permissionKeySchema.nullable().optional(),
 	validator: validatorSchema.nullable().optional(),
+	/** Three-state like the permission fields: omitted = unchanged. */
+	replication: replicationModeSchema.optional(),
 });
 
 /** Pushed parent -> child on create/config change; cached in collection_meta. */
@@ -211,6 +319,13 @@ export const collectionConfigSchema = z.strictObject({
 	demo: z.boolean(),
 	/** Monotonic; lets a child ignore a stale push after a failed retry. */
 	configVersion: z.number().int().min(0),
+	/** Defaults keep configs stored before REP1 parseable. */
+	replication: replicationModeSchema.default('off'),
+	/** PARENT-owned restore epoch: bumped after a PITR restore so replicas
+	 * discard and re-bootstrap. Lives in config (not the primary's storage)
+	 * because a restore rewinds the primary's storage - including any epoch
+	 * it would have kept itself. */
+	repEpoch: z.number().int().min(0).default(0),
 });
 export type CollectionConfig = z.infer<typeof collectionConfigSchema>;
 
@@ -247,6 +362,217 @@ export const settingsRequestSchema = z.strictObject({
 		.max(10)
 		.transform((origins) => [...new Set(origins)]),
 });
+
+// ---------------------------------------------------------------------------
+// Tables: the typed-column DSL (phase T1 of docs/db-scale-plan.md)
+
+/** Table names are DO name suffixes exactly like collection names; the
+ * physical SQLite table inside the instance is always `rows`. */
+export const tableNameSchema = collectionNameSchema;
+
+/**
+ * No leading underscore (reserved for future system use) and no hyphens
+ * (column names appear as dotted query field-path segments). Quoted in all
+ * generated SQL regardless. The system columns are PLAIN reserved names -
+ * `id`, `owner`, `created_at`, `updated_at` - so ORM-generated SQL reads
+ * like a normal table; the reservation lives in tableColumnsSchema.
+ */
+export const columnNameSchema = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);
+
+/** Owned by the platform: the row envelope's fields as real SQL columns. */
+export const RESERVED_COLUMN_NAMES = ['id', 'owner', 'created_at', 'updated_at'] as const;
+
+export const columnTypeSchema = z.enum(['text', 'integer', 'real', 'boolean', 'json']);
+export type ColumnType = z.infer<typeof columnTypeSchema>;
+
+export const MAX_TABLE_COLUMNS = 64;
+/** unique + index combined. */
+export const MAX_TABLE_INDEXES = 16;
+
+/**
+ * One declared column. SQLite affinity is NOT the type system - it would
+ * happily store text in an INTEGER column - so the write path validates
+ * values against `type` in JS before binding. The rules-lite bounds
+ * (maxLength/min/max/enum) are enforced in the same place, never as CHECK
+ * constraints (CHECK cannot be added or altered after the fact).
+ */
+export const tableColumnSchema = z
+	.strictObject({
+		name: columnNameSchema,
+		type: columnTypeSchema,
+		nullable: z.boolean().default(true),
+		/** Materialized by the WRITE PATH (missing column -> default), so
+		 * changing it later is metadata-only. The SQL DEFAULT clause is only
+		 * emitted where SQLite demands one: ADD COLUMN ... NOT NULL. */
+		default: scalarSchema.optional(),
+		/** Implemented as a UNIQUE index; implies `index`. */
+		unique: z.boolean().default(false),
+		index: z.boolean().default(false),
+		/** text columns: maximum string length. */
+		maxLength: z.number().int().min(0).max(131072).optional(),
+		/** integer/real columns only. */
+		min: z.number().optional(),
+		max: z.number().optional(),
+		/** text/integer/real columns: allowed values. */
+		enum: z.array(scalarSchema).min(1).max(20).optional(),
+	})
+	.superRefine((column, ctx) => {
+		const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
+		if (column.default !== undefined && !valueFitsType(column.type, column.default)) {
+			fail(`"${column.name}": default must be a ${column.type}`);
+		}
+		if (column.type === 'json' && column.default !== undefined) {
+			fail(`"${column.name}": json columns cannot declare a default`);
+		}
+		// NOT NULL without a default is legal and useful - it means "required on
+		// write". Only ADDING such a column to an existing table is refused (the
+		// DDL planner owns that rule: SQLite must backfill existing rows).
+		if (column.maxLength !== undefined && column.type !== 'text') {
+			fail(`"${column.name}": maxLength applies to text columns`);
+		}
+		if (
+			(column.min !== undefined || column.max !== undefined) &&
+			column.type !== 'integer' &&
+			column.type !== 'real'
+		) {
+			fail(`"${column.name}": min/max apply to integer and real columns`);
+		}
+		if (column.enum !== undefined && (column.type === 'json' || column.type === 'boolean')) {
+			fail(`"${column.name}": enum applies to text, integer, and real columns`);
+		}
+	});
+export type TableColumn = z.infer<typeof tableColumnSchema>;
+
+/** Scalar-vs-declared-type check shared by the schema and the write path. */
+export function valueFitsType(type: ColumnType, value: string | number | boolean | null): boolean {
+	if (value === null) return true;
+	switch (type) {
+		case 'text':
+			return typeof value === 'string';
+		case 'integer':
+			return typeof value === 'number' && Number.isInteger(value);
+		case 'real':
+			return typeof value === 'number';
+		case 'boolean':
+			return typeof value === 'boolean';
+		case 'json':
+			return true;
+	}
+}
+
+export const tableColumnsSchema = z
+	.array(tableColumnSchema)
+	.min(1)
+	.max(MAX_TABLE_COLUMNS)
+	.superRefine((columns, ctx) => {
+		const names = new Set<string>();
+		for (const column of columns) {
+			if (names.has(column.name)) {
+				ctx.addIssue({ code: 'custom', message: `duplicate column "${column.name}"` });
+			}
+			names.add(column.name);
+			if ((RESERVED_COLUMN_NAMES as readonly string[]).includes(column.name)) {
+				ctx.addIssue({
+					code: 'custom',
+					message: `"${column.name}" is a system column (id, owner, created_at, updated_at are reserved)`,
+				});
+			}
+		}
+		const indexes = columns.filter((column) => column.unique || column.index).length;
+		if (indexes > MAX_TABLE_INDEXES) {
+			ctx.addIssue({
+				code: 'custom',
+				message: `a table is limited to ${MAX_TABLE_INDEXES} indexed columns`,
+			});
+		}
+	});
+
+/**
+ * The PUT /admin/tables/:name body. Permissions are three-state exactly like
+ * collections (omitted = unchanged, null = clear); `columns` is the full
+ * desired schema - the parent diffs it against the registry's stored columns
+ * and refuses destructive changes before anything is pushed.
+ */
+export const tableModesSchema = z.strictObject({
+	readAccess: accessModeSchema.default('auth'),
+	writeAccess: accessModeSchema.default('auth'),
+	readPermission: permissionKeySchema.nullable().optional(),
+	writePermission: permissionKeySchema.nullable().optional(),
+	columns: tableColumnsSchema,
+	/** Three-state like the permission fields: omitted = unchanged. */
+	replication: replicationModeSchema.optional(),
+});
+
+/** Pushed parent -> child; cached in collection_meta alongside a record of
+ * what DDL has actually been applied (pragma_table_info is SQLITE_AUTH). */
+export const tableConfigSchema = z.strictObject({
+	kind: z.literal('table'),
+	projectId: projectIdSchema,
+	table: tableNameSchema,
+	readAccess: accessModeSchema,
+	writeAccess: accessModeSchema,
+	readPermission: z.string().nullable(),
+	writePermission: z.string().nullable(),
+	columns: tableColumnsSchema,
+	allowedOrigins: z.array(z.string()).max(10),
+	demo: z.boolean(),
+	configVersion: z.number().int().min(0),
+	replication: replicationModeSchema.default('off'),
+	repEpoch: z.number().int().min(0).default(0),
+});
+export type TableConfig = z.infer<typeof tableConfigSchema>;
+
+export const storedTableConfigSchema = tableConfigSchema.nullable().catch(null);
+
+/**
+ * The child's cached meta row: the pushed config plus the record of what DDL
+ * has actually been applied - which replaces introspection, because
+ * `pragma_table_info()` is SQLITE_AUTH. `appliedColumns` only moves after
+ * every planned statement succeeded.
+ */
+export const storedTableMetaSchema = z
+	.object({ config: tableConfigSchema, appliedColumns: tableColumnsSchema })
+	.nullable()
+	.catch(null);
+export type TableMeta = { config: TableConfig; appliedColumns: TableColumn[] };
+
+/**
+ * A row's wire shape is deliberately the document envelope - `data` is the
+ * column-value map (json columns parsed, booleans as true/false) - so the
+ * live-query frames, the SDK subscribe machinery, and the dashboard change
+ * handling are shared with collections rather than forked.
+ */
+export type DbRow = DbDocument;
+
+// --- The D1-shaped SQL endpoint (T2; db-table-design.md §10) ---
+
+const sqlStatementSchema = z.strictObject({
+	sql: z.string().min(1).max(10_000),
+	params: z
+		.array(z.union([z.string(), z.number(), z.boolean(), z.null()]))
+		.max(100)
+		.optional(),
+});
+
+/** One statement, or an atomic batch (transactionSync under the hood). */
+export const tableSqlRequestSchema = z.union([
+	sqlStatementSchema,
+	z.strictObject({ batch: z.array(sqlStatementSchema).min(1).max(20) }),
+]);
+
+/** D1-shaped per-statement result. `raw` + `columns` exist for ORM drivers
+ * (drizzle's sqlite-proxy wants value arrays in column order). */
+export interface TableSqlResult {
+	results: Record<string, unknown>[];
+	columns: string[];
+	raw: unknown[][];
+	meta: { changes: number; rows_read: number; rows_written: number };
+}
+
+export type TableSqlResponse =
+	| { success: true; result: TableSqlResult }
+	| { success: true; batch: TableSqlResult[] }
+	| { success: false; error: string };
 
 // ---------------------------------------------------------------------------
 // Export / import / point-in-time restore
@@ -336,6 +662,63 @@ export const unsubscribeFrameSchema = z.strictObject({
 export const clientFrameSchema = z.union([subscribeFrameSchema, unsubscribeFrameSchema]);
 export type ClientFrame = z.infer<typeof clientFrameSchema>;
 
+// ---------------------------------------------------------------------------
+// Gateway protocol (one client socket for the whole database)
+
+/** Which shard a gateway subscription addresses. */
+export const shardAddressSchema = z.strictObject({
+	kind: z.enum(['collection', 'table']),
+	name: collectionNameSchema,
+});
+export type ShardAddress = z.infer<typeof shardAddressSchema>;
+
+/** The per-shard subscribe frame plus a shard address - the only difference
+ * between the gateway socket and a direct shard socket. */
+export const gatewaySubscribeFrameSchema = subscribeFrameSchema.extend({
+	shard: shardAddressSchema,
+});
+export const gatewayClientFrameSchema = z.union([
+	gatewaySubscribeFrameSchema,
+	unsubscribeFrameSchema,
+]);
+export type GatewayClientFrame = z.infer<typeof gatewayClientFrameSchema>;
+
+/** Cross-shard subscriptions one gateway connection may hold (per-shard caps
+ * still apply at each shard). Demo cap mirrors the 5-shard x 5-sub ceiling. */
+export const GATEWAY_MAX_SUBSCRIPTIONS_PER_CONNECTION = 100;
+export const DEMO_GATEWAY_MAX_SUBSCRIPTIONS_PER_CONNECTION = 25;
+export const MAX_GATEWAY_SIBLINGS = 8;
+
+/** Shard-side registration of one gateway-held subscription. The shard runs
+ * the SAME live engine over it; only delivery differs (RPC to the gateway
+ * instead of a local socket send). The token is re-verified by the shard -
+ * the gateway is never trusted with authorization. */
+export const remoteSubscribeInputSchema = z.strictObject({
+	gateway: z.string().min(1).max(256),
+	connId: z.string().min(1).max(64),
+	subId: z.string().min(1).max(64),
+	query: querySchema.omit({ cursor: true }),
+	token: z.string().max(8192).optional(),
+});
+export type RemoteSubscribeInput = z.infer<typeof remoteSubscribeInputSchema>;
+
+export type RemoteSubscribeResult =
+	| { ok: true; docs: DbDocument[] }
+	| {
+			ok: false;
+			code: 'invalid-query' | 'unauthorized' | 'subscription-limit' | 'shard-unavailable';
+			message: string;
+	  }
+	/** A replica that cannot serve (failed bootstrap); retry on the primary. */
+	| { forward: true };
+
+export const remoteUnsubscribeInputSchema = z.strictObject({
+	connId: z.string().min(1).max(64),
+	/** Omitted = every subscription this connection holds on the shard. */
+	subId: z.string().min(1).max(64).optional(),
+});
+export type RemoteUnsubscribeInput = z.infer<typeof remoteUnsubscribeInputSchema>;
+
 const dbDocumentSchema = z.object({
 	id: z.string(),
 	data: z.record(z.string(), z.unknown()),
@@ -366,6 +749,7 @@ export const serverFrameSchema = z.union([
 			'unauthorized',
 			'token-expired',
 			'subscription-limit',
+			'shard-unavailable',
 			'internal',
 		]),
 		message: z.string(),

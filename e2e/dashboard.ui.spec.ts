@@ -60,7 +60,7 @@ test.describe('authentication page (frontend)', () => {
 		await gotoAuthPage(page, UI_PROJECT);
 		const usersBefore = Number(await statValue(page, 'users').textContent());
 
-		await page.getByRole('tab', { name: 'Try auth' }).click();
+		await page.getByTestId('nav-auth-playground').click();
 		await page.locator('#su-name').fill('Playground User');
 		await page.locator('#su-email').fill(email);
 		await page.locator('#su-password').fill('playground-password-1');
@@ -71,20 +71,21 @@ test.describe('authentication page (frontend)', () => {
 		await expect(sessionPanel.getByText('Playground User')).toBeVisible();
 		await expect(sessionPanel.getByText(email)).toBeVisible();
 
-		// …and the project data follows.
+		// …and the project data follows. The live-activity feed lives on the
+		// Users overview, so assert it there before moving on to Sessions.
 		await expect(statValue(page, 'users')).toHaveText(String(usersBefore + 1));
-		await page.getByRole('tab', { name: 'Users' }).click();
+		await page.getByTestId('nav-auth').click();
 		await expect(page.getByTestId('users-card').getByText(email)).toBeVisible();
-		await page.getByRole('tab', { name: 'Sessions' }).click();
-		await expect(page.getByTestId('sessions-card').getByText(email)).toBeVisible();
 		await expect(
 			page.getByTestId('activity-card').getByText('registered user created')
 		).toBeVisible();
+		await page.getByTestId('nav-auth-sessions').click();
+		await expect(page.getByTestId('sessions-card').getByText(email)).toBeVisible();
 	});
 
 	test('validates sign-up and sign-in fields before sending auth requests', async ({ page }) => {
 		await gotoAuthPage(page, 'e2e-ui-validation');
-		await page.getByRole('tab', { name: 'Try auth' }).click();
+		await page.getByTestId('nav-auth-playground').click();
 
 		await page.locator('#su-name').fill('A');
 		await page.locator('#su-email').fill('invalid');
@@ -109,20 +110,20 @@ test.describe('authentication page (frontend)', () => {
 	test('guest sign-in creates an anonymous user', async ({ page }) => {
 		await gotoAuthPage(page, UI_PROJECT);
 
-		await page.getByRole('tab', { name: 'Try auth' }).click();
+		await page.getByTestId('nav-auth-playground').click();
 		await page.getByTestId('guest-button').click();
 
 		await expect(page.getByTestId('auth-success')).toContainText('Guest session started');
 		const sessionPanel = page.getByTestId('session-panel');
 		await expect(sessionPanel.getByText('Anonymous')).toBeVisible();
 
-		await page.getByRole('tab', { name: 'Users' }).click();
+		await page.getByTestId('nav-auth').click();
 		await expect(page.getByTestId('users-card').getByText('anonymous').first()).toBeVisible();
 	});
 
 	test('new-identity dice fills the sign-up form with a unique demo user', async ({ page }) => {
 		await gotoAuthPage(page, 'e2e-ui-dice');
-		await page.getByRole('tab', { name: 'Try auth' }).click();
+		await page.getByTestId('nav-auth-playground').click();
 
 		await expect(page.locator('#su-name')).toHaveValue('');
 		await expect(page.locator('#su-email')).toHaveValue('');
@@ -142,14 +143,14 @@ test.describe('authentication page (frontend)', () => {
 		await gotoAuthPage(page, project);
 
 		// A user to assign roles to.
-		await page.getByRole('tab', { name: 'Try auth' }).click();
+		await page.getByTestId('nav-auth-playground').click();
 		await page.getByTestId('randomize-identity').click();
 		await page.locator('#su-email').fill(email);
 		await page.getByRole('button', { name: 'Create account' }).click();
 		await expect(page.getByTestId('session-panel').getByText(email)).toBeVisible();
 
 		// Define a custom role and grant it a permission.
-		await page.getByRole('tab', { name: 'Roles' }).click();
+		await page.getByTestId('nav-auth-roles').click();
 		await expect(page.getByTestId('role-user')).toBeVisible();
 		await expect(page.getByTestId('role-admin')).toBeVisible();
 		await page.getByLabel('New role name').fill('editor');
@@ -161,7 +162,7 @@ test.describe('authentication page (frontend)', () => {
 		await expect(editorCard.getByText('posts:write')).toBeVisible();
 
 		// Assign it from the users table.
-		await page.getByRole('tab', { name: 'Users' }).click();
+		await page.getByTestId('nav-auth').click();
 		await page.getByLabel(`Role for ${email}`).click();
 		await page.getByRole('option', { name: 'editor' }).click();
 		await expect(page.getByLabel(`Role for ${email}`)).toHaveText('editor');
@@ -170,7 +171,7 @@ test.describe('authentication page (frontend)', () => {
 	test('integration tab switches between framework examples', async ({ page }) => {
 		const project = 'e2e-ui-integration';
 		await gotoAuthPage(page, project);
-		await page.getByRole('tab', { name: 'Integration' }).click();
+		await page.getByTestId('nav-auth-integration').click();
 
 		const card = page.getByTestId('connect-card');
 		await expect(card).toContainText(`/api/projects/${project}/auth`);
@@ -206,7 +207,7 @@ test.describe('authentication page (frontend)', () => {
 	test('sign-in and sign-out round trip on the seeded project', async ({ page }) => {
 		await gotoAuthPage(page, SEED_PROJECT);
 
-		await page.getByRole('tab', { name: 'Try auth' }).click();
+		await page.getByTestId('nav-auth-playground').click();
 		await page.getByRole('tab', { name: 'Sign in' }).click();
 		await page.locator('#si-email').fill(SEED_USERS[0].email);
 		await page.locator('#si-password').fill(SEED_PASSWORD);
@@ -237,14 +238,14 @@ test.describe('authentication page (frontend)', () => {
 	test('connect guide and trusted-origin settings are functional', async ({ page }) => {
 		const project = 'e2e-ui-settings';
 		await gotoAuthPage(page, project);
-		await page.getByRole('tab', { name: 'Integration' }).click();
+		await page.getByTestId('nav-auth-integration').click();
 		await expect(page.getByTestId('connect-card')).toContainText(`/api/projects/${project}/auth`);
-		await page.getByRole('tab', { name: 'Sign-in methods' }).click();
+		await page.getByTestId('nav-auth-settings').click();
 		await page.locator('#allowed-origins').fill('https://app.example.com\nhttp://localhost:3000');
 		await page.getByRole('button', { name: 'Save changes' }).click();
 		await expect(page.getByText('Settings saved.')).toBeVisible();
 		await page.reload();
-		await page.getByRole('tab', { name: 'Sign-in methods' }).click();
+		await page.getByTestId('nav-auth-settings').click();
 		await expect(page.locator('#allowed-origins')).toHaveValue(
 			'https://app.example.com\nhttp://localhost:3000'
 		);
@@ -264,14 +265,14 @@ test.describe('authentication page (frontend)', () => {
 				.evaluate((element) => (element.classList.contains('dark') ? 'dark' : 'light'))
 		).toBe(selectedTheme);
 
-		await page.getByRole('tab', { name: 'Sign-in methods' }).click();
+		await page.getByTestId('nav-auth-settings').click();
 		await page.getByTestId('provider-github').getByRole('checkbox').check();
 		await page.getByLabel('GitHub client ID').fill('e2e-github-id');
 		await page.getByLabel('GitHub client secret').fill('e2e-github-secret');
 		await page.getByRole('button', { name: 'Save changes' }).click();
 		await expect(page.getByText('Settings saved.')).toBeVisible();
 		await page.reload();
-		await page.getByRole('tab', { name: 'Sign-in methods' }).click();
+		await page.getByTestId('nav-auth-settings').click();
 		await expect(page.getByTestId('provider-github').getByRole('checkbox')).toBeChecked();
 		await expect(page.getByLabel('GitHub client secret')).toHaveValue('');
 	});
@@ -280,26 +281,43 @@ test.describe('authentication page (frontend)', () => {
 		const project = 'e2e-ui-delete';
 		const email = uniqueEmail('ui-delete');
 		await gotoAuthPage(page, project);
-		await page.getByRole('tab', { name: 'Try auth' }).click();
+		await page.getByTestId('nav-auth-playground').click();
 		await page.locator('#su-name').fill('Disposable User');
 		await page.locator('#su-email').fill(email);
 		await page.locator('#su-password').fill('disposable-password-1');
 		await page.getByRole('button', { name: 'Create account' }).click();
 		await expect(statValue(page, 'users')).toHaveText('1');
-		await page.getByRole('tab', { name: 'Users' }).click();
+		await page.getByTestId('nav-auth').click();
 		await expect(page.getByTestId('users-card').getByText(email)).toBeVisible();
 		page.once('dialog', (dialog) => dialog.accept());
 		await page.getByRole('button', { name: `Delete ${email}` }).click();
 		await expect(page.getByTestId('users-card').getByText(email)).not.toBeVisible();
 	});
 
-	test('switching projects lands on an isolated project overview', async ({ page }) => {
+	test('switching projects via the breadcrumb lands on an isolated overview', async ({
+		page,
+		request
+	}) => {
+		// The breadcrumb dropdown lists REGISTRY projects, so the switch target
+		// must be a real registry row - unique per run, since local stacks are
+		// reused and registry ids are permanent for the stack's lifetime.
+		const target =
+			`uisw-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`.slice(
+				0,
+				24
+			);
+		const created = await request.post('/api/registry/projects', {
+			data: { id: target, name: 'Switch Target' }
+		});
+		expect(created.status(), await created.text()).toBe(201);
+
 		await gotoAuthPage(page, SEED_PROJECT);
+		const switcher = page.getByTestId('project-switcher');
+		await expect(switcher).toHaveAttribute('data-hydrated', 'true');
+		await switcher.click();
+		await page.getByTestId(`project-item-${target}`).click();
 
-		await page.getByLabel('Project id').fill('e2e-ui-switched');
-		await page.getByLabel('Project id').press('Enter');
-
-		await expect(page).toHaveURL(/\/dashboard\/e2e-ui-switched$/);
+		await expect(page).toHaveURL(new RegExp(`/dashboard/${target}$`));
 		await expect(page.getByRole('heading', { name: 'Project Overview' })).toBeVisible();
 		await expect(page.getByTestId('overview-users-count')).toHaveText('0');
 
@@ -318,25 +336,7 @@ test.describe('authentication page (frontend)', () => {
 		await expect(page.getByTestId('connect-card')).toContainText(`/api/projects/${project}/auth`);
 	});
 
-	test('project switcher rejects HTML and script payloads', async ({ page }) => {
-		await gotoAuthPage(page, SEED_PROJECT);
-		await page.evaluate(
-			() => ((window as typeof window & { xssTriggered?: boolean }).xssTriggered = false)
-		);
-		const startingUrl = page.url();
-		const input = page.getByLabel('Project id');
-
-		await input.fill('<img src=x onerror=xssTriggered=true>');
-		await input.press('Enter');
-
-		await expect(page).toHaveURL(startingUrl);
-		await expect(page.getByRole('alert')).toHaveText(
-			'Use lowercase letters, numbers, and hyphens only.'
-		);
-		await expect(input).toHaveAttribute('aria-invalid', 'true');
-		await expect(page.locator('img[src="x"]')).toHaveCount(0);
-		expect(
-			await page.evaluate(() => (window as typeof window & { xssTriggered?: boolean }).xssTriggered)
-		).toBe(false);
-	});
+	// The free-text project switcher (and with it the HTML-injection vector its
+	// XSS spec pinned) was retired for the breadcrumb dropdown: project ids now
+	// come from the registry, never from typed input.
 });

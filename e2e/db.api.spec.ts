@@ -75,9 +75,11 @@ test.describe('db agent (documents API)', () => {
 	}) => {
 		// Operator provisions the collection; the PUT is an idempotent upsert.
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'public_notes'), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
+		// The PUT response echoes access config only; replication state is read
+		// back via /admin/replication/:name.
 		expect(await provision.json()).toEqual({
 			name: 'public_notes',
 			readAccess: 'public',
@@ -197,7 +199,7 @@ test.describe('db agent (documents API)', () => {
 		baseURL
 	}) => {
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'owner_notes'), {
-			data: { readAccess: 'owner', writeAccess: 'owner' }
+			data: { readAccess: 'owner', writeAccess: 'owner', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -255,7 +257,7 @@ test.describe('db agent (documents API)', () => {
 
 	test('creating a document with a taken id is refused with 409', async ({ request, baseURL }) => {
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'public_notes'), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -278,7 +280,7 @@ test.describe('db agent (documents API)', () => {
 
 	test('invalid queries are rejected with 400', async ({ request }) => {
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'public_notes'), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -290,7 +292,7 @@ test.describe('db agent (documents API)', () => {
 
 	test('oversized document data is refused with 413', async ({ request }) => {
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'public_notes'), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -303,7 +305,7 @@ test.describe('db agent (documents API)', () => {
 
 	test('cursor pagination pages in order with no overlap', async ({ request, baseURL }) => {
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'pages'), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -358,7 +360,7 @@ test.describe('db agent (documents API)', () => {
 		// auth/auth modes: no anonymous caller could read this back, but the
 		// operator surface goes through the parent agent and bypasses the gate.
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'admin_probe'), {
-			data: { readAccess: 'auth', writeAccess: 'auth' }
+			data: { readAccess: 'auth', writeAccess: 'auth', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -405,7 +407,12 @@ test.describe('db agent (documents API)', () => {
 
 		// Any valid token may write; reading additionally needs reports:read.
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'perm_reports'), {
-			data: { readAccess: 'auth', writeAccess: 'auth', readPermission: 'reports:read' }
+			data: {
+				readAccess: 'auth',
+				writeAccess: 'auth',
+				replication: 'off',
+				readPermission: 'reports:read'
+			}
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 		expect(await provision.json()).toMatchObject({
@@ -491,6 +498,7 @@ test.describe('db agent (documents API)', () => {
 			data: {
 				readAccess: 'public',
 				writeAccess: 'public',
+				replication: 'off',
 				validator: {
 					fields: {
 						run: { type: 'string' },
@@ -561,7 +569,7 @@ test.describe('db agent (documents API)', () => {
 
 	test('aggregates compute count/sum/avg server-side', async ({ request, baseURL }) => {
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'agg_votes'), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -616,7 +624,7 @@ test.describe('db agent (documents API)', () => {
 
 	test('owner-mode aggregates and exports see only the caller', async ({ request, baseURL }) => {
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'owner_stats'), {
-			data: { readAccess: 'owner', writeAccess: 'owner' }
+			data: { readAccess: 'owner', writeAccess: 'owner', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -665,7 +673,7 @@ test.describe('db agent (documents API)', () => {
 
 	test('export streams NDJSON that import round-trips', async ({ request, baseURL }) => {
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'export_source'), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -705,7 +713,7 @@ test.describe('db agent (documents API)', () => {
 			// with its 1-based number without sinking the batch.
 			const target = `import_target_${run.replace(/[^a-z0-9]/g, '')}`;
 			const provisionTarget = await request.put(dbAdminCollectionPath(DB_PROJECT, target), {
-				data: { readAccess: 'public', writeAccess: 'public' }
+				data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 			});
 			expect(provisionTarget.ok(), await provisionTarget.text()).toBeTruthy();
 
@@ -761,7 +769,7 @@ test.describe('db agent (documents API)', () => {
 		test.skip(!!process.env.BASE_URL, 'restore against a deployed target would destroy data');
 
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'rollback_probe'), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 
@@ -818,7 +826,7 @@ test.describe('db agent (documents API)', () => {
 
 	test('deleting a collection erases it', async ({ request, baseURL }) => {
 		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, 'doomed'), {
-			data: { readAccess: 'public', writeAccess: 'public' }
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
 		});
 		expect(provision.ok(), await provision.text()).toBeTruthy();
 

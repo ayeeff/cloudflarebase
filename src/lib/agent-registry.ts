@@ -27,7 +27,7 @@ export const agentManifestSchema = z.strictObject({
 		.array(
 			z.strictObject({
 				class: z.string().min(1),
-				scope: z.enum(['perProject', 'perCollection'])
+				scope: z.enum(['perProject', 'perCollection', 'perTable'])
 			})
 		)
 		.min(1),
@@ -67,7 +67,9 @@ export const agentManifestSchema = z.strictObject({
 			z.strictObject({
 				path: z.string().startsWith('/'),
 				title: z.string().min(1),
-				testId: z.string().min(1)
+				testId: z.string().min(1),
+				/** Per-page lucide icon name; omitted pages inherit the agent icon. */
+				icon: z.string().min(1).optional()
 			})
 		)
 	})
@@ -157,7 +159,7 @@ export function buildConsoleNav(projectId: string): ConsoleNavSection[] {
 			items.push({
 				href: `/dashboard/${projectId}${page.path}`,
 				title: page.title,
-				icon: manifest.console.icon,
+				icon: page.icon ?? manifest.console.icon,
 				testId: page.testId
 			});
 		}

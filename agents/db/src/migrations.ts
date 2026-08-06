@@ -29,6 +29,48 @@ const journal = {
 			tag: '0002_gigantic_sleeper',
 			breakpoints: true,
 		},
+		{
+			idx: 3,
+			version: '6',
+			when: 1785899012221,
+			tag: '0003_large_anthem',
+			breakpoints: true,
+		},
+		{
+			idx: 4,
+			version: '6',
+			when: 1785906574078,
+			tag: '0004_luxuriant_marauders',
+			breakpoints: true,
+		},
+		{
+			idx: 5,
+			version: '6',
+			when: 1785908063017,
+			tag: '0005_late_white_tiger',
+			breakpoints: true,
+		},
+		{
+			idx: 6,
+			version: '6',
+			when: 1785935152596,
+			tag: '0006_black_infant_terrible',
+			breakpoints: true,
+		},
+		{
+			idx: 7,
+			version: '6',
+			when: 1785937604808,
+			tag: '0007_sweet_morlocks',
+			breakpoints: true,
+		},
+		{
+			idx: 8,
+			version: '6',
+			when: 1785954224042,
+			tag: '0008_blushing_shotgun',
+			breakpoints: true,
+		},
 	],
 };
 
@@ -84,11 +126,91 @@ const m0002 = `CREATE TABLE \`restore_points\` (
 --> statement-breakpoint
 CREATE INDEX \`restore_points_collection\` ON \`restore_points\` (\`collection\`);`;
 
+const m0003 = `ALTER TABLE \`collections\` ADD \`kind\` text DEFAULT 'collection' NOT NULL;--> statement-breakpoint
+ALTER TABLE \`collections\` ADD \`columns\` text;`;
+
+const m0004 = `CREATE TABLE \`changelog\` (
+	\`lsn\` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+	\`op\` text NOT NULL,
+	\`id\` text NOT NULL,
+	\`image\` text,
+	\`ts\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE \`replica_meta\` (
+	\`id\` integer PRIMARY KEY NOT NULL,
+	\`epoch\` integer DEFAULT 0 NOT NULL,
+	\`applied_lsn\` integer DEFAULT 0 NOT NULL,
+	\`pulled_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE \`replicas\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`region\` text NOT NULL,
+	\`applied_lsn\` integer DEFAULT 0 NOT NULL,
+	\`last_seen_at\` integer NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE \`collections\` ADD \`replication\` text DEFAULT 'off' NOT NULL;--> statement-breakpoint
+ALTER TABLE \`collections\` ADD \`rep_epoch\` integer DEFAULT 0 NOT NULL;`;
+
+const m0005 = `ALTER TABLE \`replicas\` ADD \`push\` integer DEFAULT 0 NOT NULL;`;
+
+const m0006 = `PRAGMA foreign_keys=OFF;--> statement-breakpoint
+CREATE TABLE \`__new_collections\` (
+	\`name\` text PRIMARY KEY NOT NULL,
+	\`kind\` text DEFAULT 'collection' NOT NULL,
+	\`read_access\` text DEFAULT 'auth' NOT NULL,
+	\`write_access\` text DEFAULT 'auth' NOT NULL,
+	\`read_permission\` text,
+	\`write_permission\` text,
+	\`validator\` text,
+	\`columns\` text,
+	\`replication\` text DEFAULT 'auto' NOT NULL,
+	\`rep_epoch\` integer DEFAULT 0 NOT NULL,
+	\`docs\` integer DEFAULT 0 NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`reported_at\` integer
+);
+--> statement-breakpoint
+INSERT INTO \`__new_collections\`("name", "kind", "read_access", "write_access", "read_permission", "write_permission", "validator", "columns", "replication", "rep_epoch", "docs", "created_at", "reported_at") SELECT "name", "kind", "read_access", "write_access", "read_permission", "write_permission", "validator", "columns", "replication", "rep_epoch", "docs", "created_at", "reported_at" FROM \`collections\`;--> statement-breakpoint
+DROP TABLE \`collections\`;--> statement-breakpoint
+ALTER TABLE \`__new_collections\` RENAME TO \`collections\`;--> statement-breakpoint
+PRAGMA foreign_keys=ON;`;
+
+const m0007 = `ALTER TABLE \`replicas\` ADD \`sockets\` integer DEFAULT 0 NOT NULL;`;
+
+const m0008 = `CREATE TABLE \`gateway_subs\` (
+	\`conn_id\` text NOT NULL,
+	\`sub_id\` text NOT NULL,
+	\`shard_kind\` text NOT NULL,
+	\`shard_name\` text NOT NULL,
+	\`instance\` text NOT NULL,
+	\`created_at\` integer NOT NULL,
+	PRIMARY KEY(\`conn_id\`, \`sub_id\`)
+);
+--> statement-breakpoint
+CREATE INDEX \`gateway_subs_conn\` ON \`gateway_subs\` (\`conn_id\`);--> statement-breakpoint
+CREATE TABLE \`gateways\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`region\` text NOT NULL,
+	\`sockets\` integer DEFAULT 0 NOT NULL,
+	\`last_seen_at\` integer NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE \`subscriptions\` ADD \`via\` text;`;
+
 export default {
 	journal,
 	migrations: {
 		m0000,
 		m0001,
 		m0002,
+		m0003,
+		m0004,
+		m0005,
+		m0006,
+		m0007,
+		m0008,
 	},
 };

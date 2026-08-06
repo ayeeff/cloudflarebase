@@ -1,0 +1,1 @@
+ALTER TABLE `replicas` ADD `sockets` integer DEFAULT 0 NOT NULL;

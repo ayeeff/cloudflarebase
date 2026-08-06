@@ -1,10 +1,20 @@
 /**
- * Records-ready product demo, the "Agentic Firebase alternative" cut: seeds
- * demo data, backfills 90 days of local analytics, generates live auth
- * traffic, and drives a choreographed browser tour with an on-screen cursor.
- * You only record the screen.
+ * Records-ready product demo. Two modes over the same preparation:
  *
- * The beats, in order - the whole product, told as one story:
+ *   --live   (`npm run demo:live`)  seed the project, keep real auth traffic
+ *            flowing, open a clean browser - and then get out of the way. YOU
+ *            drive: click, narrate, go wherever you want. Nothing is
+ *            choreographed, but the dashboard is never static, because the
+ *            generator keeps signing users in behind you.
+ *
+ *   default  the fully choreographed tour with an on-screen cursor. You only
+ *            record the screen.
+ *
+ * Both modes seed demo users, backfill 90 days of local analytics, and run the
+ * background traffic generator. The tour then takes the mouse; --live hands it
+ * to you.
+ *
+ * The tour beats, in order - the whole product, told as one story:
  *   1. Landing -> one click -> a real backend, no signup.
  *   2. AUTH: the copilot is asked up front (Workers AI reasons while the rest
  *      plays), live counters, the 90-day chart.
@@ -22,15 +32,25 @@
  *      database just built - ONE assistant orchestrating BOTH agents - with
  *      the generated API reference playing while it reads.
  *
- * Every take starts from the same state (`resetDemoData`): the role registry
- * returns to its baseline, both demo collections are dropped, and the demo
- * chat cap is cleared, so the create flows - which refuse existing names and
- * ids - always take the clean path on camera.
+ * Every tour take starts from the same state (`resetDemoData`): the role
+ * registry returns to its baseline, both demo collections are dropped, and the
+ * demo chat cap is cleared, so the create flows - which refuse existing names
+ * and ids - always take the clean path on camera. --live does the opposite for
+ * the database: it SEEDS posts and comments, because a page you might walk onto
+ * unannounced should already have something in it.
  *
  *   node scripts/demo-video.mjs            # full recording run (fullscreen)
+ *   node scripts/demo-video.mjs --live     # seeded + live, you drive
  *   node scripts/demo-video.mjs --check    # fast headless validation run
  *
  * Flags:
+ *   --live             seed and generate traffic, then hand over the browser
+ *   --start <path>     where --live opens (default `/`, the landing page, so
+ *                      the one-click CTA is available on camera)
+ *   --no-browser       --live only: prepare and generate traffic, but launch
+ *                      nothing - use your own browser (see the printed URL)
+ *   --fresh-db         --live only: drop the demo collections instead of
+ *                      seeding them, for creating them yourself on camera
  *   --base <url>       target stack (default http://localhost:5173)
  *   --project <id>     project id (default demo-a3f8c2d4e5b6a7f80912)
  *   --speed <x>        pacing multiplier, lower = faster (default 1)
@@ -66,6 +86,8 @@ const opt = (name, fallback) => {
 const BASE = opt('--base', 'http://localhost:5173').replace(/\/$/, '');
 const PROJECT = opt('--project', 'demo-a3f8c2d4e5b6a7f80912');
 const CHECK = flag('--check');
+/** Seed + live traffic, no choreography - the operator drives the browser. */
+const LIVE = flag('--live');
 const SPEED = Number(opt('--speed', CHECK ? '0.12' : '1'));
 const SHOTS = opt('--shots', '');
 /** Recorded theme; light by default, `--dark` for the old look. */
@@ -445,11 +467,13 @@ async function post(endpoint, body) {
 }
 
 /**
- * Rolling 60s budgets under the Better Auth custom rules in env local.
- * Sign-up headroom is generous because the on-camera playground sign-up
- * shares the same per-IP bucket.
+ * Rolling 60s budgets under the Better Auth custom rules (10 sign-ups, 10
+ * sign-ins, 20 guests per minute per IP). Sign-up headroom is generous because
+ * the on-camera playground sign-up shares the same per-IP bucket. Seeding uses
+ * these; --live drops them further once traffic starts, because there every
+ * click you make on camera competes for the same buckets.
  */
-const budgets = { 'sign-up/email': 4, 'sign-in/email': 9, 'sign-in/anonymous': 16 };
+let budgets = { 'sign-up/email': 4, 'sign-in/email': 9, 'sign-in/anonymous': 16 };
 const recent = { 'sign-up/email': [], 'sign-in/email': [], 'sign-in/anonymous': [] };
 
 function budgetLeft(pathName) {
@@ -493,12 +517,10 @@ async function seedRoster() {
 }
 
 /**
- * Every take starts from the same state: the role registry back to a curated
- * baseline (so 'editor' is always created live on camera) and the posts
- * collection dropped (the create form and the ADD flow both refuse existing
- * names/ids now, so a reused stack would otherwise show an error mid-take).
+ * The role registry back to a curated baseline, so 'editor' is always free to
+ * be created on camera and the Roles tab is never empty either way.
  */
-async function resetDemoData() {
+async function resetRoleRegistry() {
 	try {
 		const res = await fetch(api('admin/roles'), {
 			method: 'PUT',
@@ -512,7 +534,14 @@ async function resetDemoData() {
 	} catch {
 		log('WARNING: role registry reset failed');
 	}
+}
 
+/**
+ * Drop the demo collections. The create form and the ADD flow both refuse
+ * existing names/ids, so a reused stack would otherwise show an error mid-take
+ * when the tour (or you, with --fresh-db) creates them on camera.
+ */
+async function dropDemoCollections() {
 	for (const collection of ['posts', 'comments']) {
 		try {
 			await fetch(api(`db/admin/collections/${collection}`), {
@@ -524,32 +553,105 @@ async function resetDemoData() {
 			// A 404 (never created) is the normal case on a fresh demo project.
 		}
 	}
+}
 
-	// Demo projects cap chat at 50 questions/day, and rehearsals burn through
-	// that fast - once capped, the preflight fails and every copilot scene is
-	// silently skipped. Clearing this project's transcript locally resets the
-	// counter (it is also a cleaner history to have on camera).
-	if (IS_LOCAL) {
-		try {
-			await runWrangler(
-				[
-					'wrangler',
-					'd1',
-					'execute',
-					'cloudflarebase-control-plane',
-					'--env',
-					'local',
-					'--local',
-					'--persist-to=.wrangler/state/',
-					'--command',
-					`DELETE FROM chat_message WHERE project_id = '${PROJECT}'`
-				],
-				path.resolve(import.meta.dirname, '..')
-			);
-		} catch {
-			// No table yet (nobody has chatted) - nothing to reset.
-		}
+/**
+ * Demo projects cap chat at 50 questions/day, and rehearsals burn through that
+ * fast - once capped, the preflight fails and every copilot scene is silently
+ * skipped. Clearing this project's transcript locally resets the counter (it is
+ * also a cleaner history to have on camera).
+ */
+async function clearChatHistory() {
+	if (!IS_LOCAL) return;
+	try {
+		await runWrangler(
+			[
+				'wrangler',
+				'd1',
+				'execute',
+				'cloudflarebase-control-plane',
+				'--env',
+				'local',
+				'--local',
+				'--persist-to=.wrangler/state/',
+				'--command',
+				`DELETE FROM chat_message WHERE project_id = '${PROJECT}'`
+			],
+			path.resolve(import.meta.dirname, '..')
+		);
+	} catch {
+		// No table yet (nobody has chatted) - nothing to reset.
 	}
+}
+
+/** Every tour take starts from the same state. */
+async function resetDemoData() {
+	await resetRoleRegistry();
+	await dropDemoCollections();
+	await clearChatHistory();
+}
+
+// ---------------------------------------------------------------------------
+// Live mode: a project that is already worth walking onto
+// ---------------------------------------------------------------------------
+
+/** Seeded posts, kept in memory so the live ticker can re-rank them. */
+const SEED_POSTS = [
+	['post-1', 'Show HN: I built a Firebase on Cloudflare', 42],
+	['post-2', 'Why we moved our backend to Durable Objects', 17],
+	['post-3', 'Live queries are criminally underrated', 8],
+	['post-4', 'One Worker, one database, zero cold starts', 23],
+	['post-5', 'Auth that ships with the backend, not beside it', 11],
+	['post-6', 'What Firestore got right, and what it cost', 31]
+].map(([id, title, votes]) => ({ id, title, votes }));
+
+const SEED_COMMENTS = [
+	['comment-1', 'Durable Objects make this so much simpler.', 'post-1'],
+	['comment-2', 'Wait, the dashboard updates itself?', 'post-1'],
+	['comment-3', 'How does this handle multi-region reads?', 'post-2'],
+	['comment-4', 'The per-collection access modes are the killer feature.', 'post-3'],
+	['comment-5', 'Been waiting for something like this for years.', 'post-4'],
+	['comment-6', 'Does the client SDK work outside Workers?', 'post-5']
+];
+
+async function putCollection(name, readAccess, writeAccess) {
+	return fetch(api(`db/admin/collections/${name}`), {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json', origin: BASE },
+		body: JSON.stringify({ readAccess, writeAccess }),
+		signal: AbortSignal.timeout(15_000)
+	}).catch(() => null);
+}
+
+async function putDocument(collection, id, data) {
+	return fetch(api(`db/admin/collections/${collection}/documents/${id}`), {
+		method: 'PUT',
+		headers: { 'content-type': 'application/json', origin: BASE },
+		body: JSON.stringify({ data }),
+		signal: AbortSignal.timeout(15_000)
+	}).catch(() => null);
+}
+
+/**
+ * The database half of "seeded": two collections with real documents, so
+ * walking onto the DB tab unannounced shows a working database rather than an
+ * empty state. Writes are upserts, so a rerun is a no-op that also repairs
+ * anything a previous take mangled.
+ */
+async function seedDemoDatabase() {
+	log('seeding the database (posts + comments)...');
+	// Same modes the dashboard's create form defaults to: read public, write
+	// owner - the access sentence on screen then reads the way it would for a
+	// collection someone created by hand.
+	await putCollection('posts', 'public', 'owner');
+	await putCollection('comments', 'public', 'owner');
+	for (const post of SEED_POSTS) {
+		await putDocument('posts', post.id, { title: post.title, votes: post.votes });
+	}
+	for (const [id, body, post] of SEED_COMMENTS) {
+		await putDocument('comments', id, { body, post });
+	}
+	log(`database seeded: ${SEED_POSTS.length} posts, ${SEED_COMMENTS.length} comments`);
 }
 
 /** A registered user to assign the new role to on camera. */
@@ -614,6 +716,7 @@ async function preflightChat() {
 }
 
 let trafficTimer = null;
+let dbTimer = null;
 let freshCounter = 0;
 /**
  * While true, the generator stops sign-ups (sign-ins and guests continue on
@@ -622,28 +725,78 @@ let freshCounter = 0;
  */
 let quietSignups = false;
 
+/** One line per generated event, so the terminal proves the stack is alive. */
+function trafficLog(kind, subject, res) {
+	if (!LIVE || CHECK) return;
+	const time = new Date().toTimeString().slice(0, 8);
+	const status = res === null ? 'skipped (rate budget)' : res.ok ? 'ok' : `HTTP ${res.status}`;
+	console.log(`[demo] ${time}  ${kind.padEnd(9)} ${String(subject).padEnd(38)} ${status}`);
+}
+
 /** Background auth traffic so the live feed and stats move on camera. */
 function startTraffic() {
 	const rand = mulberry32(Date.now() % 2 ** 31);
+	if (LIVE) {
+		// In --live YOU are on the same per-IP buckets - a sign-up in the
+		// playground, a sign-in you demo by hand. Seeding is done by now, so
+		// give roughly half of every bucket back to the human at the keyboard.
+		budgets = { 'sign-up/email': 3, 'sign-in/email': 5, 'sign-in/anonymous': 9 };
+	}
 	const tick = async () => {
 		const roll = rand();
 		if (roll < 0.55 || (quietSignups && roll < 0.8)) {
 			const user = ROSTER[Math.floor(rand() * ROSTER.length)];
-			await authRequest('sign-in/email', { email: user.email, password: user.password });
+			const res = await authRequest('sign-in/email', {
+				email: user.email,
+				password: user.password
+			});
+			trafficLog('sign-in', user.email, res);
 		} else if (roll < 0.8) {
 			const name = FRESH_NAMES[freshCounter % FRESH_NAMES.length];
 			freshCounter += 1;
-			await authRequest('sign-up/email', {
+			const email = `${name.toLowerCase().replace(/ /g, '.')}.${Date.now() % 100000}@example.com`;
+			const res = await authRequest('sign-up/email', {
 				name,
-				email: `${name.toLowerCase().replace(/ /g, '.')}.${Date.now() % 100000}@example.com`,
+				email,
 				password: 'Cloudbase-demo-2026'
 			});
+			trafficLog('sign-up', email, res);
 		} else {
-			await authRequest('sign-in/anonymous', {});
+			const res = await authRequest('sign-in/anonymous', {});
+			trafficLog('guest', 'anonymous session', res);
 		}
 	};
 	trafficTimer = setInterval(() => void tick().catch(() => {}), CHECK ? 2500 : 4200);
 	log('live traffic generator running (sign-ins, sign-ups, guests)');
+}
+
+/**
+ * Database activity to match, for --live only. Mostly upvotes, because a vote
+ * count changing in an open table is the live-query engine proving itself
+ * without growing the demo project's 200-doc-per-collection ceiling. (The
+ * dashboard browser reads in document-id order - re-ranking is what a SUBSCRIBED
+ * client with `orderBy votes desc` sees, which is the Integration tab's snippet,
+ * not this table.) New posts land occasionally, capped for the same reason.
+ */
+function startDbTraffic() {
+	const rand = mulberry32((Date.now() >>> 3) % 2 ** 31);
+	let added = 0;
+	const tick = async () => {
+		const post = SEED_POSTS[Math.floor(rand() * SEED_POSTS.length)];
+		if (rand() < 0.2 && added < 8) {
+			added += 1;
+			const id = `post-live-${Date.now().toString(36)}`;
+			const title = `${FRESH_NAMES[added % FRESH_NAMES.length]} shipped something on Cloudflarebase`;
+			const res = await putDocument('posts', id, { title, votes: 1 + Math.floor(rand() * 5) });
+			trafficLog('new post', id, res);
+			return;
+		}
+		post.votes += 1;
+		const res = await putDocument('posts', post.id, { title: post.title, votes: post.votes });
+		trafficLog('upvote', `${post.id} -> ${post.votes} votes`, res);
+	};
+	dbTimer = setInterval(() => void tick().catch(() => {}), 7300);
+	log('database activity running (upvotes land in an open documents table, no refresh)');
 }
 
 // ---------------------------------------------------------------------------
@@ -792,11 +945,13 @@ async function createCollectionOnCamera(page, name) {
 		.catch(() => {});
 }
 
-async function runTour() {
+/**
+ * A recording-ready Chromium: the demo cookie set, the theme pinned, every
+ * route pre-compiled, and the window sized for capture. The tour then takes the
+ * mouse; --live hands the same browser to the operator.
+ */
+async function openDemoBrowser({ cursor }) {
 	const { chromium } = await import('@playwright/test');
-	// Hold generator sign-ups from the very start so the rate window has
-	// rolled by the time the playground scene signs up on camera.
-	quietSignups = true;
 	const windowed = flag('--windowed');
 	const browser = await chromium.launch({
 		headless: CHECK,
@@ -819,7 +974,9 @@ async function runTour() {
 	// Seed mode-watcher's own storage key too: the OS preference alone loses
 	// to a persisted choice, and a theme flip mid-take looks like a bug.
 	await context.addInitScript(`localStorage.setItem('mode-watcher-mode', '${THEME}');`);
-	await context.addInitScript(CURSOR_SCRIPT);
+	// The synthetic cursor is for the choreographed tour only - in --live the
+	// operator has a real one, and two would be a bug on camera.
+	if (cursor) await context.addInitScript(CURSOR_SCRIPT);
 	if (DEMO_PATTERN.test(PROJECT)) {
 		await context.addCookies([{ name: 'cfb-demo-project', value: PROJECT, url: BASE }]);
 	}
@@ -832,7 +989,8 @@ async function runTour() {
 		'/',
 		`/dashboard/${PROJECT}`,
 		`/dashboard/${PROJECT}/auth`,
-		`/dashboard/${PROJECT}/db`
+		`/dashboard/${PROJECT}/db`,
+		`/dashboard/${PROJECT}/api`
 	]) {
 		await warm.goto(`${BASE}${route}`, { waitUntil: 'load', timeout: 120_000 }).catch(() => {});
 		await sleep(3000);
@@ -872,6 +1030,15 @@ async function runTour() {
 					: `display reports ${screen.w}x${screen.h} - fullscreen renders at that size; set the OBS output resolution to 1920x1080 to downscale.`
 		);
 	}
+
+	return { browser, page };
+}
+
+async function runTour() {
+	// Hold generator sign-ups from the very start so the rate window has
+	// rolled by the time the playground scene signs up on camera.
+	quietSignups = true;
+	const { browser, page } = await openDemoBrowser({ cursor: true });
 
 	// --- Scene 1: landing - one beat, then straight to the live demo ---------
 	await page.goto(`${BASE}/`, { waitUntil: 'load' });
@@ -1267,27 +1434,133 @@ async function runTour() {
 }
 
 // ---------------------------------------------------------------------------
+// Live mode
+// ---------------------------------------------------------------------------
+
+/** Read back what the operator is about to walk onto, so surprises land here. */
+async function reportProjectState() {
+	try {
+		const [overview, analytics, db] = await Promise.all([
+			fetch(api('overview'), { headers: { origin: BASE } }).then((r) => r.json()),
+			fetch(api('analytics'), { headers: { origin: BASE } }).then((r) => r.json()),
+			fetch(api('db/overview'), { headers: { origin: BASE } })
+				.then((r) => r.json())
+				.catch(() => null)
+		]);
+		const collections = (db?.collections ?? [])
+			.map((c) => `${c.name} (${c.docs ?? '?'} docs)`)
+			.join(', ');
+		log(
+			`project state: ${overview.state?.users ?? '?'} users · ` +
+				`${overview.state?.activeSessions ?? '?'} active sessions · ` +
+				`DAU ${analytics.dau ?? '?'} / MAU ${analytics.mau ?? '?'}`
+		);
+		log(`collections: ${collections || 'none'}`);
+		return overview;
+	} catch (error) {
+		log(`WARNING: could not read the project back (${error.message})`);
+		return null;
+	}
+}
+
+/**
+ * Seed, generate, hand over. The tour's choreography is replaced by a browser
+ * the operator drives - everything else (seeded users, 90 days of analytics,
+ * warmed routes, pinned theme, demo cookie) is identical, so whatever page they
+ * walk onto is already the page the tour would have shown.
+ */
+async function runLive() {
+	await seedRoster();
+	await resetRoleRegistry();
+	if (flag('--fresh-db')) {
+		await dropDemoCollections();
+		log('database dropped (--fresh-db) - create the collections yourself on camera');
+	} else {
+		await seedDemoDatabase();
+	}
+	// Probe first, THEN clear: the probe tells the operator whether the copilot
+	// will answer on camera, and clearing after it leaves the pane empty.
+	await preflightChat();
+	await clearChatHistory();
+	await reportProjectState();
+
+	startTraffic();
+	if (!flag('--fresh-db')) startDbTraffic();
+
+	const dashboard = `${BASE}/dashboard/${PROJECT}`;
+	let browser = null;
+	if (flag('--no-browser')) {
+		log('');
+		log(`open ${dashboard} in your own browser (auth: ${dashboard}/auth)`);
+		log(
+			'note: clicking the landing CTA there mints a DIFFERENT, empty project - ' +
+				'go to the URL above directly, or drop --no-browser and use the browser this script opens.'
+		);
+	} else {
+		const start = opt('--start', '/');
+		const opened = await openDemoBrowser({ cursor: false });
+		browser = opened.browser;
+		await opened.page.goto(`${BASE}${start.startsWith('/') ? start : `/${start}`}`, {
+			waitUntil: 'load',
+			timeout: 120_000
+		});
+		await ensureTheme(opened.page, 'landing-theme-toggle');
+		log('');
+		log('browser is yours - START YOUR RECORDING whenever you like.');
+		log(
+			`the landing CTA lands on the seeded project (the demo cookie is set), or go straight to ${dashboard}/auth`
+		);
+	}
+	log('traffic keeps flowing while you drive. Ctrl+C here when you are done.');
+	log('');
+	return browser;
+}
+
+// ---------------------------------------------------------------------------
 
 async function main() {
-	log(`target ${BASE} · project ${PROJECT}${CHECK ? ' · CHECK MODE (headless, fast)' : ''}`);
+	log(
+		`target ${BASE} · project ${PROJECT}` +
+			`${LIVE ? ' · LIVE MODE (you drive)' : ''}${CHECK ? ' · CHECK MODE (headless, fast)' : ''}`
+	);
 	const stackWasUp = await isUp(`${BASE}/`);
 	if (!stackWasUp) await backfillAnalytics();
 	await ensureStack();
 	if (stackWasUp) await backfillAnalytics();
-	await seedRoster();
-	await resetDemoData();
-	await preflightChat();
-	startTraffic();
-	const browser = await runTour();
+
+	let browser;
+	if (LIVE) {
+		browser = await runLive();
+	} else {
+		await seedRoster();
+		await resetDemoData();
+		await preflightChat();
+		startTraffic();
+		browser = await runTour();
+	}
 
 	if (CHECK) {
+		// Live mode has no choreography to validate, so prove the thing it
+		// actually promises instead: that traffic is moving the counters.
+		if (LIVE) {
+			const before = await reportProjectState();
+			await sleep(20_000);
+			const after = await reportProjectState();
+			const moved =
+				(after?.state?.totalEvents ?? 0) > (before?.state?.totalEvents ?? 0) ||
+				(after?.state?.activeSessions ?? 0) !== (before?.state?.activeSessions ?? 0);
+			if (!moved) throw new Error('no live activity reached the agent in 20s');
+			log('live activity confirmed - the agent state moved on its own');
+		}
 		clearInterval(trafficTimer);
+		clearInterval(dbTimer);
 		log(`check passed${SHOTS ? ` - screenshots in ${SHOTS}` : ''}`);
 		process.exit(0);
 	}
 
 	const shutdown = async () => {
 		clearInterval(trafficTimer);
+		clearInterval(dbTimer);
 		await browser?.close().catch(() => {});
 		if (devProcess) log('note: the dev stack this script started is still running');
 		process.exit(0);
@@ -1300,6 +1573,7 @@ async function main() {
 
 main().catch((error) => {
 	clearInterval(trafficTimer);
+	clearInterval(dbTimer);
 	console.error(`[demo] FAILED: ${error.message}`);
 	process.exit(1);
 });

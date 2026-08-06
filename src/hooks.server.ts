@@ -73,7 +73,14 @@ const apiRateLimitHandle: Handle = async ({ event, resolve }) => {
 };
 
 type Access =
-	{ scope: 'open' } | { scope: 'operator'; projectId: string | null; kind: 'page' | 'api' };
+	| { scope: 'open' }
+	| {
+			scope: 'operator';
+			projectId: string | null;
+			kind: 'page' | 'api';
+			/** The bare /dashboard entry, the only page demo mode hands to anonymous visitors. */
+			demoEntry?: boolean;
+	  };
 
 /**
  * Splits project-scoped surfaces into public product API and operator console.
@@ -129,7 +136,18 @@ function classifyAccess(pathname: string): Access {
 	}
 
 	if (segments[0] === 'dashboard') {
-		return { scope: 'operator', projectId: segments[1] ?? null, kind: 'page' };
+		return {
+			scope: 'operator',
+			projectId: segments[1] ?? null,
+			kind: 'page',
+			demoEntry: segments.length === 1
+		};
+	}
+
+	// The CLI login hand-off page: operator-only so a signed-out visitor
+	// bounces through /login (social sign-in included) before approving.
+	if (segments[0] === 'cli-auth') {
+		return { scope: 'operator', projectId: null, kind: 'page' };
 	}
 
 	return { scope: 'open' };
@@ -153,17 +171,27 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		return resolve(event);
 	}
 
-	// The bare /dashboard entry decides for itself: in demo mode it hands the
-	// visitor a throwaway project, otherwise its loader lists real ones and so
-	// still needs a session.
-	if (event.locals.demoMode && access.kind === 'page' && !access.projectId) {
+	// The bare /dashboard entry decides for itself: in demo mode it hands an
+	// anonymous visitor a throwaway project, while a signed-in operator gets
+	// the real project list. Its loader branches on consoleUser, so the
+	// session must be resolved here too (getConsoleSession no-ops without a
+	// cookie, keeping the first-time demo visit free of a session lookup).
+	// Scoped to that one entry: other project-less operator pages (/cli-auth)
+	// keep the hard bounce through /login even on the public demo.
+	if (event.locals.demoMode && access.demoEntry) {
+		event.locals.consoleUser = await getConsoleSession(
+			event.platform,
+			event.url.origin,
+			event.request.headers.get('cookie')
+		);
 		return resolve(event);
 	}
 
 	const user = await getConsoleSession(
 		event.platform,
 		event.url.origin,
-		event.request.headers.get('cookie')
+		event.request.headers.get('cookie'),
+		event.request.headers.get('authorization')
 	);
 
 	if (user) {

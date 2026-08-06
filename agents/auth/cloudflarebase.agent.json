@@ -39,8 +39,40 @@
 	"proxy": { "apiPrefix": "auth", "agentBasePath": "/api/auth" },
 	"permissions": ["users:read", "users:write", "sessions:revoke", "roles:write"],
 	"console": {
-		"section": "Build",
+		"section": "Authentication",
 		"icon": "key-round",
-		"pages": [{ "path": "/auth", "title": "Authentication", "testId": "nav-auth" }]
+		"pages": [
+			{ "path": "/auth", "title": "Users", "testId": "nav-auth", "icon": "users" },
+			{
+				"path": "/auth/sessions",
+				"title": "Sessions",
+				"testId": "nav-auth-sessions",
+				"icon": "history"
+			},
+			{
+				"path": "/auth/roles",
+				"title": "Roles",
+				"testId": "nav-auth-roles",
+				"icon": "shield-check"
+			},
+			{
+				"path": "/auth/settings",
+				"title": "Sign-in methods",
+				"testId": "nav-auth-settings",
+				"icon": "settings"
+			},
+			{
+				"path": "/auth/playground",
+				"title": "Try auth",
+				"testId": "nav-auth-playground",
+				"icon": "flask-conical"
+			},
+			{
+				"path": "/auth/integration",
+				"title": "Integration",
+				"testId": "nav-auth-integration",
+				"icon": "plug"
+			}
+		]
 	}
 }

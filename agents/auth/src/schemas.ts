@@ -8,7 +8,11 @@ export const projectIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/);
  * throwaway by construction: capped, and erased on a schedule. Mirrored in the
  * app's src/lib/console.ts; keep both in sync.
  */
-export const DEMO_PROJECT_PATTERN = /^demo-[a-f0-9]{20}$/;
+// Demo roots are demo-<12..20 hex>; a demo BRANCH is demo-<hex>--<branch>
+// (branches-design.md), and the whole family must share demo caps and TTL
+// erasure - a branch escaping this pattern would be an uncapped anonymous
+// instance. Mirrored in the console's $lib/console.ts and agents/db.
+export const DEMO_PROJECT_PATTERN = /^demo-[a-f0-9]{12,20}(?:--[a-z0-9][a-z0-9-]{0,15})?$/;
 
 /** Hours a demo project survives before it erases itself. */
 export const demoTtlHoursSchema = z.coerce.number().int().min(1).max(720).catch(24);

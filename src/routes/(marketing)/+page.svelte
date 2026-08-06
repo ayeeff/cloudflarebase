@@ -11,6 +11,8 @@
 	import CodeExamples from '$lib/components/code-examples.svelte';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
 	import { buildDbIntegrationExamples, buildIntegrationExamples } from '$lib/integration-examples';
+	import { WORLD_OUTLINE_PATH } from '$lib/world-outline';
+	import PricingCalculator from '$lib/components/pricing-calculator.svelte';
 	import { cn } from '$lib/utils';
 	import {
 		Menu,
@@ -22,21 +24,22 @@
 		GitFork,
 		KeyRound,
 		Globe,
-		Lock,
 		Radio,
-		Bot,
 		Star,
-		UserRound,
 		Boxes,
 		Zap,
 		HardDrive,
-		Clock
+		Clock,
+		Minus
 	} from '@lucide/svelte';
 
+	// Deliberately short: the header is not a table of contents. Everything
+	// else stays reachable by scroll and the footer links.
 	type MenuItem = { name: string; href: string };
 	let menuItems: MenuItem[] = [
+		{ name: 'Pricing', href: '#pricing' },
+		{ name: 'Compare', href: '#compare' },
 		{ name: 'API', href: '#api' },
-		{ name: 'Live today', href: '#live' },
 		{ name: 'Architecture', href: '#architecture' },
 		{ name: 'Roadmap', href: '#roadmap' },
 		{ name: 'FAQ', href: '#faq' }
@@ -55,37 +58,70 @@
 		'Analytics Engine'
 	];
 
-	// Everything in this grid is live in the demo today - auth and database both.
-	const liveFeatures = [
+	// The comparison matrix. Cells are a rating plus a short receipt - never a
+	// bare checkmark. Competitor cells stay qualitative on purpose: exact
+	// prices live once, with dated sources, on /pricing.
+	type CompareCell = { mark: 'yes' | 'no' | 'partial'; note: string };
+	type CompareRow = {
+		capability: string;
+		cfb: CompareCell;
+		firebase: CompareCell;
+		supabase: CompareCell;
+	};
+	const compareRows: CompareRow[] = [
 		{
-			icon: KeyRound,
-			title: 'Email & password',
-			desc: 'Signup, signin, signout, and session lookup through Better Auth routes.'
+			capability: 'Authentication',
+			cfb: { mark: 'yes', note: 'Better Auth in a per-project agent' },
+			firebase: { mark: 'yes', note: 'Firebase Auth' },
+			supabase: { mark: 'yes', note: 'Supabase Auth' }
 		},
 		{
-			icon: Database,
-			title: 'JSON documents',
-			desc: 'Firestore-style collections - and every collection is its own Durable Object with 10 GB of SQLite.'
+			capability: 'Documents with live queries',
+			cfb: { mark: 'yes', note: 'a Durable Object per collection' },
+			firebase: { mark: 'yes', note: 'Firestore' },
+			supabase: { mark: 'partial', note: 'JSONB columns + realtime channels' }
 		},
 		{
-			icon: Radio,
-			title: 'Live queries',
-			desc: 'Subscribe to a filtered query; added, modified, and removed deltas push to every open screen as writes happen.'
+			capability: 'Typed SQL tables',
+			cfb: { mark: 'yes', note: 'ORM-ready schema, gated raw SQL' },
+			firebase: { mark: 'no', note: 'documents only' },
+			supabase: { mark: 'yes', note: 'Postgres' }
 		},
 		{
-			icon: UserRound,
-			title: 'Guest sessions',
-			desc: 'Anonymous sessions and social sign-in, so people can try your app before handing over an email.'
+			capability: 'Branching',
+			cfb: { mark: 'yes', note: 'the whole backend - auth included - free' },
+			firebase: { mark: 'no', note: 'clone the project by hand' },
+			supabase: { mark: 'partial', note: 'database only, paid' }
 		},
 		{
-			icon: Lock,
-			title: 'Access modes & JWTs',
-			desc: 'public, auth, or owner per collection - verified against project-signed JWTs from the auth agent.'
+			capability: 'Read replicas near users',
+			cfb: { mark: 'yes', note: 'on by default, per collection' },
+			firebase: { mark: 'partial', note: 'region fixed at create' },
+			supabase: { mark: 'partial', note: 'paid add-on' }
 		},
 		{
-			icon: Bot,
-			title: 'AI copilot',
-			desc: "Workers AI chat that reads your project's auth and database state through tools - ask it anything about your backend."
+			capability: 'Point-in-time restore',
+			cfb: { mark: 'yes', note: '30 days, built in' },
+			firebase: { mark: 'partial', note: 'paid, up to 7 days' },
+			supabase: { mark: 'partial', note: 'paid add-on' }
+		},
+		{
+			capability: 'Egress fees',
+			cfb: { mark: 'yes', note: '$0 bandwidth' },
+			firebase: { mark: 'no', note: 'metered per GB' },
+			supabase: { mark: 'partial', note: 'metered past the cap' }
+		},
+		{
+			capability: 'Compliance',
+			cfb: { mark: 'yes', note: "your Cloudflare account's certs - no new data processor" },
+			firebase: { mark: 'partial', note: "Google's certs, but another processor to review" },
+			supabase: { mark: 'partial', note: 'SOC 2 gated to the paid Team plan, HIPAA an add-on' }
+		},
+		{
+			capability: 'Open source + self-hosting',
+			cfb: { mark: 'yes', note: 'Apache-2.0, deploys to your account' },
+			firebase: { mark: 'no', note: 'proprietary' },
+			supabase: { mark: 'yes', note: 'their cloud or yours' }
 		}
 	];
 
@@ -149,24 +185,36 @@
 		page.url.searchParams.get('api') === 'auth' ? 'auth' : 'db'
 	);
 
-	// Agent-topology visual: simulated traffic converging on one project agent.
+	// Agent-topology visual: simulated traffic converging on one project agent,
+	// drawn over the same vendored continent silhouettes as the dashboard's
+	// Replication tab (equirectangular, 75N-60S). The primary sits in North
+	// America; writers are nearby, subscribers spread across the continents.
 	const mapW = 480;
-	const mapH = 220;
-	const dots: { x: number; y: number }[] = [];
-	for (let x = 8; x < mapW; x += 16) {
-		for (let y = 8; y < mapH; y += 16) {
-			if (Math.sin(x * 0.045) * Math.cos(y * 0.07) > -0.15) dots.push({ x, y });
-		}
-	}
-	const agent = { x: 250, y: 106 };
-	const dashboard = { x: 74, y: 178 };
+	const mapH = 240;
+	const agent = { x: 120, y: 72 };
+	const dashboard = { x: 74, y: 195 };
 	const clients = [
-		{ x: 62, y: 56, dur: 2.8, begin: 0 },
-		{ x: 198, y: 36, dur: 2.4, begin: 1.5 },
-		{ x: 388, y: 64, dur: 3.1, begin: 0.6 },
-		{ x: 428, y: 152, dur: 3.5, begin: 2.2 },
-		{ x: 318, y: 186, dur: 2.6, begin: 1.1 }
+		{ x: 85, y: 95, dur: 2.8, begin: 0 },
+		{ x: 150, y: 45, dur: 2.4, begin: 1.5 },
+		{ x: 280, y: 40, dur: 3.1, begin: 0.6 },
+		{ x: 440, y: 140, dur: 3.5, begin: 2.2 },
+		{ x: 150, y: 205, dur: 2.6, begin: 1.1 }
 	];
+	// The db skin shows replication, because it is on by default: per-region
+	// replica satellites fed by the primary over the arcs, each serving its
+	// nearest subscribers. Writers keep hitting the primary - replicas forward
+	// writes by design, so the geometry is honest about the data flow. Anchors
+	// match the Replication tab's region points (sam / weur / apac).
+	const replicas: { id: string; x: number; y: number; arc: string; note?: string }[] = [
+		{ id: 'sam', x: 180, y: 172, arc: 'M120,72 Q150,101 180,172' },
+		{ id: 'weur', x: 247, y: 55, arc: 'M120,72 Q183.5,40.5 247,55' },
+		{ id: 'apac', x: 395, y: 98, arc: 'M120,72 Q257.5,57 395,98' },
+		// The Australian replica serves the SQL-table side of the database -
+		// typed rows replicate exactly like documents.
+		{ id: 'oc', x: 445, y: 190, arc: 'M120,72 Q282.5,103 445,190', note: 'DbTable · todos' }
+	];
+	/** db skin: replica index serving each subscriber; null marks a writer. */
+	const nearestReplica: (number | null)[] = [null, null, 1, 3, 0];
 
 	type FeedEvent = { id: number; time: string; label: string; detail: string; sync: boolean };
 	const authEventPool: Omit<FeedEvent, 'id' | 'time'>[] = [
@@ -183,10 +231,13 @@
 		{ label: 'POST /documents', detail: 'post submitted', sync: false },
 		{ label: 'live query', detail: '→ 4 front pages', sync: true },
 		{ label: 'PATCH /documents/:id', detail: 'votes: 128 → 129', sync: false },
+		{ label: 'replicate · lsn 129', detail: '→ sam, weur, apac', sync: true },
 		{ label: 'change · modified', detail: 'front page re-ranks', sync: true },
 		{ label: 'POST /query', detail: 'orderBy votes desc', sync: false },
-		{ label: 'subscribe', detail: 'top 25, live', sync: true },
+		{ label: 'subscribe', detail: 'nearest replica: apac', sync: true },
 		{ label: 'POST /documents', detail: 'comment added', sync: false },
+		{ label: 'sql · INSERT INTO todos', detail: 'DbTable row', sync: false },
+		{ label: 'live query · todos', detail: 'table rows → oc', sync: true },
 		{ label: 'live query', detail: '→ 5 subscribers', sync: true }
 	];
 	// The hero visual is one diagram with two skins: same map, same agent node,
@@ -197,6 +248,8 @@
 	let heroTab = $state<'auth' | 'db'>(
 		page.url.searchParams.get('agent') === 'auth' ? 'auth' : 'db'
 	);
+	/** The dashboard subscribes like any client: nearest replica on the db skin. */
+	const dashboardSource = $derived(heroTab === 'db' ? replicas[0] : agent);
 
 	function persistParam(key: string, value: string) {
 		if (!browser) return;
@@ -283,17 +336,17 @@
 	<title>Cloudflarebase - The open-source Firebase for Cloudflare</title>
 	<meta
 		name="description"
-		content="The open-source Firebase for Cloudflare. Every backend primitive is a Cloudflare Agent on isolated Durable Objects. Auth and a live-query document database are live today, with an AI copilot that reads your backend."
+		content="The open-source Firebase for Cloudflare: auth, realtime database, and SQL tables with an AI copilot over your backend - globally replicated, no egress fees, self-hosted in your own Cloudflare account."
 	/>
 	<meta property="og:title" content="Cloudflarebase - The open-source Firebase for Cloudflare" />
 	<meta
 		property="og:description"
-		content="Ship auth and a live-query document database on Cloudflare - isolated Durable Objects, realtime sync, and an AI copilot that reads your backend."
+		content="The open-source Firebase for Cloudflare - auth, realtime data, and SQL with replication by default, whole-backend branching, and an AI copilot. Yours to keep."
 	/>
 	<meta name="twitter:title" content="Cloudflarebase - The open-source Firebase for Cloudflare" />
 	<meta
 		name="twitter:description"
-		content="Ship auth and a live-query document database on Cloudflare - isolated Durable Objects, realtime sync, and an AI copilot that reads your backend."
+		content="The open-source Firebase for Cloudflare - auth, realtime data, and SQL with replication by default, whole-backend branching, and an AI copilot. Yours to keep."
 	/>
 </svelte:head>
 
@@ -348,9 +401,8 @@
 						<p
 							class="mx-auto mt-6 max-w-2xl text-base text-balance text-muted-foreground sm:mt-8 sm:text-lg"
 						>
-							Every backend primitive is a Cloudflare Agent - isolated Durable Objects, zero
-							servers, no regions to pick. Auth and a Firestore-style database with live queries are
-							live today, with an AI copilot that reads your backend built in.
+							Ship auth, realtime data, and SQL from your own Cloudflare account - global by
+							default, zero servers to run, no egress bill. Open source, and yours to keep.
 						</p>
 
 						<div class="mt-12 flex flex-col items-center justify-center gap-2 md:flex-row">
@@ -378,13 +430,13 @@
 							class="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 font-mono text-xs text-muted-foreground/70"
 						>
 							<span class="flex items-center gap-1.5">
-								<Star class="h-3.5 w-3.5 text-primary" /> 151 stars on GitHub
+								<Star class="h-3.5 w-3.5 text-primary" /> 192 stars on GitHub
 							</span>
 							<span class="flex items-center gap-1.5">
-								<GitFork class="h-3.5 w-3.5" /> 9 forks
+								<GitFork class="h-3.5 w-3.5" /> 10 forks
 							</span>
 							<span class="flex items-center gap-1.5">
-								<Boxes class="h-3.5 w-3.5" /> 415 demo backends created
+								<Boxes class="h-3.5 w-3.5" /> 538 demo backends created
 							</span>
 						</div>
 						<p class="mt-3 font-mono text-xs text-muted-foreground/70">
@@ -445,17 +497,23 @@
 								<div class="border-b border-border p-6 md:border-r md:border-b-0">
 									{#key heroTab}
 										<svg viewBox="0 0 {mapW} {mapH}" class="w-full">
-											{#each dots as d (`${d.x}-${d.y}`)}
-												<circle cx={d.x} cy={d.y} r="1.1" class="fill-muted-foreground/20" />
-											{/each}
+											<path
+												d={WORLD_OUTLINE_PATH}
+												class="fill-primary/10 stroke-primary/20"
+												stroke-width="0.5"
+												stroke-linejoin="round"
+											/>
 
-											{#each clients as c, clientIndex (c.x)}
-												{@const outbound = heroTab === 'db' && clientIndex >= 2}
+											{#each clients as c, clientIndex (clientIndex)}
+												{@const replicaIndex =
+													heroTab === 'db' ? nearestReplica[clientIndex] : null}
+												{@const target = replicaIndex == null ? agent : replicas[replicaIndex]}
+												{@const outbound = replicaIndex != null}
 												<line
 													x1={c.x}
 													y1={c.y}
-													x2={agent.x}
-													y2={agent.y}
+													x2={target.x}
+													y2={target.y}
 													class="stroke-muted-foreground"
 													stroke-width="1"
 													stroke-dasharray="3 3"
@@ -463,8 +521,9 @@
 												/>
 												<circle cx={c.x} cy={c.y} r="3" class="fill-foreground" />
 												{#if !reduceMotion}
-													<!-- Auth: requests flow in. DB: two clients write in, the other
-												     three receive live-query deltas fanning out. -->
+													<!-- Auth: requests flow in. DB: two clients write into the
+												     primary; the subscribers receive live-query deltas from
+												     their NEAREST replica. -->
 													<circle r="2.2" class={outbound ? 'fill-chart-3' : 'fill-primary'}>
 														<animateMotion
 															dur="{c.dur}s"
@@ -475,16 +534,60 @@
 															keyTimes="0;1"
 															keySplines="0.42 0 1 1"
 															path={outbound
-																? `M${agent.x},${agent.y} L${c.x},${c.y}`
-																: `M${c.x},${c.y} L${agent.x},${agent.y}`}
+																? `M${target.x},${target.y} L${c.x},${c.y}`
+																: `M${c.x},${c.y} L${target.x},${target.y}`}
 														/>
 													</circle>
 												{/if}
 											{/each}
 
+											{#if heroTab === 'db'}
+												<!-- Per-region replicas: the primary feeds each over its arc
+												     (row images + config), and subscribers above land on the
+												     nearest one. Replication is on by default - the demo IS
+												     the pitch. -->
+												{#each replicas as replica, replicaIndex (replica.id)}
+													<path
+														d={replica.arc}
+														class="fill-none stroke-chart-2"
+														stroke-width="1"
+														stroke-dasharray="3 3"
+														opacity="0.4"
+													/>
+													<circle cx={replica.x} cy={replica.y} r="8" class="fill-chart-2/15" />
+													<circle cx={replica.x} cy={replica.y} r="3.5" class="fill-chart-2" />
+													<text
+														x={replica.x}
+														y={replica.y - 7}
+														text-anchor="middle"
+														class="fill-muted-foreground font-mono"
+														font-size="7">{replica.id}</text
+													>
+													{#if replica.note}
+														<text
+															x={replica.x - 12}
+															y={replica.y + 4}
+															text-anchor="end"
+															class="fill-muted-foreground font-mono"
+															font-size="8">{replica.note}</text
+														>
+													{/if}
+													{#if !reduceMotion}
+														<circle r="1.8" class="fill-chart-2">
+															<animateMotion
+																dur="2.2s"
+																begin="{0.3 + replicaIndex * 0.55}s"
+																repeatCount="indefinite"
+																path={replica.arc}
+															/>
+														</circle>
+													{/if}
+												{/each}
+											{/if}
+
 											<line
-												x1={agent.x}
-												y1={agent.y}
+												x1={dashboardSource.x}
+												y1={dashboardSource.y}
 												x2={dashboard.x}
 												y2={dashboard.y}
 												class="stroke-chart-3"
@@ -506,7 +609,7 @@
 														dur="1.8s"
 														begin="0.4s"
 														repeatCount="indefinite"
-														path="M{agent.x},{agent.y} L{dashboard.x},{dashboard.y}"
+														path="M{dashboardSource.x},{dashboardSource.y} L{dashboard.x},{dashboard.y}"
 													/>
 												</circle>
 											{/if}
@@ -543,7 +646,7 @@
 
 											<text
 												x={agent.x}
-												y={agent.y + 32}
+												y={agent.y + 40}
 												text-anchor="middle"
 												class="fill-muted-foreground font-mono text-[9px]"
 												>{heroTab === 'db' ? 'DbCollection · posts' : 'AuthAgent · DO SQLite'}</text
@@ -563,15 +666,21 @@
 											<span class="h-1.5 w-1.5 rounded-full bg-primary"></span>
 											{heroTab === 'db' ? 'document writes' : 'auth requests'}
 										</span>
+										{#if heroTab === 'db'}
+											<span class="flex items-center gap-1.5">
+												<span class="h-1.5 w-1.5 rounded-full bg-chart-2"></span>
+												replication feed, on by default
+											</span>
+										{/if}
 										<span class="flex items-center gap-1.5">
 											<span class="h-1.5 w-1.5 rounded-full bg-chart-3"></span>
 											{heroTab === 'db'
-												? 'live-query deltas over hibernated WebSockets'
+												? 'live-query deltas from the nearest replica'
 												: 'WebSocket state sync'}
 										</span>
 										<span
 											>{heroTab === 'db'
-												? 'one Durable Object per collection'
+												? 'one Durable Object per collection or table'
 												: 'one Durable Object per project'}</span
 										>
 									</div>
@@ -637,6 +746,102 @@
 						{/each}
 					</div>
 				</div>
+			</div>
+		</section>
+
+		<!-- PRICING: the real /pricing calculator, embedded - straight above
+		     the API section on purpose, with /pricing's own hero copy. -->
+		<section id="pricing" class="border-y border-border bg-card px-4 py-16 sm:px-8 sm:py-24">
+			<div class="mx-auto max-w-6xl">
+				<div class="mb-10 max-w-3xl">
+					<span
+						class="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
+						>Pricing</span
+					>
+					<h2 class="mt-4 text-3xl font-bold md:text-4xl">
+						Our price: <span class="text-primary">$0</span>.
+					</h2>
+					<p class="mt-3 text-muted-foreground">
+						Cloudflarebase is open source and runs on your own Cloudflare account - there is no
+						middleman bill, and Durable Objects sit on the
+						<a
+							class="underline underline-offset-2 hover:text-foreground"
+							href="https://developers.cloudflare.com/durable-objects/platform/pricing/"
+							>Workers free tier</a
+						>, so small projects run at $0. This estimates what a workload costs on your account,
+						next to the same app on Firebase and Supabase.
+					</p>
+				</div>
+				<PricingCalculator />
+			</div>
+		</section>
+
+		<!-- COMPARE -->
+		<section id="compare" class="px-4 py-16 sm:px-8 sm:py-24">
+			<div class="mx-auto max-w-6xl">
+				<div class="mb-10 max-w-xl">
+					<span
+						class="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
+						>Compare</span
+					>
+					<h2 class="mt-4 text-3xl font-bold md:text-4xl">Same primitives. Different physics.</h2>
+					<p class="mt-3 text-muted-foreground">
+						Firebase's DX, Supabase's openness, Cloudflare's network. Every row is a reason this
+						exists.
+					</p>
+				</div>
+				<div class="overflow-x-auto rounded-2xl border border-border">
+					<table
+						class="w-full min-w-[720px] border-collapse bg-card text-left text-sm"
+						data-testid="comparison-table"
+					>
+						<thead>
+							<tr class="border-b border-border">
+								<th class="p-4 font-medium text-muted-foreground">Capability</th>
+								<th class="bg-primary/[0.06] p-4">
+									<span class="flex items-center gap-2 font-semibold">
+										<img src="/brand/mark.svg" alt="" class="h-4 w-4" /> Cloudflarebase
+									</span>
+								</th>
+								<th class="p-4 font-medium text-muted-foreground">Firebase</th>
+								<th class="p-4 font-medium text-muted-foreground">Supabase</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each compareRows as row (row.capability)}
+								<tr class="border-b border-border last:border-0">
+									<th scope="row" class="p-4 align-top font-medium">{row.capability}</th>
+									{#each [row.cfb, row.firebase, row.supabase] as cell, i (i)}
+										<td class={cn('p-4 align-top', i === 0 && 'bg-primary/[0.06]')}>
+											<span class="flex items-start gap-2">
+												{#if cell.mark === 'yes'}
+													<Check class="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+												{:else if cell.mark === 'partial'}
+													<Minus class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70" />
+												{:else}
+													<X class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50" />
+												{/if}
+												<span
+													class={cn(
+														'text-xs leading-relaxed',
+														i === 0 ? 'text-foreground' : 'text-muted-foreground'
+													)}>{cell.note}</span
+												>
+											</span>
+										</td>
+									{/each}
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				<p class="mt-3 text-xs text-muted-foreground/70">
+					Competitor capabilities as publicly documented; exact prices with dated sources live on
+					the
+					<a href={resolve('/(marketing)/pricing')} class="underline hover:text-foreground"
+						>pricing page</a
+					>.
+				</p>
 			</div>
 		</section>
 
@@ -724,44 +929,9 @@
 			</div>
 		</section>
 
-		<!-- LIVE TODAY -->
-		<section id="live" class="px-4 py-16 sm:px-8 sm:py-24">
-			<div class="mx-auto max-w-6xl">
-				<div class="mb-14 max-w-xl">
-					<span
-						class="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
-					>
-						<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-primary"></span>
-						Live today
-					</span>
-					<h2 class="mt-4 text-3xl font-bold md:text-4xl">
-						Auth shipped first. Database just followed.
-					</h2>
-					<p class="mt-3 text-muted-foreground">
-						Not a waitlist, not a mockup. Open the demo and a real, isolated project - with its own
-						Durable Object - spins up for your browser.
-					</p>
-				</div>
-				<div
-					class="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border bg-border md:grid-cols-3"
-				>
-					{#each liveFeatures as f (f.title)}
-						<div class="bg-card p-7 transition-colors hover:bg-accent/40">
-							<div
-								class="mb-4 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"
-							>
-								<f.icon class="h-[18px] w-[18px]" strokeWidth={1.8} />
-							</div>
-							<h3 class="mb-1.5 font-semibold">{f.title}</h3>
-							<p class="text-sm leading-relaxed text-muted-foreground">{f.desc}</p>
-						</div>
-					{/each}
-				</div>
-			</div>
-		</section>
-
-		<!-- ARCHITECTURE -->
-		<section id="architecture" class="border-y border-border bg-card px-4 py-14 sm:px-8 sm:py-20">
+		<!-- ARCHITECTURE (white band: keeps the section backgrounds alternating
+		     card/white now that the pricing band sits above the API card) -->
+		<section id="architecture" class="px-4 py-14 sm:px-8 sm:py-20">
 			<div class="mx-auto max-w-6xl">
 				<div class="mb-10 max-w-xl">
 					<span
@@ -798,7 +968,7 @@
 		</section>
 
 		<!-- ROADMAP -->
-		<section id="roadmap" class="px-4 py-16 sm:px-8 sm:py-24">
+		<section id="roadmap" class="border-y border-border bg-card px-4 py-16 sm:px-8 sm:py-24">
 			<div class="mx-auto max-w-6xl">
 				<div class="mb-14 max-w-xl">
 					<span
@@ -847,7 +1017,7 @@
 		</section>
 
 		<!-- FAQ -->
-		<section id="faq" class="border-t border-border bg-card px-4 py-16 sm:px-8 sm:py-24">
+		<section id="faq" class="px-4 py-16 sm:px-8 sm:py-24">
 			<div class="mx-auto max-w-3xl">
 				<div class="mb-12 text-center">
 					<span
@@ -856,7 +1026,7 @@
 					>
 					<h2 class="mt-4 text-3xl font-bold md:text-4xl">Questions, answered plainly.</h2>
 				</div>
-				<div class="divide-y divide-border rounded-xl border border-border bg-background">
+				<div class="divide-y divide-border rounded-xl border border-border bg-card">
 					{#each faqs as item, i (item.q)}
 						<div>
 							<button
@@ -880,8 +1050,8 @@
 			</div>
 		</section>
 
-		<!-- CTA BAND -->
-		<section class="px-4 py-20 text-center sm:px-8 sm:py-28">
+		<!-- CTA BAND (card band: closes out the alternation after the white FAQ) -->
+		<section class="border-t border-border bg-card px-4 py-20 text-center sm:px-8 sm:py-28">
 			<span
 				class="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
 			>
@@ -930,8 +1100,9 @@
 						<h4 class="mb-3.5 font-mono text-xs tracking-wide text-muted-foreground/70 uppercase">
 							Product
 						</h4>
-						<a href="#live" class="mb-2.5 block text-sm text-muted-foreground hover:text-foreground"
-							>Live today</a
+						<a
+							href="#pricing"
+							class="mb-2.5 block text-sm text-muted-foreground hover:text-foreground">Pricing</a
 						>
 						<a href="#api" class="mb-2.5 block text-sm text-muted-foreground hover:text-foreground"
 							>API</a
@@ -965,6 +1136,7 @@
 			>
 				<span>© 2026 Cloudflarebase</span>
 				<div class="flex gap-4">
+					<a href={resolve('/pricing')} class="hover:text-foreground">Pricing</a>
 					<a href={resolve('/privacy')} class="hover:text-foreground">Privacy</a>
 					<a href={resolve('/terms')} class="hover:text-foreground">Terms</a>
 				</div>

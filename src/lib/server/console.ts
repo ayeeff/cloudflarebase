@@ -70,7 +70,10 @@ export type ConsoleUser = z.infer<typeof consoleSessionSchema>['user'];
 
 /**
  * Resolves the operator session by asking the console's AuthAgent, forwarding
- * the browser's cookies. Returns null when there is no valid session.
+ * the browser's cookies - and, for the CLI, a bearer `Authorization` header
+ * (the agent accepts session tokens as bearers; that is the documented
+ * external-client path on every project instance, the console included).
+ * Returns null when there is no valid session.
  *
  * This runs on the hot path for dashboard polling, so callers should memoize
  * per request (see `locals.consoleUser` in hooks.server.ts).
@@ -78,18 +81,20 @@ export type ConsoleUser = z.infer<typeof consoleSessionSchema>['user'];
 export async function getConsoleSession(
 	platform: App.Platform | undefined,
 	origin: string,
-	cookie: string | null
+	cookie: string | null,
+	authorization: string | null = null
 ): Promise<ConsoleUser | null> {
-	if (!cookie) return null;
+	if (!cookie && !authorization) return null;
+
+	const headers: [string, string][] = [['origin', origin]];
+	if (cookie) headers.push(['cookie', cookie]);
+	if (authorization) headers.push(['authorization', authorization]);
 
 	const agent = requireAuthAgent(platform);
 	const response = await agent
 		.fetch(agentUrl(origin, CONSOLE_PROJECT_ID, '/api/auth/get-session'), {
 			method: 'GET',
-			headers: [
-				['cookie', cookie],
-				['origin', origin]
-			]
+			headers
 		})
 		.catch((cause: unknown) => {
 			// Failing closed is right, but silence is not: an unreachable auth
@@ -115,7 +120,12 @@ export async function getConsoleSession(
 		return null;
 	}
 
-	const body = await (response as unknown as Response).json().catch(() => null);
+	const body: unknown = await (response as unknown as Response).json().catch(() => undefined);
+	// Better Auth answers a signed-out get-session with 200 and a JSON null
+	// body - the ORDINARY case for any visitor carrying unrelated cookies
+	// (e.g. the demo-project cookie), not a contract drift. Only a 200 whose
+	// body is neither null nor the session shape means the contract moved.
+	if (body === null) return null;
 	const parsed = consoleSessionSchema.safeParse(body);
 	if (!parsed.success) {
 		// A valid 200 the guard cannot read means the session contract drifted.

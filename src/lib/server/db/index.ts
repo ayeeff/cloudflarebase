@@ -18,6 +18,8 @@ const SCHEMA_STATEMENTS = [
 	`CREATE TABLE IF NOT EXISTS project (
 		id text PRIMARY KEY NOT NULL,
 		name text NOT NULL,
+		parent_id text,
+		branch_name text,
 		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL
 	)`,
 	`CREATE INDEX IF NOT EXISTS project_created_at ON project (created_at)`,
@@ -44,6 +46,19 @@ const SCHEMA_STATEMENTS = [
 ];
 
 /**
+ * Column additions for databases created before the column existed. SQLite
+ * has no ADD COLUMN IF NOT EXISTS, so these run individually and a
+ * "duplicate column" answer (fresh installs - CREATE TABLE above already
+ * carries the column) is the expected no-op, not an error. Statements that
+ * DEPEND on upgraded columns (the index) run after them, same tolerance.
+ */
+const UPGRADE_STATEMENTS = [
+	`ALTER TABLE project ADD COLUMN parent_id text`,
+	`ALTER TABLE project ADD COLUMN branch_name text`,
+	`CREATE INDEX IF NOT EXISTS project_parent ON project (parent_id)`
+];
+
+/**
  * Runs the schema once per isolate. Keyed on the binding itself so a reused
  * isolate does not re-issue the statements on every request, and so tests that
  * swap databases still bootstrap the new one.
@@ -55,7 +70,16 @@ function ensureSchema(d1: D1Database): Promise<void> {
 	if (!pending) {
 		pending = d1
 			.batch(SCHEMA_STATEMENTS.map((statement) => d1.prepare(statement)))
-			.then(() => undefined)
+			.then(async () => {
+				for (const statement of UPGRADE_STATEMENTS) {
+					try {
+						await d1.prepare(statement).run();
+					} catch (cause) {
+						const message = cause instanceof Error ? cause.message : String(cause);
+						if (!/duplicate column/i.test(message)) throw cause;
+					}
+				}
+			})
 			.catch((cause) => {
 				// Let the next request retry rather than caching a failure for the
 				// lifetime of the isolate.

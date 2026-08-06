@@ -161,12 +161,22 @@ async function fetchAgentTool(
 	return truncate(text, TOOL_RESULT_MAX_CHARS);
 }
 
-const dbQueryArgsSchema = z.object({
-	collection: z.string().min(1).max(64),
-	limit: z.number().int().min(1).max(20).optional(),
-	where: dbQuerySchema.shape.where,
-	orderBy: dbQuerySchema.shape.orderBy
+const dbSqlArgsSchema = z.object({
+	table: z.string().min(1).max(64),
+	sql: z.string().min(1).max(4000)
 });
+
+const dbQueryArgsSchema = z
+	.object({
+		collection: z.string().min(1).max(64).optional(),
+		table: z.string().min(1).max(64).optional(),
+		limit: z.number().int().min(1).max(20).optional(),
+		where: dbQuerySchema.shape.where,
+		orderBy: dbQuerySchema.shape.orderBy
+	})
+	.refine((args) => (args.collection === undefined) !== (args.table === undefined), {
+		message: 'name exactly one of collection or table'
+	});
 
 const COPILOT_TOOLS: CopilotTool[] = [
 	{
@@ -187,20 +197,25 @@ const COPILOT_TOOLS: CopilotTool[] = [
 	{
 		name: 'db_overview',
 		description:
-			"The project's database state: every collection with its name, document count, read/write access modes (public, auth, or owner), total documents, and recent database activity events.",
+			"The project's database state: every collection (name, document count, access modes) AND every SQL table (name, row count, access modes, and its full declared column schema - names, types, constraints), plus totals and recent database activity events.",
 		parameters: { type: 'object', properties: {} },
 		execute: (_args, ctx) => fetchAgentTool(ctx, AGENT_REGISTRY.db, '/overview')
 	},
 	{
 		name: 'db_query',
 		description:
-			'Read actual documents from one collection (up to 20). Use db_overview first to learn the collection names. Supports filtering and ordering over dotted JSON field paths.',
+			'Read actual documents from one collection OR rows from one SQL table (up to 20). Name exactly one of collection/table - use db_overview first for names and, for tables, the declared columns. Filters use dotted JSON field paths on collections and column names on tables (dotted paths reach into json columns).',
 		parameters: {
 			type: 'object',
 			properties: {
 				collection: {
 					type: 'string',
 					description: 'Collection name, exactly as db_overview reports it.'
+				},
+				table: {
+					type: 'string',
+					description:
+						'SQL table name, exactly as db_overview reports it. Filter fields must be declared columns.'
 				},
 				limit: { type: 'number', description: 'Maximum documents to return (1-20, default 10).' },
 				where: {
@@ -230,7 +245,7 @@ const COPILOT_TOOLS: CopilotTool[] = [
 					}
 				}
 			},
-			required: ['collection']
+			required: []
 		},
 		execute: async (args, ctx) => {
 			const parsed = dbQueryArgsSchema.safeParse(args);
@@ -240,7 +255,7 @@ const COPILOT_TOOLS: CopilotTool[] = [
 					.join('; ');
 				return `invalid arguments - ${issues}`;
 			}
-			const { collection, where, orderBy } = parsed.data;
+			const { collection, table, where, orderBy } = parsed.data;
 			const query = {
 				limit: Math.min(parsed.data.limit ?? 10, 20),
 				...(where ? { where } : {}),
@@ -249,8 +264,44 @@ const COPILOT_TOOLS: CopilotTool[] = [
 			return fetchAgentTool(ctx, AGENT_REGISTRY.db, '/admin/query', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ collection, query })
+				body: JSON.stringify(collection ? { collection, query } : { table, query })
 			});
+		}
+	},
+	{
+		name: 'db_sql',
+		description:
+			'Run ONE read-only SQL SELECT over one SQL table - for sums, grouping, and shapes the query DSL cannot express. Single-table only; get table names and columns from db_overview first. Double-quote identifiers; always add a LIMIT.',
+		parameters: {
+			type: 'object',
+			properties: {
+				table: { type: 'string', description: 'SQL table name from db_overview.' },
+				sql: {
+					type: 'string',
+					description:
+						'One SELECT statement over that table, e.g. SELECT "status", COUNT(*) AS n FROM "orders" GROUP BY "status" LIMIT 20.'
+				}
+			},
+			required: ['table', 'sql']
+		},
+		execute: async (args, ctx) => {
+			const parsed = dbSqlArgsSchema.safeParse(args);
+			if (!parsed.success) return 'invalid arguments - table and sql are required strings';
+			// The copilot is a read-only surface: refuse DML before it ever
+			// reaches the endpoint (which would happily run it as an operator).
+			if (!/^\s*(select|with)\b/i.test(parsed.data.sql)) {
+				return 'refused: only SELECT statements are allowed from the copilot';
+			}
+			return fetchAgentTool(
+				ctx,
+				AGENT_REGISTRY.db,
+				`/admin/tables/${encodeURIComponent(parsed.data.table)}/sql`,
+				{
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ sql: parsed.data.sql })
+				}
+			);
 		}
 	}
 ];
@@ -376,7 +427,7 @@ async function executeToolCall(call: NormalizedToolCall, ctx: ToolContext): Prom
 function systemPrompt(projectId: string): string {
 	return (
 		`You are the Cloudflarebase copilot for project "${projectId}" - the operator's assistant inside the project dashboard. ` +
-		'Use the provided tools to read live project data: auth_overview and auth_analytics for users, sessions, and activity; db_overview for collections; db_query for actual documents. ' +
+		'Use the provided tools to read live project data: auth_overview and auth_analytics for users, sessions, and activity; db_overview for collections, SQL tables, and their declared column schemas; db_query for actual documents or rows. ' +
 		'Answer only from tool results - never invent metrics or documents, and say when there is not enough data. ' +
 		'Be concise, and explain useful ratios or trends when the data supports them. ' +
 		'Do not claim you can modify users, documents, or configuration. ' +

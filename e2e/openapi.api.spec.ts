@@ -39,10 +39,15 @@ test.describe('openapi document', () => {
 			'/admin/settings',
 			'/admin/roles',
 			'/admin/users/{userId}',
-			'/admin/sessions/{sessionId}'
+			'/admin/sessions/{sessionId}',
+			'/branches'
 		]) {
 			expect(doc.paths[path], `${path} should be documented`).toBeTruthy();
 		}
+
+		// The branches contribution ships its request and row components too.
+		expect(doc.components.schemas.RegistryProject).toBeTruthy();
+		expect(doc.components.schemas.CreateBranchRequest).toBeTruthy();
 	});
 
 	test('covers the db agent surface', async ({ request }) => {
@@ -71,6 +76,21 @@ test.describe('openapi document', () => {
 		}
 		expect(doc.components.schemas.DbValidator).toBeTruthy();
 		expect(doc.components.schemas.DbAggregateRequest).toBeTruthy();
+
+		// SQL tables: the typed-row surface and the schema DSL components.
+		for (const path of [
+			'/db/tables/{table}/rows',
+			'/db/tables/{table}/rows/{rowId}',
+			'/db/tables/{table}/query',
+			'/db/tables/{table}/aggregate',
+			'/db/tables/{table}/sql',
+			'/db/admin/tables/{name}',
+			'/db/admin/tables/{name}/rows/{rowId}'
+		]) {
+			expect(doc.paths[path], `${path} should be documented`).toBeTruthy();
+		}
+		expect(doc.components.schemas.DbTableColumn).toBeTruthy();
+		expect(doc.components.schemas.DbTableConfig).toBeTruthy();
 	});
 
 	test('resolves every schema reference it emits', async ({ request }) => {

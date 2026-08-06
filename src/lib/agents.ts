@@ -206,13 +206,21 @@ export const registryProjectSchema = z
 	.object({
 		id: z.string(),
 		name: z.string(),
+		/** Root project this row branches from; null = a root project. */
+		parentId: z.string().nullable(),
+		/** The branch's short name (`staging`); null on roots (`main`). */
+		branchName: z.string().nullable(),
 		createdAt: z.iso.datetime()
 	})
-	.meta({ id: 'RegistryProject', description: 'A project this installation owns.' });
+	.meta({ id: 'RegistryProject', description: 'A project or branch this installation owns.' });
 
 export const projectRegistryStateSchema = z
 	.object({ projects: z.array(registryProjectSchema) })
 	.meta({ id: 'ProjectRegistryState' });
+
+export const projectBranchesSchema = z
+	.object({ branches: z.array(registryProjectSchema) })
+	.meta({ id: 'ProjectBranches', description: "A root project's branches, oldest first." });
 
 // ---------------------------------------------------------------------------
 // DB agent DTOs. Keep in sync with agents/db/src/schemas.ts and
@@ -314,18 +322,21 @@ export const dbValidatorSchema = z
 			'Rules-lite document validation over top-level fields, enforced on the public write path (operator surfaces bypass it, like the Firestore Admin SDK bypasses security rules).'
 	});
 
+export const dbReplicationModeSchema = z.enum(['off', 'auto']);
+
 export const dbCollectionConfigSchema = z
 	.object({
 		readAccess: dbAccessModeSchema,
 		writeAccess: dbAccessModeSchema,
 		readPermission: dbPermissionKeySchema.nullable().optional(),
 		writePermission: dbPermissionKeySchema.nullable().optional(),
-		validator: dbValidatorSchema.nullable().optional()
+		validator: dbValidatorSchema.nullable().optional(),
+		replication: dbReplicationModeSchema.optional()
 	})
 	.meta({
 		id: 'DbCollectionConfig',
 		description:
-			'Access modes: public (anyone), auth (any valid project JWT), owner (results and writes scoped to the token subject). Optional permission keys additionally require that claim on the JWT (auth/owner modes; `*` in the claim always passes); an optional validator enforces document rules on public writes. Omitted fields stay unchanged, explicit null clears.'
+			'Access modes: public (anyone), auth (any valid project JWT), owner (results and writes scoped to the token subject). Optional permission keys additionally require that claim on the JWT (auth/owner modes; `*` in the claim always passes); an optional validator enforces document rules on public writes. Replication defaults to auto (reads served from per-region replicas); `off` opts a single-region shard out. Omitted fields stay unchanged, explicit null clears.'
 	});
 
 export const dbCollectionSummarySchema = z
@@ -340,6 +351,7 @@ export const dbCollectionSummarySchema = z
 		readPermission: z.string().nullable().catch(null),
 		writePermission: z.string().nullable().catch(null),
 		validator: dbValidatorSchema.nullable().catch(null),
+		replication: z.enum(['off', 'auto']).catch('off'),
 		docs: z.number()
 	})
 	.meta({ id: 'DbCollectionSummary' });
@@ -354,12 +366,107 @@ export const dbActivityEventSchema = z
 			'collection.configured',
 			'collection.restored',
 			'documents.changed',
-			'documents.imported'
+			'documents.imported',
+			'table.created',
+			'table.configured',
+			'table.deleted',
+			'table.restored',
+			'rows.changed',
+			'rows.imported'
 		]),
 		message: z.string(),
 		at: z.iso.datetime()
 	})
 	.meta({ id: 'DbActivityEvent' });
+
+// --- Tables (phase T1 of docs/db-scale-plan.md) ---
+
+export const dbColumnTypeSchema = z.enum(['text', 'integer', 'real', 'boolean', 'json']);
+
+export const dbTableColumnSchema = z
+	.object({
+		name: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+		type: dbColumnTypeSchema,
+		nullable: z.boolean().optional(),
+		default: dbScalar.optional(),
+		unique: z.boolean().optional(),
+		index: z.boolean().optional(),
+		maxLength: z.number().int().min(0).optional(),
+		min: z.number().optional(),
+		max: z.number().optional(),
+		enum: z.array(dbScalar).min(1).max(20).optional()
+	})
+	.meta({
+		id: 'DbTableColumn',
+		description:
+			'One declared column. Types are enforced on write; `id`, `owner`, `created_at`, and `updated_at` are reserved system columns. NOT NULL without a default means required-on-write.'
+	});
+
+export const dbTableConfigSchema = z
+	.object({
+		readAccess: dbAccessModeSchema,
+		writeAccess: dbAccessModeSchema,
+		readPermission: dbPermissionKeySchema.nullable().optional(),
+		writePermission: dbPermissionKeySchema.nullable().optional(),
+		columns: z.array(dbTableColumnSchema).min(1).max(64),
+		replication: dbReplicationModeSchema.optional()
+	})
+	.meta({
+		id: 'DbTableConfig',
+		description:
+			'The full desired table schema plus access modes. Additive changes apply as DDL; destructive changes (drop/retype/renullability) are refused - export, recreate, and import instead. Replication defaults to auto; `off` opts out, omitted = unchanged.'
+	});
+
+export const dbTableSummarySchema = z
+	.object({
+		name: z.string(),
+		readAccess: dbAccessModeSchema,
+		writeAccess: dbAccessModeSchema,
+		readPermission: z.string().nullable().catch(null),
+		writePermission: z.string().nullable().catch(null),
+		columns: z.array(dbTableColumnSchema).catch([]),
+		replication: z.enum(['off', 'auto']).catch('off'),
+		rows: z.number()
+	})
+	.meta({ id: 'DbTableSummary' });
+
+// Mirrors RepStatus in agents/db/src/schemas.ts (GET /admin/replication/:name).
+export const dbReplicaSchema = z
+	.object({
+		/** `r:<region>:<n>` - the instance-name suffix that makes it a replica. */
+		id: z.string(),
+		region: z.string(),
+		appliedLsn: z.number(),
+		lagLsn: z.number(),
+		/** Holds live subscribers, so the primary RPC-pushes every write to it. */
+		push: z.boolean(),
+		/** Reported hibernatable-socket count; at the spawn threshold new
+		 * subscribers route to the next sibling. Tolerant for pre-sibling
+		 * agents that did not report it. */
+		sockets: z.number().catch(0),
+		lastSeenAt: z.iso.datetime()
+	})
+	.meta({ id: 'DbReplica' });
+
+export const dbReplicationStatusSchema = z
+	.object({
+		enabled: z.boolean(),
+		/** Parent-owned restore epoch; a bump forces replica re-bootstrap. */
+		epoch: z.number(),
+		lastLsn: z.number(),
+		horizonLsn: z.number(),
+		/** Empty when disabled - and often when enabled too: replicas materialize
+		 * in a region the first time that region reads. */
+		replicas: z.array(dbReplicaSchema),
+		/** The primary's own location (/cdn-cgi/trace; nulls in local dev), so
+		 * the replication map can place the hub where the DO really lives. */
+		primary: z.object({ colo: z.string().nullable(), country: z.string().nullable() }).optional()
+	})
+	.meta({
+		id: 'DbReplicationStatus',
+		description:
+			'Per-shard replication status: the primary change-log position and every durably registered region replica with its applied position and lag.'
+	});
 
 export const dbAggregateRequestSchema = z
 	.object({
@@ -444,7 +551,11 @@ export const dbAgentStateSchema = z
 		provisionedAt: z.iso.datetime().nullable(),
 		allowedOrigins: z.array(z.string()),
 		collections: z.array(dbCollectionSummarySchema),
+		// Tolerant like the summary fields: state persisted before tables
+		// existed still parses (the agent re-syncs on its next wake).
+		tables: z.array(dbTableSummarySchema).catch([]),
 		totalDocs: z.number(),
+		totalRows: z.number().catch(0),
 		rev: z.number(),
 		totalEvents: z.number(),
 		lastEventAt: z.iso.datetime().nullable(),
@@ -459,6 +570,7 @@ export const dbOverviewSchema = z
 	.object({
 		projectId: z.string(),
 		collections: z.array(dbCollectionSummarySchema),
+		tables: z.array(dbTableSummarySchema).catch([]),
 		state: dbAgentStateSchema
 	})
 	.meta({ id: 'DbOverview' });
@@ -514,6 +626,7 @@ export type AgentChatMessage = z.infer<typeof agentChatMessageSchema>;
 export type AgentChatReply = z.infer<typeof agentChatReplySchema>;
 export type RegistryProject = z.infer<typeof registryProjectSchema>;
 export type ProjectRegistryState = z.infer<typeof projectRegistryStateSchema>;
+export type ProjectBranches = z.infer<typeof projectBranchesSchema>;
 export type DbAccessMode = z.infer<typeof dbAccessModeSchema>;
 export type DbQuery = z.infer<typeof dbQuerySchema>;
 export type DbDocument = z.infer<typeof dbDocumentSchema>;
@@ -521,6 +634,10 @@ export type DbQueryResult = z.infer<typeof dbQueryResultSchema>;
 export type DbFieldRule = z.infer<typeof dbFieldRuleSchema>;
 export type DbValidator = z.infer<typeof dbValidatorSchema>;
 export type DbCollectionSummary = z.infer<typeof dbCollectionSummarySchema>;
+export type DbColumnType = z.infer<typeof dbColumnTypeSchema>;
+export type DbTableColumn = z.infer<typeof dbTableColumnSchema>;
+export type DbTableConfig = z.infer<typeof dbTableConfigSchema>;
+export type DbTableSummary = z.infer<typeof dbTableSummarySchema>;
 export type DbActivityEvent = z.infer<typeof dbActivityEventSchema>;
 export type DbAgentState = z.infer<typeof dbAgentStateSchema>;
 export type DbOverview = z.infer<typeof dbOverviewSchema>;
@@ -529,3 +646,6 @@ export type DbImportReport = z.infer<typeof dbImportReportSchema>;
 export type DbRestoreResult = z.infer<typeof dbRestoreResultSchema>;
 export type DbRestorePoint = z.infer<typeof dbRestorePointSchema>;
 export type DbRestorePoints = z.infer<typeof dbRestorePointsSchema>;
+export type DbReplicationMode = z.infer<typeof dbReplicationModeSchema>;
+export type DbReplica = z.infer<typeof dbReplicaSchema>;
+export type DbReplicationStatus = z.infer<typeof dbReplicationStatusSchema>;

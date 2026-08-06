@@ -162,7 +162,7 @@ test.describe('database page (frontend)', () => {
 		await gotoDbPage(page, DB_UI_PROJECT);
 		await createCollection(page, collection);
 
-		await page.getByRole('tab', { name: 'Access' }).click();
+		await page.getByTestId('nav-db-access').click();
 		const row = page.getByTestId(`db-access-${collection}`);
 		// The create form defaults read access to `public`, so pick a DIFFERENT
 		// mode - Apply only enables once an actual edit is pending.
@@ -171,9 +171,9 @@ test.describe('database page (frontend)', () => {
 		await row.getByRole('button', { name: 'Apply' }).click();
 		await expect(row.getByText('Saved')).toBeVisible();
 
+		// Access is its own page now, so the reload lands straight back on it.
 		await page.reload();
 		await expect(page.getByTestId('db-page')).toHaveAttribute('data-hydrated', 'true');
-		await page.getByRole('tab', { name: 'Access' }).click();
 		await expect(
 			page.getByTestId(`db-access-${collection}`).getByLabel(`Read access for ${collection}`)
 		).toHaveText('auth');
@@ -194,7 +194,7 @@ test.describe('database page (frontend)', () => {
 		await gotoDbPage(page, DB_UI_PROJECT);
 		await createCollection(page, collection);
 
-		await page.getByRole('tab', { name: 'Access' }).click();
+		await page.getByTestId('nav-db-access').click();
 		const row = page.getByTestId(`db-access-${collection}`);
 
 		// The create form defaults write access to owner, so the write
@@ -216,7 +216,6 @@ test.describe('database page (frontend)', () => {
 		// Both survive a reload - they came back from the agent, not the UI.
 		await page.reload();
 		await expect(page.getByTestId('db-page')).toHaveAttribute('data-hydrated', 'true');
-		await page.getByRole('tab', { name: 'Access' }).click();
 		await expect(page.getByTestId(`db-perm-write-${collection}`)).toHaveText('posts:write');
 		await expect(page.getByTestId(`db-rules-${collection}`)).toHaveText('1 rule');
 	});
@@ -246,9 +245,112 @@ test.describe('database page (frontend)', () => {
 		}
 	});
 
+	test('declaring a table, inserting rows, and schema refusals work from the Tables tab', async ({
+		page
+	}) => {
+		const table = uniqueCollection('tt');
+		await gotoDbPage(page, DB_UI_PROJECT);
+		await page.getByTestId('nav-db-tables').click();
+
+		// Declare: one required text column through the schema designer.
+		await page.getByTestId('db-new-table-name').fill(table);
+		await page.getByTestId('db-column-name-0').fill('title');
+		await page.getByTestId('db-declare-submit').click();
+		await expect(page.getByTestId(`db-table-${table}`)).toBeVisible();
+
+		// Browse and insert: the editor template carries the declared columns.
+		await page.getByTestId(`db-table-${table}`).click();
+		await page.getByTestId('db-add-row').click();
+		const editor = page.getByTestId('db-row-editor');
+		await editor.getByTestId('db-row-json').fill('{"title":"from the ui"}');
+		await editor.getByTestId('db-row-save').click();
+		await expect(page.getByTestId('db-rows-table').getByText('from the ui')).toBeVisible();
+
+		// The declared schema refuses a wrong-typed value with the agent's issue.
+		await page.getByTestId('db-add-row').click();
+		await editor.getByTestId('db-row-json').fill('{"title":123}');
+		await editor.getByTestId('db-row-save').click();
+		await expect(page.getByTestId('db-row-error')).toContainText('must be a text');
+	});
+
+	test('deleting a table requires typing its name back', async ({ page }) => {
+		const table = uniqueCollection('td');
+		await gotoDbPage(page, DB_UI_PROJECT);
+		await page.getByTestId('nav-db-tables').click();
+
+		await page.getByTestId('db-new-table-name').fill(table);
+		await page.getByTestId('db-column-name-0').fill('note');
+		await page.getByTestId('db-declare-submit').click();
+		await expect(page.getByTestId(`db-table-${table}`)).toBeVisible();
+
+		await page.getByTestId(`db-table-${table}`).click();
+		await page.getByTestId('db-delete-table').click();
+		const dialog = page.getByTestId('db-delete-table-panel');
+		await expect(dialog.getByTestId('db-delete-table-submit')).toBeDisabled();
+		await dialog.getByTestId('db-delete-table-confirm').fill(table);
+		await dialog.getByTestId('db-delete-table-submit').click();
+		await expect(page.getByTestId(`db-table-${table}`)).not.toBeVisible();
+	});
+
+	test('the table rollback dialog explains unsupported environments up front', async ({ page }) => {
+		const table = uniqueCollection('tr');
+		await gotoDbPage(page, DB_UI_PROJECT);
+		await page.getByTestId('nav-db-tables').click();
+
+		await page.getByTestId('db-new-table-name').fill(table);
+		await page.getByTestId('db-column-name-0').fill('note');
+		await page.getByTestId('db-declare-submit').click();
+		await expect(page.getByTestId(`db-table-${table}`)).toBeVisible();
+
+		// The workspace mounts the same shared dialog the collections browser
+		// uses, pointed at the table's own admin base.
+		await page.getByTestId(`db-table-${table}`).click();
+		await page.getByTestId('db-table-rollback').click();
+		const dialog = page.getByTestId('db-rollback-panel');
+		await expect(dialog.getByTestId('db-rollback-submit')).toBeDisabled();
+		if (!process.env.BASE_URL) {
+			await expect(dialog.getByTestId('db-rollback-unsupported')).toBeVisible();
+		} else {
+			await expect(dialog.getByTestId('db-rollback-mode-date')).toBeVisible();
+		}
+	});
+
+	test('the replication tab lights up a region after a routed read', async ({ page, request }) => {
+		const collection = uniqueCollection('rp');
+		await gotoDbPage(page, DB_UI_PROJECT);
+		await createCollection(page, collection);
+
+		// Replication defaults to auto, so a region-routed read is all it takes
+		// to materialize a replica. Seed a document through the operator surface,
+		// then read it through the hot path with the env.test region override.
+		const seeded = await request.put(
+			`/api/projects/${DB_UI_PROJECT}/db/admin/collections/${collection}/documents/rep-doc-1`,
+			{ data: { data: { title: 'replicate me' } } }
+		);
+		expect(seeded.ok(), await seeded.text()).toBeTruthy();
+		const routed = await request.get(
+			`/api/projects/${DB_UI_PROJECT}/db/collections/${collection}/documents/rep-doc-1`,
+			{ headers: { 'x-cfb-region': 'weur' } }
+		);
+		expect(routed.ok(), await routed.text()).toBeTruthy();
+
+		await page.getByTestId('nav-db-replication').click();
+		await expect(page.getByTestId('db-replication-map')).toBeVisible();
+		if (!process.env.BASE_URL) {
+			// The override header only exists on the env.test stack; deployed
+			// targets route by real geography, so the region is theirs to pick.
+			await expect(page.getByTestId('db-replication-region-weur')).toBeVisible({
+				timeout: 15_000
+			});
+		}
+		await expect(
+			page.getByTestId('db-replication-stat-regions').getByTestId('stat-value')
+		).not.toHaveText('0', { timeout: 15_000 });
+	});
+
 	test('integration snippets address this project', async ({ page }) => {
 		await gotoDbPage(page, DB_UI_PROJECT);
-		await page.getByRole('tab', { name: 'Integration' }).click();
+		await page.getByTestId('nav-db-integration').click();
 
 		// One snippet renders at a time (shared CodeExamples component), so
 		// assert each behind its own pill.

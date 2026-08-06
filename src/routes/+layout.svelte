@@ -7,10 +7,20 @@
 	let { children } = $props();
 	const canonicalUrl = $derived(`https://cloudflarebase.com${page.url.pathname}`);
 
+	// Inside the dashboard the shell (sidebar, header, agent pane) persists and
+	// the content pane plays its own keyed entry transition - a ROOT view
+	// transition there would translate/scale/blur the whole shell on every
+	// tool-page hop, which reads as a layout shift. So the full-page cinematic
+	// only plays when the navigation actually changes context (marketing,
+	// login, entering or leaving the dashboard).
+	const inDashboard = (routeId: string | null | undefined): boolean =>
+		routeId?.startsWith('/(app)/dashboard') ?? false;
+
 	onNavigate((navigation) => {
 		if (
 			!document.startViewTransition ||
-			window.matchMedia('(prefers-reduced-motion: reduce)').matches
+			window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+			(inDashboard(navigation.from?.route.id) && inDashboard(navigation.to?.route.id))
 		) {
 			return;
 		}

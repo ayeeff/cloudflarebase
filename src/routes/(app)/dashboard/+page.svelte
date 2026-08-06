@@ -2,14 +2,31 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import ConsoleShell from '$lib/components/console-shell.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { projectIdSchema } from '$lib/schemas/auth';
-	import { ChevronRight, Database } from '@lucide/svelte';
+	import { ChevronRight, Database, GitBranch } from '@lucide/svelte';
 
 	let { data } = $props();
+
+	// Branches group under their root project instead of listing as siblings
+	// (docs/branches-design.md). parentId decides - never the id's shape, so
+	// grandfathered roots containing `--` stay top-level. A branch whose root
+	// row is somehow missing degrades to a top-level row rather than vanishing.
+	const rootIds = $derived(
+		data.projects.filter((project) => !project.parentId).map((project) => project.id)
+	);
+	const groups = $derived(
+		data.projects
+			.filter((project) => !project.parentId || !rootIds.includes(project.parentId))
+			.map((root) => ({
+				root,
+				branches: data.projects.filter((branch) => branch.parentId === root.id)
+			}))
+	);
 
 	let name = $state('');
 	let id = $state('');
@@ -74,7 +91,7 @@
 
 		{#if data.projects.length}
 			<div class="grid gap-2" data-testid="project-list">
-				{#each data.projects as project (project.id)}
+				{#each groups as { root: project, branches } (project.id)}
 					<a
 						href={resolve('/(app)/dashboard/[projectId]', { projectId: project.id })}
 						class="group flex items-center gap-3 rounded-lg border bg-card p-4 transition-colors hover:border-primary hover:bg-accent/40"
@@ -84,10 +101,33 @@
 							<p class="truncate font-medium">{project.name}</p>
 							<p class="truncate font-mono text-xs text-muted-foreground">{project.id}</p>
 						</div>
+						{#if branches.length}
+							<Badge variant="outline" class="shrink-0 gap-1 text-xs text-muted-foreground">
+								<GitBranch class="h-3 w-3" />
+								{branches.length}
+								{branches.length === 1 ? 'branch' : 'branches'}
+							</Badge>
+						{/if}
 						<ChevronRight
 							class="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
 						/>
 					</a>
+					{#each branches as branch (branch.id)}
+						<a
+							href={resolve('/(app)/dashboard/[projectId]', { projectId: branch.id })}
+							class="group ml-7 flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:border-primary hover:bg-accent/40"
+							data-testid="branch-row"
+						>
+							<GitBranch class="h-4 w-4 shrink-0 text-muted-foreground" />
+							<div class="min-w-0 flex-1">
+								<p class="truncate font-mono text-sm font-medium">{branch.branchName}</p>
+								<p class="truncate font-mono text-xs text-muted-foreground">{branch.id}</p>
+							</div>
+							<ChevronRight
+								class="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+							/>
+						</a>
+					{/each}
 				{/each}
 			</div>
 		{/if}

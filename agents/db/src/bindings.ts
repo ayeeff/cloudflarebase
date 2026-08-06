@@ -21,6 +21,10 @@ export interface DbAgentBindings {
 	DbAgent: AnyDurableObjectNamespace;
 	/** The per-collection store class. Required. */
 	DbCollection: AnyDurableObjectNamespace;
+	/** The per-table store class (typed columns, ORM-compatible). Required. */
+	DbTable: AnyDurableObjectNamespace;
+	/** The realtime gateway class (one client socket, all shards). Required. */
+	DbGateway: AnyDurableObjectNamespace;
 	/** Document/collection events; auto-creates on first write. Required. */
 	DB_EVENTS: AnalyticsEngineDataset;
 
@@ -38,6 +42,8 @@ export interface DbAgentBindings {
 	TRUSTED_ORIGINS?: string;
 	SENTRY_DSN?: string;
 	SENTRY_ENV?: string;
+	/** Test stacks only: honor x-cfb-region for deterministic region routing. */
+	REGION_OVERRIDE_HEADER?: string;
 	/** Local/test analytics mirror; production uses DB_EVENTS alone. */
 	LOCAL_ANALYTICS?: D1Database;
 	DEMO_MODE?: 'true';

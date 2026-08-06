@@ -5,7 +5,8 @@ import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlit
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import migrations from './migrations';
 import * as schema from './db/schema';
-import { collections, restorePoints } from './db/schema';
+import { collections, gateways, restorePoints } from './db/schema';
+import { pickSubscribeSibling } from './replication';
 import {
 	aggregateRequestSchema,
 	checkpointRequestSchema,
@@ -17,20 +18,34 @@ import {
 	querySchema,
 	restoreRequestSchema,
 	settingsRequestSchema,
+	tableColumnsSchema,
+	tableModesSchema,
 	validatorSchema,
 	DEMO_PROJECT_PATTERN,
 	IMPORT_RPC_CHUNK,
+	MAX_GATEWAY_SIBLINGS,
 	MAX_IMPORT_BYTES,
 	MAX_IMPORT_DOCS,
 	MAX_RESTORE_POINTS,
+	SIBLING_SPAWN_SOCKETS,
 	type AccessMode,
+	type BookmarkOutcome,
 	type CollectionConfig,
 	type CollectionValidator,
+	type DbDocument,
 	type ImportLine,
 	type ImportReport,
+	type RestoreOutcome,
 	type RestorePoint,
+	type RestoreRequest,
+	type TableColumn,
+	type TableConfig,
 } from './schemas';
+import { drainUnusedBody } from './access';
+import { planDdl, uniqueViolationColumn } from './table-schema';
 import type { DbCollection } from './collection';
+import type { DbGateway } from './gateway';
+import type { DbTable } from './table';
 
 /**
  * The per-project coordinator: owns the authoritative collection registry
@@ -74,6 +89,34 @@ function parseStoredValidator(raw: string | null): CollectionValidator | null {
 	}
 }
 
+/** Table rows store the declared columns as JSON text; unreadable = []. */
+function parseStoredColumns(raw: string | null): TableColumn[] {
+	if (!raw) return [];
+	try {
+		return tableColumnsSchema.parse(JSON.parse(raw));
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * The kind-specific surface behind the shared shard admin actions (export,
+ * import, PITR). Both engines expose the same RPC contract; the adapter is
+ * what keeps the six admin routes single-sourced instead of copied per kind.
+ */
+interface ShardAdminOps {
+	kind: 'collection' | 'table';
+	row(): Promise<typeof collections.$inferSelect | null>;
+	notFound(): Response;
+	exportChunk(afterId?: string): Promise<{ docs: DbDocument[]; nextAfterId: string | null }>;
+	importChunk(lines: ImportLine[]): Promise<ImportReport>;
+	currentBookmark(): Promise<{ ok: true; bookmark: string } | { ok: false }>;
+	bookmarkForTime(iso: string): Promise<BookmarkOutcome>;
+	restoreTo(body: RestoreRequest): Promise<RestoreOutcome>;
+	reconcileCount(): Promise<void>;
+	pushShardConfig(row: typeof collections.$inferSelect): Promise<void>;
+}
+
 export interface DbActivityEvent {
 	id: string;
 	type:
@@ -83,7 +126,13 @@ export interface DbActivityEvent {
 		| 'collection.configured'
 		| 'collection.restored'
 		| 'documents.changed'
-		| 'documents.imported';
+		| 'documents.imported'
+		| 'table.created'
+		| 'table.configured'
+		| 'table.deleted'
+		| 'table.restored'
+		| 'rows.changed'
+		| 'rows.imported';
 	message: string;
 	at: string;
 }
@@ -95,7 +144,19 @@ export interface DbCollectionSummary {
 	readPermission: string | null;
 	writePermission: string | null;
 	validator: CollectionValidator | null;
+	replication: 'off' | 'auto';
 	docs: number;
+}
+
+export interface DbTableSummary {
+	name: string;
+	readAccess: AccessMode;
+	writeAccess: AccessMode;
+	readPermission: string | null;
+	writePermission: string | null;
+	columns: TableColumn[];
+	replication: 'off' | 'auto';
+	rows: number;
 }
 
 export interface DbAgentState {
@@ -103,7 +164,9 @@ export interface DbAgentState {
 	provisionedAt: string | null;
 	allowedOrigins: string[];
 	collections: DbCollectionSummary[];
+	tables: DbTableSummary[];
 	totalDocs: number;
+	totalRows: number;
 	/** Bumped on any reported change; dashboards refetch when it moves. */
 	rev: number;
 	totalEvents: number;
@@ -114,6 +177,7 @@ export interface DbAgentState {
 export interface DbOverview {
 	projectId: string;
 	collections: DbCollectionSummary[];
+	tables: DbTableSummary[];
 	state: DbAgentState;
 }
 
@@ -123,7 +187,9 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		provisionedAt: null,
 		allowedOrigins: [],
 		collections: [],
+		tables: [],
 		totalDocs: 0,
+		totalRows: 0,
 		rev: 0,
 		totalEvents: 0,
 		lastEventAt: null,
@@ -139,6 +205,14 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 
 	private get isEphemeral(): boolean {
 		return this.env.DEMO_MODE === 'true' && DEMO_PROJECT_PATTERN.test(this.name);
+	}
+
+	/** A row's replication, normalized to the union. The column defaults to
+	 * 'auto' (read replicas out of the box, demos included - the demo IS the
+	 * pitch for this feature); 'off' is the explicit opt-out. One choke point
+	 * for every config build, routing answer, and state summary. */
+	private shardReplication(row: { replication: string }): 'off' | 'auto' {
+		return row.replication === 'auto' ? 'auto' : 'off';
 	}
 
 	async onStart(): Promise<void> {
@@ -207,9 +281,12 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		if (!collectionNameSchema.safeParse(name).success) return null;
 
 		let [row] = await this.db.select().from(collections).where(eq(collections.name, name)).limit(1);
+		// A name registered as a table never resolves as a collection (names
+		// are unique across kinds), and auto-create must not squat on it.
+		if (row && row.kind !== 'collection') return null;
 		if (!row) {
 			if (!options.autoCreate) return null;
-			const denied = this.checkCollectionCap();
+			const denied = this.checkShardCap();
 			if (denied) return null;
 			[row] = await this.db
 				.insert(collections)
@@ -223,6 +300,89 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		}
 
 		return this.buildConfig(row);
+	}
+
+	/** The table child's lazy config pull. NO auto-creation - tables are
+	 * schema-first, so an unregistered name stays null and the child 404s. */
+	async getTableConfig(name: string): Promise<TableConfig | null> {
+		if (!collectionNameSchema.safeParse(name).success) return null;
+		const [row] = await this.db
+			.select()
+			.from(collections)
+			.where(eq(collections.name, name))
+			.limit(1);
+		if (!row || row.kind !== 'table') return null;
+		return this.buildTableConfig(row);
+	}
+
+	/**
+	 * The worker's routing lookup: is this shard replicated, and what kind is
+	 * it? Cached isolate-locally for 60s at the caller; a stale answer is a
+	 * latency wobble, never a correctness problem (replicas forward).
+	 */
+	async getShardRouting(
+		name: string,
+	): Promise<{ kind: 'collection' | 'table'; replication: 'off' | 'auto' } | null> {
+		if (!collectionNameSchema.safeParse(name).success) return null;
+		const [row] = await this.db
+			.select()
+			.from(collections)
+			.where(eq(collections.name, name))
+			.limit(1);
+		if (!row) return null;
+		return {
+			kind: row.kind === 'table' ? 'table' : 'collection',
+			replication: this.shardReplication(row),
+		};
+	}
+
+	/** The project's per-project extra origins, for the gateway's socket-level
+	 * origin gate (per-shard authorization still happens at each shard). */
+	async getAllowedOrigins(): Promise<string[]> {
+		return this.state.allowedOrigins;
+	}
+
+	/** Step-debounced socket-count report from a gateway instance - the
+	 * sibling-spawn signal, registered durably for the erase fan-out too. */
+	async reportGatewaySockets(id: string, region: string, sockets: number): Promise<void> {
+		if (!/^gw:[a-z-]+:\d+$/.test(id)) return;
+		const clean = Number.isFinite(sockets) && sockets >= 0 ? Math.floor(sockets) : 0;
+		await this.db
+			.insert(gateways)
+			.values({ id, region, sockets: clean, lastSeenAt: new Date() })
+			.onConflictDoUpdate({
+				target: gateways.id,
+				set: { sockets: clean, lastSeenAt: new Date() },
+			});
+	}
+
+	/** Which gateway sibling a NEW realtime socket should land on - the
+	 * replica sibling-spawn mechanism verbatim (fill-lowest with headroom,
+	 * unregistered = 0 sockets so picking it IS the spawn). Demo projects
+	 * never spawn siblings. */
+	async gatewaySubscribeTarget(region: string): Promise<number> {
+		if (this.isEphemeral) return 1;
+		const rows = await this.db.select().from(gateways).where(eq(gateways.region, region));
+		const counts: number[] = [];
+		for (const row of rows) {
+			const n = Number(row.id.split(':')[2]);
+			if (Number.isInteger(n) && n >= 1) counts[n - 1] = row.sockets;
+		}
+		const threshold = Number(this.env.SIBLING_SPAWN_SOCKETS ?? '') || SIBLING_SPAWN_SOCKETS;
+		return pickSubscribeSibling(counts, threshold, MAX_GATEWAY_SIBLINGS);
+	}
+
+	/** Debounced absolute row-count report from a table child. */
+	async reportTableStats(name: string, stats: { rows: number }): Promise<void> {
+		if (!collectionNameSchema.safeParse(name).success) return;
+		const rows = Number.isFinite(stats.rows) && stats.rows >= 0 ? Math.floor(stats.rows) : 0;
+
+		await this.db
+			.update(collections)
+			.set({ docs: rows, reportedAt: new Date() })
+			.where(and(eq(collections.name, name), eq(collections.kind, 'table')));
+		this.recordEvent('rows.changed', `table "${name}" now holds ${rows} rows`);
+		await this.syncCollectionsState();
 	}
 
 	/** Debounced absolute-count report from a child. Best-effort by design. */
@@ -247,7 +407,18 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	async destroy(): Promise<void> {
 		const rows = await this.db.select().from(collections).orderBy(asc(collections.name));
 		for (const row of rows) {
-			await this.destroyChild(row.name);
+			await this.destroyChild(row.kind === 'table' ? 'table' : 'collection', row.name);
+		}
+		// Gateways hold only routing rows, but they are project-derived state:
+		// close their sockets and wipe them before the registry goes.
+		const gatewayRows = await this.db.select().from(gateways);
+		const gatewayNamespace = this.env.DbGateway as unknown as DurableObjectNamespace<DbGateway>;
+		for (const row of gatewayRows) {
+			try {
+				await gatewayNamespace.get(gatewayNamespace.idFromName(`${this.name}:${row.id}`)).destroy();
+			} catch (error) {
+				if (!isDurableObjectReset(error)) throw error;
+			}
 		}
 
 		await this.ctx.storage.deleteAll();
@@ -264,7 +435,9 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 
 	async onRequest(request: Request): Promise<Response> {
 		try {
-			return await this.routeRequest(request);
+			const response = await this.routeRequest(request);
+			await drainUnusedBody(request);
+			return response;
 		} catch (error) {
 			// The Agents SDK's own _tryCatch converts handler exceptions into a
 			// bare 500 BEFORE Sentry's DO instrumentation (which only sees
@@ -311,29 +484,30 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			);
 		}
 
-		const collectionAction = subPath.match(
-			/^\/admin\/collections\/([^/]+)\/(export|import|restore|restore-points|checkpoint|bookmark)$/,
+		const shardAction = subPath.match(
+			/^\/admin\/(collections|tables)\/([^/]+)\/(export|import|restore|restore-points|checkpoint|bookmark)$/,
 		);
-		if (collectionAction) {
-			const name = decodeURIComponent(collectionAction[1]);
-			switch (collectionAction[2]) {
+		if (shardAction) {
+			const kind = shardAction[1] === 'tables' ? ('table' as const) : ('collection' as const);
+			const name = decodeURIComponent(shardAction[2]);
+			switch (shardAction[3]) {
 				case 'export':
-					if (request.method === 'GET') return this.adminExport(name);
+					if (request.method === 'GET') return this.adminExport(kind, name);
 					break;
 				case 'import':
-					if (request.method === 'POST') return this.adminImport(request, name);
+					if (request.method === 'POST') return this.adminImport(request, kind, name);
 					break;
 				case 'restore':
-					if (request.method === 'POST') return this.adminRestore(request, name);
+					if (request.method === 'POST') return this.adminRestore(request, kind, name);
 					break;
 				case 'restore-points':
-					if (request.method === 'GET') return this.adminRestorePoints(name);
+					if (request.method === 'GET') return this.adminRestorePoints(kind, name);
 					break;
 				case 'checkpoint':
-					if (request.method === 'POST') return this.adminCheckpoint(request, name);
+					if (request.method === 'POST') return this.adminCheckpoint(request, kind, name);
 					break;
 				case 'bookmark':
-					if (request.method === 'GET') return this.adminBookmarkForTime(url, name);
+					if (request.method === 'GET') return this.adminBookmarkForTime(url, kind, name);
 					break;
 			}
 			return Response.json({ error: 'not found' }, { status: 404 });
@@ -347,6 +521,45 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			return this.deleteCollection(decodeURIComponent(collection[1]));
 		}
 
+		const replicationStatus = subPath.match(/^\/admin\/replication\/([^/]+)$/);
+		if (replicationStatus && request.method === 'GET') {
+			return this.adminReplicationStatus(decodeURIComponent(replicationStatus[1]));
+		}
+
+		if (subPath === '/admin/realtime' && request.method === 'GET') {
+			const rows = await this.db.select().from(gateways).orderBy(asc(gateways.id));
+			return Response.json({
+				gateways: rows.map((row) => ({
+					id: row.id,
+					region: row.region,
+					sockets: row.sockets,
+					lastSeenAt: row.lastSeenAt.toISOString(),
+				})),
+			});
+		}
+
+		const tableSql = subPath.match(/^\/admin\/tables\/([^/]+)\/sql$/);
+		if (tableSql && request.method === 'POST') {
+			return this.adminTableSql(request, decodeURIComponent(tableSql[1]));
+		}
+
+		const tableRow = subPath.match(/^\/admin\/tables\/([^/]+)\/rows\/([^/]+)$/);
+		if (tableRow) {
+			return this.adminTableRowWrite(
+				request,
+				decodeURIComponent(tableRow[1]),
+				decodeURIComponent(tableRow[2]),
+			);
+		}
+
+		const table = subPath.match(/^\/admin\/tables\/([^/]+)$/);
+		if (table && request.method === 'PUT') {
+			return this.configureTable(request, decodeURIComponent(table[1]));
+		}
+		if (table && request.method === 'DELETE') {
+			return this.deleteTable(decodeURIComponent(table[1]));
+		}
+
 		return Response.json({ error: 'not found' }, { status: 404 });
 	}
 
@@ -354,32 +567,57 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return {
 			projectId: this.name,
 			collections: this.state.collections,
+			tables: this.state.tables ?? [],
 			state: this.state,
 		};
 	}
 
+	/**
+	 * One operator query surface for both engines (and the copilot's query
+	 * tool): the body names exactly one of `collection` or `table`. Table
+	 * compile refusals (unknown column, illegal dotted path) answer 400 with
+	 * the compiler's message.
+	 */
 	private async adminQuery(request: Request): Promise<Response> {
 		const body = (await request.json().catch(() => null)) as {
 			collection?: unknown;
+			table?: unknown;
 			query?: unknown;
 		} | null;
-		const name = collectionNameSchema.safeParse(body?.collection);
 		const query = querySchema.safeParse(body?.query ?? {});
-		if (!name.success || !query.success) {
-			return Response.json({ error: 'invalid collection or query' }, { status: 400 });
+		const hasCollection = body?.collection !== undefined;
+		const hasTable = body?.table !== undefined;
+		if (!query.success || hasCollection === hasTable) {
+			return Response.json(
+				{ error: 'name exactly one of collection or table, plus a valid query' },
+				{ status: 400 },
+			);
 		}
-		const [row] = await this.db
-			.select()
-			.from(collections)
-			.where(eq(collections.name, name.data))
-			.limit(1);
-		if (!row) return Response.json({ error: 'no such collection' }, { status: 404 });
 
+		if (hasTable) {
+			const name = collectionNameSchema.safeParse(body?.table);
+			if (!name.success) return Response.json({ error: 'invalid table name' }, { status: 400 });
+			if (!(await this.tableRow(name.data))) {
+				return Response.json({ error: 'no such table' }, { status: 404 });
+			}
+			const result = (await this.tableStub(name.data).adminQuery(query.data)) as unknown as Awaited<
+				ReturnType<DbTable['adminQuery']>
+			>;
+			if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
+			const { ok: _ok, ...payload } = result;
+			return Response.json(payload);
+		}
+
+		const name = collectionNameSchema.safeParse(body?.collection);
+		if (!name.success) return Response.json({ error: 'invalid collection name' }, { status: 400 });
+		if (!(await this.collectionRow(name.data))) {
+			return Response.json({ error: 'no such collection' }, { status: 404 });
+		}
 		const child = this.childStub(name.data);
 		return Response.json(await child.adminQuery(query.data));
 	}
 
-	/** The registry row, or null for an invalid/unknown name. */
+	/** The collection registry row, or null for invalid/unknown/table names. */
 	private async collectionRow(name: string): Promise<typeof collections.$inferSelect | null> {
 		if (!collectionNameSchema.safeParse(name).success) return null;
 		const [row] = await this.db
@@ -387,31 +625,123 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			.from(collections)
 			.where(eq(collections.name, name))
 			.limit(1);
-		return row ?? null;
+		return row && row.kind === 'collection' ? row : null;
 	}
 
+	/** The table registry row, or null for invalid/unknown/collection names. */
+	private async tableRow(name: string): Promise<typeof collections.$inferSelect | null> {
+		if (!collectionNameSchema.safeParse(name).success) return null;
+		const [row] = await this.db
+			.select()
+			.from(collections)
+			.where(eq(collections.name, name))
+			.limit(1);
+		return row && row.kind === 'table' ? row : null;
+	}
+
+	/** One operator aggregate surface for both engines (T2): the body names
+	 * exactly one of `collection` or `table`, like /admin/query. */
 	private async adminAggregate(request: Request): Promise<Response> {
 		const body = (await request.json().catch(() => null)) as {
 			collection?: unknown;
+			table?: unknown;
 			aggregate?: unknown;
 		} | null;
-		const name = collectionNameSchema.safeParse(body?.collection);
 		const aggregate = aggregateRequestSchema.safeParse(body?.aggregate);
-		if (!name.success || !aggregate.success) {
-			return Response.json({ error: 'invalid collection or aggregate request' }, { status: 400 });
+		const hasCollection = body?.collection !== undefined;
+		const hasTable = body?.table !== undefined;
+		if (!aggregate.success || hasCollection === hasTable) {
+			return Response.json(
+				{ error: 'name exactly one of collection or table, plus a valid aggregate request' },
+				{ status: 400 },
+			);
 		}
+
+		if (hasTable) {
+			const name = collectionNameSchema.safeParse(body?.table);
+			if (!name.success) return Response.json({ error: 'invalid table name' }, { status: 400 });
+			if (!(await this.tableRow(name.data))) {
+				return Response.json({ error: 'no such table' }, { status: 404 });
+			}
+			const result = (await this.tableStub(name.data).adminAggregate(
+				aggregate.data,
+			)) as unknown as Awaited<ReturnType<DbTable['adminAggregate']>>;
+			if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
+			return Response.json({ results: result.results });
+		}
+
+		const name = collectionNameSchema.safeParse(body?.collection);
+		if (!name.success) return Response.json({ error: 'invalid collection name' }, { status: 400 });
 		if (!(await this.collectionRow(name.data))) {
 			return Response.json({ error: 'no such collection' }, { status: 404 });
 		}
 		return Response.json(await this.childStub(name.data).adminAggregate(aggregate.data));
 	}
 
-	/** Operator NDJSON export, streamed chunk by chunk over child RPC. */
-	private async adminExport(name: string): Promise<Response> {
-		if (!(await this.collectionRow(name))) {
-			return Response.json({ error: 'no such collection' }, { status: 404 });
+	/** Operator SQL over one table - the dashboard console and the copilot's
+	 * read tool ride this; the statement gate is the same table-sql.ts. */
+	private async adminTableSql(request: Request, name: string): Promise<Response> {
+		if (!(await this.tableRow(name))) {
+			return Response.json({ error: 'no such table' }, { status: 404 });
 		}
-		const child = this.childStub(name);
+		const body = await request.json().catch(() => null);
+		const result = (await this.tableStub(name).adminSql(body)) as unknown as Awaited<
+			ReturnType<DbTable['adminSql']>
+		>;
+		if (!result.ok) return Response.json({ success: false, error: result.error }, { status: 400 });
+		return Response.json({ success: true, batch: result.batch });
+	}
+
+	/**
+	 * The kind adapter behind the shared admin actions. The exportChunk casts
+	 * mirror the DurableObjectNamespace<any> gotcha: DbDocument carries
+	 * Record<string, unknown>, and `unknown` fails the stub's Rpc.Serializable
+	 * transform, collapsing the return type to never. The values are plain
+	 * JSON objects; only the type system objects.
+	 */
+	private shardOps(kind: 'collection' | 'table', name: string): ShardAdminOps {
+		if (kind === 'table') {
+			const stub = () => this.tableStub(name);
+			return {
+				kind,
+				row: () => this.tableRow(name),
+				notFound: () => Response.json({ error: 'no such table' }, { status: 404 }),
+				exportChunk: async (afterId?: string) =>
+					(await stub().exportChunk(afterId)) as unknown as Awaited<
+						ReturnType<DbTable['exportChunk']>
+					>,
+				importChunk: (lines: ImportLine[]) => stub().importRows(lines),
+				currentBookmark: () => stub().currentBookmark(),
+				bookmarkForTime: (iso: string) => stub().bookmarkForTime(iso),
+				restoreTo: (body: RestoreRequest) => stub().restoreTo(body),
+				reconcileCount: async () =>
+					this.reportTableStats(name, { rows: await stub().getRowCount() }),
+				pushShardConfig: (row) => this.pushTableConfig(row),
+			};
+		}
+		const stub = () => this.childStub(name);
+		return {
+			kind,
+			row: () => this.collectionRow(name),
+			notFound: () => Response.json({ error: 'no such collection' }, { status: 404 }),
+			exportChunk: async (afterId?: string) =>
+				(await stub().exportChunk(afterId)) as unknown as Awaited<
+					ReturnType<DbCollection['exportChunk']>
+				>,
+			importChunk: (lines: ImportLine[]) => stub().importDocs(lines),
+			currentBookmark: () => stub().currentBookmark(),
+			bookmarkForTime: (iso: string) => stub().bookmarkForTime(iso),
+			restoreTo: (body: RestoreRequest) => stub().restoreTo(body),
+			reconcileCount: async () =>
+				this.reportCollectionStats(name, { docs: await stub().getDocCount() }),
+			pushShardConfig: (row) => this.pushConfig(row),
+		};
+	}
+
+	/** Operator NDJSON export, streamed chunk by chunk over child RPC. */
+	private async adminExport(kind: 'collection' | 'table', name: string): Promise<Response> {
+		const ops = this.shardOps(kind, name);
+		if (!(await ops.row())) return ops.notFound();
 		const encoder = new TextEncoder();
 		let afterId: string | undefined;
 		let done = false;
@@ -419,13 +749,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		const stream = new ReadableStream<Uint8Array>({
 			async pull(controller) {
 				if (done) return;
-				// The cast mirrors the DurableObjectNamespace<any> gotcha: DbDocument
-				// carries Record<string, unknown>, and `unknown` fails the stub's
-				// Rpc.Serializable transform, collapsing the return type to never.
-				// The value is a plain JSON object; only the type system objects.
-				const chunk = (await child.exportChunk(afterId)) as unknown as Awaited<
-					ReturnType<DbCollection['exportChunk']>
-				>;
+				const chunk = await ops.exportChunk(afterId);
 				for (const doc of chunk.docs) {
 					controller.enqueue(encoder.encode(`${JSON.stringify(doc)}\n`));
 				}
@@ -467,11 +791,15 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return { bookmark, reason, capturedAt: capturedAt.toISOString() };
 	}
 
-	/** Capture the collection's current-moment bookmark; null when the
-	 * environment has no PITR (local dev) - callers degrade gracefully. */
-	private async captureRestorePoint(name: string, reason: string): Promise<RestorePoint | null> {
+	/** Capture the shard's current-moment bookmark; null when the environment
+	 * has no PITR (local dev) - callers degrade gracefully. */
+	private async captureRestorePoint(
+		ops: ShardAdminOps,
+		name: string,
+		reason: string,
+	): Promise<RestorePoint | null> {
 		try {
-			const current = await this.probeBookmark(name);
+			const current = await this.probeBookmark(ops);
 			if (!current.ok) return null;
 			return await this.saveRestorePoint(name, current.bookmark, reason);
 		} catch {
@@ -483,11 +811,11 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	 * The child's current bookmark, retried once on an abort-reset: a restore
 	 * leaves that instance resetting for a tick, and without the retry a
 	 * capture or a support probe in that window reports "unsupported" for a
-	 * collection whose PITR is perfectly fine. The async wrapper is also what
+	 * shard whose PITR is perfectly fine. The async wrapper is also what
 	 * collapses the RPC stub's union return type for inference.
 	 */
-	private async probeBookmark(name: string) {
-		const probe = async () => this.childStub(name).currentBookmark();
+	private async probeBookmark(ops: ShardAdminOps) {
+		const probe = async () => ops.currentBookmark();
 		try {
 			return await probe();
 		} catch (error) {
@@ -501,11 +829,10 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	 * environment supports PITR at all, so the dialog can explain up front
 	 * instead of failing after a submit.
 	 */
-	private async adminRestorePoints(name: string): Promise<Response> {
-		if (!(await this.collectionRow(name))) {
-			return Response.json({ error: 'no such collection' }, { status: 404 });
-		}
-		const probe = await this.probeBookmark(name);
+	private async adminRestorePoints(kind: 'collection' | 'table', name: string): Promise<Response> {
+		const ops = this.shardOps(kind, name);
+		if (!(await ops.row())) return ops.notFound();
+		const probe = await this.probeBookmark(ops);
 		// The platform window is 30 days; older markers are dead weight.
 		await this.db
 			.delete(restorePoints)
@@ -534,7 +861,11 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	 * D1-restore-style: `?at=<ISO time>` in, the closest available bookmark
 	 * out - the dialog shows it BEFORE the operator commits to a restore.
 	 */
-	private async adminBookmarkForTime(url: URL, name: string): Promise<Response> {
+	private async adminBookmarkForTime(
+		url: URL,
+		kind: 'collection' | 'table',
+		name: string,
+	): Promise<Response> {
 		const at = url.searchParams.get('at') ?? '';
 		const target = new Date(at).getTime();
 		const now = Date.now();
@@ -544,12 +875,10 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				{ status: 400 },
 			);
 		}
-		if (!(await this.collectionRow(name))) {
-			return Response.json({ error: 'no such collection' }, { status: 404 });
-		}
+		const ops = this.shardOps(kind, name);
+		if (!(await ops.row())) return ops.notFound();
 
-		const resolve = async () =>
-			this.childStub(name).bookmarkForTime(new Date(target).toISOString());
+		const resolve = async () => ops.bookmarkForTime(new Date(target).toISOString());
 		let outcome;
 		try {
 			outcome = await resolve();
@@ -575,7 +904,11 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	}
 
 	/** Manual checkpoint: capture "now" as a named restore point. */
-	private async adminCheckpoint(request: Request, name: string): Promise<Response> {
+	private async adminCheckpoint(
+		request: Request,
+		kind: 'collection' | 'table',
+		name: string,
+	): Promise<Response> {
 		const body = checkpointRequestSchema.safeParse(await request.json().catch(() => ({})));
 		if (!body.success) {
 			return Response.json(
@@ -583,10 +916,13 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				{ status: 400 },
 			);
 		}
-		if (!(await this.collectionRow(name))) {
-			return Response.json({ error: 'no such collection' }, { status: 404 });
-		}
-		const point = await this.captureRestorePoint(name, body.data.reason ?? 'manual checkpoint');
+		const ops = this.shardOps(kind, name);
+		if (!(await ops.row())) return ops.notFound();
+		const point = await this.captureRestorePoint(
+			ops,
+			name,
+			body.data.reason ?? 'manual checkpoint',
+		);
 		if (!point) {
 			return Response.json(
 				{
@@ -605,10 +941,13 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	 * reported with their 1-based line number, good ones still land), then
 	 * feed the children in RPC-sized chunks and merge their reports.
 	 */
-	private async adminImport(request: Request, name: string): Promise<Response> {
-		if (!(await this.collectionRow(name))) {
-			return Response.json({ error: 'no such collection' }, { status: 404 });
-		}
+	private async adminImport(
+		request: Request,
+		kind: 'collection' | 'table',
+		name: string,
+	): Promise<Response> {
+		const ops = this.shardOps(kind, name);
+		if (!(await ops.row())) return ops.notFound();
 		const text = await request.text().catch(() => '');
 		if (new TextEncoder().encode(text).byteLength > MAX_IMPORT_BYTES) {
 			return Response.json(
@@ -629,7 +968,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		}
 
 		// A free undo for the whole import (deployed stacks; local has no PITR).
-		await this.captureRestorePoint(name, 'before import');
+		await this.captureRestorePoint(ops, name, 'before import');
 
 		const report: ImportReport = { imported: 0, updated: 0, errors: [] };
 		const valid: { line: number; parsed: ImportLine }[] = [];
@@ -649,10 +988,9 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			valid.push({ line: index + 1, parsed: parsed.data });
 		}
 
-		const child = this.childStub(name);
 		for (let start = 0; start < valid.length; start += IMPORT_RPC_CHUNK) {
 			const chunk = valid.slice(start, start + IMPORT_RPC_CHUNK);
-			const chunkReport = await child.importDocs(chunk.map((entry) => entry.parsed));
+			const chunkReport = await ops.importChunk(chunk.map((entry) => entry.parsed));
 			report.imported += chunkReport.imported;
 			report.updated += chunkReport.updated;
 			for (const error of chunkReport.errors) {
@@ -660,16 +998,19 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			}
 		}
 
-		this.writeDbEvent('documents.imported');
+		const noun = kind === 'table' ? 'rows' : 'documents';
+		const importedEvent =
+			kind === 'table' ? ('rows.imported' as const) : ('documents.imported' as const);
+		this.writeDbEvent(importedEvent);
 		this.recordEvent(
-			'documents.imported',
-			`imported ${report.imported + report.updated} documents into "${name}"` +
+			importedEvent,
+			`imported ${report.imported + report.updated} ${noun} into "${name}"` +
 				(report.errors.length ? ` (${report.errors.length} lines failed)` : ''),
 		);
 		// Immediate count reconcile so the dashboard reflects the import now
 		// rather than after the next organic write.
 		try {
-			await this.reportCollectionStats(name, { docs: await child.getDocCount() });
+			await ops.reconcileCount();
 		} catch {
 			// best-effort: the count self-heals on the next write
 		}
@@ -677,12 +1018,16 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	}
 
 	/**
-	 * Point-in-time rollback of ONE collection. The child validates support
-	 * and performs the platform restore; this route owns the 30-day window
-	 * check and the operator-facing error shapes (501 = the environment has
-	 * no durable change log, i.e. local development).
+	 * Point-in-time rollback of ONE shard (either kind). The child validates
+	 * support and performs the platform restore; this route owns the 30-day
+	 * window check and the operator-facing error shapes (501 = the environment
+	 * has no durable change log, i.e. local development).
 	 */
-	private async adminRestore(request: Request, name: string): Promise<Response> {
+	private async adminRestore(
+		request: Request,
+		kind: 'collection' | 'table',
+		name: string,
+	): Promise<Response> {
 		const parsed = restoreRequestSchema.safeParse(await request.json().catch(() => null));
 		if (!parsed.success) {
 			return Response.json(
@@ -700,18 +1045,17 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				);
 			}
 		}
-		if (!(await this.collectionRow(name))) {
-			return Response.json({ error: 'no such collection' }, { status: 404 });
-		}
+		const ops = this.shardOps(kind, name);
+		if (!(await ops.row())) return ops.notFound();
 
 		// Capture the undo point BEFORE the restore: the child aborts a tick
 		// after arming it, and in production that abort can outrace the RPC
 		// reply. With the pre-restore bookmark already persisted, an
 		// abort-reset error still reports success with a working undo.
-		const undoPoint = await this.captureRestorePoint(name, 'before rollback');
-		let outcome: Awaited<ReturnType<DbCollection['restoreTo']>>;
+		const undoPoint = await this.captureRestorePoint(ops, name, 'before rollback');
+		let outcome: RestoreOutcome;
 		try {
-			outcome = await this.childStub(name).restoreTo(parsed.data);
+			outcome = await ops.restoreTo(parsed.data);
 		} catch (error) {
 			if (!isDurableObjectReset(error)) throw error;
 			// An abort-reset here is ambiguous: THIS restore's abort raced its
@@ -720,7 +1064,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			// against the fresh instance - re-arming the same bookmark is
 			// idempotent - and only a second race counts as armed-and-raced.
 			try {
-				outcome = await this.childStub(name).restoreTo(parsed.data);
+				outcome = await ops.restoreTo(parsed.data);
 			} catch (retryError) {
 				if (!isDurableObjectReset(retryError)) throw retryError;
 				outcome = { ok: true, undoBookmark: undoPoint?.bookmark ?? '' };
@@ -740,20 +1084,40 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			return Response.json({ error: outcome.message ?? 'restore failed' }, { status: 400 });
 		}
 
-		this.writeDbEvent('collection.restored');
+		const restoredEvent =
+			kind === 'table' ? ('table.restored' as const) : ('collection.restored' as const);
+		this.writeDbEvent(restoredEvent);
 		this.recordEvent(
-			'collection.restored',
+			restoredEvent,
 			parsed.data.timestamp
-				? `collection "${name}" rolled back to ${parsed.data.timestamp}`
-				: `collection "${name}" restored to a bookmark`,
+				? `${kind} "${name}" rolled back to ${parsed.data.timestamp}`
+				: `${kind} "${name}" restored to a bookmark`,
 		);
+		// A restore rewinds the primary's storage INCLUDING its change log, so
+		// the epoch that tells replicas to discard and re-bootstrap must live
+		// here, in the parent. Bump it and push the config carrying it.
+		const restoredRow = await ops.row();
+		if (restoredRow && this.shardReplication(restoredRow) === 'auto') {
+			await this.db
+				.update(collections)
+				.set({ repEpoch: restoredRow.repEpoch + 1 })
+				.where(eq(collections.name, name));
+			const bumped = await ops.row();
+			if (bumped) {
+				try {
+					await ops.pushShardConfig(bumped);
+				} catch {
+					// the child heals via lazy pull; replicas resync on next pull
+				}
+			}
+		}
 		// The undo point was captured before the restore, so it is already in
 		// the list; the response carries whichever undo handle survived.
 		// The child aborts a tick after answering; give the restored session a
 		// moment, then reconcile the count. Best-effort - the count self-heals.
 		try {
 			await new Promise((resolve) => setTimeout(resolve, 250));
-			await this.reportCollectionStats(name, { docs: await this.childStub(name).getDocCount() });
+			await ops.reconcileCount();
 		} catch {
 			// the restored instance reports on its next write
 		}
@@ -765,15 +1129,9 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		name: string,
 		docId: string,
 	): Promise<Response> {
-		if (!collectionNameSchema.safeParse(name).success) {
-			return Response.json({ error: 'invalid collection name' }, { status: 400 });
+		if (!(await this.collectionRow(name))) {
+			return Response.json({ error: 'no such collection' }, { status: 404 });
 		}
-		const [row] = await this.db
-			.select()
-			.from(collections)
-			.where(eq(collections.name, name))
-			.limit(1);
-		if (!row) return Response.json({ error: 'no such collection' }, { status: 404 });
 		const child = this.childStub(name);
 
 		if (request.method === 'PUT') {
@@ -823,8 +1181,13 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			.where(eq(collections.name, name))
 			.limit(1);
 
+		// Names are unique across kinds (the registry PK): a table already
+		// holds this one.
+		if (existing && existing.kind !== 'collection') {
+			return Response.json({ error: `"${name}" is already a table` }, { status: 409 });
+		}
 		if (!existing) {
-			const denied = this.checkCollectionCap();
+			const denied = this.checkShardCap();
 			if (denied) return denied;
 		}
 
@@ -840,6 +1203,9 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		}
 		if (modes.data.validator !== undefined) {
 			patch.validator = modes.data.validator === null ? null : JSON.stringify(modes.data.validator);
+		}
+		if (modes.data.replication !== undefined) {
+			patch.replication = modes.data.replication;
 		}
 
 		const [row] = await this.db
@@ -877,16 +1243,12 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	}
 
 	private async deleteCollection(name: string): Promise<Response> {
-		const [row] = await this.db
-			.select()
-			.from(collections)
-			.where(eq(collections.name, name))
-			.limit(1);
+		const row = await this.collectionRow(name);
 		if (!row) return Response.json({ error: 'no such collection' }, { status: 404 });
 
 		// Child first, registry second - a failure leaves the row so the
 		// operator can retry; the reverse order would orphan the child's data.
-		await this.destroyChild(name);
+		await this.destroyChild('collection', name);
 		await this.db.delete(collections).where(eq(collections.name, name));
 		// A deliberate erase must stay erased - drop its restore markers too.
 		await this.db.delete(restorePoints).where(eq(restorePoints.collection, name));
@@ -895,6 +1257,191 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		this.recordEvent('collection.deleted', `collection "${name}" deleted`);
 		await this.syncCollectionsState();
 		return Response.json({ deleted: true });
+	}
+
+	/**
+	 * Declare or alter a table: full desired schema in, destructive diffs
+	 * refused HERE (before any row write or push - the child's planner is
+	 * defensive only), row first, then push. A DDL failure at the child (e.g.
+	 * uniquifying a column holding duplicates) must not leave the registry
+	 * claiming columns that never applied: the row reverts and the SQLite
+	 * message surfaces as the 409.
+	 */
+	private async configureTable(request: Request, name: string): Promise<Response> {
+		if (!collectionNameSchema.safeParse(name).success) {
+			return Response.json(
+				{ error: 'table names are lowercase letters, digits, _ and - (max 64 chars)' },
+				{ status: 400 },
+			);
+		}
+		const modes = tableModesSchema.safeParse(await request.json().catch(() => ({})));
+		if (!modes.success) {
+			return Response.json(
+				{ error: 'invalid table schema', issues: modes.error.issues },
+				{ status: 400 },
+			);
+		}
+
+		const [existing] = await this.db
+			.select()
+			.from(collections)
+			.where(eq(collections.name, name))
+			.limit(1);
+		if (existing && existing.kind !== 'table') {
+			return Response.json({ error: `"${name}" is already a collection` }, { status: 409 });
+		}
+		if (!existing) {
+			const denied = this.checkShardCap();
+			if (denied) return denied;
+		}
+
+		if (existing) {
+			const plan = planDdl(name, parseStoredColumns(existing.columns), modes.data.columns);
+			if (!plan.ok) return Response.json({ error: plan.reason }, { status: 400 });
+		}
+
+		const patch: Partial<typeof collections.$inferInsert> = {
+			readAccess: modes.data.readAccess,
+			writeAccess: modes.data.writeAccess,
+			columns: JSON.stringify(modes.data.columns),
+		};
+		if (modes.data.readPermission !== undefined) patch.readPermission = modes.data.readPermission;
+		if (modes.data.writePermission !== undefined) {
+			patch.writePermission = modes.data.writePermission;
+		}
+		if (modes.data.replication !== undefined) {
+			patch.replication = modes.data.replication;
+		}
+
+		const [row] = await this.db
+			.insert(collections)
+			.values({
+				name,
+				kind: 'table',
+				readPermission: null,
+				writePermission: null,
+				validator: null,
+				...patch,
+				createdAt: new Date(),
+			})
+			.onConflictDoUpdate({ target: collections.name, set: patch })
+			.returning();
+
+		try {
+			await this.pushTableConfig(row);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (existing) {
+				await this.db
+					.update(collections)
+					.set({
+						readAccess: existing.readAccess,
+						writeAccess: existing.writeAccess,
+						readPermission: existing.readPermission,
+						writePermission: existing.writePermission,
+						columns: existing.columns,
+					})
+					.where(eq(collections.name, name));
+			} else {
+				await this.db.delete(collections).where(eq(collections.name, name));
+			}
+			return Response.json(
+				{ error: `schema change failed: ${message.slice(0, 256)}` },
+				{ status: 409 },
+			);
+		}
+
+		this.writeDbEvent(existing ? 'table.configured' : 'table.created');
+		this.recordEvent(
+			existing ? 'table.configured' : 'table.created',
+			existing
+				? `table "${name}" reconfigured (${modes.data.columns.length} columns)`
+				: `table "${name}" declared (${modes.data.columns.length} columns)`,
+		);
+		await this.syncCollectionsState();
+		return Response.json({
+			name,
+			readAccess: row.readAccess,
+			writeAccess: row.writeAccess,
+			readPermission: row.readPermission,
+			writePermission: row.writePermission,
+			columns: parseStoredColumns(row.columns),
+		});
+	}
+
+	private async deleteTable(name: string): Promise<Response> {
+		const row = await this.tableRow(name);
+		if (!row) return Response.json({ error: 'no such table' }, { status: 404 });
+
+		// Child first, registry second - the collection erase discipline.
+		await this.destroyChild('table', name);
+		await this.db.delete(collections).where(eq(collections.name, name));
+		// A deliberate erase must stay erased - drop its restore markers too.
+		await this.db.delete(restorePoints).where(eq(restorePoints.collection, name));
+
+		this.writeDbEvent('table.deleted');
+		this.recordEvent('table.deleted', `table "${name}" deleted`);
+		await this.syncCollectionsState();
+		return Response.json({ deleted: true });
+	}
+
+	/** The replica map: lag and last-seen per region, for either kind. */
+	private async adminReplicationStatus(name: string): Promise<Response> {
+		const routing = await this.getShardRouting(name);
+		if (!routing) return Response.json({ error: 'no such collection or table' }, { status: 404 });
+		const status =
+			routing.kind === 'table'
+				? await this.tableStub(name).repStatus()
+				: await this.childStub(name).repStatus();
+		return Response.json(status);
+	}
+
+	private async adminTableRowWrite(
+		request: Request,
+		name: string,
+		rowId: string,
+	): Promise<Response> {
+		if (!(await this.tableRow(name))) {
+			return Response.json({ error: 'no such table' }, { status: 404 });
+		}
+		const child = this.tableStub(name);
+
+		if (request.method === 'PUT') {
+			const data = (await request.json().catch(() => null)) as { data?: unknown } | null;
+			if (!data || typeof data.data !== 'object' || data.data === null) {
+				return Response.json({ error: 'invalid row body' }, { status: 400 });
+			}
+			const ifAbsent = new URL(request.url).searchParams.get('ifAbsent') === '1';
+			let result: Awaited<ReturnType<DbTable['adminPut']>>;
+			try {
+				result = (await child.adminPut(rowId, data.data, ifAbsent)) as unknown as Awaited<
+					ReturnType<DbTable['adminPut']>
+				>;
+			} catch (error) {
+				const column = uniqueViolationColumn(error);
+				if (!column) throw error;
+				return Response.json(
+					{ error: `a row with that ${column} already exists (unique column)` },
+					{ status: 409 },
+				);
+			}
+			if (typeof result === 'object' && result !== null && 'conflict' in result) {
+				return Response.json({ error: 'a row with that id already exists' }, { status: 409 });
+			}
+			if (typeof result === 'object' && result !== null && 'invalid' in result) {
+				return Response.json(
+					{ error: 'row failed validation', issues: result.invalid },
+					{ status: 400 },
+				);
+			}
+			return Response.json(result);
+		}
+		if (request.method === 'DELETE') {
+			const deleted = await child.adminDelete(rowId);
+			if (!deleted) return Response.json({ error: 'no such row' }, { status: 404 });
+			return Response.json({ deleted: true });
+		}
+		return Response.json({ error: 'not found' }, { status: 404 });
 	}
 
 	private async updateSettings(request: Request): Promise<Response> {
@@ -908,15 +1455,17 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 
 		this.setState({ ...this.state, allowedOrigins: parsed.data.allowedOrigins });
 
-		// Re-push every child so cached CORS lists update. Retry once; a child
-		// that still fails heals on its next lazy pull.
+		// Re-push every child - both kinds - so cached CORS lists update.
+		// Retry once; a child that still fails heals on its next lazy pull.
 		const rows = await this.db.select().from(collections);
 		for (const row of rows) {
+			const push =
+				row.kind === 'table' ? () => this.pushTableConfig(row) : () => this.pushConfig(row);
 			try {
-				await this.pushConfig(row);
+				await push();
 			} catch {
 				try {
-					await this.pushConfig(row);
+					await push();
 				} catch {
 					// seconds-level staleness accepted; documented risk
 				}
@@ -933,20 +1482,29 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return namespace.get(namespace.idFromName(`${this.name}:${name}`));
 	}
 
+	private tableStub(name: string) {
+		const namespace = this.env.DbTable as unknown as DurableObjectNamespace<DbTable>;
+		return namespace.get(namespace.idFromName(`${this.name}:${name}`));
+	}
+
 	/**
-	 * Destroy one child, tolerating the abort-vs-reply race: an abort-reset
-	 * error is verified against a fresh instance instead of failing the
-	 * operation - zero documents means the wipe landed. A genuine failure
-	 * (documents still there) rethrows, and the registry row survives so the
-	 * operator can retry; nothing may orphan a Durable Object holding data.
+	 * Destroy one child of either kind, tolerating the abort-vs-reply race:
+	 * an abort-reset error is verified against a fresh instance instead of
+	 * failing the operation - zero documents/rows means the wipe landed. A
+	 * genuine failure rethrows, and the registry row survives so the operator
+	 * can retry; nothing may orphan a Durable Object holding data.
 	 */
-	private async destroyChild(name: string): Promise<void> {
+	private async destroyChild(kind: 'collection' | 'table', name: string): Promise<void> {
 		try {
-			await this.childStub(name).destroy();
+			if (kind === 'table') await this.tableStub(name).destroy();
+			else await this.childStub(name).destroy();
 		} catch (error) {
 			if (!isDurableObjectReset(error)) throw error;
-			const docs = await this.childStub(name).getDocCount();
-			if (docs > 0) throw error;
+			const remaining =
+				kind === 'table'
+					? await this.tableStub(name).getRowCount()
+					: await this.childStub(name).getDocCount();
+			if (remaining > 0) throw error;
 		}
 	}
 
@@ -964,6 +1522,8 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			allowedOrigins: this.state.allowedOrigins,
 			demo: this.isEphemeral,
 			configVersion: version,
+			replication: this.shardReplication(row),
+			repEpoch: row.repEpoch,
 		};
 	}
 
@@ -972,14 +1532,41 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		await child.configure(await this.buildConfig(row));
 	}
 
-	private checkCollectionCap(): Response | null {
+	private async buildTableConfig(row: typeof collections.$inferSelect): Promise<TableConfig> {
+		const version = ((await this.ctx.storage.get<number>('config-version')) ?? 0) + 1;
+		await this.ctx.storage.put('config-version', version);
+		return {
+			kind: 'table',
+			projectId: this.name,
+			table: row.name,
+			readAccess: row.readAccess as AccessMode,
+			writeAccess: row.writeAccess as AccessMode,
+			readPermission: row.readPermission,
+			writePermission: row.writePermission,
+			columns: parseStoredColumns(row.columns),
+			allowedOrigins: this.state.allowedOrigins,
+			demo: this.isEphemeral,
+			configVersion: version,
+			replication: this.shardReplication(row),
+			repEpoch: row.repEpoch,
+		};
+	}
+
+	private async pushTableConfig(row: typeof collections.$inferSelect): Promise<void> {
+		await this.tableStub(row.name).configure(await this.buildTableConfig(row));
+	}
+
+	/** ONE pool across kinds: a project holds at most MAX_COLLECTIONS shards
+	 * (collections + tables together), DEMO_MAX_COLLECTIONS in demos. */
+	private checkShardCap(): Response | null {
 		const cap = this.isEphemeral ? DEMO_MAX_COLLECTIONS : MAX_COLLECTIONS;
-		if (this.state.collections.length >= cap) {
+		const total = this.state.collections.length + (this.state.tables ?? []).length;
+		if (total >= cap) {
 			return Response.json(
 				{
 					error: this.isEphemeral
-						? `demo projects are capped at ${DEMO_MAX_COLLECTIONS} collections`
-						: `projects are capped at ${MAX_COLLECTIONS} collections`,
+						? `demo projects are capped at ${DEMO_MAX_COLLECTIONS} collections and tables`
+						: `projects are capped at ${MAX_COLLECTIONS} collections and tables`,
 				},
 				{ status: 429 },
 			);
@@ -989,19 +1576,36 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 
 	private async syncCollectionsState(): Promise<void> {
 		const rows = await this.db.select().from(collections).orderBy(asc(collections.name));
-		const summaries: DbCollectionSummary[] = rows.map((row) => ({
-			name: row.name,
-			readAccess: row.readAccess as AccessMode,
-			writeAccess: row.writeAccess as AccessMode,
-			readPermission: row.readPermission,
-			writePermission: row.writePermission,
-			validator: parseStoredValidator(row.validator),
-			docs: row.docs,
-		}));
+		const summaries: DbCollectionSummary[] = rows
+			.filter((row) => row.kind === 'collection')
+			.map((row) => ({
+				name: row.name,
+				readAccess: row.readAccess as AccessMode,
+				writeAccess: row.writeAccess as AccessMode,
+				readPermission: row.readPermission,
+				writePermission: row.writePermission,
+				validator: parseStoredValidator(row.validator),
+				replication: this.shardReplication(row),
+				docs: row.docs,
+			}));
+		const tables: DbTableSummary[] = rows
+			.filter((row) => row.kind === 'table')
+			.map((row) => ({
+				name: row.name,
+				readAccess: row.readAccess as AccessMode,
+				writeAccess: row.writeAccess as AccessMode,
+				readPermission: row.readPermission,
+				writePermission: row.writePermission,
+				columns: parseStoredColumns(row.columns),
+				replication: this.shardReplication(row),
+				rows: row.docs,
+			}));
 		this.setState({
 			...this.state,
 			collections: summaries,
+			tables,
 			totalDocs: summaries.reduce((sum, entry) => sum + entry.docs, 0),
+			totalRows: tables.reduce((sum, entry) => sum + entry.rows, 0),
 			rev: this.state.rev + 1,
 		});
 	}
