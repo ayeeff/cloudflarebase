@@ -112,6 +112,12 @@
 			supabase: { mark: 'partial', note: 'metered past the cap' }
 		},
 		{
+			capability: 'Compliance',
+			cfb: { mark: 'yes', note: "your Cloudflare account's certs - no new data processor" },
+			firebase: { mark: 'partial', note: "Google's certs, but another processor to review" },
+			supabase: { mark: 'partial', note: 'SOC 2 gated to the paid Team plan, HIPAA an add-on' }
+		},
+		{
 			capability: 'Open source + self-hosting',
 			cfb: { mark: 'yes', note: 'Apache-2.0, deploys to your account' },
 			firebase: { mark: 'no', note: 'proprietary' },
