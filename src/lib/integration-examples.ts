@@ -165,6 +165,45 @@ const unsubscribe = posts.subscribe(
 );`
 		},
 		{
+			id: 'db-tables',
+			label: 'SQL tables',
+			lang: 'typescript',
+			code: `import { createDbClient } from '@cloudflarebase/db/client';
+
+const db = createDbClient({ baseUrl: '${url}', getToken });
+
+// Typed rows on a declared schema - the same handle surface as collections.
+const todos = db.table<{ title: string; done: boolean }>('todos');
+await todos.create({ title: 'ship it', done: false });
+
+// Tables have live queries too: typed rows, same frames, same socket.
+todos.subscribe(
+  { where: [{ field: 'done', op: '==', value: false }] },
+  { onSnapshot: (rows) => render(rows), onChange: (change, rows) => render(rows) }
+);`
+		},
+		{
+			id: 'db-drizzle',
+			label: 'Drizzle',
+			lang: 'typescript',
+			code: `import { drizzleTable } from '@cloudflarebase/db/drizzle';
+import { desc } from 'drizzle-orm';
+import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+
+// \`cloudflarebase schema generate\` emits this from your declared columns.
+const todos = sqliteTable('todos', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  votes: integer('votes')
+});
+
+// Real SQL over the gated /tables/todos/sql endpoint - a project JWT is
+// required; the gate keeps statements single-table and DDL-free.
+const db = drizzleTable({ baseUrl: '${url}', table: 'todos', getToken });
+await db.insert(todos).values({ id: '1', title: 'ship it' });
+const top = await db.select().from(todos).orderBy(desc(todos.votes)).limit(10);`
+		},
+		{
 			id: 'db-ws',
 			label: 'Raw WebSocket',
 			lang: 'javascript',
