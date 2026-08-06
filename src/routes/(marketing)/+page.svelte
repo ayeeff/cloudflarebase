@@ -11,6 +11,7 @@
 	import CodeExamples from '$lib/components/code-examples.svelte';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
 	import { buildDbIntegrationExamples, buildIntegrationExamples } from '$lib/integration-examples';
+	import { WORLD_OUTLINE_PATH } from '$lib/world-outline';
 	import PricingCalculator from '$lib/components/pricing-calculator.svelte';
 	import { cn } from '$lib/utils';
 	import {
@@ -178,34 +179,30 @@
 		page.url.searchParams.get('api') === 'auth' ? 'auth' : 'db'
 	);
 
-	// Agent-topology visual: simulated traffic converging on one project agent.
+	// Agent-topology visual: simulated traffic converging on one project agent,
+	// drawn over the same vendored continent silhouettes as the dashboard's
+	// Replication tab (equirectangular, 75N-60S). The primary sits in North
+	// America; writers are nearby, subscribers spread across the continents.
 	const mapW = 480;
-	const mapH = 220;
-	const dots: { x: number; y: number }[] = [];
-	for (let x = 8; x < mapW; x += 16) {
-		for (let y = 8; y < mapH; y += 16) {
-			if (Math.sin(x * 0.045) * Math.cos(y * 0.07) > -0.15) dots.push({ x, y });
-		}
-	}
-	// The primary sits in North America; writers are nearby, subscribers spread
-	// across the other continents.
-	const agent = { x: 96, y: 60 };
-	const dashboard = { x: 74, y: 178 };
+	const mapH = 240;
+	const agent = { x: 120, y: 72 };
+	const dashboard = { x: 74, y: 195 };
 	const clients = [
-		{ x: 56, y: 90, dur: 2.8, begin: 0 },
-		{ x: 150, y: 40, dur: 2.4, begin: 1.5 },
-		{ x: 296, y: 44, dur: 3.1, begin: 0.6 },
-		{ x: 428, y: 152, dur: 3.5, begin: 2.2 },
-		{ x: 120, y: 180, dur: 2.6, begin: 1.1 }
+		{ x: 85, y: 95, dur: 2.8, begin: 0 },
+		{ x: 150, y: 45, dur: 2.4, begin: 1.5 },
+		{ x: 280, y: 40, dur: 3.1, begin: 0.6 },
+		{ x: 440, y: 140, dur: 3.5, begin: 2.2 },
+		{ x: 150, y: 205, dur: 2.6, begin: 1.1 }
 	];
 	// The db skin shows replication, because it is on by default: per-region
 	// replica satellites fed by the primary over the arcs, each serving its
 	// nearest subscribers. Writers keep hitting the primary - replicas forward
-	// writes by design, so the geometry is honest about the data flow.
+	// writes by design, so the geometry is honest about the data flow. Anchors
+	// match the Replication tab's region points (sam / weur / apac).
 	const replicas = [
-		{ id: 'sam', x: 140, y: 138, arc: 'M96,60 Q100,104 140,138' },
-		{ id: 'weur', x: 262, y: 66, arc: 'M96,60 Q178,38 262,66' },
-		{ id: 'apac', x: 372, y: 92, arc: 'M96,60 Q238,16 372,92' }
+		{ id: 'sam', x: 180, y: 172, arc: 'M120,72 Q150,101 180,172' },
+		{ id: 'weur', x: 247, y: 55, arc: 'M120,72 Q183.5,40.5 247,55' },
+		{ id: 'apac', x: 395, y: 98, arc: 'M120,72 Q257.5,57 395,98' }
 	];
 	/** db skin: replica index serving each subscriber; null marks a writer. */
 	const nearestReplica: (number | null)[] = [null, null, 1, 2, 0];
@@ -490,11 +487,14 @@
 								<div class="border-b border-border p-6 md:border-r md:border-b-0">
 									{#key heroTab}
 										<svg viewBox="0 0 {mapW} {mapH}" class="w-full">
-											{#each dots as d (`${d.x}-${d.y}`)}
-												<circle cx={d.x} cy={d.y} r="1.1" class="fill-muted-foreground/20" />
-											{/each}
+											<path
+												d={WORLD_OUTLINE_PATH}
+												class="fill-primary/10 stroke-primary/20"
+												stroke-width="0.5"
+												stroke-linejoin="round"
+											/>
 
-											{#each clients as c, clientIndex (c.x)}
+											{#each clients as c, clientIndex (clientIndex)}
 												{@const replicaIndex =
 													heroTab === 'db' ? nearestReplica[clientIndex] : null}
 												{@const target = replicaIndex == null ? agent : replicas[replicaIndex]}
@@ -546,6 +546,13 @@
 													/>
 													<circle cx={replica.x} cy={replica.y} r="8" class="fill-chart-2/15" />
 													<circle cx={replica.x} cy={replica.y} r="3.5" class="fill-chart-2" />
+													<text
+														x={replica.x}
+														y={replica.y - 7}
+														text-anchor="middle"
+														class="fill-muted-foreground font-mono"
+														font-size="7">{replica.id}</text
+													>
 													{#if !reduceMotion}
 														<circle r="1.8" class="fill-chart-2">
 															<animateMotion
