@@ -28,10 +28,12 @@
 		ChevronsUpDown,
 		Clock,
 		Database,
+		FlaskConical,
 		FolderTree,
 		GitBranch,
 		Globe,
 		HardDrive,
+		History,
 		House,
 		KeyRound,
 		LayoutGrid,
@@ -40,10 +42,12 @@
 		Plus,
 		Radio,
 		SendHorizontal,
+		Settings,
 		ShieldCheck,
 		Sparkles,
 		Table2,
 		TerminalSquare,
+		UsersRound,
 		X,
 		Zap
 	} from '@lucide/svelte';
@@ -85,12 +89,16 @@
 	const navIcons: Record<string, typeof KeyRound> = {
 		'key-round': KeyRound,
 		database: Database,
+		'flask-conical': FlaskConical,
 		'folder-tree': FolderTree,
+		globe: Globe,
+		history: History,
+		plug: Plug,
+		settings: Settings,
+		'shield-check': ShieldCheck,
 		table: Table2,
 		'terminal-square': TerminalSquare,
-		'shield-check': ShieldCheck,
-		globe: Globe,
-		plug: Plug
+		users: UsersRound
 	};
 	// Exact match: tool pages are siblings now (/db must not light on
 	// /db/tables); the API reference keeps its own prefix check via isApi.

@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { browser, dev } from '$app/environment';
-	import { replaceState } from '$app/navigation';
+	import { dev } from '$app/environment';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { AuthAgentState, AuthAnalytics, AuthOverview, RoleDefinition } from '$lib/agents';
 	import { Badge } from '$lib/components/ui/badge';
@@ -44,7 +45,7 @@
 	} from '@lucide/svelte';
 	import { AgentClient } from 'agents/client';
 	import { Area, AreaChart, Points } from 'layerchart';
-	import { onMount, tick } from 'svelte';
+	import { onMount } from 'svelte';
 	import { SvelteDate } from 'svelte/reactivity';
 	import { superForm } from 'sveltekit-superforms';
 	import { zod4Client } from 'sveltekit-superforms/adapters';
@@ -52,45 +53,29 @@
 	let { data } = $props();
 	let hydrated = $state(false);
 
-	const AUTH_TABS = ['users', 'sessions', 'roles', 'settings', 'playground', 'setup'];
+	function toolHref(tool: string): string {
+		return resolve('/(app)/dashboard/[projectId]/auth/[[tool=authtool]]', {
+			projectId: data.projectId,
+			tool
+		});
+	}
 
 	onMount(() => {
 		hydrated = true;
-		// Hash deep-links win (buttons elsewhere target them); otherwise the
-		// ?tab= param restores the last selection across reloads.
-		if (window.location.hash === '#sign-in-methods') activeTab = 'settings';
-		else if (window.location.hash === '#integration') activeTab = 'setup';
-		else {
-			const saved = page.url.searchParams.get('tab');
-			if (saved && AUTH_TABS.includes(saved)) activeTab = saved;
+		// Hash deep-links predate the page-per-tool split; forward them to the
+		// tool routes (a hash never reaches the server, so this must be here).
+		if (window.location.hash === '#sign-in-methods') {
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- toolHref builds on resolve()
+			void goto(toolHref('settings'), { replaceState: true });
+		} else if (window.location.hash === '#integration') {
+			// eslint-disable-next-line svelte/no-navigation-without-resolve -- toolHref builds on resolve()
+			void goto(toolHref('integration'), { replaceState: true });
 		}
 	});
 
-	function setActiveTab(tab: string) {
-		activeTab = tab;
-		if (!browser) return;
-		try {
-			// Ephemeral param builder, not component state - reactivity would buy
-			// nothing here.
-			// eslint-disable-next-line svelte/prefer-svelte-reactivity
-			const query = new URLSearchParams(window.location.search);
-			query.set('tab', tab);
-			// A string target drops any deep-link hash, which would otherwise
-			// override the saved tab on the next load.
-			// eslint-disable-next-line svelte/no-navigation-without-resolve -- same-page query param, not a route
-			replaceState(`${window.location.pathname}?${query}`, {});
-		} catch {
-			// router not ready - the tab still switches
-		}
-	}
-
-	async function openSignInMethods() {
-		activeTab = 'settings';
-		history.replaceState(history.state, '', '#sign-in-methods');
-		await tick();
-		document
-			.getElementById('sign-in-methods')
-			?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	function openSignInMethods() {
+		// eslint-disable-next-line svelte/no-navigation-without-resolve -- toolHref builds on resolve()
+		void goto(toolHref('settings'));
 	}
 
 	// Initial values from the server load; kept in sync on navigation by the
@@ -106,7 +91,15 @@
 	// rendering UTC buckets and then shifting the graph after hydration.
 	let activityTimeZone = $state<string | null>(null);
 	let live = $state(false);
-	let activeTab = $state('users');
+	// Page-per-tool (Neon-style): the tool IS the route - /auth is Users,
+	// /auth/sessions, /auth/roles, /auth/settings, /auth/playground, and
+	// /auth/integration are sidebar siblings. Old ?tab= links redirect in the
+	// server load; hash deep-links forward in onMount. The stats, charts, and
+	// live-activity blocks stay on every tool page - they are the pulse of the
+	// instance, not a tab.
+	const activeTab = $derived(
+		page.params.tool === 'integration' ? 'setup' : (page.params.tool ?? 'users')
+	);
 	let playgroundTab = $state('sign-up');
 
 	type SessionInfo = {
@@ -646,202 +639,194 @@
 		</Badge>
 	</div>
 
-	<div class="grid items-stretch gap-6 lg:grid-cols-3">
-		<Card.Root class="lg:col-span-2">
-			<Card.Header class="pb-2">
-				<div>
-					<Card.Title>Authentication activity</Card.Title>
-					<Card.Description>Sign-ups and sign-ins per day from Analytics Engine.</Card.Description>
-					{#if activityTimeZone}
-						<div class="mt-4 flex flex-wrap items-end gap-3">
-							<p class="flex items-baseline gap-1.5">
-								<span class="text-2xl leading-none font-semibold tabular-nums"
-									>{activitySignups}</span
-								><span class="text-xs font-medium text-muted-foreground">sign-ups</span>
-							</p>
-							<p class="flex items-baseline gap-1.5 border-l pl-3">
-								<span class="text-2xl leading-none font-semibold tabular-nums"
-									>{activitySignins}</span
-								><span class="text-xs font-medium text-muted-foreground">sign-ins</span>
-							</p>
-							<p class="border-l pl-3 text-xs text-muted-foreground">{activityDateRange}</p>
-						</div>
-					{:else}
-						<p class="mt-4 text-xs text-muted-foreground" data-testid="activity-timezone-loading">
-							Loading activity in your timezone…
-						</p>
-					{/if}
-				</div>
-				<Card.Action class="self-start">
-					<Select.Root type="single" bind:value={activityRange}>
-						<Select.Trigger
-							size="sm"
-							class="w-36"
-							aria-label="Activity range"
-							data-testid="activity-range"
-						>
-							{activityRangeOptions.find((option) => option.value === activityRange)?.label}
-						</Select.Trigger>
-						<Select.Content>
-							{#each activityRangeOptions as option (option.value)}
-								<Select.Item value={option.value} label={option.label} />
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</Card.Action>
-			</Card.Header>
-			<Card.Content>
-				{#if !activityTimeZone}
-					<div class="h-52 w-full animate-pulse rounded-lg bg-muted/50" aria-hidden="true"></div>
-				{:else if ['connected', 'local'].includes(analytics.engine.status)}
-					<Chart.Container
-						config={activityChartConfig}
-						class="aspect-auto h-52 w-full"
-						data-testid="activity-chart"
-					>
-						<AreaChart
-							data={activityChart}
-							x="date"
-							series={[
-								{ key: 'signins', label: 'Sign-ins', color: activityChartConfig.signins.color }
-							]}
-							props={{
-								yAxis: { ticks: 4 },
-								xAxis: {
-									// One tick per data point on the weekly view; a time scale
-									// otherwise subdivides days and repeats weekday labels.
-									ticks: activityRange === '7' ? activityChart.map((point) => point.date) : 6,
-									format: (value: Date) =>
-										value.toLocaleDateString(
-											undefined,
-											activityRange === '7'
-												? { weekday: 'short' }
-												: { month: 'short', day: 'numeric' }
-										)
-								}
-							}}
-						>
-							{#snippet marks()}
-								<Area
-									seriesKey="signins"
-									fill={activityChartConfig.signins.color}
-									fillOpacity={0.18}
-									line={{ strokeWidth: 2.5, stroke: activityChartConfig.signins.color }}
-								/>
-								<Points
-									seriesKey="signins"
-									r={activityRange === '7' ? 3.5 : 2.5}
-									fill="var(--background)"
-									stroke={activityChartConfig.signins.color}
-									strokeWidth={1.5}
-								/>
-							{/snippet}
-							{#snippet tooltip()}
-								<Chart.Tooltip
-									indicator="line"
-									labelFormatter={(value: unknown) =>
-										value instanceof Date
-											? value.toLocaleDateString(undefined, {
-													weekday: 'long',
-													month: 'long',
-													day: 'numeric'
-												})
-											: String(value)}
-								/>
-							{/snippet}
-						</AreaChart>
-					</Chart.Container>
-				{:else}
-					<div
-						class="flex h-24 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground"
-					>
-						{analytics.engine.status === 'write-only'
-							? 'Events are flowing. Add Analytics Engine read credentials to visualize activity.'
-							: analytics.engine.status === 'error'
-								? 'Analytics Engine reads are temporarily unavailable.'
-								: 'No auth activity recorded in this period.'}
-					</div>
-				{/if}
-			</Card.Content>
-		</Card.Root>
-
-		<Card.Root data-testid="activity-card">
-			<Card.Header>
-				<Card.Title class="flex items-center gap-2">
-					<Radio class="h-4 w-4 text-primary" /> Live activity
-				</Card.Title>
-				<Card.Description>Streamed from the agent via WebSocket state sync.</Card.Description>
-			</Card.Header>
-			<Card.Content>
-				{#if agentState.events.length === 0}
-					<p class="py-6 text-center text-sm text-muted-foreground">Nothing yet.</p>
-				{:else}
-					<ScrollArea class="h-72 pr-3" type="always">
-						<ol class="space-y-4">
-							{#each agentState.events as event (event.id)}
-								{@const Icon = eventIcons[event.type] ?? Activity}
-								<li class="flex gap-3">
-									<div
-										class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
-									>
-										<Icon class="h-3.5 w-3.5" />
-									</div>
-									<div class="min-w-0">
-										<p class="text-sm leading-snug">{event.message}</p>
-										<p class="mt-0.5 font-mono text-[11px] text-muted-foreground">
-											{event.type} · {timeAgo(event.at)}
-										</p>
-									</div>
-								</li>
-							{/each}
-						</ol>
-					</ScrollArea>
-				{/if}
-			</Card.Content>
-		</Card.Root>
-	</div>
-
-	<!-- Stats -->
-	<div class="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-		{#each stats as stat (stat.id)}
-			<Card.Root class="py-4" data-testid={`stat-${stat.id}`}>
-				<Card.Content class="flex items-center justify-between gap-2 px-3 sm:px-5">
+	<!-- Not every tool page carries the whole shell: the charts and the
+	     analytics side column belong to the Users overview; the stats row also
+	     rides along on the playground, whose flows read it live. The other
+	     tools are lean single-purpose pages. -->
+	{#if activeTab === 'users'}
+		<div class="grid items-stretch gap-6 lg:grid-cols-3">
+			<Card.Root class="lg:col-span-2">
+				<Card.Header class="pb-2">
 					<div>
-						<p class="text-xs tracking-wide text-muted-foreground uppercase">{stat.label}</p>
-						<p class="mt-1 text-2xl font-semibold tabular-nums" data-testid="stat-value">
-							{stat.value}
-						</p>
+						<Card.Title>Authentication activity</Card.Title>
+						<Card.Description>Sign-ups and sign-ins per day from Analytics Engine.</Card.Description
+						>
+						{#if activityTimeZone}
+							<div class="mt-4 flex flex-wrap items-end gap-3">
+								<p class="flex items-baseline gap-1.5">
+									<span class="text-2xl leading-none font-semibold tabular-nums"
+										>{activitySignups}</span
+									><span class="text-xs font-medium text-muted-foreground">sign-ups</span>
+								</p>
+								<p class="flex items-baseline gap-1.5 border-l pl-3">
+									<span class="text-2xl leading-none font-semibold tabular-nums"
+										>{activitySignins}</span
+									><span class="text-xs font-medium text-muted-foreground">sign-ins</span>
+								</p>
+								<p class="border-l pl-3 text-xs text-muted-foreground">{activityDateRange}</p>
+							</div>
+						{:else}
+							<p class="mt-4 text-xs text-muted-foreground" data-testid="activity-timezone-loading">
+								Loading activity in your timezone…
+							</p>
+						{/if}
 					</div>
-					<div
-						class="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary min-[360px]:flex"
-					>
-						<stat.icon class="h-4.5 w-4.5" strokeWidth={1.8} />
-					</div>
+					<Card.Action class="self-start">
+						<Select.Root type="single" bind:value={activityRange}>
+							<Select.Trigger
+								size="sm"
+								class="w-36"
+								aria-label="Activity range"
+								data-testid="activity-range"
+							>
+								{activityRangeOptions.find((option) => option.value === activityRange)?.label}
+							</Select.Trigger>
+							<Select.Content>
+								{#each activityRangeOptions as option (option.value)}
+									<Select.Item value={option.value} label={option.label} />
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</Card.Action>
+				</Card.Header>
+				<Card.Content>
+					{#if !activityTimeZone}
+						<div class="h-52 w-full animate-pulse rounded-lg bg-muted/50" aria-hidden="true"></div>
+					{:else if ['connected', 'local'].includes(analytics.engine.status)}
+						<Chart.Container
+							config={activityChartConfig}
+							class="aspect-auto h-52 w-full"
+							data-testid="activity-chart"
+						>
+							<AreaChart
+								data={activityChart}
+								x="date"
+								series={[
+									{ key: 'signins', label: 'Sign-ins', color: activityChartConfig.signins.color }
+								]}
+								props={{
+									yAxis: { ticks: 4 },
+									xAxis: {
+										// One tick per data point on the weekly view; a time scale
+										// otherwise subdivides days and repeats weekday labels.
+										ticks: activityRange === '7' ? activityChart.map((point) => point.date) : 6,
+										format: (value: Date) =>
+											value.toLocaleDateString(
+												undefined,
+												activityRange === '7'
+													? { weekday: 'short' }
+													: { month: 'short', day: 'numeric' }
+											)
+									}
+								}}
+							>
+								{#snippet marks()}
+									<Area
+										seriesKey="signins"
+										fill={activityChartConfig.signins.color}
+										fillOpacity={0.18}
+										line={{ strokeWidth: 2.5, stroke: activityChartConfig.signins.color }}
+									/>
+									<Points
+										seriesKey="signins"
+										r={activityRange === '7' ? 3.5 : 2.5}
+										fill="var(--background)"
+										stroke={activityChartConfig.signins.color}
+										strokeWidth={1.5}
+									/>
+								{/snippet}
+								{#snippet tooltip()}
+									<Chart.Tooltip
+										indicator="line"
+										labelFormatter={(value: unknown) =>
+											value instanceof Date
+												? value.toLocaleDateString(undefined, {
+														weekday: 'long',
+														month: 'long',
+														day: 'numeric'
+													})
+												: String(value)}
+									/>
+								{/snippet}
+							</AreaChart>
+						</Chart.Container>
+					{:else}
+						<div
+							class="flex h-24 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground"
+						>
+							{analytics.engine.status === 'write-only'
+								? 'Events are flowing. Add Analytics Engine read credentials to visualize activity.'
+								: analytics.engine.status === 'error'
+									? 'Analytics Engine reads are temporarily unavailable.'
+									: 'No auth activity recorded in this period.'}
+						</div>
+					{/if}
 				</Card.Content>
 			</Card.Root>
-		{/each}
-	</div>
+
+			<Card.Root data-testid="activity-card">
+				<Card.Header>
+					<Card.Title class="flex items-center gap-2">
+						<Radio class="h-4 w-4 text-primary" /> Live activity
+					</Card.Title>
+					<Card.Description>Streamed from the agent via WebSocket state sync.</Card.Description>
+				</Card.Header>
+				<Card.Content>
+					{#if agentState.events.length === 0}
+						<p class="py-6 text-center text-sm text-muted-foreground">Nothing yet.</p>
+					{:else}
+						<ScrollArea class="h-72 pr-3" type="always">
+							<ol class="space-y-4">
+								{#each agentState.events as event (event.id)}
+									{@const Icon = eventIcons[event.type] ?? Activity}
+									<li class="flex gap-3">
+										<div
+											class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+										>
+											<Icon class="h-3.5 w-3.5" />
+										</div>
+										<div class="min-w-0">
+											<p class="text-sm leading-snug">{event.message}</p>
+											<p class="mt-0.5 font-mono text-[11px] text-muted-foreground">
+												{event.type} · {timeAgo(event.at)}
+											</p>
+										</div>
+									</li>
+								{/each}
+							</ol>
+						</ScrollArea>
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		</div>
+	{/if}
+
+	<!-- Stats -->
+	{#if activeTab === 'users' || activeTab === 'playground'}
+		<div class="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+			{#each stats as stat (stat.id)}
+				<Card.Root class="py-4" data-testid={`stat-${stat.id}`}>
+					<Card.Content class="flex items-center justify-between gap-2 px-3 sm:px-5">
+						<div>
+							<p class="text-xs tracking-wide text-muted-foreground uppercase">{stat.label}</p>
+							<p class="mt-1 text-2xl font-semibold tabular-nums" data-testid="stat-value">
+								{stat.value}
+							</p>
+						</div>
+						<div
+							class="hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary min-[360px]:flex"
+						>
+							<stat.icon class="h-4.5 w-4.5" strokeWidth={1.8} />
+						</div>
+					</Card.Content>
+				</Card.Root>
+			{/each}
+		</div>
+	{/if}
 
 	<div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
-		<div class="min-w-0 lg:col-span-2">
+		<div class={['min-w-0', activeTab === 'users' ? 'lg:col-span-2' : 'lg:col-span-3']}>
 			<div>
-				<div class="flex h-10 max-w-full gap-1 overflow-x-auto border-b px-1" role="tablist">
-					{#each [['users', 'Users'], ['sessions', 'Sessions'], ['roles', 'Roles'], ['settings', 'Sign-in methods'], ['playground', 'Try auth'], ['setup', 'Integration']] as tab (tab[0])}
-						<button
-							type="button"
-							role="tab"
-							aria-selected={activeTab === tab[0]}
-							class={[
-								'relative flex-none px-3.5 text-sm font-medium transition-colors',
-								activeTab === tab[0]
-									? 'text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary'
-									: 'text-muted-foreground hover:text-foreground'
-							]}
-							onclick={() => setActiveTab(tab[0])}>{tab[1]}</button
-						>
-					{/each}
-				</div>
-
 				<!-- USERS -->
 				{#if activeTab === 'users'}<div class="mt-4">
 						<Card.Root data-testid="users-card">
@@ -855,7 +840,9 @@
 										size="sm"
 										class="gap-1.5"
 										data-testid="add-user-button"
-										onclick={() => setActiveTab('playground')}
+										onclick={() =>
+											// eslint-disable-next-line svelte/no-navigation-without-resolve -- toolHref builds on resolve()
+											void goto(toolHref('playground'))}
 									>
 										<UserPlus class="h-4 w-4" /> Add user
 									</Button>
@@ -1514,138 +1501,146 @@
 			</div>
 		</div>
 
-		<!-- Right column -->
-		<div class="space-y-6">
-			<Card.Root data-testid="wae-card">
-				<Card.Header>
-					<Card.Title>Events pipeline</Card.Title>
-					<Card.Description>Workers Analytics Engine</Card.Description>
-				</Card.Header>
-				<Card.Content class="space-y-3">
-					<div class="flex items-center justify-between gap-2">
-						<span class="truncate font-mono text-xs">{analytics.engine.dataset}</span>
-						<Badge variant="outline">{analytics.engine.status}</Badge>
-					</div>
-					{#if analytics.engine.error}
-						<p class="mt-2 text-xs text-destructive">{analytics.engine.error}</p>
-					{/if}
-					{#if analytics.eventsLast24h?.length}
-						<ul class="space-y-2">
-							{#each analytics.eventsLast24h as e (e.eventType)}
-								<li class="flex items-center justify-between text-sm">
-									<span class="font-mono text-xs">{e.eventType}</span>
-									<span class="tabular-nums">{e.count}</span>
-								</li>
-							{/each}
-						</ul>
-					{:else}
-						<p class="text-xs text-muted-foreground">
-							Every auth event streams a data point (event, country, provider) indexed by project.
-							Set CF_ACCOUNT_ID + CF_ANALYTICS_API_TOKEN on the agent to query it from here.
-						</p>
-					{/if}
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root data-testid="countries-card">
-				<Card.Header>
-					<Card.Title>Top countries</Card.Title>
-					<Card.Description>By session count, resolved at the edge.</Card.Description>
-				</Card.Header>
-				<Card.Content>
-					{#if analytics.countries.length === 0}
-						{#if analytics.engine.status === 'write-only'}
-							<p class="text-sm text-muted-foreground">
-								Country events are being collected. Configure Analytics Engine read credentials to
-								show rankings.
-							</p>
-						{:else if analytics.engine.status === 'error'}
-							<p class="text-sm text-destructive">Country analytics are temporarily unavailable.</p>
-						{:else}
-							<p class="text-sm text-muted-foreground">No sessions recorded in the last 30 days.</p>
-						{/if}
-					{:else}
-						<ul class="space-y-2">
-							{#each analytics.countries as c (c.country)}
-								<li class="flex items-center justify-between text-sm">
-									<span class="flex items-center gap-2 font-mono text-xs">
-										<CountryFlag code={c.country} class="h-3.5 w-[1.1666rem]" />
-										{c.country}
-									</span>
-									<span class="tabular-nums">{c.sessions}</span>
-								</li>
-							{/each}
-						</ul>
-					{/if}
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root data-testid="providers-card">
-				<button
-					type="button"
-					class="w-full rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					onclick={openSignInMethods}
-					aria-label="Configure sign-in methods"
-				>
+		<!-- Right column: analytics summaries, Users-overview only. -->
+		{#if activeTab === 'users'}
+			<div class="space-y-6">
+				<Card.Root data-testid="wae-card">
 					<Card.Header>
-						<Card.Title>Sign-in methods</Card.Title>
-						<Card.Description
-							>Configuration and linked-user activity. Open settings →</Card.Description
-						>
+						<Card.Title>Events pipeline</Card.Title>
+						<Card.Description>Workers Analytics Engine</Card.Description>
 					</Card.Header>
-					<Card.Content class="space-y-4">
-						<div class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-							<div class="flex items-center gap-2 rounded-lg border p-2.5">
-								<KeyRound class="h-4 w-4 text-primary" /> Email/password
-								<span class="ml-auto h-2 w-2 rounded-full bg-emerald-500"></span>
-							</div>
-							<div class="flex items-center gap-2 rounded-lg border p-2.5">
-								<UserRound class="h-4 w-4 text-primary" /> Guest
-								<span class="ml-auto h-2 w-2 rounded-full bg-emerald-500"></span>
-							</div>
-							<div class="flex items-center gap-2 rounded-lg border p-2.5">
-								<GoogleLogo class="h-4 w-4" />
-								Google
-								<Badge variant="outline" class="ml-auto text-[10px]"
-									>{agentState.enabledSocialProviders?.includes('google')
-										? 'enabled'
-										: 'off'}</Badge
-								>
-							</div>
-							<div class="flex items-center gap-2 rounded-lg border p-2.5">
-								<GithubLogo class="h-4 w-4" />
-								GitHub
-								<Badge variant="outline" class="ml-auto text-[10px]"
-									>{agentState.enabledSocialProviders?.includes('github')
-										? 'enabled'
-										: 'off'}</Badge
-								>
-							</div>
+					<Card.Content class="space-y-3">
+						<div class="flex items-center justify-between gap-2">
+							<span class="truncate font-mono text-xs">{analytics.engine.dataset}</span>
+							<Badge variant="outline">{analytics.engine.status}</Badge>
 						</div>
-						<div class="border-t pt-3">
-							<p class="mb-2 text-xs font-medium text-muted-foreground">Linked users (30 days)</p>
-							{#if analytics.providers.length === 0}
+						{#if analytics.engine.error}
+							<p class="mt-2 text-xs text-destructive">{analytics.engine.error}</p>
+						{/if}
+						{#if analytics.eventsLast24h?.length}
+							<ul class="space-y-2">
+								{#each analytics.eventsLast24h as e (e.eventType)}
+									<li class="flex items-center justify-between text-sm">
+										<span class="font-mono text-xs">{e.eventType}</span>
+										<span class="tabular-nums">{e.count}</span>
+									</li>
+								{/each}
+							</ul>
+						{:else}
+							<p class="text-xs text-muted-foreground">
+								Every auth event streams a data point (event, country, provider) indexed by project.
+								Set CF_ACCOUNT_ID + CF_ANALYTICS_API_TOKEN on the agent to query it from here.
+							</p>
+						{/if}
+					</Card.Content>
+				</Card.Root>
+
+				<Card.Root data-testid="countries-card">
+					<Card.Header>
+						<Card.Title>Top countries</Card.Title>
+						<Card.Description>By session count, resolved at the edge.</Card.Description>
+					</Card.Header>
+					<Card.Content>
+						{#if analytics.countries.length === 0}
+							{#if analytics.engine.status === 'write-only'}
 								<p class="text-sm text-muted-foreground">
-									No users have completed a provider sign-in yet.
+									Country events are being collected. Configure Analytics Engine read credentials to
+									show rankings.
+								</p>
+							{:else if analytics.engine.status === 'error'}
+								<p class="text-sm text-destructive">
+									Country analytics are temporarily unavailable.
 								</p>
 							{:else}
-								<ul class="space-y-2">
-									{#each analytics.providers as p (p.provider)}
-										<li class="flex items-center justify-between text-sm">
-											<span class="font-mono text-xs">{p.provider}</span>
-											<span class="tabular-nums">{p.users}</span>
-										</li>
-									{/each}
-									<li class="flex items-center justify-between border-t border-border pt-2 text-sm">
-										<span class="font-mono text-xs">@gmail.com emails</span>
-										<span class="tabular-nums">{analytics.gmailUsers}</span>
-									</li>
-								</ul>
+								<p class="text-sm text-muted-foreground">
+									No sessions recorded in the last 30 days.
+								</p>
 							{/if}
-						</div>
+						{:else}
+							<ul class="space-y-2">
+								{#each analytics.countries as c (c.country)}
+									<li class="flex items-center justify-between text-sm">
+										<span class="flex items-center gap-2 font-mono text-xs">
+											<CountryFlag code={c.country} class="h-3.5 w-[1.1666rem]" />
+											{c.country}
+										</span>
+										<span class="tabular-nums">{c.sessions}</span>
+									</li>
+								{/each}
+							</ul>
+						{/if}
 					</Card.Content>
-				</button>
-			</Card.Root>
-		</div>
+				</Card.Root>
+
+				<Card.Root data-testid="providers-card">
+					<button
+						type="button"
+						class="w-full rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						onclick={openSignInMethods}
+						aria-label="Configure sign-in methods"
+					>
+						<Card.Header>
+							<Card.Title>Sign-in methods</Card.Title>
+							<Card.Description
+								>Configuration and linked-user activity. Open settings →</Card.Description
+							>
+						</Card.Header>
+						<Card.Content class="space-y-4">
+							<div class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+								<div class="flex items-center gap-2 rounded-lg border p-2.5">
+									<KeyRound class="h-4 w-4 text-primary" /> Email/password
+									<span class="ml-auto h-2 w-2 rounded-full bg-emerald-500"></span>
+								</div>
+								<div class="flex items-center gap-2 rounded-lg border p-2.5">
+									<UserRound class="h-4 w-4 text-primary" /> Guest
+									<span class="ml-auto h-2 w-2 rounded-full bg-emerald-500"></span>
+								</div>
+								<div class="flex items-center gap-2 rounded-lg border p-2.5">
+									<GoogleLogo class="h-4 w-4" />
+									Google
+									<Badge variant="outline" class="ml-auto text-[10px]"
+										>{agentState.enabledSocialProviders?.includes('google')
+											? 'enabled'
+											: 'off'}</Badge
+									>
+								</div>
+								<div class="flex items-center gap-2 rounded-lg border p-2.5">
+									<GithubLogo class="h-4 w-4" />
+									GitHub
+									<Badge variant="outline" class="ml-auto text-[10px]"
+										>{agentState.enabledSocialProviders?.includes('github')
+											? 'enabled'
+											: 'off'}</Badge
+									>
+								</div>
+							</div>
+							<div class="border-t pt-3">
+								<p class="mb-2 text-xs font-medium text-muted-foreground">Linked users (30 days)</p>
+								{#if analytics.providers.length === 0}
+									<p class="text-sm text-muted-foreground">
+										No users have completed a provider sign-in yet.
+									</p>
+								{:else}
+									<ul class="space-y-2">
+										{#each analytics.providers as p (p.provider)}
+											<li class="flex items-center justify-between text-sm">
+												<span class="font-mono text-xs">{p.provider}</span>
+												<span class="tabular-nums">{p.users}</span>
+											</li>
+										{/each}
+										<li
+											class="flex items-center justify-between border-t border-border pt-2 text-sm"
+										>
+											<span class="font-mono text-xs">@gmail.com emails</span>
+											<span class="tabular-nums">{analytics.gmailUsers}</span>
+										</li>
+									</ul>
+								{/if}
+							</div>
+						</Card.Content>
+					</button>
+				</Card.Root>
+			</div>
+		{/if}
 	</div>
 </div>
