@@ -132,6 +132,12 @@ function classifyAccess(pathname: string): Access {
 		return { scope: 'operator', projectId: segments[1] ?? null, kind: 'page' };
 	}
 
+	// The CLI login hand-off page: operator-only so a signed-out visitor
+	// bounces through /login (social sign-in included) before approving.
+	if (segments[0] === 'cli-auth') {
+		return { scope: 'operator', projectId: null, kind: 'page' };
+	}
+
 	return { scope: 'open' };
 }
 
@@ -170,7 +176,8 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 	const user = await getConsoleSession(
 		event.platform,
 		event.url.origin,
-		event.request.headers.get('cookie')
+		event.request.headers.get('cookie'),
+		event.request.headers.get('authorization')
 	);
 
 	if (user) {

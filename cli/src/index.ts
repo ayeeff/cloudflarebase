@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { addCommand } from './commands/add.js';
 import { deployCommand } from './commands/deploy.js';
 import { initCommand } from './commands/init.js';
+import { loginCommand } from './commands/login.js';
+import { logoutCommand } from './commands/logout.js';
+import { schemaCommand } from './commands/schema.js';
 import { blank, bold, dim, error, info, UserError } from './lib/log.js';
 
 const usage = (): void => {
@@ -14,6 +17,13 @@ const usage = (): void => {
 	info(`  cloudflarebase init <name>    ${dim('scaffold a Worker with the auth agent installed')}`);
 	info(`  cloudflarebase add <agent>    ${dim('install an agent into an existing Worker')}`);
 	info(`  cloudflarebase deploy         ${dim('deploy, and set TRUSTED_ORIGINS on first run')}`);
+	info(
+		`  cloudflarebase login <url>    ${dim('authenticate against a console (browser approval)')}`
+	);
+	info(`  cloudflarebase logout         ${dim('revoke and forget the stored session')}`);
+	info(
+		`  cloudflarebase schema <cmd>   ${dim('generate | apply | drop, with --project and --branch')}`
+	);
 	blank();
 	info(`Run ${dim('cloudflarebase add')} with no agent to list what is installable.`);
 };
@@ -37,6 +47,15 @@ async function main(): Promise<void> {
 			return;
 		case 'deploy':
 			await deployCommand(cwd);
+			return;
+		case 'login':
+			await loginCommand(rest);
+			return;
+		case 'logout':
+			await logoutCommand();
+			return;
+		case 'schema':
+			await schemaCommand(rest);
 			return;
 		case '--version':
 		case '-v':
