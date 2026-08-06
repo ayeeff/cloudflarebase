@@ -1,6 +1,33 @@
 # Schema CLI: `cloudflarebase schema` + console auth
 
-Status: PROPOSED (drafted 2026-08-06, awaiting approval)
+Status: IMPLEMENTED (drafted 2026-08-06, approved and built same day)
+
+> **Deviations and specifics from the draft, for future readers:**
+>
+> - **Console side**: `getConsoleSession` forwards the `Authorization` header
+>   alongside cookies (`src/lib/server/console.ts` + `hooks.server.ts`), so a
+>   bearer session token passes the console guard on every operator surface.
+>   The hand-off page is `/cli-auth` (operator-only via `classifyAccess`, so
+>   signed-out operators bounce through `/login` - hard bounce even in demo
+>   mode, where the guard's bare-/dashboard exception is scoped to exactly
+>   that entry). `POST /api/cli/token` returns the caller's own session
+>   cookie value (`__Secure-` prefix handled) with a belt-and-braces
+>   same-origin check; the page form-POSTs token+code to the CLI's
+>   `127.0.0.1:<port>` listener - a top-level navigation, so the listener
+>   never speaks CORS.
+> - **CLI side**: `login [origin]` (browser hand-off with a one-time code and
+>   5-minute timeout, `--email`/`--password` fallback driving the public
+>   console sign-in and storing the `set-auth-token` header), `logout`,
+>   `schema generate` (drizzle `schema.ts` from declared columns; `--dsl`
+>   writes `cloudflarebase.schema.jsonc` from declared state), `schema
+apply` (DSL file -> `PUT /db/admin/tables/:name` per table; the agent's
+>   additive-only `planDdl` is the safety), and `schema drop <table>` (typed
+>   confirmation, `--yes` for CI). All take `--project` and `--branch`; a
+>   branch is pure id composition (`<project>--<branch>`), exactly as
+>   designed. Config lives in `~/.cloudflarebase/config.json`.
+> - **Pinned by** `e2e/cli-auth.api.spec.ts` (token endpoint, bearer flow,
+>   anonymous/cross-origin refusals) and `e2e/cli-auth.ui.spec.ts` (the
+>   approve hand-off against a real localhost listener).
 
 The missing half of the T2 ORM story. `@cloudflarebase/db/drizzle` executes
 queries, but the consumer still hand-writes the drizzle schema that the
