@@ -7,6 +7,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Chart from '$lib/components/ui/chart';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -20,8 +21,10 @@
 		signUpSchema
 	} from '$lib/schemas/auth';
 	import * as Table from '$lib/components/ui/table';
+	import { buildConsoleNav } from '$lib/agent-registry';
 	import CodeExamples from '$lib/components/code-examples.svelte';
 	import CountryFlag from '$lib/components/country-flag.svelte';
+	import ToolTabs from '$lib/components/tool-tabs.svelte';
 	import GithubLogo from '$lib/components/github-logo.svelte';
 	import GoogleLogo from '$lib/components/google-logo.svelte';
 	import { buildIntegrationExamples } from '$lib/integration-examples';
@@ -78,6 +81,46 @@
 		void goto(toolHref('settings'));
 	}
 
+	// Add-user dialog on the Users page: creates a registered identity through
+	// the SAME public sign-up surface the playground drives - a dialog instead
+	// of bouncing the operator to Try auth.
+	let addUserOpen = $state(false);
+	let addUserName = $state('');
+	let addUserEmail = $state('');
+	let addUserPassword = $state('');
+	let addUserError = $state<string | null>(null);
+	let addUserBusy = $state(false);
+
+	async function addUser(event: SubmitEvent) {
+		event.preventDefault();
+		addUserBusy = true;
+		addUserError = null;
+		try {
+			const response = await fetch(`${authBase}/sign-up/email`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					name: addUserName.trim(),
+					email: addUserEmail.trim(),
+					password: addUserPassword
+				})
+			});
+			if (!response.ok) {
+				const body = (await response.json().catch(() => null)) as { message?: string } | null;
+				throw new Error(body?.message ?? `request failed (HTTP ${response.status})`);
+			}
+			addUserOpen = false;
+			addUserName = '';
+			addUserEmail = '';
+			addUserPassword = '';
+			void refreshData(data.projectId);
+		} catch (error) {
+			addUserError = error instanceof Error ? error.message : String(error);
+		} finally {
+			addUserBusy = false;
+		}
+	}
+
 	// Initial values from the server load; kept in sync on navigation by the
 	// $effect below and updated live via WebSocket state sync.
 	// svelte-ignore state_referenced_locally
@@ -99,6 +142,12 @@
 	// instance, not a tab.
 	const activeTab = $derived(
 		page.params.tool === 'integration' ? 'setup' : (page.params.tool ?? 'users')
+	);
+	/** Desktop quick-switcher over this agent's tool pages (sidebar stays canonical). */
+	const toolTabs = $derived(
+		buildConsoleNav(data.projectId)
+			.flatMap((section) => section.items)
+			.filter((item) => item.href.startsWith(`/dashboard/${data.projectId}/auth`))
 	);
 	let playgroundTab = $state('sign-up');
 
@@ -620,6 +669,8 @@
 	data-testid="auth-page"
 	data-hydrated={hydrated}
 >
+	<ToolTabs items={toolTabs} />
+
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<div>
 			<h1 class="text-2xl font-semibold">Authentication</h1>
@@ -828,123 +879,124 @@
 		<div class={['min-w-0', activeTab === 'users' ? 'lg:col-span-2' : 'lg:col-span-3']}>
 			<div>
 				<!-- USERS -->
-				{#if activeTab === 'users'}<div class="mt-4">
-						<Card.Root data-testid="users-card">
-							<Card.Header>
-								<Card.Title>Users</Card.Title>
-								<Card.Description>
-									{analytics.registeredUsers} registered · {analytics.anonymousUsers} anonymous
-								</Card.Description>
-								<Card.Action class="self-center"
-									><Button
-										size="sm"
-										class="gap-1.5"
-										data-testid="add-user-button"
-										onclick={() =>
-											// eslint-disable-next-line svelte/no-navigation-without-resolve -- toolHref builds on resolve()
-											void goto(toolHref('playground'))}
-									>
-										<UserPlus class="h-4 w-4" /> Add user
-									</Button>
-								</Card.Action>
-							</Card.Header>
-							<Card.Content>
-								{#if overview.users.length === 0}
-									<p class="py-6 text-center text-sm text-muted-foreground">
-										No users yet - create the first one in the playground.
-									</p>
-								{:else}
-									<Table.Root class="min-w-[42rem]">
-										<Table.Header>
+				{#if activeTab === 'users'}
+					<Card.Root data-testid="users-card">
+						<Card.Header>
+							<Card.Title>Users</Card.Title>
+							<Card.Description>
+								{analytics.registeredUsers} registered · {analytics.anonymousUsers} anonymous
+							</Card.Description>
+							<Card.Action class="self-center"
+								><Button
+									size="sm"
+									class="gap-1.5"
+									data-testid="add-user-button"
+									onclick={() => {
+										addUserError = null;
+										addUserOpen = true;
+									}}
+								>
+									<UserPlus class="h-4 w-4" /> Add user
+								</Button>
+							</Card.Action>
+						</Card.Header>
+						<Card.Content>
+							{#if overview.users.length === 0}
+								<p class="py-6 text-center text-sm text-muted-foreground">
+									No users yet - create the first one in the playground.
+								</p>
+							{:else}
+								<Table.Root class="min-w-[42rem]">
+									<Table.Header>
+										<Table.Row>
+											<Table.Head>Identifier</Table.Head>
+											<Table.Head>Providers</Table.Head>
+											<Table.Head>Role</Table.Head>
+											<Table.Head>Status</Table.Head>
+											<Table.Head class="text-right">Created</Table.Head>
+											<Table.Head class="w-12"><span class="sr-only">Actions</span></Table.Head>
+										</Table.Row>
+									</Table.Header>
+									<Table.Body>
+										{#each overview.users as user (user.id)}
 											<Table.Row>
-												<Table.Head>Identifier</Table.Head>
-												<Table.Head>Providers</Table.Head>
-												<Table.Head>Role</Table.Head>
-												<Table.Head>Status</Table.Head>
-												<Table.Head class="text-right">Created</Table.Head>
-												<Table.Head class="w-12"><span class="sr-only">Actions</span></Table.Head>
-											</Table.Row>
-										</Table.Header>
-										<Table.Body>
-											{#each overview.users as user (user.id)}
-												<Table.Row>
-													<Table.Cell>
-														<div class="flex items-center gap-2">
-															<div
-																class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
-															>
-																<UserRound class="h-3.5 w-3.5" />
-															</div>
-															<div class="min-w-0">
-																<p class="truncate text-sm font-medium">{user.name}</p>
-																<p class="truncate font-mono text-xs text-muted-foreground">
-																	{user.email}
-																</p>
-															</div>
-														</div>
-													</Table.Cell>
-													<Table.Cell>
-														<div class="flex flex-wrap gap-1">
-															{#each user.providers as provider (provider)}
-																<Badge variant="outline" class="font-mono text-[11px]">
-																	{provider}
-																</Badge>
-															{/each}
-														</div>
-													</Table.Cell>
-													<Table.Cell>
-														<Select.Root
-															type="single"
-															value={user.role}
-															onValueChange={(value) => setUserRole(user.id, value, user.role)}
+												<Table.Cell>
+													<div class="flex items-center gap-2">
+														<div
+															class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
 														>
-															<Select.Trigger
-																class="min-w-28 font-mono"
-																size="sm"
-																disabled={busy}
-																aria-label={`Role for ${user.email}`}
-															>
-																{user.role}
-															</Select.Trigger>
-															<Select.Content>
-																{#each roleOptions(user.role) as role (role)}
-																	<Select.Item value={role} label={role} class="font-mono" />
-																{/each}
-															</Select.Content>
-														</Select.Root>
-													</Table.Cell>
-													<Table.Cell>
-														{#if user.isAnonymous}
-															<Badge variant="secondary">anonymous</Badge>
-														{:else}
-															<Badge variant={user.emailVerified ? 'default' : 'secondary'}>
-																{user.emailVerified ? 'verified' : 'unverified'}
+															<UserRound class="h-3.5 w-3.5" />
+														</div>
+														<div class="min-w-0">
+															<p class="truncate text-sm font-medium">{user.name}</p>
+															<p class="truncate font-mono text-xs text-muted-foreground">
+																{user.email}
+															</p>
+														</div>
+													</div>
+												</Table.Cell>
+												<Table.Cell>
+													<div class="flex flex-wrap gap-1">
+														{#each user.providers as provider (provider)}
+															<Badge variant="outline" class="font-mono text-[11px]">
+																{provider}
 															</Badge>
-														{/if}
-													</Table.Cell>
-													<Table.Cell class="text-right text-xs text-muted-foreground">
-														{timeAgo(user.createdAt)}
-													</Table.Cell>
-													<Table.Cell>
-														<Button
-															variant="ghost"
-															size="icon"
-															class="h-8 w-8 text-muted-foreground hover:text-destructive"
+														{/each}
+													</div>
+												</Table.Cell>
+												<Table.Cell>
+													<Select.Root
+														type="single"
+														value={user.role}
+														onValueChange={(value) => setUserRole(user.id, value, user.role)}
+													>
+														<Select.Trigger
+															class="min-w-28 font-mono"
+															size="sm"
 															disabled={busy}
-															aria-label={`Delete ${user.email}`}
-															onclick={() => adminDelete('users', user.id)}
+															aria-label={`Role for ${user.email}`}
 														>
-															<Trash2 class="h-4 w-4" />
-														</Button>
-													</Table.Cell>
-												</Table.Row>
-											{/each}
-										</Table.Body>
-									</Table.Root>
-								{/if}
-							</Card.Content>
-						</Card.Root>
-					</div>{/if}
+															{user.role}
+														</Select.Trigger>
+														<Select.Content>
+															{#each roleOptions(user.role) as role (role)}
+																<Select.Item value={role} label={role} class="font-mono" />
+															{/each}
+														</Select.Content>
+													</Select.Root>
+												</Table.Cell>
+												<Table.Cell>
+													{#if user.isAnonymous}
+														<Badge variant="secondary">anonymous</Badge>
+													{:else}
+														<Badge variant={user.emailVerified ? 'default' : 'secondary'}>
+															{user.emailVerified ? 'verified' : 'unverified'}
+														</Badge>
+													{/if}
+												</Table.Cell>
+												<Table.Cell class="text-right text-xs text-muted-foreground">
+													{timeAgo(user.createdAt)}
+												</Table.Cell>
+												<Table.Cell>
+													<Button
+														variant="ghost"
+														size="icon"
+														class="h-8 w-8 text-muted-foreground hover:text-destructive"
+														disabled={busy}
+														aria-label={`Delete ${user.email}`}
+														onclick={() => adminDelete('users', user.id)}
+													>
+														<Trash2 class="h-4 w-4" />
+													</Button>
+												</Table.Cell>
+											</Table.Row>
+										{/each}
+									</Table.Body>
+								</Table.Root>
+							{/if}
+						</Card.Content>
+					</Card.Root>
+				{/if}
 
 				<!-- SESSIONS -->
 				{#if activeTab === 'sessions'}<div class="mt-4">
@@ -1094,7 +1146,7 @@
 												<Input
 													bind:value={permissionInputs[role.name]}
 													oninput={() => (rolesError = null)}
-													placeholder="posts:write"
+													placeholder="resource:action"
 													aria-label={`New permission for ${role.name}`}
 													class="h-8 w-44 font-mono text-xs"
 													autocomplete="off"
@@ -1644,3 +1696,45 @@
 		{/if}
 	</div>
 </div>
+
+<Dialog.Root bind:open={addUserOpen}>
+	<Dialog.Content class="sm:max-w-md" data-testid="add-user-dialog">
+		<Dialog.Header>
+			<Dialog.Title>Add user</Dialog.Title>
+			<Dialog.Description>
+				Creates a registered identity through the same public sign-up surface your application uses.
+			</Dialog.Description>
+		</Dialog.Header>
+		<form class="space-y-4" onsubmit={addUser}>
+			<div class="space-y-1.5">
+				<Label for="add-user-name">Name</Label>
+				<Input id="add-user-name" bind:value={addUserName} autocomplete="off" />
+			</div>
+			<div class="space-y-1.5">
+				<Label for="add-user-email">Email</Label>
+				<Input id="add-user-email" type="email" bind:value={addUserEmail} autocomplete="off" />
+			</div>
+			<div class="space-y-1.5">
+				<Label for="add-user-password">Password</Label>
+				<Input
+					id="add-user-password"
+					type="password"
+					bind:value={addUserPassword}
+					autocomplete="new-password"
+				/>
+			</div>
+			{#if addUserError}
+				<p class="text-sm text-destructive" data-testid="add-user-error">{addUserError}</p>
+			{/if}
+			<Dialog.Footer>
+				<Button
+					type="submit"
+					disabled={addUserBusy || !addUserName.trim() || !addUserEmail.trim() || !addUserPassword}
+					data-testid="add-user-submit"
+				>
+					{addUserBusy ? 'Creating…' : 'Create user'}
+				</Button>
+			</Dialog.Footer>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>

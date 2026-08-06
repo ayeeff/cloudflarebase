@@ -870,7 +870,9 @@
 					constrained container with overflow on the page, not the shell.
 				-->
 				<main class="min-h-0 min-w-0 flex-1 overflow-hidden bg-muted/20">
-					{#key page.url.pathname}
+					<!-- Keyed per PROJECT, not per path: tool-page hops must not remount
+					     and re-play the entry transition (the "shake"). -->
+					{#key projectId}
 						<div class="h-full" in:fly={{ y: 6, duration: 220, easing: cubicOut, opacity: 0 }}>
 							{@render children()}
 						</div>
@@ -883,7 +885,9 @@
 					scrollbarYClasses="data-vertical:w-1.5 data-vertical:border-l-0"
 				>
 					<main class="min-w-0">
-						{#key page.url.pathname}
+						<!-- Keyed per PROJECT, not per path: tool-page hops must not remount
+					     and re-play the entry transition (the "shake"). -->
+						{#key projectId}
 							<div
 								class="min-h-full"
 								in:fly={{ y: 6, duration: 220, easing: cubicOut, opacity: 0 }}

@@ -14,7 +14,9 @@
 		DbValidator
 	} from '$lib/agents';
 	import { dbAccessModeSchema, dbValidatorSchema } from '$lib/agents';
+	import { buildConsoleNav } from '$lib/agent-registry';
 	import CodeExamples from '$lib/components/code-examples.svelte';
+	import ToolTabs from '$lib/components/tool-tabs.svelte';
 	import ReplicationTab from '../replication-tab.svelte';
 	import RollbackDialog from '../rollback-dialog.svelte';
 	import SqlEditor from '../sql-editor.svelte';
@@ -94,6 +96,12 @@
 	// and /db/integration are sidebar siblings. Old ?tab= links redirect in
 	// the server load.
 	const activeTab = $derived(page.params.tool ?? 'collections');
+	/** Desktop quick-switcher over this agent's tool pages (sidebar stays canonical). */
+	const toolTabs = $derived(
+		buildConsoleNav(data.projectId)
+			.flatMap((section) => section.items)
+			.filter((item) => item.href.startsWith(`/dashboard/${data.projectId}/db`))
+	);
 	const toolMeta: Record<string, { title: string; blurb: string }> = {
 		collections: {
 			title: 'Collections',
@@ -890,6 +898,8 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 	data-testid="db-page"
 	data-hydrated={hydrated}
 >
+	<ToolTabs items={toolTabs} />
+
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<div>
 			<h1 class="text-2xl font-semibold">{toolMeta[activeTab]?.title ?? 'Database'}</h1>
