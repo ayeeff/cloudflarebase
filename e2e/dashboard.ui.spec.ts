@@ -71,15 +71,16 @@ test.describe('authentication page (frontend)', () => {
 		await expect(sessionPanel.getByText('Playground User')).toBeVisible();
 		await expect(sessionPanel.getByText(email)).toBeVisible();
 
-		// …and the project data follows.
+		// …and the project data follows. The live-activity feed lives on the
+		// Users overview, so assert it there before moving on to Sessions.
 		await expect(statValue(page, 'users')).toHaveText(String(usersBefore + 1));
 		await page.getByTestId('nav-auth').click();
 		await expect(page.getByTestId('users-card').getByText(email)).toBeVisible();
-		await page.getByTestId('nav-auth-sessions').click();
-		await expect(page.getByTestId('sessions-card').getByText(email)).toBeVisible();
 		await expect(
 			page.getByTestId('activity-card').getByText('registered user created')
 		).toBeVisible();
+		await page.getByTestId('nav-auth-sessions').click();
+		await expect(page.getByTestId('sessions-card').getByText(email)).toBeVisible();
 	});
 
 	test('validates sign-up and sign-in fields before sending auth requests', async ({ page }) => {
