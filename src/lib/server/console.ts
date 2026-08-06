@@ -120,7 +120,12 @@ export async function getConsoleSession(
 		return null;
 	}
 
-	const body = await (response as unknown as Response).json().catch(() => null);
+	const body: unknown = await (response as unknown as Response).json().catch(() => undefined);
+	// Better Auth answers a signed-out get-session with 200 and a JSON null
+	// body - the ORDINARY case for any visitor carrying unrelated cookies
+	// (e.g. the demo-project cookie), not a contract drift. Only a 200 whose
+	// body is neither null nor the session shape means the contract moved.
+	if (body === null) return null;
 	const parsed = consoleSessionSchema.safeParse(body);
 	if (!parsed.success) {
 		// A valid 200 the guard cannot read means the session contract drifted.
