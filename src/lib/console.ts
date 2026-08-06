@@ -32,9 +32,23 @@ export const RESERVED_PROJECT_IDS = new Set([
 	'fleet'
 ]);
 
-/** Demo projects are minted per visitor by the demo landing flow. */
-const DEMO_PROJECT_PATTERN = /^demo-[a-f0-9]{20}$/;
+/**
+ * Demo projects are minted per visitor by the demo landing flow. Roots are
+ * `demo-<hex>` (12 hex since demo branches shipped, 20 before - both stay
+ * valid), and a demo BRANCH is `demo-<hex>--<branch>` with the registry's
+ * branch-name grammar: demos get production/preview branches like any other
+ * project, so the whole demo family must share the demo caps, TTL erasure,
+ * and anonymous access. Mirrored in agents/auth and agents/db schemas.ts;
+ * keep all three in sync.
+ */
+const DEMO_PROJECT_PATTERN = /^demo-[a-f0-9]{12,20}(?:--[a-z0-9][a-z0-9-]{0,15})?$/;
 
 export function isDemoProjectId(projectId: string): boolean {
 	return DEMO_PROJECT_PATTERN.test(projectId);
+}
+
+/** Root demo id for a possibly-branched demo id: `demo-x--stg` -> `demo-x`. */
+export function demoRootId(projectId: string): string {
+	const separator = projectId.indexOf('--');
+	return separator === -1 ? projectId : projectId.slice(0, separator);
 }

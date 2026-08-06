@@ -18,7 +18,12 @@ export const projectIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/);
 /** Collection names become Durable Object name suffixes - keep them tame. */
 export const collectionNameSchema = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
 
-export const DEMO_PROJECT_PATTERN = /^demo-[a-f0-9]{20}$/;
+// Demo roots are demo-<12..20 hex>; a demo BRANCH is demo-<hex>--<branch>
+// (branches-design.md), and the whole family must share demo caps, TTL
+// erasure, and the sibling-spawn exclusion - a branch escaping this pattern
+// would be an uncapped anonymous instance. Mirrored in the console's
+// $lib/console.ts and agents/auth.
+export const DEMO_PROJECT_PATTERN = /^demo-[a-f0-9]{12,20}(?:--[a-z0-9][a-z0-9-]{0,15})?$/;
 
 /** Bad env degrades to 24h instead of throwing in onStart. */
 export const demoTtlHoursSchema = z.coerce.number().int().min(1).max(720).catch(24);

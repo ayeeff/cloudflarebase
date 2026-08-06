@@ -49,10 +49,10 @@ test.describe('landing page (frontend)', () => {
 
 		await page.getByRole('link', { name: 'Open the live demo' }).first().click();
 
-		await expect(page).toHaveURL(/\/dashboard\/demo-[a-f0-9]{20}$/);
+		await expect(page).toHaveURL(/\/dashboard\/demo-[a-f0-9]{12}$/);
 		await expect(page.getByRole('heading', { name: 'Project Overview' })).toBeVisible();
 		const projectId = (await page.getByTestId('project-badge').textContent())!;
-		expect(projectId).toMatch(/^demo-[a-f0-9]{20}$/);
+		expect(projectId).toMatch(/^demo-[a-f0-9]{12}$/);
 		await expect(page.getByTestId('project-copilot')).toBeVisible();
 
 		// The Firebase-style sidebar navigates into Authentication.

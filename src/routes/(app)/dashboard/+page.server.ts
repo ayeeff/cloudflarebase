@@ -4,7 +4,10 @@ import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
 const COOKIE = 'cfb-demo-project';
-const PROJECT_PATTERN = /^demo-[a-f0-9]{20}$/;
+// Roots only - the cookie remembers what this flow minted, never a branch.
+// 12 hex now (17-char root), so `--production` still fits the 32-char
+// project-id ceiling; 20-hex ids from before demo branches stay resumable.
+const PROJECT_PATTERN = /^demo-[a-f0-9]{12,20}$/;
 
 /**
  * The console entry point, which behaves differently for the two audiences
@@ -19,7 +22,7 @@ export const load: PageServerLoad = async ({ cookies, locals, platform }) => {
 	if (locals.demoMode && !locals.consoleUser) {
 		let projectId = cookies.get(COOKIE);
 		if (!projectId || !PROJECT_PATTERN.test(projectId)) {
-			projectId = `demo-${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`;
+			projectId = `demo-${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`;
 			// The all-time demo counter on /admin; recordDemoProject never rejects.
 			platform?.ctx.waitUntil(recordDemoProject(platform, projectId));
 			cookies.set(COOKIE, projectId, {

@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/sveltekit';
-import { isDemoProjectId, RESERVED_PROJECT_IDS } from '$lib/console';
+import { demoRootId, isDemoProjectId, RESERVED_PROJECT_IDS } from '$lib/console';
 import { AGENT_REGISTRY } from '$lib/agent-registry';
 import type { RegistryProject } from '$lib/agents';
 import { getDb } from '$lib/server/db';
@@ -221,6 +221,36 @@ export interface BranchContext {
 	current: string | null;
 	/** The root's branches, oldest first. */
 	branches: RegistryProject[];
+	/** Synthesized demo context: branches are id-derived, never registry rows,
+	 * and creation is client-side navigation instead of POST /branches. */
+	demo?: boolean;
+}
+
+/**
+ * Branch context for a DEMO project family - synthesized, never stored.
+ * Every demo gets production and preview branches (plus whatever the visitor
+ * navigated to), derived purely from the id: the broadened demo pattern gives
+ * each branch instance the same caps and TTL erasure as its root, so nothing
+ * needs registering for ids that erase themselves. Null for pre-branch 20-hex
+ * demo roots, whose ids leave no room under the 32-char ceiling.
+ */
+export function demoBranchContext(projectId: string): BranchContext | null {
+	if (!isDemoProjectId(projectId)) return null;
+	const rootId = demoRootId(projectId);
+	const current = projectId === rootId ? null : projectId.slice(rootId.length + 2);
+	const names = ['production', 'preview'];
+	if (current && !names.includes(current)) names.push(current);
+	const branches = names
+		.map((branchName) => ({
+			id: `${rootId}--${branchName}`,
+			name: `Demo (${branchName})`,
+			parentId: rootId,
+			branchName,
+			createdAt: new Date(0).toISOString()
+		}))
+		.filter((branch) => projectIdSchema.safeParse(branch.id).success);
+	if (branches.length === 0) return null;
+	return { demo: true, rootId, current, branches };
 }
 
 /**
