@@ -73,7 +73,14 @@ const apiRateLimitHandle: Handle = async ({ event, resolve }) => {
 };
 
 type Access =
-	{ scope: 'open' } | { scope: 'operator'; projectId: string | null; kind: 'page' | 'api' };
+	| { scope: 'open' }
+	| {
+			scope: 'operator';
+			projectId: string | null;
+			kind: 'page' | 'api';
+			/** The bare /dashboard entry, the only page demo mode hands to anonymous visitors. */
+			demoEntry?: boolean;
+	  };
 
 /**
  * Splits project-scoped surfaces into public product API and operator console.
@@ -129,7 +136,12 @@ function classifyAccess(pathname: string): Access {
 	}
 
 	if (segments[0] === 'dashboard') {
-		return { scope: 'operator', projectId: segments[1] ?? null, kind: 'page' };
+		return {
+			scope: 'operator',
+			projectId: segments[1] ?? null,
+			kind: 'page',
+			demoEntry: segments.length === 1
+		};
 	}
 
 	// The CLI login hand-off page: operator-only so a signed-out visitor
@@ -164,7 +176,9 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 	// the real project list. Its loader branches on consoleUser, so the
 	// session must be resolved here too (getConsoleSession no-ops without a
 	// cookie, keeping the first-time demo visit free of a session lookup).
-	if (event.locals.demoMode && access.kind === 'page' && !access.projectId) {
+	// Scoped to that one entry: other project-less operator pages (/cli-auth)
+	// keep the hard bounce through /login even on the public demo.
+	if (event.locals.demoMode && access.demoEntry) {
 		event.locals.consoleUser = await getConsoleSession(
 			event.platform,
 			event.url.origin,
