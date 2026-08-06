@@ -1020,13 +1020,25 @@
 								No rows yet.
 							</p>
 						{:else}
-							<div class="overflow-x-auto">
+							<!-- Neon-style data grid: typed column headers from the DECLARED
+							     schema (SQLite affinity is not the type system - the DSL is),
+							     sticky while the grid scrolls, NULLs rendered as NULLs. -->
+							<div class="max-h-[32rem] overflow-auto rounded-lg border">
 								<Table.Root class="min-w-[42rem]" data-testid="db-rows-table">
-									<Table.Header>
+									<Table.Header class="sticky top-0 z-10 bg-card">
 										<Table.Row>
-											<Table.Head class="w-40">id</Table.Head>
+											<Table.Head class="w-40 font-mono text-xs">
+												id <span class="ml-1 text-[10px] font-normal text-muted-foreground/70"
+													>uuid</span
+												>
+											</Table.Head>
 											{#each selectedTable.columns as column (column.name)}
-												<Table.Head class="font-mono text-xs">{column.name}</Table.Head>
+												<Table.Head class="font-mono text-xs">
+													{column.name}
+													<span class="ml-1 text-[10px] font-normal text-muted-foreground/70"
+														>{column.type}{column.nullable ? '?' : ''}</span
+													>
+												</Table.Head>
 											{/each}
 											<Table.Head class="w-20 text-right">Actions</Table.Head>
 										</Table.Row>
@@ -1041,7 +1053,11 @@
 												</Table.Cell>
 												{#each selectedTable.columns as column (column.name)}
 													<Table.Cell class="max-w-[14rem] truncate font-mono text-xs">
-														{cellText(row.data[column.name])}
+														{#if row.data[column.name] === null || row.data[column.name] === undefined}
+															<span class="text-muted-foreground/50">NULL</span>
+														{:else}
+															{cellText(row.data[column.name])}
+														{/if}
 													</Table.Cell>
 												{/each}
 												<Table.Cell class="text-right">
