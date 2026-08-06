@@ -46,7 +46,9 @@ test.describe('branch switcher (frontend)', () => {
 		await dialog.getByTestId('new-branch-create').click();
 
 		await expect(page).toHaveURL(new RegExp(`/dashboard/${ROOT}--${BRANCH}$`));
-		await expect(page.getByTestId('project-badge')).toHaveText(`${ROOT}--${BRANCH}`);
+		// The breadcrumb keeps root and branch as separate segments: the project
+		// crumb names the ROOT, the branch crumb the branch - never `root--branch`.
+		await expect(page.getByTestId('project-badge')).toHaveText(ROOT);
 		await expect(page.getByTestId('branch-switcher')).toContainText(BRANCH);
 	});
 

@@ -293,13 +293,30 @@ test.describe('authentication page (frontend)', () => {
 		await expect(page.getByTestId('users-card').getByText(email)).not.toBeVisible();
 	});
 
-	test('switching projects lands on an isolated project overview', async ({ page }) => {
+	test('switching projects via the breadcrumb lands on an isolated overview', async ({
+		page,
+		request
+	}) => {
+		// The breadcrumb dropdown lists REGISTRY projects, so the switch target
+		// must be a real registry row - unique per run, since local stacks are
+		// reused and registry ids are permanent for the stack's lifetime.
+		const target =
+			`uisw-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`.slice(
+				0,
+				24
+			);
+		const created = await request.post('/api/registry/projects', {
+			data: { id: target, name: 'Switch Target' }
+		});
+		expect(created.status(), await created.text()).toBe(201);
+
 		await gotoAuthPage(page, SEED_PROJECT);
+		const switcher = page.getByTestId('project-switcher');
+		await expect(switcher).toHaveAttribute('data-hydrated', 'true');
+		await switcher.click();
+		await page.getByTestId(`project-item-${target}`).click();
 
-		await page.getByLabel('Project id').fill('e2e-ui-switched');
-		await page.getByLabel('Project id').press('Enter');
-
-		await expect(page).toHaveURL(/\/dashboard\/e2e-ui-switched$/);
+		await expect(page).toHaveURL(new RegExp(`/dashboard/${target}$`));
 		await expect(page.getByRole('heading', { name: 'Project Overview' })).toBeVisible();
 		await expect(page.getByTestId('overview-users-count')).toHaveText('0');
 
@@ -318,25 +335,7 @@ test.describe('authentication page (frontend)', () => {
 		await expect(page.getByTestId('connect-card')).toContainText(`/api/projects/${project}/auth`);
 	});
 
-	test('project switcher rejects HTML and script payloads', async ({ page }) => {
-		await gotoAuthPage(page, SEED_PROJECT);
-		await page.evaluate(
-			() => ((window as typeof window & { xssTriggered?: boolean }).xssTriggered = false)
-		);
-		const startingUrl = page.url();
-		const input = page.getByLabel('Project id');
-
-		await input.fill('<img src=x onerror=xssTriggered=true>');
-		await input.press('Enter');
-
-		await expect(page).toHaveURL(startingUrl);
-		await expect(page.getByRole('alert')).toHaveText(
-			'Use lowercase letters, numbers, and hyphens only.'
-		);
-		await expect(input).toHaveAttribute('aria-invalid', 'true');
-		await expect(page.locator('img[src="x"]')).toHaveCount(0);
-		expect(
-			await page.evaluate(() => (window as typeof window & { xssTriggered?: boolean }).xssTriggered)
-		).toBe(false);
-	});
+	// The free-text project switcher (and with it the HTML-injection vector its
+	// XSS spec pinned) was retired for the breadcrumb dropdown: project ids now
+	// come from the registry, never from typed input.
 });

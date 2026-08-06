@@ -14,23 +14,23 @@
 	import * as Resizable from '$lib/components/ui/resizable';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
-	import { createBranchSchema, projectIdSchema } from '$lib/schemas/auth';
+	import { createBranchSchema } from '$lib/schemas/auth';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
 	import { onMount, tick } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
 	import {
-		ArrowRight,
 		BookOpen,
 		Bot,
 		Check,
-		ChevronDown,
+		ChevronsUpDown,
 		Clock,
 		Database,
 		GitBranch,
 		HardDrive,
 		House,
 		KeyRound,
+		LayoutGrid,
 		Plus,
 		Radio,
 		SendHorizontal,
@@ -42,10 +42,6 @@
 	let { children, data } = $props();
 
 	const projectId = $derived(page.params.projectId ?? 'demo');
-	// Writable derived: resets to the current project on navigation, while the
-	// input binding can still overwrite it locally.
-	let projectInput = $derived(page.params.projectId ?? 'demo');
-	let projectSwitchError = $state('');
 	const isMobile = new IsMobile();
 	// Open state and pane sizes come from the cfbase-copilot cookie via the
 	// layout server load, so SSR already renders the saved layout - reopening
@@ -160,23 +156,15 @@
 		}
 	}
 
-	function switchProject(event: SubmitEvent) {
-		event.preventDefault();
-		const slug = projectInput.trim().toLowerCase();
-		const parsed = projectIdSchema.safeParse(slug);
-		if (!parsed.success) {
-			projectSwitchError = parsed.error.issues[0]?.message ?? 'Invalid project ID.';
-			return;
-		}
-		projectSwitchError = '';
-		if (parsed.data !== projectId) {
-			void goto(resolve('/(app)/dashboard/[projectId]', { projectId: parsed.data }));
-		}
-	}
-
-	// --- Branch switcher (docs/branches-design.md). data.branches is null on
-	// demo/unregistered projects, which hides the control entirely. ---
+	// --- Breadcrumb switchers (Neon-style shell). data.branches is null on
+	// demo/unregistered projects, which hides the branch controls entirely;
+	// data.projects is null for anonymous demo visitors, so the registry list
+	// never reaches their page data and the project crumb stays static. ---
 	const branchCtx = $derived(data.branches);
+	/** What the project crumb names: the ROOT id - the branch is its own crumb. */
+	const rootId = $derived(branchCtx?.rootId ?? projectId);
+	/** Roots only: branches are reached through the branch crumb, not this list. */
+	const rootProjects = $derived((data.projects ?? []).filter((entry) => !entry.parentId));
 	// data-hydrated on the trigger, the suite's convention: the dropdown only
 	// answers clicks after hydration, so tests wait for this before clicking.
 	let hydrated = $state(false);
@@ -354,6 +342,42 @@
 	<meta name="robots" content="noindex, nofollow, noarchive" />
 </svelte:head>
 
+{#snippet branchMenuItems(ctx: NonNullable<typeof data.branches>)}
+	<!-- eslint-disable svelte/no-navigation-without-resolve -- branchHref builds on resolve() and swaps only the project segment -->
+	<DropdownMenu.Item data-testid="branch-item-main">
+		{#snippet child({ props })}
+			<a {...props} href={branchHref(ctx.rootId)}>
+				<GitBranch class="h-4 w-4" />
+				<span class="truncate font-mono text-xs">main</span>
+				{#if !ctx.current}<Check class="ml-auto h-4 w-4" />{/if}
+			</a>
+		{/snippet}
+	</DropdownMenu.Item>
+	{#each ctx.branches as branch (branch.id)}
+		<DropdownMenu.Item data-testid={`branch-item-${branch.branchName}`}>
+			{#snippet child({ props })}
+				<a {...props} href={branchHref(branch.id)}>
+					<GitBranch class="h-4 w-4" />
+					<span class="truncate font-mono text-xs">{branch.branchName}</span>
+					{#if ctx.current === branch.branchName}<Check class="ml-auto h-4 w-4" />{/if}
+				</a>
+			{/snippet}
+		</DropdownMenu.Item>
+	{/each}
+	<!-- eslint-enable svelte/no-navigation-without-resolve -->
+	<DropdownMenu.Separator />
+	<DropdownMenu.Item
+		data-testid="new-branch"
+		onclick={() => {
+			newBranchName = '';
+			newBranchError = '';
+			newBranchOpen = true;
+		}}
+	>
+		<Plus class="h-4 w-4" /> New branch…
+	</DropdownMenu.Item>
+{/snippet}
+
 {#snippet copilotPanel(desktop: boolean)}
 	<section
 		class="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
@@ -477,18 +501,27 @@
 {/snippet}
 
 <div class="flex h-dvh overflow-hidden bg-background text-foreground">
-	<!-- Sidebar -->
+	<!-- Sidebar: two labeled groups, Neon-style. PROJECT holds the cross-project
+	     links; BRANCH holds the branch select and every per-branch tool - the
+	     agent nav, coming-soon primitives, and the API reference all operate on
+	     the current branch's agent instances. The brand lives in the header
+	     breadcrumb now. -->
 	<aside class="hidden w-60 shrink-0 flex-col border-r border-border bg-card lg:flex">
-		<a
-			href={resolve('/')}
-			class="flex h-14 shrink-0 items-center gap-2 border-b border-border px-5 font-bold"
-		>
-			<img src="/brand/mark.svg" alt="" class="h-5 w-5" />
-			Cloudflarebase
-		</a>
-
-		<nav class="flex-1 space-y-6 px-3 py-4">
+		<nav class="flex-1 space-y-6 overflow-y-auto px-3 py-4">
 			<div>
+				<p
+					class="px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase"
+				>
+					Project
+				</p>
+				<a
+					href={resolve('/(app)/dashboard')}
+					data-testid="nav-all-projects"
+					class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+				>
+					<LayoutGrid class="h-4 w-4" />
+					All projects
+				</a>
 				<a
 					href={overviewHref}
 					data-testid="nav-overview"
@@ -500,18 +533,43 @@
 					]}
 				>
 					<House class="h-4 w-4" />
-					Project Overview
+					Overview
 				</a>
 			</div>
 
-			{#each agentNav as navSection (navSection.section)}
-				<div>
-					<p
-						class="px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase"
-					>
-						{navSection.section}
-					</p>
-					<!-- eslint-disable svelte/no-navigation-without-resolve -- manifest-driven hrefs are prebuilt project-relative paths -->
+			<div>
+				<p
+					class="px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase"
+				>
+					Branch
+				</p>
+				{#if branchCtx}
+					{@const ctx = branchCtx}
+					<div class="px-3 pb-3">
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger>
+								{#snippet child({ props })}
+									<button
+										{...props}
+										type="button"
+										class="flex w-full items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-left text-xs font-medium transition-colors hover:bg-accent"
+										aria-label="Switch branch"
+										data-testid="sidebar-branch-select"
+									>
+										<GitBranch class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+										<span class="truncate font-mono">{ctx.current ?? 'main'}</span>
+										<ChevronsUpDown class="ml-auto h-3 w-3 shrink-0 text-muted-foreground" />
+									</button>
+								{/snippet}
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Content align="start" class="w-52">
+								{@render branchMenuItems(ctx)}
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+					</div>
+				{/if}
+				<!-- eslint-disable svelte/no-navigation-without-resolve -- manifest-driven hrefs are prebuilt project-relative paths -->
+				{#each agentNav as navSection (navSection.section)}
 					{#each navSection.items as item (item.testId)}
 						{@const NavIcon = navIcons[item.icon] ?? KeyRound}
 						<a
@@ -542,15 +600,7 @@
 							</span>
 						{/each}
 					{/if}
-				</div>
-			{/each}
-
-			<div>
-				<p
-					class="px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase"
-				>
-					Reference
-				</p>
+				{/each}
 				<a
 					href={apiHref}
 					data-testid="nav-api"
@@ -590,18 +640,71 @@
 			<header
 				class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-3 py-3 sm:px-6 md:h-14 md:flex-nowrap md:py-0"
 			>
-				<div class="flex min-w-0 items-center gap-2 text-sm">
-					<a href={resolve('/')} class="shrink-0 lg:hidden" aria-label="Cloudflarebase home">
+				<!-- Breadcrumb: logo / project ⇅ / branch ⇅. The project crumb is a
+				     dropdown over the registry (operators only - data.projects is
+				     null for anonymous demo visitors, who get a static crumb), and
+				     a branch is never folded into the project name: root and branch
+				     are separate segments. -->
+				<div class="flex min-w-0 items-center gap-1.5 text-sm">
+					<a href={resolve('/')} class="shrink-0" aria-label="Cloudflarebase home">
 						<img src="/brand/mark.svg" alt="" class="h-5 w-5" />
 					</a>
-					<span class="hidden text-muted-foreground lg:inline">Project</span>
-					<Badge
-						variant="secondary"
-						class="max-w-28 truncate font-mono sm:max-w-none"
-						data-testid="project-badge">{projectId}</Badge
-					>
+					<span class="text-muted-foreground/40 select-none">/</span>
+					{#if data.projects}
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										size="sm"
+										variant="ghost"
+										class="h-8 min-w-0 shrink gap-1.5 px-2 font-mono text-xs"
+										aria-label="Switch project"
+										data-testid="project-switcher"
+										data-hydrated={hydrated}
+									>
+										<span class="truncate" data-testid="project-badge">{rootId}</span>
+										<ChevronsUpDown class="h-3 w-3 shrink-0 text-muted-foreground" />
+									</Button>
+								{/snippet}
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Content align="start" class="max-h-80 w-64 overflow-y-auto">
+								<!-- eslint-disable svelte/no-navigation-without-resolve -- hrefs are resolve()-built project paths -->
+								{#each rootProjects as candidate (candidate.id)}
+									<DropdownMenu.Item data-testid={`project-item-${candidate.id}`}>
+										{#snippet child({ props })}
+											<a
+												{...props}
+												href={resolve('/(app)/dashboard/[projectId]', {
+													projectId: candidate.id
+												})}
+											>
+												<span class="truncate font-mono text-xs">{candidate.id}</span>
+												{#if candidate.id === rootId}<Check class="ml-auto h-4 w-4" />{/if}
+											</a>
+										{/snippet}
+									</DropdownMenu.Item>
+								{/each}
+								{#if rootProjects.length}<DropdownMenu.Separator />{/if}
+								<DropdownMenu.Item data-testid="project-item-all">
+									{#snippet child({ props })}
+										<a {...props} href={resolve('/(app)/dashboard')}>
+											<LayoutGrid class="h-4 w-4" />
+											All projects
+										</a>
+									{/snippet}
+								</DropdownMenu.Item>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+					{:else}
+						<span class="truncate px-1 font-mono text-xs font-medium" data-testid="project-badge"
+							>{rootId}</span
+						>
+					{/if}
 					{#if branchCtx}
 						{@const ctx = branchCtx}
+						<span class="text-muted-foreground/40 select-none">/</span>
 						<DropdownMenu.Root>
 							<DropdownMenu.Trigger>
 								{#snippet child({ props })}
@@ -616,46 +719,12 @@
 									>
 										<GitBranch class="h-3.5 w-3.5 text-muted-foreground" />
 										<span class="max-w-24 truncate">{ctx.current ?? 'main'}</span>
-										<ChevronDown class="h-3 w-3 text-muted-foreground" />
+										<ChevronsUpDown class="h-3 w-3 shrink-0 text-muted-foreground" />
 									</Button>
 								{/snippet}
 							</DropdownMenu.Trigger>
 							<DropdownMenu.Content align="start" class="w-56">
-								<!-- eslint-disable svelte/no-navigation-without-resolve -- branchHref builds on resolve() and swaps only the project segment -->
-								<DropdownMenu.Item data-testid="branch-item-main">
-									{#snippet child({ props })}
-										<a {...props} href={branchHref(ctx.rootId)}>
-											<GitBranch class="h-4 w-4" />
-											<span class="truncate font-mono text-xs">main</span>
-											{#if !ctx.current}<Check class="ml-auto h-4 w-4" />{/if}
-										</a>
-									{/snippet}
-								</DropdownMenu.Item>
-								{#each ctx.branches as branch (branch.id)}
-									<DropdownMenu.Item data-testid={`branch-item-${branch.branchName}`}>
-										{#snippet child({ props })}
-											<a {...props} href={branchHref(branch.id)}>
-												<GitBranch class="h-4 w-4" />
-												<span class="truncate font-mono text-xs">{branch.branchName}</span>
-												{#if ctx.current === branch.branchName}<Check
-														class="ml-auto h-4 w-4"
-													/>{/if}
-											</a>
-										{/snippet}
-									</DropdownMenu.Item>
-								{/each}
-								<!-- eslint-enable svelte/no-navigation-without-resolve -->
-								<DropdownMenu.Separator />
-								<DropdownMenu.Item
-									data-testid="new-branch"
-									onclick={() => {
-										newBranchName = '';
-										newBranchError = '';
-										newBranchOpen = true;
-									}}
-								>
-									<Plus class="h-4 w-4" /> New branch…
-								</DropdownMenu.Item>
+								{@render branchMenuItems(ctx)}
 							</DropdownMenu.Content>
 						</DropdownMenu.Root>
 					{/if}
@@ -663,39 +732,6 @@
 
 				<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
 					<ModeToggle class="h-8 w-8" testId="theme-toggle" />
-					<form onsubmit={switchProject} novalidate class="relative flex items-center gap-2">
-						<Input
-							bind:value={projectInput}
-							oninput={() => (projectSwitchError = '')}
-							class="h-8 w-24 font-mono text-xs min-[380px]:w-32 sm:w-40"
-							placeholder="switch project…"
-							aria-label="Project id"
-							aria-invalid={projectSwitchError ? 'true' : undefined}
-							aria-describedby={projectSwitchError ? 'project-switch-error' : undefined}
-							maxlength={32}
-							pattern={'[a-z0-9][a-z0-9-]{0,31}'}
-							autocomplete="off"
-							spellcheck="false"
-						/>
-						<Button
-							type="submit"
-							size="sm"
-							variant="outline"
-							class="h-8"
-							aria-label="Switch project"
-						>
-							<ArrowRight class="h-3.5 w-3.5" />
-						</Button>
-						{#if projectSwitchError}
-							<p
-								id="project-switch-error"
-								role="alert"
-								class="absolute top-full right-0 z-50 mt-1 w-64 rounded-md border border-destructive/30 bg-background px-2 py-1.5 text-xs text-destructive shadow-md"
-							>
-								{projectSwitchError}
-							</p>
-						{/if}
-					</form>
 				</div>
 			</header>
 			{#if !mobileAgentOpen}
