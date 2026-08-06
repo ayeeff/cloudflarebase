@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { DbCollectionSummary, DbReplicationStatus, DbTableSummary } from '$lib/agents';
+	import { coloPoint } from '$lib/colo-locations';
 	import { WORLD_OUTLINE_PATH } from '$lib/world-outline';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -238,9 +239,13 @@
 		return null;
 	});
 	const hub = $derived.by(() => {
+		// Exact colo placement when the reported IATA code is known...
+		const exact = primaryLocation?.colo ? coloPoint(primaryLocation.colo, MAP_W, MAP_H) : null;
+		if (exact) return exact;
+		// ...else the country's region anchor, nudged off the region marker so
+		// the two glyphs stay distinguishable; else the abstract fallback.
 		const region = PRIMARY_COUNTRY_REGION[primaryLocation?.country ?? ''];
 		const point = region ? REGION_POINTS[region] : undefined;
-		// Nudged off the region marker so the two glyphs stay distinguishable.
 		return point ? { x: point.x, y: point.y + 14 } : HUB;
 	});
 
