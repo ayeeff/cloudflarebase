@@ -632,7 +632,7 @@
 								<Input
 									id="new-table-name"
 									bind:value={designerName}
-									placeholder="todos"
+									placeholder="table name..."
 									autocomplete="off"
 									data-testid="db-new-table-name"
 								/>

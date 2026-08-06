@@ -15,9 +15,10 @@
 	} from '$lib/agents';
 	import { dbAccessModeSchema, dbValidatorSchema } from '$lib/agents';
 	import CodeExamples from '$lib/components/code-examples.svelte';
-	import ReplicationTab from './replication-tab.svelte';
-	import RollbackDialog from './rollback-dialog.svelte';
-	import TablesTab from './tables-tab.svelte';
+	import ReplicationTab from '../replication-tab.svelte';
+	import RollbackDialog from '../rollback-dialog.svelte';
+	import SqlEditor from '../sql-editor.svelte';
+	import TablesTab from '../tables-tab.svelte';
 	import { ulid } from '$lib/ulid';
 	import type { CodeExample } from '$lib/integration-examples';
 	import { Badge } from '$lib/components/ui/badge';
@@ -55,10 +56,9 @@
 	let { data } = $props();
 	let hydrated = $state(false);
 
-	// Tab and browsed collection restore from the query string AT INIT, not in
+	// The browsed collection restores from the query string AT INIT, not in
 	// onMount: page.url is the request URL during SSR, so the server already
-	// renders the right tab and the reload never flashes the default first.
-	const initialTab = page.url.searchParams.get('tab');
+	// renders the right state and the reload never flashes the default first.
 	const initialCollection = page.url.searchParams.get('collection');
 
 	onMount(() => {
@@ -82,11 +82,6 @@
 		}
 	}
 
-	function setActiveTab(tab: string) {
-		activeTab = tab;
-		persistQueryParam('tab', tab === 'collections' ? null : tab);
-	}
-
 	// Initial values from the server load; kept in sync on navigation by the
 	// $effect below and updated live via WebSocket state sync.
 	// svelte-ignore state_referenced_locally
@@ -94,14 +89,42 @@
 	// svelte-ignore state_referenced_locally
 	let agentState = $state<DbAgentState>(data.overview.state);
 	let live = $state(false);
-	let activeTab = $state(
-		initialTab === 'tables' ||
-			initialTab === 'access' ||
-			initialTab === 'replication' ||
-			initialTab === 'setup'
-			? initialTab
-			: 'collections'
-	);
+	// Page-per-tool (Neon-style): the tool IS the route - /db is the
+	// collections browser, /db/tables, /db/sql, /db/access, /db/replication,
+	// and /db/integration are sidebar siblings. Old ?tab= links redirect in
+	// the server load.
+	const activeTab = $derived(page.params.tool ?? 'collections');
+	const toolMeta: Record<string, { title: string; blurb: string }> = {
+		collections: {
+			title: 'Collections',
+			blurb:
+				'Like Firestore, but every collection is its own Durable Object - JSON documents, queries, and onSnapshot-style live subscriptions.'
+		},
+		tables: {
+			title: 'Tables',
+			blurb:
+				'Schema-first SQL tables - typed columns, ORM-compatible storage, and the same live queries as collections.'
+		},
+		sql: {
+			title: 'SQL Editor',
+			blurb:
+				'Operator SQL against a declared table - single statement or atomic batch, single-table, no DDL: the column DSL owns the schema.'
+		},
+		access: {
+			title: 'Access',
+			blurb: 'Per-shard access modes, permission keys, document rules, and replication opt-outs.'
+		},
+		replication: {
+			title: 'Replication',
+			blurb:
+				'Where reads are served from right now - replicas materialize per region, on by default.'
+		},
+		integration: {
+			title: 'Integration',
+			blurb:
+				'Connect your application: REST, the typed client SDK, the Drizzle driver, or a raw live-query WebSocket.'
+		}
+	};
 	let busy = $state(false);
 
 	// Document browser: which collection is open, and its latest page of docs.
@@ -869,10 +892,9 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 >
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<div>
-			<h1 class="text-2xl font-semibold">Database</h1>
+			<h1 class="text-2xl font-semibold">{toolMeta[activeTab]?.title ?? 'Database'}</h1>
 			<p class="mt-1 text-sm text-muted-foreground">
-				Like Firestore, but every collection is its own Durable Object - JSON documents, queries,
-				and onSnapshot-style live subscriptions.
+				{toolMeta[activeTab]?.blurb}
 			</p>
 		</div>
 		<Badge variant="outline" class="gap-1.5" data-testid="connection-status">
@@ -887,23 +909,6 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 	</div>
 
 	<div>
-		<div class="flex h-10 max-w-full gap-1 overflow-x-auto border-b px-1" role="tablist">
-			{#each [['collections', 'Collections'], ['tables', 'Tables'], ['access', 'Access'], ['replication', 'Replication'], ['setup', 'Integration']] as tab (tab[0])}
-				<button
-					type="button"
-					role="tab"
-					aria-selected={activeTab === tab[0]}
-					class={[
-						'relative flex-none px-3.5 text-sm font-medium transition-colors',
-						activeTab === tab[0]
-							? 'text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary'
-							: 'text-muted-foreground hover:text-foreground'
-					]}
-					onclick={() => setActiveTab(tab[0])}>{tab[1]}</button
-				>
-			{/each}
-		</div>
-
 		<!-- COLLECTIONS -->
 		{#if activeTab === 'collections'}
 			<div class="mt-4 space-y-5 sm:space-y-6">
@@ -1658,8 +1663,18 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 			</div>
 		{/if}
 
+		<!-- SQL EDITOR -->
+		{#if activeTab === 'sql'}
+			<div class="mt-4">
+				<SqlEditor
+					projectId={data.projectId}
+					tables={agentState.tables?.map((table) => table.name) ?? []}
+				/>
+			</div>
+		{/if}
+
 		<!-- INTEGRATION -->
-		{#if activeTab === 'setup'}
+		{#if activeTab === 'integration'}
 			<div class="mt-4">
 				<Card.Root data-testid="db-integration">
 					<Card.Header>

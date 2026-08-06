@@ -32,8 +32,35 @@
 	"proxy": { "apiPrefix": "db", "agentBasePath": "" },
 	"permissions": ["documents:read", "documents:write", "collections:write"],
 	"console": {
-		"section": "Build",
+		"section": "Database",
 		"icon": "database",
-		"pages": [{ "path": "/db", "title": "Database", "testId": "nav-db" }]
+		"pages": [
+			{ "path": "/db", "title": "Collections", "testId": "nav-db", "icon": "folder-tree" },
+			{ "path": "/db/tables", "title": "Tables", "testId": "nav-db-tables", "icon": "table" },
+			{
+				"path": "/db/sql",
+				"title": "SQL Editor",
+				"testId": "nav-db-sql",
+				"icon": "terminal-square"
+			},
+			{
+				"path": "/db/access",
+				"title": "Access",
+				"testId": "nav-db-access",
+				"icon": "shield-check"
+			},
+			{
+				"path": "/db/replication",
+				"title": "Replication",
+				"testId": "nav-db-replication",
+				"icon": "globe"
+			},
+			{
+				"path": "/db/integration",
+				"title": "Integration",
+				"testId": "nav-db-integration",
+				"icon": "plug"
+			}
+		]
 	}
 }

@@ -39,7 +39,7 @@
 	"proxy": { "apiPrefix": "auth", "agentBasePath": "/api/auth" },
 	"permissions": ["users:read", "users:write", "sessions:revoke", "roles:write"],
 	"console": {
-		"section": "Build",
+		"section": "Authentication",
 		"icon": "key-round",
 		"pages": [{ "path": "/auth", "title": "Authentication", "testId": "nav-auth" }]
 	}
