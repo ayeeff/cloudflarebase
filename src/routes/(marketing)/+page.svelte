@@ -187,15 +187,28 @@
 			if (Math.sin(x * 0.045) * Math.cos(y * 0.07) > -0.15) dots.push({ x, y });
 		}
 	}
-	const agent = { x: 250, y: 106 };
+	// The primary sits in North America; writers are nearby, subscribers spread
+	// across the other continents.
+	const agent = { x: 96, y: 60 };
 	const dashboard = { x: 74, y: 178 };
 	const clients = [
-		{ x: 62, y: 56, dur: 2.8, begin: 0 },
-		{ x: 198, y: 36, dur: 2.4, begin: 1.5 },
-		{ x: 388, y: 64, dur: 3.1, begin: 0.6 },
+		{ x: 56, y: 90, dur: 2.8, begin: 0 },
+		{ x: 150, y: 40, dur: 2.4, begin: 1.5 },
+		{ x: 296, y: 44, dur: 3.1, begin: 0.6 },
 		{ x: 428, y: 152, dur: 3.5, begin: 2.2 },
-		{ x: 318, y: 186, dur: 2.6, begin: 1.1 }
+		{ x: 120, y: 180, dur: 2.6, begin: 1.1 }
 	];
+	// The db skin shows replication, because it is on by default: per-region
+	// replica satellites fed by the primary over the arcs, each serving its
+	// nearest subscribers. Writers keep hitting the primary - replicas forward
+	// writes by design, so the geometry is honest about the data flow.
+	const replicas = [
+		{ id: 'sam', x: 140, y: 138, arc: 'M96,60 Q100,104 140,138' },
+		{ id: 'weur', x: 262, y: 66, arc: 'M96,60 Q178,38 262,66' },
+		{ id: 'apac', x: 372, y: 92, arc: 'M96,60 Q238,16 372,92' }
+	];
+	/** db skin: replica index serving each subscriber; null marks a writer. */
+	const nearestReplica: (number | null)[] = [null, null, 1, 2, 0];
 
 	type FeedEvent = { id: number; time: string; label: string; detail: string; sync: boolean };
 	const authEventPool: Omit<FeedEvent, 'id' | 'time'>[] = [
@@ -212,9 +225,10 @@
 		{ label: 'POST /documents', detail: 'post submitted', sync: false },
 		{ label: 'live query', detail: '→ 4 front pages', sync: true },
 		{ label: 'PATCH /documents/:id', detail: 'votes: 128 → 129', sync: false },
+		{ label: 'replicate · lsn 129', detail: '→ sam, weur, apac', sync: true },
 		{ label: 'change · modified', detail: 'front page re-ranks', sync: true },
 		{ label: 'POST /query', detail: 'orderBy votes desc', sync: false },
-		{ label: 'subscribe', detail: 'top 25, live', sync: true },
+		{ label: 'subscribe', detail: 'nearest replica: apac', sync: true },
 		{ label: 'POST /documents', detail: 'comment added', sync: false },
 		{ label: 'live query', detail: '→ 5 subscribers', sync: true }
 	];
@@ -226,6 +240,8 @@
 	let heroTab = $state<'auth' | 'db'>(
 		page.url.searchParams.get('agent') === 'auth' ? 'auth' : 'db'
 	);
+	/** The dashboard subscribes like any client: nearest replica on the db skin. */
+	const dashboardSource = $derived(heroTab === 'db' ? replicas[0] : agent);
 
 	function persistParam(key: string, value: string) {
 		if (!browser) return;
@@ -479,12 +495,15 @@
 											{/each}
 
 											{#each clients as c, clientIndex (c.x)}
-												{@const outbound = heroTab === 'db' && clientIndex >= 2}
+												{@const replicaIndex =
+													heroTab === 'db' ? nearestReplica[clientIndex] : null}
+												{@const target = replicaIndex == null ? agent : replicas[replicaIndex]}
+												{@const outbound = replicaIndex != null}
 												<line
 													x1={c.x}
 													y1={c.y}
-													x2={agent.x}
-													y2={agent.y}
+													x2={target.x}
+													y2={target.y}
 													class="stroke-muted-foreground"
 													stroke-width="1"
 													stroke-dasharray="3 3"
@@ -492,8 +511,9 @@
 												/>
 												<circle cx={c.x} cy={c.y} r="3" class="fill-foreground" />
 												{#if !reduceMotion}
-													<!-- Auth: requests flow in. DB: two clients write in, the other
-												     three receive live-query deltas fanning out. -->
+													<!-- Auth: requests flow in. DB: two clients write into the
+												     primary; the subscribers receive live-query deltas from
+												     their NEAREST replica. -->
 													<circle r="2.2" class={outbound ? 'fill-chart-3' : 'fill-primary'}>
 														<animateMotion
 															dur="{c.dur}s"
@@ -504,16 +524,44 @@
 															keyTimes="0;1"
 															keySplines="0.42 0 1 1"
 															path={outbound
-																? `M${agent.x},${agent.y} L${c.x},${c.y}`
-																: `M${c.x},${c.y} L${agent.x},${agent.y}`}
+																? `M${target.x},${target.y} L${c.x},${c.y}`
+																: `M${c.x},${c.y} L${target.x},${target.y}`}
 														/>
 													</circle>
 												{/if}
 											{/each}
 
+											{#if heroTab === 'db'}
+												<!-- Per-region replicas: the primary feeds each over its arc
+												     (row images + config), and subscribers above land on the
+												     nearest one. Replication is on by default - the demo IS
+												     the pitch. -->
+												{#each replicas as replica, replicaIndex (replica.id)}
+													<path
+														d={replica.arc}
+														class="fill-none stroke-chart-2"
+														stroke-width="1"
+														stroke-dasharray="3 3"
+														opacity="0.4"
+													/>
+													<circle cx={replica.x} cy={replica.y} r="8" class="fill-chart-2/15" />
+													<circle cx={replica.x} cy={replica.y} r="3.5" class="fill-chart-2" />
+													{#if !reduceMotion}
+														<circle r="1.8" class="fill-chart-2">
+															<animateMotion
+																dur="2.2s"
+																begin="{0.3 + replicaIndex * 0.55}s"
+																repeatCount="indefinite"
+																path={replica.arc}
+															/>
+														</circle>
+													{/if}
+												{/each}
+											{/if}
+
 											<line
-												x1={agent.x}
-												y1={agent.y}
+												x1={dashboardSource.x}
+												y1={dashboardSource.y}
 												x2={dashboard.x}
 												y2={dashboard.y}
 												class="stroke-chart-3"
@@ -535,7 +583,7 @@
 														dur="1.8s"
 														begin="0.4s"
 														repeatCount="indefinite"
-														path="M{agent.x},{agent.y} L{dashboard.x},{dashboard.y}"
+														path="M{dashboardSource.x},{dashboardSource.y} L{dashboard.x},{dashboard.y}"
 													/>
 												</circle>
 											{/if}
@@ -572,7 +620,7 @@
 
 											<text
 												x={agent.x}
-												y={agent.y + 32}
+												y={agent.y + 40}
 												text-anchor="middle"
 												class="fill-muted-foreground font-mono text-[9px]"
 												>{heroTab === 'db' ? 'DbCollection · posts' : 'AuthAgent · DO SQLite'}</text
@@ -592,10 +640,16 @@
 											<span class="h-1.5 w-1.5 rounded-full bg-primary"></span>
 											{heroTab === 'db' ? 'document writes' : 'auth requests'}
 										</span>
+										{#if heroTab === 'db'}
+											<span class="flex items-center gap-1.5">
+												<span class="h-1.5 w-1.5 rounded-full bg-chart-2"></span>
+												replication feed, on by default
+											</span>
+										{/if}
 										<span class="flex items-center gap-1.5">
 											<span class="h-1.5 w-1.5 rounded-full bg-chart-3"></span>
 											{heroTab === 'db'
-												? 'live-query deltas over hibernated WebSockets'
+												? 'live-query deltas from the nearest replica'
 												: 'WebSocket state sync'}
 										</span>
 										<span
