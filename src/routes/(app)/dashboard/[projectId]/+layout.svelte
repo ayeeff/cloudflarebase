@@ -507,6 +507,14 @@
 	     the current branch's agent instances. The brand lives in the header
 	     breadcrumb now. -->
 	<aside class="hidden w-60 shrink-0 flex-col border-r border-border bg-card lg:flex">
+		<a
+			href={resolve('/')}
+			class="flex h-14 shrink-0 items-center gap-2 border-b border-border px-5 font-bold"
+		>
+			<img src="/brand/mark.svg" alt="" class="h-5 w-5" />
+			Cloudflarebase
+		</a>
+
 		<nav class="flex-1 space-y-6 overflow-y-auto px-3 py-4">
 			<div>
 				<p
@@ -646,10 +654,14 @@
 				     a branch is never folded into the project name: root and branch
 				     are separate segments. -->
 				<div class="flex min-w-0 items-center gap-1.5 text-sm">
-					<a href={resolve('/')} class="shrink-0" aria-label="Cloudflarebase home">
+					<!-- Below lg the sidebar (and its wordmark) is hidden, so the
+					     breadcrumb starts with the mark there; on desktop the brand
+					     lives top-left in the sidebar and the crumb starts at the
+					     project. -->
+					<a href={resolve('/')} class="shrink-0 lg:hidden" aria-label="Cloudflarebase home">
 						<img src="/brand/mark.svg" alt="" class="h-5 w-5" />
 					</a>
-					<span class="text-muted-foreground/40 select-none">/</span>
+					<span class="text-muted-foreground/40 select-none lg:hidden">/</span>
 					{#if data.projects}
 						<DropdownMenu.Root>
 							<DropdownMenu.Trigger>
