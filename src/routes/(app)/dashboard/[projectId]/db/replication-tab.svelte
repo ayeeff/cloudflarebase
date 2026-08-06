@@ -170,16 +170,86 @@
 		oc: { x: 445, y: 190, label: 'Oceania' },
 		afr: { x: 280, y: 178, label: 'Africa' }
 	};
-	/** Primaries have no fixed geography (a DO lives where it was first
-	 * touched), so the hub is deliberately abstract: mid-Atlantic water. */
-	const HUB = { x: 208, y: 124 };
+	/** Fallback when the primary has not reported a location (local dev, or
+	 * the trace probe failed): mid-North-America, the most common case. */
+	const HUB = { x: 112, y: 78 };
+
+	/** Country -> region hint, mirroring the agent's region.ts buckets, for
+	 * placing the primary hub. US stays on the fallback point - a country
+	 * alone cannot pick wnam vs enam, and mid-continent reads honestly. */
+	const PRIMARY_COUNTRY_REGION: Record<string, string> = {
+		CA: 'enam',
+		MX: 'wnam',
+		AR: 'sam',
+		BR: 'sam',
+		CL: 'sam',
+		CO: 'sam',
+		BE: 'weur',
+		CH: 'weur',
+		DE: 'weur',
+		DK: 'weur',
+		ES: 'weur',
+		FR: 'weur',
+		GB: 'weur',
+		IE: 'weur',
+		IT: 'weur',
+		NL: 'weur',
+		NO: 'weur',
+		PT: 'weur',
+		SE: 'weur',
+		AT: 'eeur',
+		CZ: 'eeur',
+		FI: 'eeur',
+		GR: 'eeur',
+		PL: 'eeur',
+		RO: 'eeur',
+		HK: 'apac',
+		IN: 'apac',
+		SG: 'apac',
+		TW: 'apac',
+		JP: 'apac-ne',
+		KR: 'apac-ne',
+		ID: 'apac-se',
+		MY: 'apac-se',
+		PH: 'apac-se',
+		TH: 'apac-se',
+		VN: 'apac-se',
+		AU: 'oc',
+		NZ: 'oc',
+		EG: 'afr',
+		KE: 'afr',
+		NG: 'afr',
+		ZA: 'afr',
+		AE: 'me',
+		BH: 'me',
+		IL: 'me',
+		QA: 'me',
+		SA: 'me',
+		TR: 'me'
+	};
+
+	/** First reported primary location across the fanned-out statuses. */
+	const primaryLocation = $derived.by(() => {
+		for (const status of Object.values(statuses)) {
+			if (status.primary && (status.primary.colo || status.primary.country)) {
+				return status.primary;
+			}
+		}
+		return null;
+	});
+	const hub = $derived.by(() => {
+		const region = PRIMARY_COUNTRY_REGION[primaryLocation?.country ?? ''];
+		const point = region ? REGION_POINTS[region] : undefined;
+		// Nudged off the region marker so the two glyphs stay distinguishable.
+		return point ? { x: point.x, y: point.y + 14 } : HUB;
+	});
 
 	function arcPath(region: string): string {
 		const to = REGION_POINTS[region];
 		if (!to) return '';
-		const mx = (HUB.x + to.x) / 2;
-		const my = (HUB.y + to.y) / 2 - Math.min(28, Math.hypot(to.x - HUB.x, to.y - HUB.y) * 0.18);
-		return `M${HUB.x},${HUB.y} Q${mx.toFixed(1)},${my.toFixed(1)} ${to.x},${to.y}`;
+		const mx = (hub.x + to.x) / 2;
+		const my = (hub.y + to.y) / 2 - Math.min(28, Math.hypot(to.x - hub.x, to.y - hub.y) * 0.18);
+		return `M${hub.x},${hub.y} Q${mx.toFixed(1)},${my.toFixed(1)} ${to.x},${to.y}`;
 	}
 </script>
 
@@ -293,17 +363,17 @@
 						{/if}
 					{/each}
 
-					<!-- The primary hub: abstract on purpose, primaries have no region. -->
-					<circle cx={HUB.x} cy={HUB.y} r="11" class="fill-primary/15" />
-					<circle cx={HUB.x} cy={HUB.y} r="4.5" class="fill-primary" />
+					<!-- The primary hub, placed by the DO's own reported colo. -->
+					<circle cx={hub.x} cy={hub.y} r="11" class="fill-primary/15" />
+					<circle cx={hub.x} cy={hub.y} r="4.5" class="fill-primary" />
 					<text
-						x={HUB.x}
-						y={HUB.y + 18}
+						x={hub.x}
+						y={hub.y + 18}
 						text-anchor="middle"
 						class="fill-muted-foreground font-mono"
 						font-size="7"
 					>
-						primary
+						primary{primaryLocation?.colo ? ` · ${primaryLocation.colo}` : ''}
 					</text>
 				</svg>
 			</div>

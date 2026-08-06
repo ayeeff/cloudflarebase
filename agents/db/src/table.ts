@@ -3,6 +3,7 @@ import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import { z } from 'zod';
 import migrations from './migrations';
 import { checkAccess, corsHeadersFor, drainUnusedBody, withCors } from './access';
+import { primaryLocation } from './colo';
 import { collectionMeta } from './db/schema';
 import { ProjectJwtVerifier } from './jwt';
 import { LiveShard, type LiveGate } from './live';
@@ -528,6 +529,7 @@ export class DbTable extends LiveShard {
 			epoch: this.config?.repEpoch ?? 0,
 			lastLsn: last,
 			horizonLsn: enabled ? horizonLsn(sql) : 0,
+			primary: await primaryLocation(),
 			replicas: enabled
 				? listReplicas(sql).map((replica) => ({
 						id: replica.id,

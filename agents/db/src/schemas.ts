@@ -276,6 +276,10 @@ export interface RepStatus {
 	lastLsn: number;
 	horizonLsn: number;
 	replicas: RepReplicaStatus[];
+	/** The answering primary's own location (/cdn-cgi/trace; null in local
+	 * dev), so the dashboard's map can place the hub where the DO really
+	 * lives instead of guessing. */
+	primary?: { colo: string | null; country: string | null };
 }
 
 // ---------------------------------------------------------------------------

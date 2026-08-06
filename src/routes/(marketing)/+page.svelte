@@ -199,13 +199,16 @@
 	// nearest subscribers. Writers keep hitting the primary - replicas forward
 	// writes by design, so the geometry is honest about the data flow. Anchors
 	// match the Replication tab's region points (sam / weur / apac).
-	const replicas = [
+	const replicas: { id: string; x: number; y: number; arc: string; note?: string }[] = [
 		{ id: 'sam', x: 180, y: 172, arc: 'M120,72 Q150,101 180,172' },
 		{ id: 'weur', x: 247, y: 55, arc: 'M120,72 Q183.5,40.5 247,55' },
-		{ id: 'apac', x: 395, y: 98, arc: 'M120,72 Q257.5,57 395,98' }
+		{ id: 'apac', x: 395, y: 98, arc: 'M120,72 Q257.5,57 395,98' },
+		// The Australian replica serves the SQL-table side of the database -
+		// typed rows replicate exactly like documents.
+		{ id: 'oc', x: 445, y: 190, arc: 'M120,72 Q282.5,103 445,190', note: 'DbTable · todos' }
 	];
 	/** db skin: replica index serving each subscriber; null marks a writer. */
-	const nearestReplica: (number | null)[] = [null, null, 1, 2, 0];
+	const nearestReplica: (number | null)[] = [null, null, 1, 3, 0];
 
 	type FeedEvent = { id: number; time: string; label: string; detail: string; sync: boolean };
 	const authEventPool: Omit<FeedEvent, 'id' | 'time'>[] = [
@@ -227,6 +230,8 @@
 		{ label: 'POST /query', detail: 'orderBy votes desc', sync: false },
 		{ label: 'subscribe', detail: 'nearest replica: apac', sync: true },
 		{ label: 'POST /documents', detail: 'comment added', sync: false },
+		{ label: 'sql · INSERT INTO todos', detail: 'DbTable row', sync: false },
+		{ label: 'live query · todos', detail: 'table rows → oc', sync: true },
 		{ label: 'live query', detail: '→ 5 subscribers', sync: true }
 	];
 	// The hero visual is one diagram with two skins: same map, same agent node,
@@ -553,6 +558,15 @@
 														class="fill-muted-foreground font-mono"
 														font-size="7">{replica.id}</text
 													>
+													{#if replica.note}
+														<text
+															x={replica.x - 12}
+															y={replica.y + 4}
+															text-anchor="end"
+															class="fill-muted-foreground font-mono"
+															font-size="8">{replica.note}</text
+														>
+													{/if}
 													{#if !reduceMotion}
 														<circle r="1.8" class="fill-chart-2">
 															<animateMotion
@@ -661,7 +675,7 @@
 										</span>
 										<span
 											>{heroTab === 'db'
-												? 'one Durable Object per collection'
+												? 'one Durable Object per collection or table'
 												: 'one Durable Object per project'}</span
 										>
 									</div>

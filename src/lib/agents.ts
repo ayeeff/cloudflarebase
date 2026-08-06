@@ -457,7 +457,10 @@ export const dbReplicationStatusSchema = z
 		horizonLsn: z.number(),
 		/** Empty when disabled - and often when enabled too: replicas materialize
 		 * in a region the first time that region reads. */
-		replicas: z.array(dbReplicaSchema)
+		replicas: z.array(dbReplicaSchema),
+		/** The primary's own location (/cdn-cgi/trace; nulls in local dev), so
+		 * the replication map can place the hub where the DO really lives. */
+		primary: z.object({ colo: z.string().nullable(), country: z.string().nullable() }).optional()
 	})
 	.meta({
 		id: 'DbReplicationStatus',
