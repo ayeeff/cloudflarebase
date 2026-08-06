@@ -35,6 +35,7 @@
 		House,
 		KeyRound,
 		LayoutGrid,
+		Menu,
 		Plug,
 		Plus,
 		Radio,
@@ -186,6 +187,15 @@
 	let hydrated = $state(false);
 	onMount(() => {
 		hydrated = true;
+	});
+
+	// Below lg the sidebar becomes a hamburger drawer: the SAME aside slides
+	// in as a fixed overlay, so mobile and desktop can never drift. Closes on
+	// any navigation (the pathname effect) or the backdrop.
+	let mobileNavOpen = $state(false);
+	$effect(() => {
+		void page.url.pathname;
+		mobileNavOpen = false;
 	});
 	let newBranchOpen = $state(false);
 	let newBranchName = $state('');
@@ -375,15 +385,18 @@
 
 {#snippet branchMenuItems(ctx: NonNullable<typeof data.branches>)}
 	<!-- eslint-disable svelte/no-navigation-without-resolve -- branchHref builds on resolve() and swaps only the project segment -->
-	<DropdownMenu.Item data-testid="branch-item-main">
-		{#snippet child({ props })}
-			<a {...props} href={branchHref(ctx.rootId)}>
-				<GitBranch class="h-4 w-4" />
-				<span class="truncate font-mono text-xs">main</span>
-				{#if !ctx.current}<Check class="ml-auto h-4 w-4" />{/if}
-			</a>
-		{/snippet}
-	</DropdownMenu.Item>
+	<!-- Demo contexts have no `main`: the bare root is listed AS production. -->
+	{#if !ctx.demo}
+		<DropdownMenu.Item data-testid="branch-item-main">
+			{#snippet child({ props })}
+				<a {...props} href={branchHref(ctx.rootId)}>
+					<GitBranch class="h-4 w-4" />
+					<span class="truncate font-mono text-xs">main</span>
+					{#if !ctx.current}<Check class="ml-auto h-4 w-4" />{/if}
+				</a>
+			{/snippet}
+		</DropdownMenu.Item>
+	{/if}
 	{#each ctx.branches as branch (branch.id)}
 		<DropdownMenu.Item data-testid={`branch-item-${branch.branchName}`}>
 			{#snippet child({ props })}
@@ -537,7 +550,21 @@
 	     agent nav, coming-soon primitives, and the API reference all operate on
 	     the current branch's agent instances. The brand lives in the header
 	     breadcrumb now. -->
-	<aside class="hidden w-60 shrink-0 flex-col border-r border-border bg-card lg:flex">
+	{#if mobileNavOpen}
+		<button
+			type="button"
+			class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+			aria-label="Close menu"
+			onclick={() => (mobileNavOpen = false)}
+		></button>
+	{/if}
+	<aside
+		class={[
+			'w-60 shrink-0 flex-col border-r border-border bg-card',
+			mobileNavOpen ? 'fixed inset-y-0 left-0 z-50 flex shadow-xl' : 'hidden',
+			'lg:static lg:z-auto lg:flex lg:shadow-none'
+		]}
+	>
 		<a
 			href={resolve('/')}
 			class="flex h-14 shrink-0 items-center gap-2 border-b border-border px-5 font-bold"
@@ -717,10 +744,20 @@
 				     a branch is never folded into the project name: root and branch
 				     are separate segments. -->
 				<div class="flex min-w-0 items-center gap-1.5 text-sm">
-					<!-- Below lg the sidebar (and its wordmark) is hidden, so the
+					<!-- Below lg the sidebar lives behind the hamburger, so the
 					     breadcrumb starts with the mark there; on desktop the brand
 					     lives top-left in the sidebar and the crumb starts at the
 					     project. -->
+					<Button
+						size="icon"
+						variant="ghost"
+						class="h-8 w-8 shrink-0 lg:hidden"
+						aria-label="Open menu"
+						data-testid="mobile-nav-toggle"
+						onclick={() => (mobileNavOpen = true)}
+					>
+						<Menu class="h-4 w-4" />
+					</Button>
 					<a href={resolve('/')} class="shrink-0 lg:hidden" aria-label="Cloudflarebase home">
 						<img src="/brand/mark.svg" alt="" class="h-5 w-5" />
 					</a>
@@ -809,33 +846,8 @@
 					<ModeToggle class="h-8 w-8" testId="theme-toggle" />
 				</div>
 			</header>
-			{#if !mobileAgentOpen}
-				<nav
-					class="flex gap-1 overflow-x-auto border-b px-3 py-2 lg:hidden"
-					aria-label="Project tools"
-				>
-					<a
-						href={overviewHref}
-						class={[
-							'rounded-md px-3 py-1.5 text-sm',
-							isOverview ? 'bg-primary/10 text-primary' : 'text-muted-foreground'
-						]}>Overview</a
-					>
-					<!-- eslint-disable svelte/no-navigation-without-resolve -- manifest-driven hrefs are prebuilt project-relative paths -->
-					{#each agentNav as navSection (navSection.section)}
-						{#each navSection.items as item (item.testId)}
-							<a
-								href={item.href}
-								class={[
-									'rounded-md px-3 py-1.5 text-sm',
-									navActive(item.href) ? 'bg-primary/10 text-primary' : 'text-muted-foreground'
-								]}>{item.title}</a
-							>
-						{/each}
-					{/each}
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
-				</nav>
-			{/if}
+			<!-- Mobile tool navigation lives in the hamburger drawer (the same
+			     sidebar aside, fixed-positioned), so no chip row here. -->
 
 			{#if isMobile.current && mobileAgentOpen}
 				{@render copilotPanel(false)}

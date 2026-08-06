@@ -237,12 +237,14 @@ export interface BranchContext {
 export function demoBranchContext(projectId: string): BranchContext | null {
 	if (!isDemoProjectId(projectId)) return null;
 	const rootId = demoRootId(projectId);
-	const current = projectId === rootId ? null : projectId.slice(rootId.length + 2);
+	// The bare root IS production - demos have no `main`, so the default
+	// branch the visitor lands on already carries the production name.
+	const current = projectId === rootId ? 'production' : projectId.slice(rootId.length + 2);
 	const names = ['production', 'preview'];
-	if (current && !names.includes(current)) names.push(current);
+	if (!names.includes(current)) names.push(current);
 	const branches = names
 		.map((branchName) => ({
-			id: `${rootId}--${branchName}`,
+			id: branchName === 'production' ? rootId : `${rootId}--${branchName}`,
 			name: `Demo (${branchName})`,
 			parentId: rootId,
 			branchName,
