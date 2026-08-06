@@ -14,7 +14,7 @@
   <a href="../../actions/workflows/e2e.yaml"><img alt="E2E" src="../../actions/workflows/e2e.yaml/badge.svg" /></a>
 </p>
 
-An open-source Firebase alternative that runs entirely on your Cloudflare
+The open-source Firebase for Cloudflare - it runs entirely on your own
 account. Each project gets isolated Durable Objects - Better Auth on embedded
 SQLite, and a database with two models and live queries on both: Firestore-style
 JSON documents and typed-column SQL tables you can drive with an ORM. Every

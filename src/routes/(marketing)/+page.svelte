@@ -336,17 +336,17 @@
 	<title>Cloudflarebase - The open-source Firebase for Cloudflare</title>
 	<meta
 		name="description"
-		content="The open-source Firebase for Cloudflare. Every backend primitive is a Cloudflare Agent on isolated Durable Objects. Auth and a live-query document database are live today, with an AI copilot that reads your backend."
+		content="The open-source Firebase for Cloudflare: auth, realtime database, and SQL tables with an AI copilot over your backend - globally replicated, no egress fees, self-hosted in your own Cloudflare account."
 	/>
 	<meta property="og:title" content="Cloudflarebase - The open-source Firebase for Cloudflare" />
 	<meta
 		property="og:description"
-		content="Ship auth and a live-query document database on Cloudflare - isolated Durable Objects, realtime sync, and an AI copilot that reads your backend."
+		content="The open-source Firebase for Cloudflare - auth, realtime data, and SQL with replication by default, whole-backend branching, and an AI copilot. Yours to keep."
 	/>
 	<meta name="twitter:title" content="Cloudflarebase - The open-source Firebase for Cloudflare" />
 	<meta
 		name="twitter:description"
-		content="Ship auth and a live-query document database on Cloudflare - isolated Durable Objects, realtime sync, and an AI copilot that reads your backend."
+		content="The open-source Firebase for Cloudflare - auth, realtime data, and SQL with replication by default, whole-backend branching, and an AI copilot. Yours to keep."
 	/>
 </svelte:head>
 
@@ -401,9 +401,8 @@
 						<p
 							class="mx-auto mt-6 max-w-2xl text-base text-balance text-muted-foreground sm:mt-8 sm:text-lg"
 						>
-							Every backend primitive is a Cloudflare Agent - isolated Durable Objects, zero
-							servers, no regions to pick. Auth and a Firestore-style database with live queries are
-							live today, with an AI copilot that reads your backend built in.
+							Ship auth, realtime data, and SQL from your own Cloudflare account - global by
+							default, zero servers to run, no egress bill. Open source, and yours to keep.
 						</p>
 
 						<div class="mt-12 flex flex-col items-center justify-center gap-2 md:flex-row">
