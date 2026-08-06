@@ -19,7 +19,7 @@
 	import RollbackDialog from '../rollback-dialog.svelte';
 	import SqlEditor from '../sql-editor.svelte';
 	import TablesTab from '../tables-tab.svelte';
-	import { ulid } from '$lib/ulid';
+	import { v7 as uuidv7 } from 'uuid';
 	import type { CodeExample } from '$lib/integration-examples';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -670,7 +670,7 @@
 		}
 		busy = true;
 		try {
-			const id = docIdInput.trim() || ulid();
+			const id = docIdInput.trim() || uuidv7();
 			// ADD refuses a taken id (409) so a typo cannot silently overwrite;
 			// EDIT keeps the deliberate replace semantics.
 			const guard = editingExisting ? '' : '?ifAbsent=1';

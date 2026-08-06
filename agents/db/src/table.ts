@@ -1,4 +1,4 @@
-import * as Sentry from '@sentry/cloudflare';
+﻿import * as Sentry from '@sentry/cloudflare';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import { z } from 'zod';
 import migrations from './migrations';
@@ -41,7 +41,7 @@ import {
 	validateRow,
 } from './table-schema';
 import { compileTableAggregate, compileTableQuery } from './table-query';
-import { ulid } from './ulid';
+import { v7 as uuidv7 } from 'uuid';
 import {
 	aggregateRequestSchema,
 	createDocumentSchema,
@@ -287,7 +287,7 @@ export class DbTable extends LiveShard {
 					report.errors.push({ line: index, error: issues.join('; ') });
 					continue;
 				}
-				const id = line.id ?? ulid();
+				const id = line.id ?? uuidv7();
 				const existing = this.rowById(id);
 				if (
 					!existing &&
@@ -885,7 +885,7 @@ export class DbTable extends LiveShard {
 			);
 		}
 
-		const id = body.data.id ?? ulid();
+		const id = body.data.id ?? uuidv7();
 		if (this.rowById(id)) {
 			return Response.json({ error: 'a row with that id already exists' }, { status: 409 });
 		}

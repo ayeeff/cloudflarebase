@@ -1,4 +1,4 @@
-import * as Sentry from '@sentry/cloudflare';
+﻿import * as Sentry from '@sentry/cloudflare';
 import { count, eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import { z } from 'zod';
@@ -35,7 +35,7 @@ import {
 } from './query';
 import { shardBookmarkForTime, shardCurrentBookmark, shardRestoreTo } from './pitr';
 import { validateDocument } from './rules';
-import { ulid } from './ulid';
+import { v7 as uuidv7 } from 'uuid';
 import {
 	aggregateRequestSchema,
 	collectionConfigSchema,
@@ -214,7 +214,7 @@ export class DbCollection extends LiveShard {
 					report.errors.push({ line: index, error: sizeIssue });
 					continue;
 				}
-				const id = line.id ?? ulid();
+				const id = line.id ?? uuidv7();
 				const [existing] = await this.db
 					.select()
 					.from(documents)
@@ -856,10 +856,10 @@ export class DbCollection extends LiveShard {
 			}
 		}
 
-		// ULID, not UUID: ids sort chronologically, so id order - the default
+		// UUIDv7: ids sort chronologically, so id order - the default
 		// for exports, cursor pages, and the dashboard browser - reads oldest
 		// first with no orderBy.
-		const id = body.data.id ?? ulid();
+		const id = body.data.id ?? uuidv7();
 		const [existing] = await this.db.select().from(documents).where(eq(documents.id, id)).limit(1);
 		if (existing) {
 			return Response.json({ error: 'a document with that id already exists' }, { status: 409 });

@@ -18,7 +18,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { ulid } from '$lib/ulid';
+	import { v7 as uuidv7 } from 'uuid';
 	import {
 		Columns3,
 		Download,
@@ -364,7 +364,7 @@
 		editorBusy = true;
 		editorError = null;
 		try {
-			const id = editorRowId ?? ulid();
+			const id = editorRowId ?? uuidv7();
 			const suffix = editorRowId ? '' : '?ifAbsent=1';
 			const response = await fetch(
 				`${adminBase}/tables/${encodeURIComponent(table)}/rows/${encodeURIComponent(id)}${suffix}`,
