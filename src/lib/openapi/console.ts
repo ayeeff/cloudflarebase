@@ -33,7 +33,7 @@ export const consoleOpenApi: AgentOpenApiModule = {
 				tags: [CONSOLE_TAG],
 				summary: 'Create a branch',
 				description:
-					'Mints `<root>--<branch>` as a full project row. The branch starts empty, like a fresh project; agent instances spawn lazily on first touch. Only root projects can be branched, and `<root>--<branch>` must fit the 32-character project-id ceiling.',
+					'Mints `<root>--<branch>` as a full project row. The branch starts empty, like a fresh project; agent instances spawn lazily on first touch. Only root projects can be branched, and `<root>--<branch>` must fit the 48-character project-id ceiling.',
 				security: [{ sessionCookie: [] }],
 				requestBody: jsonBody(createBranchSchema, 'The branch to create.'),
 				responses: {
@@ -51,7 +51,7 @@ export const consoleOpenApi: AgentOpenApiModule = {
 					},
 					'400': {
 						description:
-							'Invalid branch name, branch of a branch, demo project, or the combined id exceeds 32 characters.'
+							'Invalid branch name, branch of a branch, demo project, or the combined id exceeds 48 characters.'
 					},
 					'401': UNAUTHORIZED,
 					'404': { description: 'No such root project.' },

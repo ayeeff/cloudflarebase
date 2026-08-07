@@ -12,7 +12,7 @@ dropdown, PlanetScale-style)
 >   as designed.
 > - **Refusal contract** (pinned by `e2e/branches.api.spec.ts`): unknown
 >   root 404; branch-of-branch, `main` (it would alias the bare id), demo
->   roots, malformed names, and a combined id past the 32-char ceiling all
+>   roots, malformed names, and a combined id past the 48-char ceiling all
 >   400; duplicate branch 409. The `MAX_PROJECTS` installation ceiling
 >   counts branches - a branch is a full row.
 > - **A branch row's display name** is `<root name> (<branch>)`; the DTO
@@ -60,10 +60,13 @@ key on the project id.
 
 ## Why derived ids beat a branch field
 
-- `projectIdSchema` is `/^[a-z0-9][a-z0-9-]{0,31}$/` in every agent TODAY:
-  `myapp--staging` is already a valid instance name end to end. Zero agent
-  releases, zero migration, zero new schema fields in `@cloudflarebase/auth`
-  or `@cloudflarebase/db`.
+- `projectIdSchema` is `/^[a-z0-9][a-z0-9-]{0,47}$/` in every agent:
+  `myapp--staging` is already a valid instance name end to end. Zero
+  migration, zero new schema fields in `@cloudflarebase/auth` or
+  `@cloudflarebase/db`. (It was `{0,31}` when branches shipped; widened
+  because a long root left room for a 5-character branch name. The ceiling
+  is mirrored in three files - console, auth agent, db agent - so deployed
+  agents must carry the widening before the console mints an id past 32.)
 - Isolation is _structural_, not policy: a branch cannot leak into another
   because nothing is shared - not a row, not a JWKS keypair, not a replica.
   `myapp--staging` JWTs cannot verify against `myapp`: different agents,
@@ -82,7 +85,7 @@ the registry (the sole minter of project ids):
    grandfathered as plain projects - the registry decides what is a branch,
    never the string shape.
 2. **Branch names**: `/^[a-z0-9][a-z0-9-]{0,15}$/`, no `--`. Combined id
-   fits the 32-char ceiling; the create form enforces it with a counter.
+   fits the 48-char ceiling; the create form enforces it with a counter.
 
 ## Control plane (the only real work)
 
@@ -128,7 +131,7 @@ the registry (the sole minter of project ids):
 
 - DO count multiplies per branch **only on use** - instances spawn lazily,
   so an idle branch costs nothing until touched.
-- The 32-char id ceiling caps root + branch length; enforced at create.
+- The 48-char id ceiling caps root + branch length; enforced at create.
 - Analytics events carry the full project id, so per-branch analytics work;
   the fleet view should group by root project when the switcher lands
   (cosmetic).

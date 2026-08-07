@@ -5,7 +5,7 @@ import type { PageServerLoad } from './$types';
 
 const COOKIE = 'cfb-demo-project';
 // Roots only - the cookie remembers what this flow minted, never a branch.
-// 12 hex now (17-char root), so `--production` still fits the 32-char
+// 12 hex now (17-char root), so `--production` still fits the 48-char
 // project-id ceiling; 20-hex ids from before demo branches stay resumable.
 const PROJECT_PATTERN = /^demo-[a-f0-9]{12,20}$/;
 

@@ -1,7 +1,10 @@
 import { z } from 'zod';
 
 export const resourceIdSchema = z.string().min(1).max(128);
-export const projectIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/);
+// 48 characters: branch ids are `<root>--<branch>`, so the ceiling has to hold
+// a root plus a usable branch name. Mirrored in the console's
+// src/lib/schemas/auth.ts and in agents/db - keep all three in sync.
+export const projectIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,47}$/);
 
 /**
  * Projects minted for anonymous visitors of the public demo. They are

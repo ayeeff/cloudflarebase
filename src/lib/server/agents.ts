@@ -24,7 +24,7 @@ export function serverError(status: number, message: string, cause?: unknown): n
 export function assertProjectId(projectId: string | undefined): string {
 	const parsed = projectIdSchema.safeParse(projectId);
 	if (!parsed.success) {
-		error(400, 'invalid project id - use lowercase letters, digits and dashes (max 32 chars)');
+		error(400, 'invalid project id - use lowercase letters, digits and dashes (max 48 chars)');
 	}
 	return parsed.data;
 }

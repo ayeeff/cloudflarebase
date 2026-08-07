@@ -1,5 +1,10 @@
 import { isDemoProjectId } from '$lib/server/console';
-import { demoBranchContext, getBranchContext, listProjects } from '$lib/server/registry';
+import {
+	demoBranchContext,
+	getBranchContext,
+	listProjects,
+	rememberDemoBranch
+} from '$lib/server/registry';
 import type { LayoutServerLoad } from './$types';
 
 // The agent pane's open state and split sizes persist in a cookie (written by
@@ -16,12 +21,15 @@ export const load: LayoutServerLoad = async ({ cookies, params, platform, locals
 	const [branches, projects] = await Promise.all([
 		// Null hides the branch controls (unregistered projects, unreachable
 		// control plane). Demo families get a SYNTHESIZED context instead -
-		// production/preview plus the current branch, derived from the id, so
+		// production/preview plus every branch this visitor minted (remembered
+		// in a cookie, since demo branches are ids and not registry rows), so
 		// demo visitors experience branching without touching the registry.
 		// Re-runs only when the project param changes, so subpage navigation
 		// costs no registry reads.
 		locals.demoMode && isDemoProjectId(params.projectId)
-			? Promise.resolve(demoBranchContext(params.projectId))
+			? Promise.resolve(
+					demoBranchContext(params.projectId, rememberDemoBranch(cookies, params.projectId))
+				)
 			: getBranchContext(platform, params.projectId),
 		// The breadcrumb project switcher's list - operators only. Demo mode
 		// serves this layout to anonymous visitors, and the installation's

@@ -1,8 +1,12 @@
 import { z } from 'zod';
 
+// 48 characters, mirrored in agents/auth and agents/db (keep all three in
+// sync). The ceiling is a readability budget, not a platform limit - it was 32
+// until branch ids (`<root>--<branch>`) left long-named roots with room for a
+// 5-character branch.
 export const projectIdSchema = z
 	.string()
-	.regex(/^[a-z0-9][a-z0-9-]{0,31}$/, 'Use lowercase letters, numbers, and hyphens only.');
+	.regex(/^[a-z0-9][a-z0-9-]{0,47}$/, 'Use lowercase letters, numbers, and hyphens only.');
 
 export const signUpSchema = z
 	.object({

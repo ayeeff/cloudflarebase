@@ -23,6 +23,7 @@
 	import TablesTab from '../tables-tab.svelte';
 	import { v7 as uuidv7 } from 'uuid';
 	import type { CodeExample } from '$lib/integration-examples';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -704,10 +705,23 @@
 		}
 	}
 
-	async function deleteDocument(id: string) {
+	// Deleting a document is confirmed in the app's own dialog rather than a
+	// native confirm(): it can show WHICH document is about to go, and it keeps
+	// its error where the rest of the browser's errors live.
+	let deleteDocOpen = $state(false);
+	let deleteDocTarget = $state<string | null>(null);
+	const deleteDocPreview = $derived(documents.find((doc) => doc.id === deleteDocTarget) ?? null);
+
+	function confirmDeleteDocument(id: string) {
+		deleteDocTarget = id;
+		actionError = null;
+		deleteDocOpen = true;
+	}
+
+	async function deleteDocument() {
 		const collection = selected;
-		if (!collection) return;
-		if (!confirm('Delete this document? This cannot be undone.')) return;
+		const id = deleteDocTarget;
+		if (!collection || !id) return;
 		busy = true;
 		actionError = null;
 		try {
@@ -719,12 +733,30 @@
 				const result = (await response.json().catch(() => null)) as { error?: string } | null;
 				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
 			}
+			deleteDocOpen = false;
+			deleteDocTarget = null;
+			if (selectedDoc === id) selectedDoc = null;
 			await refreshData(data.projectId);
 		} catch (error) {
 			actionError = error instanceof Error ? error.message : String(error);
 		} finally {
 			busy = false;
 		}
+	}
+
+	/** Firestore names the JSON shapes it shows; documents are schemaless, so
+	 * the type is inferred per field rather than declared anywhere. */
+	function fieldType(value: unknown): string {
+		if (value === null) return 'null';
+		if (Array.isArray(value)) return 'array';
+		if (typeof value === 'object') return 'map';
+		return typeof value;
+	}
+
+	/** One line of value: strings as themselves, everything else as JSON. */
+	function fieldPreview(value: unknown): string {
+		const text = typeof value === 'string' ? value : JSON.stringify(value);
+		return text.length > 160 ? `${text.slice(0, 160)}…` : text;
 	}
 
 	function timeAgo(iso: string): string {
@@ -984,15 +1016,18 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 									data-testid="db-collections-table"
 								>
 									{#if agentState.collections.length === 0}
-										<p class="px-2 py-6 text-center text-sm text-muted-foreground">
+										<div
+											class="flex flex-col items-center gap-2 px-2 py-6 text-center text-sm text-muted-foreground"
+										>
+											<Database class="h-5 w-5 opacity-60" />
 											No collections yet - create the first one below.
-										</p>
+										</div>
 									{:else}
 										{#each agentState.collections as collection (collection.name)}
 											<button
 												type="button"
 												class={[
-													'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+													'flex w-full items-center gap-2 rounded-md py-1.5 pr-2 pl-1.5 text-left text-[13px] transition-colors',
 													selected === collection.name
 														? 'bg-muted font-medium text-foreground'
 														: 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
@@ -1000,9 +1035,20 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 												data-testid={`db-collection-${collection.name}`}
 												onclick={() => selectCollection(collection.name)}
 											>
-												<Database class="h-3.5 w-3.5 shrink-0" />
+												<span
+													class={[
+														'h-4 w-0.5 shrink-0 rounded-full',
+														selected === collection.name ? 'bg-primary' : 'bg-transparent'
+													]}
+												></span>
+												<Database
+													class={[
+														'h-3.5 w-3.5 shrink-0',
+														selected === collection.name && 'text-primary'
+													]}
+												/>
 												<span class="min-w-0 flex-1 truncate font-mono">{collection.name}</span>
-												<span class="text-xs tabular-nums">{collection.docs}</span>
+												<span class="text-[11px] tabular-nums opacity-70">{collection.docs}</span>
 												{#if selected === collection.name}
 													<ChevronRight class="h-3.5 w-3.5 shrink-0" />
 												{/if}
@@ -1262,9 +1308,25 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 												Loading documents…
 											</p>
 										{:else if documents.length === 0}
-											<p class="px-2 py-6 text-center text-sm text-muted-foreground">
-												No documents yet - add the first one.
-											</p>
+											<div
+												class="flex flex-col items-center gap-2 px-2 py-6 text-center text-sm text-muted-foreground"
+											>
+												<FileText class="h-5 w-5 opacity-60" />
+												No documents yet.
+												<Button
+													variant="outline"
+													size="sm"
+													class="mt-1"
+													onclick={() => {
+														editorOpen = true;
+														editingExisting = false;
+														docIdInput = '';
+														docError = null;
+													}}
+												>
+													<Plus class="h-3.5 w-3.5" /> Add document
+												</Button>
+											</div>
 										{:else}
 											{#each documents as doc (doc.id)}
 												<div
@@ -1300,7 +1362,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 													<Button
 														variant="ghost"
 														size="icon"
-														class="h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+														class="h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 hover:text-foreground max-lg:opacity-100"
 														disabled={busy}
 														aria-label={`Edit document ${doc.id}`}
 														data-testid={`db-edit-${doc.id}`}
@@ -1311,10 +1373,11 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 													<Button
 														variant="ghost"
 														size="icon"
-														class="mr-1 h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
+														class="mr-1 h-6 w-6 shrink-0 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 hover:text-destructive max-lg:opacity-100"
 														disabled={busy}
 														aria-label={`Delete document ${doc.id}`}
-														onclick={() => deleteDocument(doc.id)}
+														data-testid={`db-delete-${doc.id}`}
+														onclick={() => confirmDeleteDocument(doc.id)}
 													>
 														<Trash2 class="h-3 w-3" />
 													</Button>
@@ -1332,46 +1395,96 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 								{/if}
 							</div>
 
-							<!-- Column 3: the selected document's fields -->
+							<!-- Column 3: the selected document's fields, Firestore-style -
+							     one row per field with its inferred type, then the metadata
+							     the envelope keeps outside `data`. -->
 							<div class="flex min-w-0 flex-col">
 								{#if selectedDocData}
-									<div class="flex items-center justify-between gap-2 border-b px-3 py-2">
-										<span
-											class="min-w-0 truncate font-mono text-xs text-muted-foreground"
-											title={selectedDocData.id}
-										>
-											{selectedDocData.id}
+									{@const fields = Object.entries(selectedDocData.data)}
+									<div class="flex items-center justify-between gap-2 border-b px-3 py-1.5">
+										<span class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+											Fields
 										</span>
-										<span class="shrink-0 text-xs text-muted-foreground">
-											{timeAgo(selectedDocData.updatedAt)}
-										</span>
+										<div class="flex shrink-0 items-center gap-1.5">
+											<span class="text-xs text-muted-foreground tabular-nums">
+												{fields.length}
+											</span>
+											<Button
+												variant="ghost"
+												size="icon"
+												class="h-7 w-7"
+												aria-label={`Edit document ${selectedDocData.id}`}
+												onclick={() => selectedDocData && editDocument(selectedDocData)}
+											>
+												<Pencil class="h-3.5 w-3.5" />
+											</Button>
+										</div>
 									</div>
-									<div class="min-h-0 flex-1 overflow-y-auto p-3" data-testid="db-doc-fields">
-										<dl class="space-y-1.5">
-											{#each Object.entries(selectedDocData.data) as [field, value] (field)}
-												<div class="flex items-baseline gap-2 text-xs">
-													<dt class="shrink-0 font-mono font-medium">{field}</dt>
-													<dd
-														class="min-w-0 flex-1 truncate text-right font-mono text-muted-foreground"
-														title={JSON.stringify(value)}
-													>
-														{JSON.stringify(value)}
-													</dd>
-												</div>
-											{/each}
-										</dl>
-										{#if selectedDocData.owner}
-											<p class="mt-3 border-t pt-2 text-xs text-muted-foreground">
-												owner <span class="font-mono">{selectedDocData.owner}</span>
+									<div class="min-h-0 flex-1 overflow-y-auto" data-testid="db-doc-fields">
+										{#if fields.length === 0}
+											<p class="px-3 py-6 text-center text-sm text-muted-foreground">
+												This document has no fields.
 											</p>
+										{:else}
+											<dl class="divide-y">
+												{#each fields as [field, value] (field)}
+													<div class="px-3 py-2">
+														<div class="flex items-baseline justify-between gap-2">
+															<dt class="truncate font-mono text-xs font-medium">{field}</dt>
+															<span
+																class="shrink-0 rounded-sm bg-muted px-1.5 text-[10px] text-muted-foreground"
+															>
+																{fieldType(value)}
+															</span>
+														</div>
+														<dd
+															class="mt-0.5 font-mono text-xs break-all text-muted-foreground"
+															title={JSON.stringify(value)}
+														>
+															{#if value === null}
+																<span class="italic opacity-70">null</span>
+															{:else}
+																{fieldPreview(value)}
+															{/if}
+														</dd>
+													</div>
+												{/each}
+											</dl>
 										{/if}
+										<dl
+											class="space-y-1 border-t bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground"
+										>
+											<div class="flex items-baseline justify-between gap-2">
+												<dt>id</dt>
+												<dd class="truncate font-mono" title={selectedDocData.id}>
+													{selectedDocData.id}
+												</dd>
+											</div>
+											<div class="flex items-baseline justify-between gap-2">
+												<dt>owner</dt>
+												<dd class="truncate font-mono" title={selectedDocData.owner ?? undefined}>
+													{selectedDocData.owner ?? '—'}
+												</dd>
+											</div>
+											<div class="flex items-baseline justify-between gap-2">
+												<dt>created</dt>
+												<dd class="font-mono">{timeAgo(selectedDocData.createdAt)}</dd>
+											</div>
+											<div class="flex items-baseline justify-between gap-2">
+												<dt>updated</dt>
+												<dd class="font-mono">{timeAgo(selectedDocData.updatedAt)}</dd>
+											</div>
+										</dl>
 									</div>
 								{:else}
-									<p class="m-auto px-4 py-10 text-center text-sm text-muted-foreground">
+									<div
+										class="m-auto flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-muted-foreground"
+									>
+										<FileText class="h-5 w-5 opacity-60" />
 										{selected
 											? 'Select a document to inspect its fields.'
 											: 'Fields appear here once a document is open.'}
-									</p>
+									</div>
 								{/if}
 							</div>
 						</div>
@@ -1714,6 +1827,42 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 		{/if}
 	</div>
 </div>
+
+<!-- Document deletion: confirmed, and it shows exactly what is about to go. -->
+<AlertDialog.Root bind:open={deleteDocOpen}>
+	<AlertDialog.Content data-testid="db-delete-doc-panel">
+		<AlertDialog.Header>
+			<AlertDialog.Title>Delete this document?</AlertDialog.Title>
+			<AlertDialog.Description>
+				This cannot be undone from here - a point-in-time rollback is the only way back.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		{#if deleteDocPreview}
+			<div class="max-h-40 overflow-auto rounded-md border bg-muted/40 p-2.5">
+				<p class="font-mono text-[11px] text-muted-foreground">{deleteDocPreview.id}</p>
+				<pre class="mt-1 font-mono text-[11px] break-all whitespace-pre-wrap">{JSON.stringify(
+						deleteDocPreview.data,
+						null,
+						2
+					)}</pre>
+			</div>
+		{/if}
+		{#if actionError}
+			<p class="text-sm text-destructive">{actionError}</p>
+		{/if}
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel disabled={busy}>Cancel</AlertDialog.Cancel>
+			<Button
+				variant="destructive"
+				disabled={busy}
+				data-testid="db-delete-doc-submit"
+				onclick={() => void deleteDocument()}
+			>
+				{busy ? 'Deleting…' : 'Delete document'}
+			</Button>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
 
 <!-- Collection deletion: destructive enough that the name must be typed back. -->
 <Dialog.Root bind:open={deletePanelOpen}>

@@ -6,6 +6,7 @@ import { getDb } from '$lib/server/db';
 import { project, projectAgent } from '$lib/server/db/schema';
 import { requireAgent } from '$lib/server/agents';
 import { projectIdSchema } from '$lib/schemas/auth';
+import type { Cookies } from '@sveltejs/kit';
 import { asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -32,7 +33,7 @@ export const createProjectSchema = z.object({
 });
 
 /** Branch names: short, id-charset, no `--` (it is the separator), and the
- * combined `<root>--<branch>` must still satisfy projectIdSchema's 32-char
+ * combined `<root>--<branch>` must still satisfy projectIdSchema's 48-char
  * ceiling - checked at create where the root id is known. */
 export const branchNameSchema = z
 	.string()
@@ -182,7 +183,7 @@ export async function createBranch(
 		return {
 			ok: false,
 			status: 400,
-			error: 'the combined id exceeds 32 characters - use a shorter branch name'
+			error: 'the combined id exceeds 48 characters - use a shorter branch name'
 		};
 	}
 	const [existing] = await db.select().from(project).where(eq(project.id, branchId)).limit(1);
@@ -226,22 +227,62 @@ export interface BranchContext {
 	demo?: boolean;
 }
 
+/** Demo branches a visitor has minted, so they survive navigating away. */
+const DEMO_BRANCH_COOKIE = 'cfbase-demo-branches';
+const MAX_REMEMBERED_DEMO_BRANCHES = 8;
+
+/**
+ * Reads - and updates - the visitor's remembered demo branches.
+ *
+ * Demo branches are never registry rows, so without this the branch a visitor
+ * just created would vanish from the switcher the moment they navigated to
+ * another one: the context is derived from the id, and the id is gone. The
+ * cookie is the smallest thing that can remember them, describes exactly ONE
+ * demo family (a new demo starts over), and expires with the demo itself.
+ */
+export function rememberDemoBranch(cookies: Cookies, projectId: string): string[] {
+	if (!isDemoProjectId(projectId)) return [];
+	const rootId = demoRootId(projectId);
+	const current = projectId === rootId ? null : projectId.slice(rootId.length + 2);
+
+	const [storedRoot, stored = ''] = (cookies.get(DEMO_BRANCH_COOKIE) ?? '').split('|');
+	const known = storedRoot === rootId ? stored.split(',') : [];
+	const names = known.filter((name) => branchNameSchema.safeParse(name).success);
+	if (current && !names.includes(current)) names.push(current);
+	const kept = names.slice(-MAX_REMEMBERED_DEMO_BRANCHES);
+
+	const value = `${rootId}|${kept.join(',')}`;
+	if (value !== `${storedRoot}|${stored}`) {
+		cookies.set(DEMO_BRANCH_COOKIE, value, {
+			path: '/',
+			httpOnly: true,
+			sameSite: 'lax',
+			maxAge: 60 * 60 * 24
+		});
+	}
+	return kept;
+}
+
 /**
  * Branch context for a DEMO project family - synthesized, never stored.
- * Every demo gets production and preview branches (plus whatever the visitor
- * navigated to), derived purely from the id: the broadened demo pattern gives
- * each branch instance the same caps and TTL erasure as its root, so nothing
- * needs registering for ids that erase themselves. Null for pre-branch 20-hex
- * demo roots, whose ids leave no room under the 32-char ceiling.
+ * Every demo gets production and preview branches (plus the ones this visitor
+ * minted, remembered in a cookie), derived purely from the id: the broadened
+ * demo pattern gives each branch instance the same caps and TTL erasure as its
+ * root, so nothing needs registering for ids that erase themselves.
  */
-export function demoBranchContext(projectId: string): BranchContext | null {
+export function demoBranchContext(
+	projectId: string,
+	remembered: string[] = []
+): BranchContext | null {
 	if (!isDemoProjectId(projectId)) return null;
 	const rootId = demoRootId(projectId);
 	// The bare root IS production - demos have no `main`, so the default
 	// branch the visitor lands on already carries the production name.
 	const current = projectId === rootId ? 'production' : projectId.slice(rootId.length + 2);
 	const names = ['production', 'preview'];
-	if (!names.includes(current)) names.push(current);
+	for (const name of [...remembered, current]) {
+		if (!names.includes(name)) names.push(name);
+	}
 	const branches = names
 		.map((branchName) => ({
 			id: branchName === 'production' ? rootId : `${rootId}--${branchName}`,
