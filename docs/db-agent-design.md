@@ -36,9 +36,9 @@ Two DO classes in `agents/db`:
 | `DbCollection` | plain `DurableObject` (raw WebSocket Hibernation API) | `<projectId>:<collectionName>` | the documents table for ONE collection, the query engine, the live-query subscription engine, cached access modes/config (pushed from parent), JWT verification, per-collection demo caps         |
 
 Instance naming: `idFromName(projectId + ':' + collection)`. Collision-proof because
-`projectIdSchema` is `/^[a-z0-9][a-z0-9-]{0,31}$/` (no `:`) and the new collection-name
+`projectIdSchema` is `/^[a-z0-9][a-z0-9-]{0,47}$/` (no `:`) and the new collection-name
 schema is `/^[a-z][a-z0-9_-]{0,63}$/` (no `:`), so the first `:` is an unambiguous
-separator. Max length 32+1+64 = 97 chars, far under DO name limits (names are hashed).
+separator. Max length 48+1+64 = 113 chars, far under DO name limits (names are hashed).
 
 Why `DbCollection` is a plain DurableObject, not an Agents SDK Agent:
 

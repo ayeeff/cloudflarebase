@@ -210,9 +210,9 @@
 	let newBranchError = $state('');
 	let newBranchBusy = $state(false);
 	/** Branch-name budget: its own 16-char grammar, shrunk when the root id
-	 * leaves less room under the combined 32-char project-id ceiling. */
+	 * leaves less room under the combined 48-char project-id ceiling. */
 	const maxBranchChars = $derived(
-		branchCtx ? Math.max(1, Math.min(16, 32 - branchCtx.rootId.length - 2)) : 16
+		branchCtx ? Math.max(1, Math.min(16, 48 - branchCtx.rootId.length - 2)) : 16
 	);
 
 	/** Same tool page, other branch: swap only the project segment. */
@@ -236,7 +236,7 @@
 		if (branchCtx.demo) {
 			const branchId = `${branchCtx.rootId}--${parsed.data.branch}`;
 			if (!projectIdSchema.safeParse(branchId).success) {
-				newBranchError = 'the combined id exceeds 32 characters - use a shorter branch name';
+				newBranchError = 'the combined id exceeds 48 characters - use a shorter branch name';
 				return;
 			}
 			newBranchOpen = false;

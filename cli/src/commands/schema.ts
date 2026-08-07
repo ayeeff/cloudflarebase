@@ -19,7 +19,9 @@ import { blank, bold, dim, error, info, step, success, UserError } from '../lib/
  * composition - apply to a branch, test, then apply to main.
  */
 
-const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
+// Mirrors projectIdSchema in the console and both agents (48 chars: a branch
+// id is `<root>--<branch>`, so the ceiling has to hold both).
+const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,47}$/;
 const BRANCH_NAME = /^[a-z0-9][a-z0-9-]{0,15}$/;
 
 /** Mirrors the console's DbTableColumn/DbTableConfig zod (src/lib/agents.ts). */
@@ -94,7 +96,7 @@ function targetProjectId(flags: Flags): string {
 	}
 	const id = `${flags.project}--${flags.branch}`;
 	if (!PROJECT_ID.test(id)) {
-		throw new UserError('The combined id exceeds 32 characters - use a shorter branch name.');
+		throw new UserError('The combined id exceeds 48 characters - use a shorter branch name.');
 	}
 	return id;
 }

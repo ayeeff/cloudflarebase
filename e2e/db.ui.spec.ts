@@ -252,25 +252,61 @@ test.describe('database page (frontend)', () => {
 		await gotoDbPage(page, DB_UI_PROJECT);
 		await page.getByTestId('nav-db-tables').click();
 
-		// Declare: one required text column through the schema designer.
+		// Declare: one required text column through the schema designer sheet.
+		await page.getByTestId('db-new-table').click();
 		await page.getByTestId('db-new-table-name').fill(table);
 		await page.getByTestId('db-column-name-0').fill('title');
 		await page.getByTestId('db-declare-submit').click();
 		await expect(page.getByTestId(`db-table-${table}`)).toBeVisible();
 
-		// Browse and insert: the editor template carries the declared columns.
+		// Browse and insert: the editor renders one typed field per column.
 		await page.getByTestId(`db-table-${table}`).click();
 		await page.getByTestId('db-add-row').click();
 		const editor = page.getByTestId('db-row-editor');
-		await editor.getByTestId('db-row-json').fill('{"title":"from the ui"}');
+		await editor.getByTestId('db-row-field-title').fill('from the ui');
 		await editor.getByTestId('db-row-save').click();
 		await expect(page.getByTestId('db-rows-table').getByText('from the ui')).toBeVisible();
 
-		// The declared schema refuses a wrong-typed value with the agent's issue.
+		// The declared schema refuses a wrong-typed value with the agent's issue;
+		// the JSON escape hatch is what can express one.
 		await page.getByTestId('db-add-row').click();
+		await editor.getByTestId('db-row-mode-json').click();
 		await editor.getByTestId('db-row-json').fill('{"title":123}');
 		await editor.getByTestId('db-row-save').click();
 		await expect(page.getByTestId('db-row-error')).toContainText('must be a text');
+	});
+
+	test('deleting a row is confirmed before anything is erased', async ({ page }) => {
+		const table = uniqueCollection('tx');
+		await gotoDbPage(page, DB_UI_PROJECT);
+		await page.getByTestId('nav-db-tables').click();
+
+		await page.getByTestId('db-new-table').click();
+		await page.getByTestId('db-new-table-name').fill(table);
+		await page.getByTestId('db-column-name-0').fill('title');
+		await page.getByTestId('db-declare-submit').click();
+		await expect(page.getByTestId(`db-table-${table}`)).toBeVisible();
+
+		await page.getByTestId(`db-table-${table}`).click();
+		await page.getByTestId('db-add-row').click();
+		const editor = page.getByTestId('db-row-editor');
+		await editor.getByTestId('db-row-field-title').fill('doomed row');
+		await editor.getByTestId('db-row-save').click();
+
+		const grid = page.getByTestId('db-rows-table');
+		await expect(grid.getByText('doomed row')).toBeVisible();
+		const row = grid.locator('tr[data-testid^="db-row-"]').first();
+		await row.getByLabel('Delete row').click();
+
+		// Cancelling leaves the row alone - the click alone never deletes.
+		const confirm = page.getByTestId('db-delete-rows-panel');
+		await expect(confirm).toContainText('doomed row');
+		await confirm.getByRole('button', { name: 'Cancel' }).click();
+		await expect(grid.getByText('doomed row')).toBeVisible();
+
+		await row.getByLabel('Delete row').click();
+		await page.getByTestId('db-delete-rows-submit').click();
+		await expect(page.getByTestId('db-rows-empty')).toBeVisible();
 	});
 
 	test('deleting a table requires typing its name back', async ({ page }) => {
@@ -278,12 +314,14 @@ test.describe('database page (frontend)', () => {
 		await gotoDbPage(page, DB_UI_PROJECT);
 		await page.getByTestId('nav-db-tables').click();
 
+		await page.getByTestId('db-new-table').click();
 		await page.getByTestId('db-new-table-name').fill(table);
 		await page.getByTestId('db-column-name-0').fill('note');
 		await page.getByTestId('db-declare-submit').click();
 		await expect(page.getByTestId(`db-table-${table}`)).toBeVisible();
 
 		await page.getByTestId(`db-table-${table}`).click();
+		await page.getByTestId('db-table-actions').click();
 		await page.getByTestId('db-delete-table').click();
 		const dialog = page.getByTestId('db-delete-table-panel');
 		await expect(dialog.getByTestId('db-delete-table-submit')).toBeDisabled();
@@ -297,6 +335,7 @@ test.describe('database page (frontend)', () => {
 		await gotoDbPage(page, DB_UI_PROJECT);
 		await page.getByTestId('nav-db-tables').click();
 
+		await page.getByTestId('db-new-table').click();
 		await page.getByTestId('db-new-table-name').fill(table);
 		await page.getByTestId('db-column-name-0').fill('note');
 		await page.getByTestId('db-declare-submit').click();
@@ -305,6 +344,7 @@ test.describe('database page (frontend)', () => {
 		// The workspace mounts the same shared dialog the collections browser
 		// uses, pointed at the table's own admin base.
 		await page.getByTestId(`db-table-${table}`).click();
+		await page.getByTestId('db-table-actions').click();
 		await page.getByTestId('db-table-rollback').click();
 		const dialog = page.getByTestId('db-rollback-panel');
 		await expect(dialog.getByTestId('db-rollback-submit')).toBeDisabled();

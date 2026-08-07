@@ -19,7 +19,7 @@ import {
  */
 
 /** Unique per run so a locally reused stack never collides. Short enough that
- * `--stg` still fits the 32-char project-id ceiling. */
+ * `--stg` still fits the 48-char project-id ceiling. */
 function rootId(): string {
 	return `br-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`.slice(
 		0,
@@ -139,17 +139,24 @@ test.describe('project branches', () => {
 		expect(demo.status()).toBe(400);
 	});
 
-	test('the combined id must fit the 32-char project-id ceiling', async ({ request }) => {
-		// 28-char root: `--stg` would make 33. The name passes the branch-name
+	test('the combined id must fit the 48-char project-id ceiling', async ({ request }) => {
+		// 44-char root: `--stg` would make 49. The name passes the branch-name
 		// schema, so the refusal can only come from the combined-length check.
 		const longRoot = `brl${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`
-			.padEnd(28, 'x')
-			.slice(0, 28);
+			.padEnd(44, 'x')
+			.slice(0, 44);
 		await createRoot(request, longRoot);
+
+		// A root that leaves room takes the very same branch name - so the
+		// refusal below can only be the combined-length check.
+		const roomyRoot = `${longRoot.slice(0, 40)}ok`;
+		await createRoot(request, roomyRoot);
+		const accepted = await request.post(branchesPath(roomyRoot), { data: { branch: 'stg' } });
+		expect(accepted.status()).toBe(201);
 
 		const refused = await request.post(branchesPath(longRoot), { data: { branch: 'stg' } });
 		expect(refused.status()).toBe(400);
-		expect((await refused.json()).error).toContain('32');
+		expect((await refused.json()).error).toContain('48');
 	});
 
 	test('new root ids may not contain the branch separator', async ({ request }) => {
