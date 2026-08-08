@@ -78,12 +78,38 @@
 		}
 	],
 
+	// Per-IP abuse control over /api/* (hooks.server.ts). It covers the REST
+	// proxy base as well as the console, so it is an application throughput
+	// limit, not just a console one - the old 100/60s was 1.7 req/s and would
+	// 429 any real app using /api/projects/<id>/db/**.
+	//
+	// 1000/10s is 100 req/s per IP. The ceiling that decides this is the shard,
+	// not the console: a Durable Object is single-threaded at ~1k req/s, so a
+	// per-IP allowance anywhere near that lets ONE client saturate a whole
+	// project and the limiter stops protecting what it exists to protect. 100
+	// req/s leaves ~10x headroom while still being 60x the old value.
+	//
+	// `period` accepts ONLY 10 or 60 (Cloudflare's own constraint). The same
+	// rate as 6000/60s would let one client burn the whole minute's budget in a
+	// second and then starve for 59.
+	//
+	// The counter is per Cloudflare LOCATION, not global: one key accumulates
+	// independently in each colo, so the real allowance is a multiple of this.
+	// Sizing it as a hard global cap would be wrong.
+	//
+	// Keying on IP is an abuse ceiling, NOT fair-share: a browser app is one IP
+	// per end user, but a customer's server-side backend is thousands of end
+	// users behind one. Real per-tenant throughput limiting belongs per project.
+	//
+	// Auth's own limiter is separate and deliberately tighter (agents/auth
+	// src/auth.ts: sign-in/sign-up stay at 10/min - that one is anti-credential
+	// -stuffing, not throughput).
 	"ratelimits": [
 		{
 			"name": "API_RATE_LIMITER",
 			// Namespace ids are per-account and arbitrary; any stable number works.
 			"namespace_id": "1001",
-			"simple": { "limit": 100, "period": 60 }
+			"simple": { "limit": 1000, "period": 10 }
 		}
 	],
 
@@ -130,7 +156,7 @@
 				{
 					"name": "API_RATE_LIMITER",
 					"namespace_id": "4511764382",
-					"simple": { "limit": 100, "period": 60 }
+					"simple": { "limit": 1000, "period": 10 }
 				}
 			]
 		},
@@ -172,7 +198,7 @@
 				{
 					"name": "API_RATE_LIMITER",
 					"namespace_id": "4511764383",
-					"simple": { "limit": 100, "period": 60 }
+					"simple": { "limit": 1000, "period": 10 }
 				}
 			]
 		},
@@ -215,7 +241,7 @@
 				{
 					"name": "API_RATE_LIMITER",
 					"namespace_id": "4511764381",
-					"simple": { "limit": 100, "period": 60 }
+					"simple": { "limit": 1000, "period": 10 }
 				}
 			],
 			"secrets": {
@@ -246,7 +272,7 @@
 				{
 					"name": "API_RATE_LIMITER",
 					"namespace_id": "4511764384",
-					"simple": { "limit": 100, "period": 60 }
+					"simple": { "limit": 1000, "period": 10 }
 				}
 			],
 			// Preview gets its own control plane. Registry rows are only

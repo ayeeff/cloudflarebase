@@ -1050,7 +1050,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 					</Card.Header>
 					<Card.Content class="p-0">
 						<div
-							class="grid grid-cols-1 max-lg:divide-y lg:h-[34rem] lg:grid-cols-[minmax(13rem,0.9fr)_minmax(0,1.1fr)_minmax(0,1.4fr)] lg:divide-x"
+							class="grid grid-cols-1 max-lg:divide-y lg:h-[34rem] lg:grid-cols-[minmax(13rem,0.9fr)_minmax(0,1.1fr)_minmax(0,1.4fr)] lg:grid-rows-1 lg:divide-x"
 						>
 							<!-- Column 1: collections -->
 							<div class="flex min-w-0 flex-col">
@@ -1063,7 +1063,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 									</span>
 								</div>
 								<div
-									class="min-h-0 flex-1 overflow-y-auto p-1.5"
+									class="min-h-0 flex-1 overflow-y-auto p-1.5 max-lg:max-h-[22rem]"
 									data-testid="db-collections-table"
 								>
 									{#if agentState.collections.length === 0}
