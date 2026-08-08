@@ -5,7 +5,9 @@ import {
 	authOverviewSchema,
 	overviewSessionSchema,
 	overviewUserSchema,
-	roleDefinitionSchema
+	roleDefinitionSchema,
+	sessionPageSchema,
+	userPageSchema
 } from '$lib/agents';
 import {
 	chatRequestSchema,
@@ -21,6 +23,21 @@ import { jsonBody, jsonResponse, UNAUTHORIZED, type AgentOpenApiModule } from '.
 
 const AUTH_TAG = 'Authentication';
 const CONSOLE_TAG = 'Console';
+
+const PAGE_CURSOR = {
+	name: 'cursor',
+	in: 'query',
+	required: false,
+	schema: { type: 'string' },
+	description: "Opaque continuation from the previous page's `nextCursor`."
+};
+const PAGE_LIMIT = {
+	name: 'limit',
+	in: 'query',
+	required: false,
+	schema: { type: 'integer', minimum: 1, maximum: 200 },
+	description: 'Rows per page. Defaults to 50, capped at 200.'
+};
 
 export const authOpenApi: AgentOpenApiModule = {
 	tags: [
@@ -39,6 +56,8 @@ export const authOpenApi: AgentOpenApiModule = {
 		authAgentStateSchema,
 		overviewUserSchema,
 		overviewSessionSchema,
+		userPageSchema,
+		sessionPageSchema,
 		roleDefinitionSchema,
 		agentChatReplySchema
 	],
@@ -199,6 +218,34 @@ export const authOpenApi: AgentOpenApiModule = {
 				responses: {
 					'200': { description: 'Registry replaced.' },
 					'400': { description: 'Validation failed.' },
+					'401': UNAUTHORIZED
+				}
+			}
+		},
+		'/admin/users': {
+			get: {
+				tags: [CONSOLE_TAG],
+				summary: 'One page of users, newest first',
+				description:
+					"Keyset pagination: pass the previous response's `nextCursor` to continue. The cursor is opaque; an absent `nextCursor` means the last page. Offset paging is deliberately not offered - sign-ups landing mid-scan would skip or repeat rows.",
+				security: [{ sessionCookie: [] }],
+				parameters: [PAGE_CURSOR, PAGE_LIMIT],
+				responses: {
+					'200': jsonResponse(userPageSchema, 'One page of users.'),
+					'401': UNAUTHORIZED
+				}
+			}
+		},
+		'/admin/sessions': {
+			get: {
+				tags: [CONSOLE_TAG],
+				summary: 'One page of live sessions, newest first',
+				description:
+					'Keyset pagination, same contract as `/admin/users`. Expired sessions are filtered in SQL, so a full page is always live sessions.',
+				security: [{ sessionCookie: [] }],
+				parameters: [PAGE_CURSOR, PAGE_LIMIT],
+				responses: {
+					'200': jsonResponse(sessionPageSchema, 'One page of live sessions.'),
 					'401': UNAUTHORIZED
 				}
 			}

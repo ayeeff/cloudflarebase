@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type {
+		DbActivityEvent,
 		DbColumnType,
 		DbDocument,
 		DbImportReport,
@@ -8,6 +9,7 @@
 		DbTableColumn,
 		DbTableSummary
 	} from '$lib/agents';
+	import ActivityCard from './activity-card.svelte';
 	import RollbackDialog from './rollback-dialog.svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Button } from '$lib/components/ui/button';
@@ -23,6 +25,8 @@
 	import { v7 as uuidv7 } from 'uuid';
 	import {
 		Braces,
+		ChevronLeft,
+		ChevronRight,
 		Clock,
 		Download,
 		EllipsisVertical,
@@ -54,12 +58,15 @@
 		projectId,
 		tables,
 		totalRows,
+		events,
 		permissionOptions,
 		refresh
 	}: {
 		projectId: string;
 		tables: DbTableSummary[];
 		totalRows: number;
+		/** Already narrowed to table/row events by the page. */
+		events: DbActivityEvent[];
 		permissionOptions: (current: string) => string[];
 		refresh: () => Promise<void>;
 	} = $props();
@@ -298,7 +305,34 @@
 	/** Not $state: an in-flight guard must never re-trigger the live effect. */
 	let loadingRows = false;
 
+	// Keyset paging, same shape as the collections browser: the query DSL takes
+	// an opaque `cursor`, so Prev walks a stack of the cursors that started each
+	// page. Index 0 is always undefined - the first page needs no cursor.
+	const ROW_PAGE_SIZE = 50;
+	let rowPage = $state(0);
+	let rowPageCursors = $state<(string | undefined)[]>([undefined]);
+	let rowsNextCursor = $state<string | null>(null);
+
 	const selectedTable = $derived(tables.find((table) => table.name === selected) ?? null);
+	const rowRangeStart = $derived(rows.length === 0 ? 0 : rowPage * ROW_PAGE_SIZE + 1);
+	const rowRangeEnd = $derived(rowPage * ROW_PAGE_SIZE + rows.length);
+
+	function resetRowPaging() {
+		rowPage = 0;
+		rowPageCursors = [undefined];
+		rowsNextCursor = null;
+	}
+
+	function nextRowPage() {
+		if (!selected || !rowsNextCursor) return;
+		rowPageCursors[rowPage + 1] = rowsNextCursor;
+		void loadRows(selected, rowPage + 1);
+	}
+
+	function prevRowPage() {
+		if (!selected || rowPage === 0) return;
+		void loadRows(selected, rowPage - 1);
+	}
 	const visibleTables = $derived(
 		tableFilter.trim()
 			? tables.filter((table) => table.name.includes(tableFilter.trim().toLowerCase()))
@@ -319,6 +353,7 @@
 		if (selected === name) return;
 		selected = name;
 		rows = [];
+		resetRowPaging();
 		picked = [];
 		rowFilter = '';
 		rowsLoaded = false;
@@ -345,15 +380,19 @@
 		void loadRows(table);
 	});
 
-	async function loadRows(table: string) {
+	async function loadRows(table: string, page = rowPage) {
 		if (loadingRows) return;
 		loadingRows = true;
 		refreshing = true;
+		const cursor = rowPageCursors[page];
 		try {
 			const response = await fetch(`${adminBase}/query`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ table, query: { limit: 50 } })
+				body: JSON.stringify({
+					table,
+					query: { limit: ROW_PAGE_SIZE, ...(cursor ? { cursor } : {}) }
+				})
 			});
 			if (selected !== table) return;
 			const result = (await response.json().catch(() => null)) as
@@ -361,7 +400,20 @@
 			if (!response.ok || !result) {
 				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
 			}
+			// Deletes can empty the page the operator is standing on; fall back to
+			// the first page instead of claiming the table is empty. Page 0 is the
+			// base case, so this recurses at most once.
+			if (result.docs.length === 0 && page > 0) {
+				resetRowPaging();
+				loadingRows = false;
+				await loadRows(table, 0);
+				return;
+			}
 			rows = result.docs;
+			rowPage = page;
+			rowsNextCursor = result.nextCursor ?? null;
+			if (result.nextCursor) rowPageCursors[page + 1] = result.nextCursor;
+			else rowPageCursors = rowPageCursors.slice(0, page + 1);
 			// Rows deleted elsewhere must not linger in the selection.
 			picked = picked.filter((id) => result.docs.some((doc) => doc.id === id));
 			rowsError = null;
@@ -1287,17 +1339,45 @@
 							Clear
 						</Button>
 					{:else}
-						<span class="text-muted-foreground tabular-nums">
-							{visibleRows.length}
-							{visibleRows.length === 1 ? 'row' : 'rows'}{rowFilter.trim()
-								? ` of ${rows.length}`
-								: ''} · newest page of 50
+						<!-- The filter is client-side over the OPEN page, so it reports
+						     against the page while the range reports the whole table. -->
+						<span class="text-muted-foreground tabular-nums" data-testid="db-rows-range">
+							{#if rowFilter.trim()}
+								{visibleRows.length}
+								{visibleRows.length === 1 ? 'row' : 'rows'} of {rows.length} on this page
+							{:else}
+								{rowRangeStart}–{rowRangeEnd} of {selectedTable?.rows ?? rows.length}
+							{/if}
 						</span>
 					{/if}
 					<div class="ml-auto flex items-center gap-2 text-muted-foreground">
 						<span class="flex items-center gap-1.5">
 							<span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Live
 						</span>
+						<div class="flex items-center gap-0.5">
+							<Button
+								size="icon"
+								variant="ghost"
+								class="h-6 w-6"
+								disabled={rowPage === 0}
+								aria-label="Previous page"
+								data-testid="db-rows-prev"
+								onclick={prevRowPage}
+							>
+								<ChevronLeft class="h-3.5 w-3.5" />
+							</Button>
+							<Button
+								size="icon"
+								variant="ghost"
+								class="h-6 w-6"
+								disabled={!rowsNextCursor}
+								aria-label="Next page"
+								data-testid="db-rows-next"
+								onclick={nextRowPage}
+							>
+								<ChevronRight class="h-3.5 w-3.5" />
+							</Button>
+						</div>
 						<Button
 							size="icon"
 							variant="ghost"
@@ -1335,6 +1415,10 @@
 			</Button>
 		</section>
 	{/if}
+</div>
+
+<div class="mt-4">
+	<ActivityCard {events} empty="No table activity yet." />
 </div>
 
 <!-- Schema designer: declare and alter, one PUT either way. -->
