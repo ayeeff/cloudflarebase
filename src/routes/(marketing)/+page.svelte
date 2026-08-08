@@ -935,7 +935,7 @@
 						     short and tall examples never shifts the page below. -->
 						<CodeExamples
 							examples={apiProduct === 'db' ? dbApiExamples : authApiExamples}
-							class="p-4 [&_pre]:h-[22.75rem] [&_pre]:overflow-y-auto"
+							class="p-4 [&_pre]:h-[23rem] [&_pre]:overflow-y-auto"
 						/>
 					{/key}
 				</div>
