@@ -7,8 +7,18 @@
 		value = $bindable(),
 		orientation = "horizontal",
 		class: className,
+		"aria-label": ariaLabel,
+		"aria-labelledby": ariaLabelledby,
 		...restProps
 	}: WithoutChildrenOrChild<SliderPrimitive.RootProps> = $props();
+
+	// Diverges from the generated shadcn component on purpose: the label is
+	// pulled off restProps so it lands on the THUMB rather than the root. The
+	// root is a plain container with no role, so a name there is inert, while
+	// the thumb is the element carrying role="slider" - and an ARIA input with
+	// no accessible name fails axe's aria-input-field-name, which costs both the
+	// Accessibility score and the Agentic Browsing accessibility-tree check.
+	// Re-run `shadcn-svelte add slider` and this is the edit to reapply.
 </script>
 
 <!--
@@ -45,6 +55,10 @@ get along, so we shut typescript up by casting `value` to `never`.
 			<SliderPrimitive.Thumb
 				data-slot="slider-thumb"
 				index={thumb.index}
+				aria-label={ariaLabel && thumbItems.length > 1
+					? `${ariaLabel} ${thumb.index + 1}`
+					: ariaLabel}
+				aria-labelledby={ariaLabelledby}
 				class="border-primary ring-ring/50 size-4 rounded-full border bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden block shrink-0 select-none disabled:pointer-events-none disabled:opacity-50"
 			/>
 		{/each}

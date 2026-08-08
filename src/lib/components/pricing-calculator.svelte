@@ -345,24 +345,7 @@
 	</details>
 </div>
 
-<style>
-	/* The 4-slot cost palette: brand hues re-stepped for categorical use and
-	   VALIDATED (CVD + contrast, light and dark surfaces) with the dataviz
-	   palette validator - do not eyeball-edit these. Fixed assignment order:
-	   base, requests, rows, storage. */
-	div[data-testid='pricing-calculator'] {
-		--cost-base: #cd6500;
-		--cost-requests: #0e49bc;
-		--cost-rows: #a48526;
-		--cost-storage: #9b2014;
-	}
-	:global(.dark) div[data-testid='pricing-calculator'] {
-		--cost-base: #d6701a;
-		--cost-requests: #3d84ea;
-		--cost-rows: #a7882a;
-		--cost-storage: #c34f4b;
-	}
-	.cost-segment {
-		background: var(--segment);
-	}
-</style>
+<!-- The cost palette and .cost-segment live in src/routes/layout.css: a component
+	 <style> block here becomes its own render-blocking stylesheet on the landing
+	 page, which cost a round trip to save a kilobyte. -->
+

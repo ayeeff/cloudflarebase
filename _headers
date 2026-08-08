@@ -1,0 +1,35 @@
+# Cache lifetimes for the unhashed files in static/. Everything under
+# /_app/immutable/* is content-hashed and the Cloudflare adapter appends its own
+# immutable block for it below this file at build time - do not restate it here.
+#
+# These names are stable, so the TTL is the only thing keeping a redesigned logo
+# or favicon from going stale in a visitor's cache. A month is the compromise:
+# long enough that Lighthouse stops counting them as uncached, short enough that
+# a brand change lands without a rename.
+
+/brand/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400
+
+/flags/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/favicon.svg
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400
+
+/favicon-16x16.png
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400
+
+/favicon-32x32.png
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400
+
+/apple-touch-icon.png
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400
+
+/icon-192.png
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400
+
+/icon-512.png
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400
+
+/site.webmanifest
+  Cache-Control: public, max-age=604800
