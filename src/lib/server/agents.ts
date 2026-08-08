@@ -70,6 +70,13 @@ export function agentUrl(
  * copied individually so multiple cookies survive the round trip.
  */
 export function toNativeResponse(response: Response): Response {
+	// `new Response` refuses any status outside 200-599, so re-wrapping a 101
+	// WebSocket upgrade throws a RangeError - and the `webSocket` would not
+	// survive the copy anyway. Upgrades are forwarded untouched by the hook
+	// before routing reaches a proxy, so this is the belt to that braces: a
+	// stray one passes through instead of 500ing the request.
+	if (response.status < 200 || response.status > 599) return response;
+
 	const headers = new Headers();
 	response.headers.forEach((value, key) => {
 		if (key.toLowerCase() !== 'set-cookie') headers.set(key, value);

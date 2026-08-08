@@ -1,10 +1,12 @@
 import { dev } from '$app/environment';
 import { agentByApiPrefix, agentByWorkerSegment, routeAccess } from '$lib/agent-registry';
-import { agentFetcher } from '$lib/server/agents';
+import { projectIdSchema } from '$lib/schemas/auth';
+import { agentFetcher, agentUrl } from '$lib/server/agents';
 import { getConsoleSession, isDemoMode, isDemoProjectId } from '$lib/server/console';
 import { handleErrorWithSentry, initCloudflareSentryHandle, sentryHandle } from '@sentry/sveltekit';
 import { redirect } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
+import type { AppAgentEntry } from '$lib/agent-registry';
 import type { Handle } from '@sveltejs/kit';
 
 let platform: App.Platform;
@@ -34,6 +36,25 @@ const platformHandle: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
+/**
+ * `/api/projects/<id>/<apiPrefix>/<rest>` -> the agent-worker URL the REST
+ * proxy routes build, or null when the path is not an agent proxy. Mirrors
+ * the translation `classifyAccess` does, so the guard and the passthrough
+ * agree on what a proxied path means.
+ */
+function agentProxyTarget(url: URL): { entry: AppAgentEntry; target: string } | null {
+	const segments = url.pathname.split('/').filter(Boolean);
+	if (segments[0] !== 'api' || segments[1] !== 'projects') return null;
+
+	const projectId = projectIdSchema.safeParse(segments[2]);
+	const entry = segments[3] ? agentByApiPrefix(segments[3]) : undefined;
+	if (!projectId.success || !entry) return null;
+
+	const rest = segments.slice(4).join('/');
+	const subPath = `${entry.manifest.proxy.agentBasePath}${rest ? `/${rest}` : ''}` || '/';
+	return { entry, target: agentUrl(url.origin, entry, projectId.data, `${subPath}${url.search}`) };
+}
+
 const applicationHandle: Handle = async ({ event, resolve }) => {
 	// Agent traffic (HTTP + WebSocket state sync) goes straight through to the
 	// agent worker the manifest registry names for the path's worker segment.
@@ -44,6 +65,27 @@ const applicationHandle: Handle = async ({ event, resolve }) => {
 		const agent = entry && agentFetcher(event.platform, entry);
 		if (agent) {
 			return agent.fetch(event.request) as unknown as Promise<Response>;
+		}
+	}
+
+	// An upgrade aimed at the REST proxy base takes the SAME untouched
+	// passthrough. The `+server.ts` proxies re-wrap every answer, and a 101
+	// cannot be re-wrapped - its status is outside what `new Response` accepts
+	// and the `webSocket` never survives a copy - so a subscribe that arrived
+	// here died as a RangeError 500. The SDK rewrites a proxy base to
+	// `/agents/...` for exactly this reason; raw clients that don't now work
+	// too. Returning the fetcher's response verbatim is what makes it possible,
+	// which only a hook can do.
+	if (event.request.headers.get('upgrade')?.toLowerCase() === 'websocket') {
+		const proxied = agentProxyTarget(event.url);
+		const agent = proxied && agentFetcher(event.platform, proxied.entry);
+		if (proxied && agent) {
+			// url + init, never a Request: the dev binding is a miniflare proxy
+			// that cannot consume Requests from the Node realm.
+			return agent.fetch(proxied.target, {
+				method: event.request.method,
+				headers: [...event.request.headers]
+			}) as unknown as Promise<Response>;
 		}
 	}
 
