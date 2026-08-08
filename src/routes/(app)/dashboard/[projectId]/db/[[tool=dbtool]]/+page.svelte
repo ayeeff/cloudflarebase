@@ -18,6 +18,7 @@
 	import { buildConsoleNav } from '$lib/agent-registry';
 	import CodeExamples from '$lib/components/code-examples.svelte';
 	import ToolTabs from '$lib/components/tool-tabs.svelte';
+	import ActivityCard from '../activity-card.svelte';
 	import ReplicationTab from '../replication-tab.svelte';
 	import RollbackDialog from '../rollback-dialog.svelte';
 	import SqlEditor from '../sql-editor.svelte';
@@ -32,25 +33,20 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import * as Select from '$lib/components/ui/select';
 	import * as Table from '$lib/components/ui/table';
-	import * as Tabs from '$lib/components/ui/tabs';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
 		Activity,
+		ChevronLeft,
 		ChevronRight,
 		Database,
 		Download,
 		EllipsisVertical,
 		FileText,
-		FolderPlus,
 		History,
 		Pencil,
 		Plus,
-		Radio,
-		Rocket,
-		ShieldCheck,
 		Trash2,
 		Upload,
 		X
@@ -152,8 +148,62 @@
 	let selectedDoc = $state<string | null>(null);
 	const selectedDocData = $derived(documents.find((doc) => doc.id === selectedDoc) ?? null);
 
+	// Paging is KEYSET, not offset - the query DSL takes an opaque `cursor` and
+	// hands back the next one, so "previous" means walking back a stack of the
+	// cursors that started each page. `docPageCursors[i]` starts page i, and
+	// index 0 is always undefined (the first page needs no cursor).
+	const DOC_PAGE_SIZE = 50;
+	let docPage = $state(0);
+	let docPageCursors = $state<(string | undefined)[]>([undefined]);
+	let docsNextCursor = $state<string | null>(null);
+	const openCollectionDocs = $derived(
+		agentState.collections.find((entry) => entry.name === selected)?.docs ?? 0
+	);
+	const docRangeStart = $derived(documents.length === 0 ? 0 : docPage * DOC_PAGE_SIZE + 1);
+	const docRangeEnd = $derived(docPage * DOC_PAGE_SIZE + documents.length);
+
+	function resetDocPaging() {
+		docPage = 0;
+		docPageCursors = [undefined];
+		docsNextCursor = null;
+	}
+
+	function nextDocPage() {
+		if (!selected || !docsNextCursor) return;
+		docPageCursors[docPage + 1] = docsNextCursor;
+		void loadDocuments(selected, docPage + 1);
+	}
+
+	function prevDocPage() {
+		if (!selected || docPage === 0) return;
+		void loadDocuments(selected, docPage - 1);
+	}
+
 	function selectDocument(id: string) {
 		selectedDoc = selectedDoc === id ? null : id;
+		// Below lg the fields column sits BELOW the document list, which can be a
+		// full page tall - selecting a row deep in the list would otherwise look
+		// like nothing happened. On desktop the three columns share one bounded
+		// height, so the fields are already on screen and this is a no-op.
+		if (!selectedDoc || !browser || window.matchMedia('(min-width: 1024px)').matches) return;
+		void tick().then(() => scrollIntoViewport('[data-testid="db-doc-fields"]'));
+	}
+
+	/**
+	 * Scroll an element into view inside the shell's ScrollArea viewport, NEVER
+	 * the window: the app shell is viewport-height, and window scrolling shoves
+	 * the layout past the mobile tab bar.
+	 */
+	function scrollIntoViewport(selector: string) {
+		const target = document.querySelector(selector);
+		if (!(target instanceof HTMLElement)) return;
+		const viewport = target.closest('[data-slot="scroll-area-viewport"]');
+		if (!(viewport instanceof HTMLElement)) return;
+		const top =
+			target.getBoundingClientRect().top -
+			viewport.getBoundingClientRect().top +
+			viewport.scrollTop;
+		viewport.scrollTo({ top: Math.max(0, top - 12), behavior: 'smooth' });
 	}
 
 	// Keep the snapshot in sync with the load, but only reset the browser when
@@ -210,14 +260,18 @@
 		if (selected) void loadDocuments(selected);
 	}
 
-	async function loadDocuments(collection: string) {
+	async function loadDocuments(collection: string, page = docPage) {
+		const cursor = docPageCursors[page];
 		try {
 			const response = await fetch(`/api/projects/${data.projectId}/db/admin/query`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				// orderBy addresses the JSON data only (createdAt is metadata), so
 				// the browser takes the agent's default order: document id.
-				body: JSON.stringify({ collection, query: { limit: 50 } })
+				body: JSON.stringify({
+					collection,
+					query: { limit: DOC_PAGE_SIZE, ...(cursor ? { cursor } : {}) }
+				})
 			});
 			if (selected !== collection) return;
 			const result = (await response.json().catch(() => null)) as
@@ -225,7 +279,22 @@
 			if (!response.ok || !result) {
 				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
 			}
+			// Deletions can empty the page the operator is standing on; fall back
+			// to the first page rather than showing "no documents" for a
+			// collection that still has plenty. Page 0 is the base case, so this
+			// recurses at most once.
+			if (result.docs.length === 0 && page > 0) {
+				resetDocPaging();
+				await loadDocuments(collection, 0);
+				return;
+			}
 			documents = result.docs;
+			docPage = page;
+			docsNextCursor = result.nextCursor ?? null;
+			// Remember where the next page starts, and forget pages that no longer
+			// exist so Next cannot walk past the end after a delete.
+			if (result.nextCursor) docPageCursors[page + 1] = result.nextCursor;
+			else docPageCursors = docPageCursors.slice(0, page + 1);
 			if (selectedDoc && !result.docs.some((doc) => doc.id === selectedDoc)) {
 				selectedDoc = null;
 			}
@@ -242,6 +311,7 @@
 		selected = null;
 		selectedDoc = null;
 		documents = [];
+		resetDocPaging();
 		docsLoaded = false;
 		docsError = null;
 		actionError = null;
@@ -264,24 +334,10 @@
 		closeBrowser();
 		selected = name;
 		if (options.persist !== false) persistQueryParam('collection', name);
-		void loadDocuments(name);
+		void loadDocuments(name, 0);
 		// The documents card mounts below the collections grid - off-screen on
-		// phones, where a tap would otherwise appear to do nothing. Scroll the
-		// shell's ScrollArea viewport, NEVER the window: the app shell is
-		// viewport-height, and window scrolling shoves the layout past the
-		// mobile tab bar.
-		void tick().then(() => {
-			const card = document.querySelector('[data-testid="db-documents-card"]');
-			if (!(card instanceof HTMLElement)) return;
-			const viewport = card.closest('[data-slot="scroll-area-viewport"]');
-			if (viewport instanceof HTMLElement) {
-				const top =
-					card.getBoundingClientRect().top -
-					viewport.getBoundingClientRect().top +
-					viewport.scrollTop;
-				viewport.scrollTo({ top: Math.max(0, top - 12), behavior: 'smooth' });
-			}
-		});
+		// phones, where a tap would otherwise appear to do nothing.
+		void tick().then(() => scrollIntoViewport('[data-testid="db-documents-card"]'));
 	}
 
 	// Collection create / access-mode configuration. Both go through the same
@@ -772,31 +828,14 @@
 		return `${Math.floor(hours / 24)}d ago`;
 	}
 
-	const eventIcons = {
-		'project.provisioned': Rocket,
-		'collection.created': FolderPlus,
-		'collection.deleted': Trash2,
-		'collection.configured': ShieldCheck,
-		'collection.restored': History,
-		'documents.changed': FileText,
-		'documents.imported': Upload,
-		'table.created': FolderPlus,
-		'table.configured': ShieldCheck,
-		'table.deleted': Trash2,
-		'table.restored': History,
-		'rows.changed': FileText,
-		'rows.imported': Upload
-	} as const;
-
 	// The feed carries both engines, so browsing collections used to surface
-	// table traffic (and the reverse). Split by event prefix; `project.*` is
-	// neither engine's, so it stays with the default tab rather than appearing
-	// twice.
+	// table traffic (and the reverse). Each tool page renders only its own half:
+	// `project.*` belongs to neither engine, so it rides with collections (the
+	// default page) rather than being duplicated or dropped.
 	const isTableEvent = (event: DbActivityEvent) =>
 		event.type.startsWith('table.') || event.type.startsWith('rows.');
 	const tableEvents = $derived(agentState.events.filter(isTableEvent));
 	const collectionEvents = $derived(agentState.events.filter((event) => !isTableEvent(event)));
-	let activityFeed = $state<'collections' | 'tables'>('collections');
 
 	const stats = $derived([
 		{
@@ -937,33 +976,6 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 	/>
 </svelte:head>
 
-{#snippet activityFeedList(events: DbActivityEvent[], empty: string)}
-	{#if events.length === 0}
-		<p class="py-6 text-center text-sm text-muted-foreground">{empty}</p>
-	{:else}
-		<ScrollArea class="h-72 pr-3" type="always">
-			<ol class="space-y-4">
-				{#each events as event (event.id)}
-					{@const Icon = eventIcons[event.type] ?? Activity}
-					<li class="flex gap-3">
-						<div
-							class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
-						>
-							<Icon class="h-3.5 w-3.5" />
-						</div>
-						<div class="min-w-0">
-							<p class="text-sm leading-snug">{event.message}</p>
-							<p class="mt-0.5 font-mono text-[11px] text-muted-foreground">
-								{event.type} · {timeAgo(event.at)}
-							</p>
-						</div>
-					</li>
-				{/each}
-			</ol>
-		</ScrollArea>
-	{/if}
-{/snippet}
-
 <div
 	class="mx-auto max-w-7xl space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-8"
 	data-testid="db-page"
@@ -1038,7 +1050,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 					</Card.Header>
 					<Card.Content class="p-0">
 						<div
-							class="grid grid-cols-1 max-lg:divide-y lg:min-h-[26rem] lg:grid-cols-[minmax(13rem,0.9fr)_minmax(0,1.1fr)_minmax(0,1.4fr)] lg:divide-x"
+							class="grid grid-cols-1 max-lg:divide-y lg:h-[34rem] lg:grid-cols-[minmax(13rem,0.9fr)_minmax(0,1.1fr)_minmax(0,1.4fr)] lg:divide-x"
 						>
 							<!-- Column 1: collections -->
 							<div class="flex min-w-0 flex-col">
@@ -1313,7 +1325,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 									{/if}
 
 									<div
-										class="min-h-0 flex-1 overflow-y-auto p-1.5"
+										class="min-h-0 flex-1 overflow-y-auto p-1.5 max-lg:max-h-[22rem]"
 										data-testid="db-documents-table"
 									>
 										{#if actionError}
@@ -1378,6 +1390,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 														type="button"
 														class="min-w-0 flex-1 px-2 py-1 text-left"
 														title={doc.id}
+														data-testid={`db-doc-${doc.id}`}
 														onclick={() => selectDocument(doc.id)}
 													>
 														<span
@@ -1427,6 +1440,43 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 											{/each}
 										{/if}
 									</div>
+
+									<!-- Keyset pager. The total is the registry's count, so the
+									     range reads against the whole collection, not the page. -->
+									{#if docsLoaded && (docPage > 0 || docsNextCursor || documents.length > 0)}
+										<div
+											class="flex shrink-0 items-center gap-2 border-t px-2.5 py-1.5 text-[11px] text-muted-foreground"
+											data-testid="db-docs-pager"
+										>
+											<span class="tabular-nums" data-testid="db-docs-range">
+												{docRangeStart}–{docRangeEnd} of {openCollectionDocs}
+											</span>
+											<div class="ml-auto flex items-center gap-0.5">
+												<Button
+													variant="ghost"
+													size="icon"
+													class="h-6 w-6"
+													disabled={docPage === 0}
+													aria-label="Previous page"
+													data-testid="db-docs-prev"
+													onclick={prevDocPage}
+												>
+													<ChevronLeft class="h-3.5 w-3.5" />
+												</Button>
+												<Button
+													variant="ghost"
+													size="icon"
+													class="h-6 w-6"
+													disabled={!docsNextCursor}
+													aria-label="Next page"
+													data-testid="db-docs-next"
+													onclick={nextDocPage}
+												>
+													<ChevronRight class="h-3.5 w-3.5" />
+												</Button>
+											</div>
+										</div>
+									{/if}
 								{:else}
 									<p class="m-auto px-4 py-10 text-center text-sm text-muted-foreground">
 										Select a collection to browse its documents.
@@ -1459,7 +1509,10 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 											</Button>
 										</div>
 									</div>
-									<div class="min-h-0 flex-1 overflow-y-auto" data-testid="db-doc-fields">
+									<div
+										class="min-h-0 flex-1 overflow-y-auto max-lg:max-h-[22rem]"
+										data-testid="db-doc-fields"
+									>
 										{#if fields.length === 0}
 											<p class="px-3 py-6 text-center text-sm text-muted-foreground">
 												This document has no fields.
@@ -1530,42 +1583,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 					</Card.Content>
 				</Card.Root>
 
-				<Card.Root data-testid="db-activity">
-					<Card.Header>
-						<Card.Title class="flex items-center gap-2">
-							<Radio class="h-4 w-4 text-primary" /> Live activity
-						</Card.Title>
-						<Card.Description>Streamed from the agent via WebSocket state sync.</Card.Description>
-					</Card.Header>
-					<Card.Content>
-						<Tabs.Root bind:value={activityFeed}>
-							<Tabs.List class="grid w-full grid-cols-2">
-								<Tabs.Trigger value="collections" data-testid="db-activity-collections">
-									Collections
-									{#if collectionEvents.length}
-										<span class="ml-1.5 text-[11px] text-muted-foreground tabular-nums">
-											{collectionEvents.length}
-										</span>
-									{/if}
-								</Tabs.Trigger>
-								<Tabs.Trigger value="tables" data-testid="db-activity-tables">
-									Tables
-									{#if tableEvents.length}
-										<span class="ml-1.5 text-[11px] text-muted-foreground tabular-nums">
-											{tableEvents.length}
-										</span>
-									{/if}
-								</Tabs.Trigger>
-							</Tabs.List>
-							<Tabs.Content value="collections" class="mt-3">
-								{@render activityFeedList(collectionEvents, 'No collection activity yet.')}
-							</Tabs.Content>
-							<Tabs.Content value="tables" class="mt-3">
-								{@render activityFeedList(tableEvents, 'No table activity yet.')}
-							</Tabs.Content>
-						</Tabs.Root>
-					</Card.Content>
-				</Card.Root>
+				<ActivityCard events={collectionEvents} empty="No collection activity yet." />
 			</div>
 		{/if}
 
@@ -1576,6 +1594,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 				projectId={data.projectId}
 				tables={agentState.tables ?? []}
 				totalRows={agentState.totalRows ?? 0}
+				events={tableEvents}
 				{permissionOptions}
 				refresh={() => refreshData(data.projectId)}
 			/>

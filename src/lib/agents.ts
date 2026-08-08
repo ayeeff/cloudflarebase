@@ -87,10 +87,24 @@ export const authOverviewSchema = z
 	.object({
 		projectId: z.string(),
 		users: z.array(overviewUserSchema),
+		/** Continuation for `/admin/users`; absent when this is the last page. */
+		usersNextCursor: z.string().optional(),
 		sessions: z.array(overviewSessionSchema),
+		/** Continuation for `/admin/sessions`; absent on the last page. */
+		sessionsNextCursor: z.string().optional(),
 		state: authAgentStateSchema
 	})
 	.meta({ id: 'AuthOverview' });
+
+/** Keyset pages: the cursor is opaque, so the agent's ordering can change
+ * without a client change. */
+export const userPageSchema = z
+	.object({ users: z.array(overviewUserSchema), nextCursor: z.string().optional() })
+	.meta({ id: 'UserPage' });
+
+export const sessionPageSchema = z
+	.object({ sessions: z.array(overviewSessionSchema), nextCursor: z.string().optional() })
+	.meta({ id: 'SessionPage' });
 
 export const authAnalyticsSchema = z
 	.object({
@@ -617,6 +631,8 @@ export type AuthAgentState = z.infer<typeof authAgentStateSchema>;
 export type OverviewUser = z.infer<typeof overviewUserSchema>;
 export type OverviewSession = z.infer<typeof overviewSessionSchema>;
 export type AuthOverview = z.infer<typeof authOverviewSchema>;
+export type UserPage = z.infer<typeof userPageSchema>;
+export type SessionPage = z.infer<typeof sessionPageSchema>;
 export type AuthAnalytics = z.infer<typeof authAnalyticsSchema>;
 export type FleetProjectCounts = z.infer<typeof fleetProjectCountsSchema>;
 export type FleetProject = z.infer<typeof fleetProjectSchema>;

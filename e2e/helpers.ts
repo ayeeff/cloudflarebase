@@ -71,6 +71,14 @@ export function adminSessionPath(projectId: string, sessionId: string): string {
 	return `/api/projects/${projectId}/admin/sessions/${encodeURIComponent(sessionId)}`;
 }
 
+export function adminUsersPath(projectId: string): string {
+	return `/api/projects/${projectId}/admin/users`;
+}
+
+export function adminSessionsPath(projectId: string): string {
+	return `/api/projects/${projectId}/admin/sessions`;
+}
+
 export function settingsPath(projectId: string): string {
 	return `/api/projects/${projectId}/admin/settings`;
 }

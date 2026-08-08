@@ -3,7 +3,16 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import type { AuthAgentState, AuthAnalytics, AuthOverview, RoleDefinition } from '$lib/agents';
+	import type {
+		AuthAgentState,
+		AuthAnalytics,
+		AuthOverview,
+		OverviewSession,
+		OverviewUser,
+		RoleDefinition,
+		SessionPage,
+		UserPage
+	} from '$lib/agents';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -30,6 +39,8 @@
 	import { buildIntegrationExamples } from '$lib/integration-examples';
 	import {
 		Activity,
+		ChevronLeft,
+		ChevronRight,
 		CodeXml,
 		Dices,
 		Globe,
@@ -129,6 +140,105 @@
 	let agentState = $state<AuthAgentState>(data.overview.state);
 	// svelte-ignore state_referenced_locally
 	let analytics = $state<AuthAnalytics>(data.analytics);
+
+	// Users and sessions page over the agent's KEYSET cursors (offset paging
+	// would skip or repeat rows as sign-ups land mid-scan). The overview
+	// carries page 0 plus its continuation, so standing on the first page costs
+	// no extra request - it just tracks the 5s poll. Deeper pages are fetched
+	// from the admin list routes and re-fetched in place by the same poll.
+	// svelte-ignore state_referenced_locally
+	let users = $state<OverviewUser[]>(data.overview.users);
+	// svelte-ignore state_referenced_locally
+	let usersNextCursor = $state<string | null>(data.overview.usersNextCursor ?? null);
+	let userPageIndex = $state(0);
+	let userCursors = $state<(string | undefined)[]>([undefined]);
+	// svelte-ignore state_referenced_locally
+	let sessions = $state<OverviewSession[]>(data.overview.sessions);
+	// svelte-ignore state_referenced_locally
+	let sessionsNextCursor = $state<string | null>(data.overview.sessionsNextCursor ?? null);
+	let sessionPageIndex = $state(0);
+	let sessionCursors = $state<(string | undefined)[]>([undefined]);
+
+	const LIST_PAGE_SIZE = 50;
+	const userRangeStart = $derived(users.length === 0 ? 0 : userPageIndex * LIST_PAGE_SIZE + 1);
+	const userRangeEnd = $derived(userPageIndex * LIST_PAGE_SIZE + users.length);
+	const sessionRangeStart = $derived(
+		sessions.length === 0 ? 0 : sessionPageIndex * LIST_PAGE_SIZE + 1
+	);
+	const sessionRangeEnd = $derived(sessionPageIndex * LIST_PAGE_SIZE + sessions.length);
+
+	/** Page 0 rides the overview payload; deeper pages hit the list route. */
+	async function loadUserPage(pageIndex: number) {
+		if (pageIndex === 0) {
+			userPageIndex = 0;
+			userCursors = [undefined];
+			users = overview.users;
+			usersNextCursor = overview.usersNextCursor ?? null;
+			return;
+		}
+		const cursor = userCursors[pageIndex];
+		if (!cursor) return;
+		try {
+			const response = await fetch(
+				`/api/projects/${data.projectId}/admin/users?cursor=${encodeURIComponent(cursor)}`
+			);
+			if (!response.ok) return;
+			const result = (await response.json()) as UserPage;
+			// A page emptied by deletions falls back to the first page rather than
+			// stranding the operator on nothing.
+			if (result.users.length === 0) {
+				await loadUserPage(0);
+				return;
+			}
+			users = result.users;
+			userPageIndex = pageIndex;
+			usersNextCursor = result.nextCursor ?? null;
+			if (result.nextCursor) userCursors[pageIndex + 1] = result.nextCursor;
+			else userCursors = userCursors.slice(0, pageIndex + 1);
+		} catch {
+			// agent unreachable - keep the page we have
+		}
+	}
+
+	async function loadSessionPage(pageIndex: number) {
+		if (pageIndex === 0) {
+			sessionPageIndex = 0;
+			sessionCursors = [undefined];
+			sessions = overview.sessions;
+			sessionsNextCursor = overview.sessionsNextCursor ?? null;
+			return;
+		}
+		const cursor = sessionCursors[pageIndex];
+		if (!cursor) return;
+		try {
+			const response = await fetch(
+				`/api/projects/${data.projectId}/admin/sessions?cursor=${encodeURIComponent(cursor)}`
+			);
+			if (!response.ok) return;
+			const result = (await response.json()) as SessionPage;
+			if (result.sessions.length === 0) {
+				await loadSessionPage(0);
+				return;
+			}
+			sessions = result.sessions;
+			sessionPageIndex = pageIndex;
+			sessionsNextCursor = result.nextCursor ?? null;
+			if (result.nextCursor) sessionCursors[pageIndex + 1] = result.nextCursor;
+			else sessionCursors = sessionCursors.slice(0, pageIndex + 1);
+		} catch {
+			// agent unreachable - keep the page we have
+		}
+	}
+
+	function nextUserPage() {
+		if (usersNextCursor) userCursors[userPageIndex + 1] = usersNextCursor;
+		void loadUserPage(userPageIndex + 1);
+	}
+
+	function nextSessionPage() {
+		if (sessionsNextCursor) sessionCursors[sessionPageIndex + 1] = sessionsNextCursor;
+		void loadSessionPage(sessionPageIndex + 1);
+	}
 	// The server cannot know the browser's IANA timezone. Keep the activity
 	// panel hidden until its first timezone-specific refresh instead of briefly
 	// rendering UTC buckets and then shifting the graph after hydration.
@@ -226,6 +336,16 @@
 		overview = data.overview;
 		agentState = data.overview.state;
 		analytics = data.analytics;
+		// A cursor belongs to the project that minted it - never carry paging
+		// across a project switch.
+		users = data.overview.users;
+		usersNextCursor = data.overview.usersNextCursor ?? null;
+		userPageIndex = 0;
+		userCursors = [undefined];
+		sessions = data.overview.sessions;
+		sessionsNextCursor = data.overview.sessionsNextCursor ?? null;
+		sessionPageIndex = 0;
+		sessionCursors = [undefined];
 		activityTimeZone = null;
 		allowedOriginsInput = (data.overview.state.allowedOrigins ?? []).join('\n');
 		googleEnabled = (data.overview.state.enabledSocialProviders ?? []).includes('google');
@@ -269,6 +389,12 @@
 			if (overviewRes.ok) {
 				overview = await overviewRes.json();
 				agentState = overview.state;
+				// Page 0 IS the overview payload; deeper pages re-read themselves so
+				// the poll never yanks the operator back to the top of the list.
+				if (userPageIndex === 0) await loadUserPage(0);
+				else await loadUserPage(userPageIndex);
+				if (sessionPageIndex === 0) await loadSessionPage(0);
+				else await loadSessionPage(sessionPageIndex);
 			}
 			if (analyticsRes.ok) {
 				analytics = await analyticsRes.json();
@@ -664,6 +790,55 @@
 	/>
 </svelte:head>
 
+<!-- Keyset pager shared by the users and sessions tables. The total comes from
+     the agent's counter, not the page length, so the range reads against the
+     whole list. -->
+{#snippet listPager(
+	name: string,
+	rangeStart: number,
+	rangeEnd: number,
+	total: number,
+	pageIndex: number,
+	hasNext: boolean,
+	previous: () => void,
+	next: () => void
+)}
+	{#if pageIndex > 0 || hasNext}
+		<div
+			class="mt-3 flex items-center gap-2 border-t pt-2.5 text-[11px] text-muted-foreground"
+			data-testid={`${name}-pager`}
+		>
+			<span class="tabular-nums" data-testid={`${name}-range`}>
+				{rangeStart}–{rangeEnd} of {total}
+			</span>
+			<div class="ml-auto flex items-center gap-0.5">
+				<Button
+					variant="ghost"
+					size="icon"
+					class="h-6 w-6"
+					disabled={pageIndex === 0}
+					aria-label="Previous page"
+					data-testid={`${name}-prev`}
+					onclick={previous}
+				>
+					<ChevronLeft class="h-3.5 w-3.5" />
+				</Button>
+				<Button
+					variant="ghost"
+					size="icon"
+					class="h-6 w-6"
+					disabled={!hasNext}
+					aria-label="Next page"
+					data-testid={`${name}-next`}
+					onclick={next}
+				>
+					<ChevronRight class="h-3.5 w-3.5" />
+				</Button>
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
 <div
 	class="mx-auto max-w-7xl space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-8"
 	data-testid="auth-page"
@@ -901,7 +1076,7 @@
 							</Card.Action>
 						</Card.Header>
 						<Card.Content>
-							{#if overview.users.length === 0}
+							{#if users.length === 0}
 								<p class="py-6 text-center text-sm text-muted-foreground">
 									No users yet - create the first one in the playground.
 								</p>
@@ -918,7 +1093,7 @@
 										</Table.Row>
 									</Table.Header>
 									<Table.Body>
-										{#each overview.users as user (user.id)}
+										{#each users as user (user.id)}
 											<Table.Row>
 												<Table.Cell>
 													<div class="flex items-center gap-2">
@@ -994,6 +1169,16 @@
 									</Table.Body>
 								</Table.Root>
 							{/if}
+							{@render listPager(
+								'users',
+								userRangeStart,
+								userRangeEnd,
+								agentState.users,
+								userPageIndex,
+								!!usersNextCursor,
+								() => void loadUserPage(userPageIndex - 1),
+								nextUserPage
+							)}
 						</Card.Content>
 					</Card.Root>
 				{/if}
@@ -1009,7 +1194,7 @@
 								<Card.Description>{agentState.activeSessions} currently active</Card.Description>
 							</Card.Header>
 							<Card.Content>
-								{#if overview.sessions.length === 0}
+								{#if sessions.length === 0}
 									<p
 										class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
 									>
@@ -1028,7 +1213,7 @@
 											</Table.Row>
 										</Table.Header>
 										<Table.Body>
-											{#each overview.sessions as s (s.id)}
+											{#each sessions as s (s.id)}
 												<Table.Row>
 													<Table.Cell class="font-mono text-xs">{s.email ?? s.userId}</Table.Cell>
 													<Table.Cell>
@@ -1065,6 +1250,16 @@
 										</Table.Body>
 									</Table.Root>
 								{/if}
+								{@render listPager(
+									'sessions',
+									sessionRangeStart,
+									sessionRangeEnd,
+									agentState.activeSessions,
+									sessionPageIndex,
+									!!sessionsNextCursor,
+									() => void loadSessionPage(sessionPageIndex - 1),
+									nextSessionPage
+								)}
 							</Card.Content>
 						</Card.Root>
 					</div>{/if}

@@ -1,5 +1,5 @@
 import { Agent, type AgentContext } from 'agents';
-import { count, desc, eq, gt } from 'drizzle-orm';
+import { and, count, desc, eq, gt, lt, or } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/durable-sqlite';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import * as Sentry from '@sentry/cloudflare';
@@ -26,6 +26,44 @@ import {
 } from './schemas';
 
 const MAX_EVENTS = 50;
+/**
+ * Users and sessions page KEYSET-style over `(createdAt, id)` in descending
+ * order, never by offset: sign-ups and sign-ins land while an operator is
+ * paging, and an offset would silently skip or repeat rows. The cursor is
+ * opaque on the wire so the ordering can change without a client change.
+ */
+const LIST_PAGE_SIZE = 50;
+const MAX_LIST_PAGE_SIZE = 200;
+
+/** `(createdAt, id)` of the last row on a page, base64url so it survives a
+ * query string untouched. */
+function encodeListCursor(createdAt: Date, id: string): string {
+	const raw = JSON.stringify([createdAt.getTime(), id]);
+	return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** Undecodable cursors are treated as absent - a mangled continuation should
+ * restart the list, never 500 an operator surface. */
+function decodeListCursor(raw: string | null): { createdAt: Date; id: string } | null {
+	if (!raw) return null;
+	try {
+		const padded = raw.replace(/-/g, '+').replace(/_/g, '/');
+		const parsed: unknown = JSON.parse(atob(padded));
+		if (!Array.isArray(parsed)) return null;
+		const [at, id] = parsed as unknown[];
+		if (typeof at !== 'number' || !Number.isFinite(at) || typeof id !== 'string') return null;
+		return { createdAt: new Date(at), id };
+	} catch {
+		return null;
+	}
+}
+
+function listPageSize(url: URL): number {
+	const raw = Number(url.searchParams.get('limit'));
+	if (!Number.isFinite(raw) || raw < 1) return LIST_PAGE_SIZE;
+	return Math.min(Math.floor(raw), MAX_LIST_PAGE_SIZE);
+}
+
 /**
  * Reserved project id for the dashboard's own operator auth - Cloudflarebase
  * authenticating its console with the same stack it sells. Mirrored in the
@@ -122,8 +160,22 @@ export interface OverviewSession {
 export interface AuthOverview {
 	projectId: string;
 	users: OverviewUser[];
+	/** Continuation for `GET /admin/users`; absent when this is the last page. */
+	usersNextCursor?: string;
 	sessions: OverviewSession[];
+	/** Continuation for `GET /admin/sessions`; absent on the last page. */
+	sessionsNextCursor?: string;
 	state: AuthAgentState;
+}
+
+export interface UserPage {
+	users: OverviewUser[];
+	nextCursor?: string;
+}
+
+export interface SessionPage {
+	sessions: OverviewSession[];
+	nextCursor?: string;
 }
 
 export interface AuthAnalytics {
@@ -711,6 +763,16 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			}
 		}
 
+		if (subPath === '/admin/users' && request.method === 'GET') {
+			return Response.json(await this.listUsers(url.searchParams.get('cursor'), listPageSize(url)));
+		}
+
+		if (subPath === '/admin/sessions' && request.method === 'GET') {
+			return Response.json(
+				await this.listSessions(url.searchParams.get('cursor'), listPageSize(url)),
+			);
+		}
+
 		const roleUpdate = subPath.match(/^\/admin\/users\/([^/]+)\/role$/);
 		if (roleUpdate && request.method === 'PUT') {
 			return this.setUserRole(this.decodeResourceId(roleUpdate[1]), request);
@@ -923,10 +985,33 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		});
 	}
 
-	/** Snapshot used by the dashboard's initial server-side load and polling. */
+	/** Snapshot used by the dashboard's initial server-side load and polling.
+	 * Carries the FIRST page of each list plus its continuation; subsequent
+	 * pages come from `/admin/users` and `/admin/sessions`. */
 	async getOverview(): Promise<AuthOverview> {
-		const now = new Date();
-		const users = await this.db
+		const [users, sessions] = await Promise.all([
+			this.listUsers(null, LIST_PAGE_SIZE),
+			this.listSessions(null, LIST_PAGE_SIZE),
+		]);
+
+		return {
+			projectId: this.name,
+			users: users.users,
+			usersNextCursor: users.nextCursor,
+			sessions: sessions.sessions,
+			sessionsNextCursor: sessions.nextCursor,
+			state: this.state,
+		};
+	}
+
+	/**
+	 * One page of users, newest first. Fetches limit+1 rows so "is there a next
+	 * page" needs no COUNT: the extra row is dropped and only proves the cursor
+	 * is worth handing back.
+	 */
+	async listUsers(cursorRaw: string | null, limit: number): Promise<UserPage> {
+		const cursor = decodeListCursor(cursorRaw);
+		const rows = await this.db
 			.select({
 				id: schema.user.id,
 				name: schema.user.name,
@@ -937,18 +1022,51 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				createdAt: schema.user.createdAt,
 			})
 			.from(schema.user)
-			.orderBy(desc(schema.user.createdAt))
-			.limit(100);
+			.where(
+				cursor
+					? or(
+							lt(schema.user.createdAt, cursor.createdAt),
+							and(eq(schema.user.createdAt, cursor.createdAt), lt(schema.user.id, cursor.id)),
+						)
+					: undefined,
+			)
+			.orderBy(desc(schema.user.createdAt), desc(schema.user.id))
+			.limit(limit + 1);
 
-		const accounts = await this.db
-			.select({ userId: schema.account.userId, providerId: schema.account.providerId })
-			.from(schema.account);
+		const page = rows.slice(0, limit);
+		// One provider lookup per page, not per user.
+		const ids = new Set(page.map((row) => row.id));
+		const accounts = ids.size
+			? await this.db
+					.select({ userId: schema.account.userId, providerId: schema.account.providerId })
+					.from(schema.account)
+			: [];
 		const providersByUser = new Map<string, string[]>();
 		for (const row of accounts) {
+			if (!ids.has(row.userId)) continue;
 			providersByUser.set(row.userId, [...(providersByUser.get(row.userId) ?? []), row.providerId]);
 		}
 
-		const sessions = await this.db
+		const last = page.at(-1);
+		return {
+			users: page.map((u) => ({
+				...u,
+				isAnonymous: !!u.isAnonymous,
+				providers: providersByUser.get(u.id) ?? (u.isAnonymous ? ['anonymous'] : []),
+				createdAt: u.createdAt.toISOString(),
+			})),
+			nextCursor:
+				rows.length > limit && last ? encodeListCursor(last.createdAt, last.id) : undefined,
+		};
+	}
+
+	/** One page of LIVE sessions, newest first. Expired rows are filtered in
+	 * SQL, so a page is always `limit` live sessions rather than `limit` rows
+	 * that happen to include dead ones. */
+	async listSessions(cursorRaw: string | null, limit: number): Promise<SessionPage> {
+		const cursor = decodeListCursor(cursorRaw);
+		const live = gt(schema.session.expiresAt, new Date());
+		const rows = await this.db
 			.select({
 				id: schema.session.id,
 				userId: schema.session.userId,
@@ -961,24 +1079,33 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			})
 			.from(schema.session)
 			.leftJoin(schema.user, eq(schema.user.id, schema.session.userId))
-			.where(gt(schema.session.expiresAt, now))
-			.orderBy(desc(schema.session.createdAt))
-			.limit(100);
+			.where(
+				cursor
+					? and(
+							live,
+							or(
+								lt(schema.session.createdAt, cursor.createdAt),
+								and(
+									eq(schema.session.createdAt, cursor.createdAt),
+									lt(schema.session.id, cursor.id),
+								),
+							),
+						)
+					: live,
+			)
+			.orderBy(desc(schema.session.createdAt), desc(schema.session.id))
+			.limit(limit + 1);
 
+		const page = rows.slice(0, limit);
+		const last = page.at(-1);
 		return {
-			projectId: this.name,
-			users: users.map((u) => ({
-				...u,
-				isAnonymous: !!u.isAnonymous,
-				providers: providersByUser.get(u.id) ?? (u.isAnonymous ? ['anonymous'] : []),
-				createdAt: u.createdAt.toISOString(),
-			})),
-			sessions: sessions.map((s) => ({
+			sessions: page.map((s) => ({
 				...s,
 				createdAt: s.createdAt.toISOString(),
 				expiresAt: s.expiresAt.toISOString(),
 			})),
-			state: this.state,
+			nextCursor:
+				rows.length > limit && last ? encodeListCursor(last.createdAt, last.id) : undefined,
 		};
 	}
 

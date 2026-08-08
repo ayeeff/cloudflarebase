@@ -21,7 +21,8 @@ The Worker itself: `GET /health`, `GET /fleet/overview`, and `DELETE /internal/p
 
 Agent routes at `/agents/auth-agent/<projectId>/...`:
 
-- `GET /overview`: users, sessions, synchronized state.
+- `GET /overview`: the FIRST page of users and sessions, each with its continuation (`usersNextCursor` / `sessionsNextCursor`), plus synchronized state.
+- `GET /admin/users` / `GET /admin/sessions`: one page each, newest first, `?limit=` (default 50, max 200) + `?cursor=`. **Keyset over `(createdAt, id)`, never offset** - sign-ups and sign-ins land while an operator pages, and an offset would skip or repeat rows. The cursor is opaque base64url so the ordering can change without a client change; an undecodable one restarts the list rather than 500ing. Sessions filter expired rows in SQL, so a full page is always live sessions. These replaced a silent 100-row truncation in `/overview`. Pinned by `e2e/auth-pagination.api.spec.ts`.
 - `GET /analytics`: aggregates; validated `timeZone` query param for signup-day buckets.
 - `GET /config`: safe public client configuration; never provider secrets.
 - `POST /chat`: Workers AI answer grounded in project analytics.
