@@ -149,9 +149,14 @@
 								.meta.rows_written} written
 						</p>
 						{#if result.columns.length > 0 && result.raw.length > 0}
-							<div class="overflow-x-auto rounded-lg border">
+							<!-- Bounded like the tables grid: a bare SELECT returns whatever
+							     the operator asked for, and an uncapped result pushed the
+							     editor and Run button off the top of the shell's scrollport
+							     (300 rows was a 10,000px page). Header stays put while the
+							     rows scroll. -->
+							<div class="max-h-[60vh] overflow-auto rounded-lg border">
 								<Table.Root>
-									<Table.Header>
+									<Table.Header class="sticky top-0 z-10 bg-card">
 										<Table.Row>
 											{#each result.columns as column (column)}
 												<Table.Head class="font-mono text-xs">{column}</Table.Head>
