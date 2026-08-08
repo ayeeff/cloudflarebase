@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import type {
 		DbAccessMode,
+		DbActivityEvent,
 		DbAgentState,
 		DbReplicationMode,
 		DbDocument,
@@ -34,6 +35,7 @@
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import * as Select from '$lib/components/ui/select';
 	import * as Table from '$lib/components/ui/table';
+	import * as Tabs from '$lib/components/ui/tabs';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
 		Activity,
@@ -786,6 +788,16 @@
 		'rows.imported': Upload
 	} as const;
 
+	// The feed carries both engines, so browsing collections used to surface
+	// table traffic (and the reverse). Split by event prefix; `project.*` is
+	// neither engine's, so it stays with the default tab rather than appearing
+	// twice.
+	const isTableEvent = (event: DbActivityEvent) =>
+		event.type.startsWith('table.') || event.type.startsWith('rows.');
+	const tableEvents = $derived(agentState.events.filter(isTableEvent));
+	const collectionEvents = $derived(agentState.events.filter((event) => !isTableEvent(event)));
+	let activityFeed = $state<'collections' | 'tables'>('collections');
+
 	const stats = $derived([
 		{
 			id: 'collections',
@@ -924,6 +936,33 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 		content="Browse collections and documents, tune access modes, and connect apps to project {data.projectId}'s database."
 	/>
 </svelte:head>
+
+{#snippet activityFeedList(events: DbActivityEvent[], empty: string)}
+	{#if events.length === 0}
+		<p class="py-6 text-center text-sm text-muted-foreground">{empty}</p>
+	{:else}
+		<ScrollArea class="h-72 pr-3" type="always">
+			<ol class="space-y-4">
+				{#each events as event (event.id)}
+					{@const Icon = eventIcons[event.type] ?? Activity}
+					<li class="flex gap-3">
+						<div
+							class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+						>
+							<Icon class="h-3.5 w-3.5" />
+						</div>
+						<div class="min-w-0">
+							<p class="text-sm leading-snug">{event.message}</p>
+							<p class="mt-0.5 font-mono text-[11px] text-muted-foreground">
+								{event.type} · {timeAgo(event.at)}
+							</p>
+						</div>
+					</li>
+				{/each}
+			</ol>
+		</ScrollArea>
+	{/if}
+{/snippet}
 
 <div
 	class="mx-auto max-w-7xl space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-8"
@@ -1499,30 +1538,32 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 						<Card.Description>Streamed from the agent via WebSocket state sync.</Card.Description>
 					</Card.Header>
 					<Card.Content>
-						{#if agentState.events.length === 0}
-							<p class="py-6 text-center text-sm text-muted-foreground">Nothing yet.</p>
-						{:else}
-							<ScrollArea class="h-72 pr-3" type="always">
-								<ol class="space-y-4">
-									{#each agentState.events as event (event.id)}
-										{@const Icon = eventIcons[event.type] ?? Activity}
-										<li class="flex gap-3">
-											<div
-												class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
-											>
-												<Icon class="h-3.5 w-3.5" />
-											</div>
-											<div class="min-w-0">
-												<p class="text-sm leading-snug">{event.message}</p>
-												<p class="mt-0.5 font-mono text-[11px] text-muted-foreground">
-													{event.type} · {timeAgo(event.at)}
-												</p>
-											</div>
-										</li>
-									{/each}
-								</ol>
-							</ScrollArea>
-						{/if}
+						<Tabs.Root bind:value={activityFeed}>
+							<Tabs.List class="grid w-full grid-cols-2">
+								<Tabs.Trigger value="collections" data-testid="db-activity-collections">
+									Collections
+									{#if collectionEvents.length}
+										<span class="ml-1.5 text-[11px] text-muted-foreground tabular-nums">
+											{collectionEvents.length}
+										</span>
+									{/if}
+								</Tabs.Trigger>
+								<Tabs.Trigger value="tables" data-testid="db-activity-tables">
+									Tables
+									{#if tableEvents.length}
+										<span class="ml-1.5 text-[11px] text-muted-foreground tabular-nums">
+											{tableEvents.length}
+										</span>
+									{/if}
+								</Tabs.Trigger>
+							</Tabs.List>
+							<Tabs.Content value="collections" class="mt-3">
+								{@render activityFeedList(collectionEvents, 'No collection activity yet.')}
+							</Tabs.Content>
+							<Tabs.Content value="tables" class="mt-3">
+								{@render activityFeedList(tableEvents, 'No table activity yet.')}
+							</Tabs.Content>
+						</Tabs.Root>
 					</Card.Content>
 				</Card.Root>
 			</div>

@@ -1110,7 +1110,9 @@ export class DbTable extends LiveShard {
 					await this.notifySubscribers(null, notice.row);
 				}
 			}
-			this.scheduleStatsReport();
+			// SELECT-only requests reach here too, and they cannot have moved the
+			// row count - reporting them made every read mint a `rows.changed`.
+			if (outcome.notifications.length) this.scheduleStatsReport();
 			const payload =
 				'batch' in body.data
 					? { success: true as const, batch: outcome.results }
@@ -1203,7 +1205,8 @@ export class DbTable extends LiveShard {
 				if (notice.kind === 'delete') await this.notifySubscribers(notice.row, null);
 				else await this.notifySubscribers(null, notice.row);
 			}
-			this.scheduleStatsReport();
+			// Same as the public SQL route: a read never changes the count.
+			if (outcome.notifications.length) this.scheduleStatsReport();
 			return { ok: true, batch: outcome.results };
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
@@ -1554,7 +1557,10 @@ export class DbTable extends LiveShard {
 
 	private async reportStats(): Promise<void> {
 		const config = this.config;
-		if (!config) return;
+		// Replicas wake on their own schedule and can be arbitrarily far behind
+		// the feed, so their count is neither authoritative nor newsworthy - the
+		// registry number belongs to the primary.
+		if (!config || this.role.kind !== 'primary') return;
 		try {
 			const parent = await this.parentStub(config.projectId);
 			await parent.reportTableStats(config.table, { rows: await this.getRowCount() });
