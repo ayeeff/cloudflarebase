@@ -291,26 +291,39 @@
 	onMount(() => {
 		reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const sections = Array.from(document.querySelectorAll<HTMLElement>('main > section'));
-		sections.forEach((section, index) => {
-			section.classList.add('landing-reveal');
-			section.style.setProperty('--reveal-delay', `${Math.min(index * 35, 140)}ms`);
-		});
 
+		// Nothing is hidden up front. Adding `landing-reveal` to every section on
+		// mount blanked whatever was ALREADY on screen: the page painted from SSR,
+		// went transparent the moment hydration ran, then faded back in - which is
+		// what drove Speed Index up without ever showing as a layout shift. The
+		// observer's first callback reports each section's current state, so the
+		// ones on screen are simply marked visible and never blank, and the ones
+		// off screen are hidden there, where hiding costs no paint.
+		let primed = false;
 		const observer = reduceMotion
 			? null
 			: new IntersectionObserver(
 					(entries) => {
 						for (const entry of entries) {
-							if (!entry.isIntersecting) continue;
-							(entry.target as HTMLElement).classList.add('is-visible');
-							observer?.unobserve(entry.target);
+							const section = entry.target as HTMLElement;
+							if (entry.isIntersecting) {
+								section.classList.add('is-visible');
+								observer?.unobserve(section);
+							} else if (!primed) {
+								section.classList.add('landing-reveal');
+							}
 						}
+						primed = true;
 					},
 					{ threshold: 0.12, rootMargin: '0px 0px -7% 0px' }
 				);
 
-		if (observer) sections.forEach((section) => observer.observe(section));
-		else sections.forEach((section) => section.classList.add('is-visible'));
+		if (observer) {
+			sections.forEach((section, index) => {
+				section.style.setProperty('--reveal-delay', `${Math.min(index * 35, 140)}ms`);
+				observer.observe(section);
+			});
+		}
 
 		// Seeding lives in the heroTab $effect; this only appends from whichever
 		// pool the active tab reads.
@@ -922,7 +935,7 @@
 						     short and tall examples never shifts the page below. -->
 						<CodeExamples
 							examples={apiProduct === 'db' ? dbApiExamples : authApiExamples}
-							class="p-4 [&_pre]:h-[22.75rem] [&_pre]:overflow-y-auto"
+							class="p-4 [&_pre]:h-[23rem] [&_pre]:overflow-y-auto"
 						/>
 					{/key}
 				</div>
@@ -1264,73 +1277,6 @@
 	</header>
 {/snippet}
 
-<style>
-	@keyframes hero-rise {
-		from {
-			opacity: 0;
-			transform: translateY(16px);
-			filter: blur(6px);
-		}
-		to {
-			opacity: 1;
-			transform: none;
-			filter: none;
-		}
-	}
-
-	.hero-stagger > :global(*) {
-		animation: hero-rise 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-	}
-	.hero-stagger > :global(*:nth-child(1)) {
-		animation-delay: 60ms;
-	}
-	.hero-stagger > :global(*:nth-child(2)) {
-		animation-delay: 140ms;
-	}
-	.hero-stagger > :global(*:nth-child(3)) {
-		animation-delay: 230ms;
-	}
-	.hero-stagger > :global(*:nth-child(4)) {
-		animation-delay: 320ms;
-	}
-	.hero-stagger > :global(*:nth-child(5)) {
-		animation-delay: 400ms;
-	}
-
-	.hero-visual {
-		animation: hero-rise 900ms cubic-bezier(0.2, 0.8, 0.2, 1) 380ms both;
-	}
-
-	@keyframes marquee {
-		to {
-			transform: translateX(-50%);
-		}
-	}
-
-	.marquee-track {
-		width: max-content;
-		animation: marquee 28s linear infinite;
-	}
-	.marquee-track:hover {
-		animation-play-state: paused;
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.hero-stagger > :global(*),
-		.hero-visual {
-			animation: none;
-		}
-		.marquee-track {
-			width: auto;
-			animation: none;
-			justify-content: center;
-		}
-		.marquee-track > :global([data-duplicate]) {
-			display: none;
-		}
-		.marquee-track > :global(div) {
-			flex-wrap: wrap;
-			justify-content: center;
-		}
-	}
-</style>
+<!-- Hero and marquee motion lives in src/routes/layout.css: a component <style>
+	 block here becomes its own render-blocking stylesheet, so the page paid an
+	 extra round trip on the critical path for ~1 KB of animation rules. -->
