@@ -377,23 +377,48 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		if (!collectionNameSchema.safeParse(name).success) return;
 		const rows = Number.isFinite(stats.rows) && stats.rows >= 0 ? Math.floor(stats.rows) : 0;
 
+		const [row] = await this.db
+			.select()
+			.from(collections)
+			.where(and(eq(collections.name, name), eq(collections.kind, 'table')))
+			.limit(1);
+		if (!row) return;
+
 		await this.db
 			.update(collections)
 			.set({ docs: rows, reportedAt: new Date() })
 			.where(and(eq(collections.name, name), eq(collections.kind, 'table')));
+		if (row.docs === rows) return;
 		this.recordEvent('rows.changed', `table "${name}" now holds ${rows} rows`);
 		await this.syncCollectionsState();
 	}
 
-	/** Debounced absolute-count report from a child. Best-effort by design. */
+	/**
+	 * Debounced absolute-count report from a child. Best-effort by design.
+	 *
+	 * Reports are a HEARTBEAT, not a change notification: children send them on
+	 * every wake (the self-healing path - see the child constructors), so most
+	 * carry a count that has not moved. Logging those made a plain read look
+	 * like a write in the activity feed, and each one pushed agent state twice,
+	 * which the dashboard answers with a refetch. The event and the state sync
+	 * belong to a real delta; the row's `reportedAt` is updated either way.
+	 */
 	async reportCollectionStats(name: string, stats: { docs: number }): Promise<void> {
 		if (!collectionNameSchema.safeParse(name).success) return;
 		const docs = Number.isFinite(stats.docs) && stats.docs >= 0 ? Math.floor(stats.docs) : 0;
+
+		const [row] = await this.db
+			.select()
+			.from(collections)
+			.where(eq(collections.name, name))
+			.limit(1);
+		if (!row) return;
 
 		await this.db
 			.update(collections)
 			.set({ docs, reportedAt: new Date() })
 			.where(eq(collections.name, name));
+		if (row.docs === docs) return;
 		this.recordEvent('documents.changed', `collection "${name}" now holds ${docs} documents`);
 		await this.syncCollectionsState();
 	}

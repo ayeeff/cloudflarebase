@@ -1311,7 +1311,10 @@ export class DbCollection extends LiveShard {
 
 	private async reportStats(): Promise<void> {
 		const config = this.config;
-		if (!config) return;
+		// Replicas wake on their own schedule and can be arbitrarily far behind
+		// the feed, so their count is neither authoritative nor newsworthy - the
+		// registry number belongs to the primary.
+		if (!config || this.role.kind !== 'primary') return;
 		try {
 			const parent = await this.parentStub(config.projectId);
 			await parent.reportCollectionStats(config.collection, { docs: await this.getDocCount() });
