@@ -348,4 +348,3 @@
 <!-- The cost palette and .cost-segment live in src/routes/layout.css: a component
 	 <style> block here becomes its own render-blocking stylesheet on the landing
 	 page, which cost a round trip to save a kilobyte. -->
-
