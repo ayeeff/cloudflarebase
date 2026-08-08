@@ -5,9 +5,9 @@ import type { RequestHandler } from './$types';
 /**
  * Public passthrough for the db agent's document API (access modes are
  * enforced inside the collection Durable Object against project JWTs, the
- * same trust shape as the auth proxy). WebSocket subscriptions do NOT go
- * through here - browsers hit /agents/db-agent/... directly, exactly like
- * the dashboard's own realtime socket.
+ * same trust shape as the auth proxy). WebSocket subscriptions never reach
+ * this handler: `applicationHandle` forwards upgrades straight to the agent,
+ * because a 101 cannot survive `toNativeResponse`.
  */
 const proxy: RequestHandler = async ({ params, request, url, platform }) => {
 	const projectId = assertProjectId(params.projectId);

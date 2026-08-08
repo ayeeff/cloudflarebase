@@ -19,6 +19,12 @@ function subscribeUrl(base: string, collection: string): string {
 	return `${base}/agents/db-agent/${DB_PROJECT}/collections/${collection}/subscribe`;
 }
 
+/** The console REST proxy base - what a client that never rewrites its
+ * baseUrl to /agents/... ends up dialling for a subscription. */
+function proxySubscribeUrl(base: string, collection: string): string {
+	return `${base}/api/projects/${DB_PROJECT}/db/collections/${collection}/subscribe`;
+}
+
 test.describe('db agent (live queries)', () => {
 	test.skip(!!process.env.BASE_URL, 'WebSocket endpoints are pinned on the local stack only');
 
@@ -98,6 +104,32 @@ test.describe('db agent (live queries)', () => {
 				'the unsubscribe ack'
 			);
 			expect(unsubscribed.id).toBe('s1');
+		} finally {
+			socket.close();
+		}
+	});
+
+	test('upgrades on the console proxy base, not only on /agents/*', async ({ request }) => {
+		// A 101 cannot be re-wrapped by `toNativeResponse`, so before the hook
+		// forwarded upgrades this exact URL answered a RangeError 500 - which is
+		// what any SDK consumer whose baseUrl did not rewrite to /agents/ hit.
+		const collection = `live-proxy-${run}`;
+		const provision = await request.put(dbAdminCollectionPath(DB_PROJECT, collection), {
+			data: { readAccess: 'public', writeAccess: 'public', replication: 'off' }
+		});
+		expect(provision.ok(), await provision.text()).toBeTruthy();
+
+		const created = await request.post(dbDocumentsPath(DB_PROJECT, collection), {
+			data: { id: 'proxied', data: { kind: 'task' } }
+		});
+		expect(created.status(), await created.text()).toBe(201);
+
+		const socket = await LiveSocket.connect(proxySubscribeUrl(WEB_WS, collection));
+		try {
+			socket.send({ type: 'subscribe', id: 'p1', query: {} });
+			const snapshot = await socket.next((frame) => frame.type === 'snapshot', 'the snapshot');
+			expect(snapshot.id).toBe('p1');
+			expect(snapshot.docs?.map((doc) => doc.id)).toEqual(['proxied']);
 		} finally {
 			socket.close();
 		}
