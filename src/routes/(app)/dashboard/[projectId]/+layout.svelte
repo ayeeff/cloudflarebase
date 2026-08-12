@@ -236,10 +236,12 @@
 	 * dead end for an anonymous visitor, so no button). */
 	const claimableDemo = $derived(!!branchCtx?.demo && data.demoClaimable);
 	const signedIn = $derived(data.projects !== null);
+	// The next param is DATA the login page validates (safeNext demands a
+	// leading slash), never an href - resolve() emits RELATIVE paths like
+	// `../dashboard/<id>` under SvelteKit's relative-paths default, which
+	// safeNext rejected, silently dropping the claim destination.
 	const loginClaimHref = $derived(
-		`${resolve('/(app)/login')}?next=${encodeURIComponent(
-			`${resolve('/(app)/dashboard/[projectId]', { projectId: rootId })}?claim=1`
-		)}`
+		`${resolve('/(app)/login')}?next=${encodeURIComponent(`/dashboard/${rootId}?claim=1`)}`
 	);
 	onMount(() => {
 		hydrated = true;

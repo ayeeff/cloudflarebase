@@ -271,6 +271,20 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		isDemoProjectId(access.projectId) &&
 		!ownership?.registered
 	) {
+		// Access is anonymous, but a signed-in operator's identity must still
+		// resolve: the demo layout's claim flow ("Keep this project", the
+		// ?claim=1 post-login auto-claim) branches on it, and without this the
+		// page renders anonymous even mid-claim - sign-in appeared to do
+		// nothing. getConsoleIdentity no-ops without a cookie, so first-time
+		// demo visits still skip the session lookup entirely.
+		if (event.request.headers.get('cookie')) {
+			event.locals.consoleIdentity = await getConsoleIdentity(
+				event.platform,
+				event.url.origin,
+				event.request.headers.get('cookie')
+			);
+			event.locals.consoleUser = event.locals.consoleIdentity?.user ?? null;
+		}
 		return resolve(event);
 	}
 

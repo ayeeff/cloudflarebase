@@ -26,9 +26,7 @@
 		signedIn = false
 	}: {
 		children: Snippet;
-		/** Widen the content column for lists; forms stay narrow. Wide surfaces
-		 * also top-align instead of centering - a list floating mid-viewport
-		 * reads as broken on tall screens; a form centered there reads as calm. */
+		/** Widen the content column for lists; forms stay narrow. */
 		wide?: boolean;
 		/** Renders the sign-out control. The operator surfaces that sit in this
 		 * shell (projects, organization, cli-auth) always have a session; the
@@ -124,11 +122,7 @@
 		</div>
 	</aside>
 
-	<main
-		class="relative flex flex-col items-center px-4 {wide
-			? 'pt-16 pb-10 lg:py-20'
-			: 'justify-center py-10'}"
-	>
+	<main class="relative flex flex-col items-center justify-center px-4 py-10">
 		<div class="absolute top-4 right-4 flex items-center gap-1">
 			{#if signedIn}
 				<Button

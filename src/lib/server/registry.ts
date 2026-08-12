@@ -494,7 +494,12 @@ export async function getBranchContext(
 	platform: App.Platform | undefined,
 	projectId: string
 ): Promise<BranchContext | null> {
-	if (!projectIdSchema.safeParse(projectId).success || isDemoProjectId(projectId)) return null;
+	// Demo-shaped ids are NOT short-circuited: a claimed demo is a registered
+	// row, and answering null here made the layout fall back to the
+	// synthesized demo context - so a successful claim still rendered the
+	// "Keep this project" CTA, as if the claim had done nothing. Unclaimed
+	// demo ids simply miss the row lookup and return null as before.
+	if (!projectIdSchema.safeParse(projectId).success) return null;
 	try {
 		const db = await getDb(platform);
 		const [row] = await db.select().from(project).where(eq(project.id, projectId)).limit(1);
