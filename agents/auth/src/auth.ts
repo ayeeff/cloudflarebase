@@ -2,9 +2,14 @@ import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { anonymous, bearer, jwt, organization } from 'better-auth/plugins';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
 import * as schema from './db/schema';
+
+/** Providers whose sign-in attests a verified email. Shared between the
+ * accountLinking trust list and the credential-supersession hook so the two
+ * halves of that policy can never disagree. */
+const TRUSTED_SOCIAL_PROVIDERS: string[] = ['google', 'github'];
 
 export type AuthDatabase = DrizzleSqliteDODatabase<typeof schema>;
 
@@ -230,14 +235,17 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 		},
 		account: {
 			accountLinking: {
-				// Both providers attest verified emails, so implicit linking on the
-				// OAuth callback already applies; trusting them additionally allows
-				// EXPLICIT /link-social from a live session whose local email is
-				// still unverified (linking from a session proves account ownership
-				// on its own). requireLocalEmailVerified stays at its safe default:
-				// relaxing it would let a pre-registered unverified password account
-				// capture a later social sign-in with the same address.
-				trustedProviders: ['google', 'github'],
+				// Both providers attest verified emails, so "Continue with Google"
+				// must also work for an address that signed up with a password and
+				// never verified - Firebase's one-account-per-email behaviour. The
+				// provider just proved the visitor owns the email, which outranks a
+				// password whose holder never did: requireLocalEmailVerified is off,
+				// and the account-creation hook below closes the takeover window
+				// that gate existed for by dropping the never-verified credential
+				// the moment a trusted provider supersedes it. Trust additionally
+				// allows EXPLICIT /link-social from a live session.
+				trustedProviders: TRUSTED_SOCIAL_PROVIDERS,
+				requireLocalEmailVerified: false,
 			},
 		},
 		user: {
@@ -303,6 +311,43 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 				update: {
 					after: async (session) => {
 						await config.onSessionActivity?.(session, 'refreshed');
+					},
+				},
+			},
+			account: {
+				create: {
+					// The other half of requireLocalEmailVerified: false above. This
+					// hook runs before Better Auth flips emailVerified on the linked
+					// user, so "trusted provider linked onto a STILL-unverified user"
+					// means whoever set the local password never proved they own the
+					// address - the provider sign-in just did. Drop that credential
+					// and every pre-existing session so a pre-registered password
+					// cannot linger as a backdoor into the linked account; the
+					// provider becomes the way in, and the real owner re-adds a
+					// password via reset if they want one. The session for this very
+					// sign-in is created after the hook and survives.
+					after: async (account) => {
+						if (!TRUSTED_SOCIAL_PROVIDERS.includes(account.providerId)) return;
+						const [owner] = await config.db
+							.select({ emailVerified: schema.user.emailVerified })
+							.from(schema.user)
+							.where(eq(schema.user.id, account.userId))
+							.limit(1);
+						if (!owner || owner.emailVerified) return;
+						const dropped = await config.db
+							.delete(schema.account)
+							.where(
+								and(
+									eq(schema.account.userId, account.userId),
+									eq(schema.account.providerId, 'credential'),
+								),
+							)
+							.returning({ id: schema.account.id });
+						if (dropped.length > 0) {
+							await config.db
+								.delete(schema.session)
+								.where(eq(schema.session.userId, account.userId));
+						}
 					},
 				},
 			},
