@@ -124,7 +124,13 @@ export interface ProjectAuthConfig {
 export function createProjectAuth(config: ProjectAuthConfig) {
 	return betterAuth({
 		appName: `cloudflarebase:${config.projectId}`,
-		basePath: '/api/auth',
+		// The PUBLIC path of this project's auth endpoints on a dashboard
+		// deployment, not the agent-internal /api/auth the DO dispatches on
+		// (agent.ts rewrites ingress to this base). Better Auth derives every
+		// absolute URL it hands out - email verification/reset links, OAuth
+		// redirect URIs - from request origin + basePath, so mounting it at the
+		// internal path sent visitors to a route the console guard 401s.
+		basePath: `/api/projects/${config.projectId}/auth`,
 		secret: config.secret,
 		// A deployment trusts its own origin automatically: a browser only sends
 		// an Origin equal to the URL it is actually on, so same-origin requests
@@ -221,6 +227,18 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 		socialProviders: {
 			...(config.google ? { google: config.google } : {}),
 			...(config.github ? { github: config.github } : {}),
+		},
+		account: {
+			accountLinking: {
+				// Both providers attest verified emails, so implicit linking on the
+				// OAuth callback already applies; trusting them additionally allows
+				// EXPLICIT /link-social from a live session whose local email is
+				// still unverified (linking from a session proves account ownership
+				// on its own). requireLocalEmailVerified stays at its safe default:
+				// relaxing it would let a pre-registered unverified password account
+				// capture a later social sign-in with the same address.
+				trustedProviders: ['google', 'github'],
+			},
 		},
 		user: {
 			additionalFields: {

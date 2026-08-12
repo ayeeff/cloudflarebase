@@ -27,6 +27,15 @@
 		github: 'GitHub'
 	};
 
+	// OAuth callback failures bounce back here with ?error=<code> - the
+	// errorCallbackURL passed to sign-in/social - instead of Better Auth's
+	// bare error page.
+	const oauthErrors: Record<string, string> = {
+		account_not_linked: 'This email signed up with a password - use it to sign in.',
+		unable_to_create_user: 'Sign-up was refused. A claimed console admits invited emails only.'
+	};
+	const oauthError = page.url.searchParams.get('error');
+
 	// 'sign-in' | 'sign-up': what the form submits. Open mode offers both;
 	// claimed mode keeps sign-up behind the "invited?" link (the agent admits
 	// only emails holding a pending invitation). ?signup=1 (the landing nav's
@@ -37,7 +46,9 @@
 	let name = $state('');
 	let email = $state('');
 	let password = $state('');
-	let error = $state<string | null>(null);
+	let error = $state<string | null>(
+		oauthError ? (oauthErrors[oauthError] ?? 'Social sign-in failed - try again.') : null
+	);
 	let submitting = $state(false);
 	// Open-mode sign-up ends here: no session until the email is verified.
 	let verifyNotice = $state(false);
@@ -55,7 +66,15 @@
 				{
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify(signingUp ? { name, email, password } : { email, password })
+					// callbackURL is where the emailed verification link lands after
+					// verifying - the login page, not `/` (the marketing page on a
+					// demo deployment). A failed unverified sign-in re-sends the
+					// mail with the same destination.
+					body: JSON.stringify(
+						signingUp
+							? { name, email, password, callbackURL: '/login' }
+							: { email, password, callbackURL: '/login' }
+					)
 				}
 			);
 
@@ -90,7 +109,8 @@
 	 * URL and the browser navigates there; the OAuth callback lands the session
 	 * cookie and redirects to callbackURL. In claimed mode unknown accounts
 	 * bounce (the console refuses to create users beyond the owner and invited
-	 * emails); open mode registers them implicitly.
+	 * emails); open mode registers them implicitly. On the first-run claim the
+	 * provider account simply becomes the owner.
 	 */
 	async function signInWithProvider(provider: string) {
 		submitting = true;
@@ -100,7 +120,13 @@
 			const response = await fetch(`${CONSOLE_AUTH_BASE}/sign-in/social`, {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ provider, callbackURL: data.next })
+				body: JSON.stringify({
+					provider,
+					callbackURL: data.next,
+					// Callback failures return here (?error=<code>) instead of
+					// stranding the visitor on Better Auth's error page.
+					errorCallbackURL: `/login?next=${encodeURIComponent(data.next)}`
+				})
 			});
 			const body = (await response.json().catch(() => null)) as { url?: string } | null;
 
@@ -185,7 +211,9 @@
 				</p>
 			</div>
 
-			{#if !claiming && data.socialProviders.length > 0}
+			<!-- Also offered on the first-run claim: the agent admits the first
+			     account on every path, so the owner can be a Google/GitHub identity. -->
+			{#if data.socialProviders.length > 0}
 				<div class="space-y-2" data-testid="console-social-providers">
 					{#each data.socialProviders as provider (provider)}
 						<Button

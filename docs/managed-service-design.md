@@ -9,7 +9,13 @@ that opens sign-ups - it must come last, after the ownership guard is
 live): 1. deploy agents by hand (auth -> db), 2. deploy the web worker, 3. sign in once to mint the founder's personal org, 4. run
 `node scripts/backfill-org.mjs --org <orgId>` so no pre-org registry row
 stays visible to every account, 5. set `CONSOLE_SIGNUPS=open` in the
-auth worker's env.production vars and redeploy it.
+auth worker's env.production vars and redeploy it. Optional, any time
+after step 1: console social sign-in - register Google/GitHub OAuth apps
+with redirect URI
+`https://cloudflarebase.com/api/projects/console/auth/callback/<provider>`
+and `wrangler secret put GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` /
+`GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` on the auth worker (console
+instance only; per-project credentials stay in admin settings).
 
 cloudflarebase.com becomes a managed Firebase alternative: sign up, create a
 project, `cloudflarebase deploy`, and your app is live at

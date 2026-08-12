@@ -86,9 +86,15 @@ export interface AuthAgentBindings {
 	DEMO_MODE?: 'true';
 	DEMO_TTL_HOURS?: string;
 
-	/** Social sign-in, also configurable per project from the console. */
+	/**
+	 * Social sign-in for the CONSOLE instance (deployment-level secrets; the
+	 * OAuth redirect URI is per project, so they never spread to other
+	 * projects). Customer projects configure providers via PUT /admin/settings.
+	 */
 	GOOGLE_CLIENT_ID?: string;
 	GOOGLE_CLIENT_SECRET?: string;
+	GITHUB_CLIENT_ID?: string;
+	GITHUB_CLIENT_SECRET?: string;
 
 	/** Empty disables reporting, which is the default - no DSN is committed. */
 	SENTRY_DSN?: string;

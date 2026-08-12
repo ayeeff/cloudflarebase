@@ -351,12 +351,8 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			getRequestCountry: () => this.requestCountry,
 			getRolePermissions: (role) =>
 				(this.state.roles ?? DEFAULT_ROLES).find((entry) => entry.name === role)?.permissions ?? [],
-			google:
-				this.socialCredentials.google ??
-				(this.env.GOOGLE_CLIENT_ID && this.env.GOOGLE_CLIENT_SECRET
-					? { clientId: this.env.GOOGLE_CLIENT_ID, clientSecret: this.env.GOOGLE_CLIENT_SECRET }
-					: undefined),
-			github: this.socialCredentials.github,
+			google: this.socialCredentials.google ?? this.envSocialCredentials('GOOGLE'),
+			github: this.socialCredentials.github ?? this.envSocialCredentials('GITHUB'),
 			// Demo projects never send mail: the addresses are strangers' and the
 			// sending domain's reputation is not worth a throwaway signup flow.
 			sendEmail:
@@ -413,6 +409,17 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			},
 		});
 		return this._auth;
+	}
+
+	/**
+	 * Where this project's Better Auth is mounted: the public proxy path,
+	 * mirrored in createProjectAuth's basePath. Ingress still dispatches on the
+	 * agent-internal /api/auth prefix and is rewritten to this base before the
+	 * handler runs, so the URLs Better Auth derives from it (email links, OAuth
+	 * redirect URIs) point at routes the dashboard serves unauthenticated.
+	 */
+	private get authBasePath(): string {
+		return `/api/projects/${this.name}/auth`;
 	}
 
 	/**
@@ -617,13 +624,28 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		await this.destroy();
 	}
 
+	/**
+	 * Environment OAuth credentials configure the CONSOLE's social sign-in and
+	 * nothing else. They are deployment-level secrets, and the redirect URI
+	 * Better Auth derives is per project - one registered OAuth app can only
+	 * ever answer one project's callback, so spreading the env credentials
+	 * across every project (demos included) would advertise sign-in buttons
+	 * whose callbacks the provider refuses. Customer projects configure their
+	 * own apps per project via PUT /admin/settings.
+	 */
+	private envSocialCredentials(
+		provider: 'GOOGLE' | 'GITHUB',
+	): { clientId: string; clientSecret: string } | undefined {
+		if (this.name !== CONSOLE_PROJECT_ID) return undefined;
+		const clientId = this.env[`${provider}_CLIENT_ID`];
+		const clientSecret = this.env[`${provider}_CLIENT_SECRET`];
+		return clientId && clientSecret ? { clientId, clientSecret } : undefined;
+	}
+
 	private get configuredSocialProviders(): string[] {
 		return [
-			...(this.socialCredentials.google ||
-			(this.env.GOOGLE_CLIENT_ID && this.env.GOOGLE_CLIENT_SECRET)
-				? ['google']
-				: []),
-			...(this.socialCredentials.github ? ['github'] : []),
+			...(this.socialCredentials.google || this.envSocialCredentials('GOOGLE') ? ['google'] : []),
+			...(this.socialCredentials.github || this.envSocialCredentials('GITHUB') ? ['github'] : []),
 		];
 	}
 
@@ -1026,13 +1048,18 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			}
 			this.requestCountry =
 				(request.cf?.country as string | undefined) ?? request.headers.get('cf-ipcountry');
-			// Better Auth sees the request at its basePath, on the caller's origin,
-			// so cookies and redirect URLs resolve against the dashboard origin.
+			// Better Auth sees the request at its basePath - the project's PUBLIC
+			// proxy path - on the caller's origin, so cookies, redirect URLs, and
+			// every absolute URL it generates (verification links, OAuth redirect
+			// URIs) resolve to routes a browser can actually reach.
 			const signingOut = /\/sign-out$/.test(subPath);
 			const currentSession = signingOut
 				? await this.auth.api.getSession({ headers: request.headers }).catch(() => null)
 				: null;
-			const authRequest = new Request(`${url.origin}${subPath}${url.search}`, request);
+			const authRequest = new Request(
+				`${url.origin}${this.authBasePath}${subPath.slice('/api/auth'.length)}${url.search}`,
+				request,
+			);
 			const response = await this.auth.handler(authRequest);
 
 			// Sign-out deletes the session row without a database hook - refresh
@@ -1211,7 +1238,10 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		if (sessionHeaders.get('authorization')) sessionHeaders.delete('cookie');
 		const sessionResponse = await this.auth
 			.handler(
-				new Request(`${origin}/api/auth/get-session`, { method: 'GET', headers: sessionHeaders }),
+				new Request(`${origin}${this.authBasePath}/get-session`, {
+					method: 'GET',
+					headers: sessionHeaders,
+				}),
 			)
 			.catch(() => null);
 		if (!sessionResponse || !sessionResponse.ok) return null;
