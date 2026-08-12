@@ -341,10 +341,19 @@ hosted build service (webhook-driven builds on our infra stay Phase D):
   missing (the deploy token authorizes exactly that) - so
   preview-per-git-branch falls out of the branches design.
 - **The dashboard Hosting page has a "Connect GitHub" card** that mints a
-  deploy token and generates the ready-to-commit workflow YAML with the
-  project and app filled in. Nothing to install, no GitHub App, no OAuth
-  - the trust anchor is the token the operator pastes into their repo
-    secrets.
+  deploy token and generates the ready-to-commit workflow YAML
+  (single-sourced in `src/lib/hosting-workflow.ts`). Nothing to install,
+  no GitHub App, no OAuth - the trust anchor is the token the operator
+  pastes into their repo secrets. The card deep-links GitHub's new-file
+  editor with the workflow PRE-FILLED plus the repo's secrets page, so
+  setup is two clicks on GitHub - after which every push deploys
+  automatically. (Asked at build time: could this be a
+  Workers-Builds-style bot with no setup at all? A true bot means running
+  the user's `npm run build` on OUR infrastructure - webhook → clone →
+  build - which is arbitrary code execution at build time, i.e. the build
+  farm this section explicitly defers. The workflow gets the same
+  push-to-deploy behaviour with GitHub's runners doing the building; the
+  GitHub App + build farm upgrade is Phase D.)
 
 ### Guardrails from day one
 
