@@ -20,6 +20,7 @@ const SCHEMA_STATEMENTS = [
 		name text NOT NULL,
 		parent_id text,
 		branch_name text,
+		org_id text,
 		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL
 	)`,
 	`CREATE INDEX IF NOT EXISTS project_created_at ON project (created_at)`,
@@ -55,7 +56,9 @@ const SCHEMA_STATEMENTS = [
 const UPGRADE_STATEMENTS = [
 	`ALTER TABLE project ADD COLUMN parent_id text`,
 	`ALTER TABLE project ADD COLUMN branch_name text`,
-	`CREATE INDEX IF NOT EXISTS project_parent ON project (parent_id)`
+	`ALTER TABLE project ADD COLUMN org_id text`,
+	`CREATE INDEX IF NOT EXISTS project_parent ON project (parent_id)`,
+	`CREATE INDEX IF NOT EXISTS project_org ON project (org_id)`
 ];
 
 /**

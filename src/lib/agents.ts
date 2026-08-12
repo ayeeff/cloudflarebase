@@ -224,6 +224,9 @@ export const registryProjectSchema = z
 		parentId: z.string().nullable(),
 		/** The branch's short name (`staging`); null on roots (`main`). */
 		branchName: z.string().nullable(),
+		/** Owning organization (console AuthAgent org id); null = unowned
+		 * legacy/self-hosted row, visible to any operator. */
+		orgId: z.string().nullable(),
 		createdAt: z.iso.datetime()
 	})
 	.meta({ id: 'RegistryProject', description: 'A project or branch this installation owns.' });

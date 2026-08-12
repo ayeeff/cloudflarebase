@@ -29,7 +29,8 @@ export const RESERVED_PROJECT_IDS = new Set([
 	'setup',
 	'new',
 	'health',
-	'fleet'
+	'fleet',
+	'organization'
 ]);
 
 /**

@@ -26,13 +26,21 @@ export const project = sqliteTable(
 		parentId: text('parent_id'),
 		/** The branch's short name (`staging`); null on roots (`main`). */
 		branchName: text('branch_name'),
+		/** Owning organization - a row in the console AuthAgent's org tables
+		 * (docs/managed-service-design.md). The registry knows which org owns a
+		 * project; the agent knows who is in the org; the guard joins the two
+		 * per request. Null = legacy/self-hosted row, visible to any operator -
+		 * exactly the pre-Phase-A behaviour, so a claimed-mode install never
+		 * notices ownership exists. Branch rows copy the root's value. */
+		orgId: text('org_id'),
 		createdAt: integer('created_at', { mode: 'timestamp_ms' })
 			.notNull()
 			.default(sql`(unixepoch() * 1000)`)
 	},
 	(table) => [
 		index('project_created_at').on(table.createdAt),
-		index('project_parent').on(table.parentId)
+		index('project_parent').on(table.parentId),
+		index('project_org').on(table.orgId)
 	]
 );
 

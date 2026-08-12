@@ -7,7 +7,7 @@ import { project, projectAgent } from '$lib/server/db/schema';
 import { requireAgent } from '$lib/server/agents';
 import { projectIdSchema } from '$lib/schemas/auth';
 import type { Cookies } from '@sveltejs/kit';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
@@ -50,6 +50,7 @@ function toDto(row: {
 	name: string;
 	parentId: string | null;
 	branchName: string | null;
+	orgId: string | null;
 	createdAt: Date;
 }): RegistryProject {
 	return {
@@ -57,6 +58,7 @@ function toDto(row: {
 		name: row.name,
 		parentId: row.parentId,
 		branchName: row.branchName,
+		orgId: row.orgId,
 		createdAt: row.createdAt.toISOString()
 	};
 }
@@ -65,11 +67,25 @@ function toDto(row: {
  * Lists the installation's projects, oldest first. Returns an empty list
  * rather than throwing when the database cannot be reached, so a first-run
  * console renders its empty state instead of an error page.
+ *
+ * `orgIds` scopes the list to rows those organizations own PLUS unowned
+ * (org_id NULL) legacy/self-hosted rows, which every operator may see.
+ * Omitting it returns everything - for callers that predate ownership or
+ * genuinely need the whole registry (the erase fan-out, tests).
  */
-export async function listProjects(platform: App.Platform | undefined): Promise<RegistryProject[]> {
+export async function listProjects(
+	platform: App.Platform | undefined,
+	orgIds?: string[]
+): Promise<RegistryProject[]> {
 	try {
 		const db = await getDb(platform);
-		const rows = await db.select().from(project).orderBy(asc(project.createdAt));
+		const scope =
+			orgIds === undefined
+				? undefined
+				: orgIds.length
+					? or(isNull(project.orgId), inArray(project.orgId, orgIds))
+					: isNull(project.orgId);
+		const rows = await db.select().from(project).where(scope).orderBy(asc(project.createdAt));
 		return rows.map(toDto);
 	} catch (cause) {
 		// Degrading to "no projects" is right for a first run but wrong to do
@@ -89,11 +105,18 @@ export type CreateProjectResult =
 
 export async function createProject(
 	platform: App.Platform | undefined,
-	input: unknown
+	input: unknown,
+	orgId: string | null = null
 ): Promise<CreateProjectResult> {
 	const parsed = createProjectSchema.safeParse(input);
 	if (!parsed.success) {
 		return { ok: false, status: 400, error: parsed.error.issues[0]?.message ?? 'invalid project' };
+	}
+	if (isDemoProjectId(parsed.data.id)) {
+		// The claim route is the ONLY minter of demo-shaped registry rows: a row
+		// inserted here would leave the agents' TTL armed under a registered
+		// project, because only the claim fans out the cap-lifting flag.
+		return { ok: false, status: 400, error: 'demo projects are claimed, not created' };
 	}
 
 	const db = await getDb(platform);
@@ -114,7 +137,7 @@ export async function createProject(
 
 	const [created] = await db
 		.insert(project)
-		.values({ id: parsed.data.id, name: parsed.data.name, createdAt: new Date() })
+		.values({ id: parsed.data.id, name: parsed.data.name, orgId, createdAt: new Date() })
 		.returning();
 
 	await enableRegistryAgents(db, created.id);
@@ -206,6 +229,9 @@ export async function createBranch(
 			name: `${root.name} (${parsed.data.branch})`,
 			parentId: rootId,
 			branchName: parsed.data.branch,
+			// A branch belongs to whoever owns its root - ownership follows the
+			// family, never the individual row.
+			orgId: root.orgId,
 			createdAt: new Date()
 		})
 		.returning();
@@ -289,6 +315,7 @@ export function demoBranchContext(
 			name: `Demo (${branchName})`,
 			parentId: rootId,
 			branchName,
+			orgId: null,
 			createdAt: new Date(0).toISOString()
 		}))
 		.filter((branch) => projectIdSchema.safeParse(branch.id).success);
