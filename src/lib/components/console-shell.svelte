@@ -1,7 +1,11 @@
 <script lang="ts">
+	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import GithubLogo from '$lib/components/github-logo.svelte';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { CONSOLE_AUTH_BASE } from '$lib/console';
+	import { LogOut } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 
 	/**
@@ -19,12 +23,36 @@
 	 */
 	let {
 		children,
-		wide = false
+		wide = false,
+		signedIn = false
 	}: {
 		children: Snippet;
-		/** Widen the content column for lists; forms stay narrow. */
+		/** Widen the content column for lists; forms stay narrow. Wide surfaces
+		 * also top-align instead of centering - a list floating mid-viewport
+		 * reads as broken on tall screens; a form centered there reads as calm. */
 		wide?: boolean;
+		/** Renders the sign-out control. The operator surfaces that sit in this
+		 * shell (projects, organization, cli-auth) always have a session; the
+		 * login page never does. */
+		signedIn?: boolean;
 	} = $props();
+
+	let signingOut = $state(false);
+
+	async function signOut() {
+		signingOut = true;
+		try {
+			await fetch(`${CONSOLE_AUTH_BASE}/sign-out`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: '{}'
+			});
+			await invalidateAll();
+			await goto(resolve('/login'));
+		} finally {
+			signingOut = false;
+		}
+	}
 </script>
 
 <div class="grid min-h-svh lg:grid-cols-2">
@@ -34,7 +62,7 @@
 		<!-- Faint engineering dot grid, fading toward the lower panel. -->
 		<div
 			aria-hidden="true"
-			class="pointer-events-none absolute inset-0 bg-[radial-gradient(oklch(0.93_0.03_80/10%)_1px,transparent_1px)] [mask-image:linear-gradient(200deg,black_15%,transparent_70%)] [background-size:22px_22px]"
+			class="pointer-events-none absolute inset-0 bg-[radial-gradient(oklch(0.93_0.03_80/10%)_1px,transparent_1px)] mask-[linear-gradient(200deg,black_15%,transparent_70%)] bg-size-[22px_22px]"
 		></div>
 
 		<!-- Ember horizon: the edge network glowing past the fold. -->
@@ -63,10 +91,13 @@
 			class="pointer-events-none absolute bottom-30 left-[78%] size-1.5 rounded-full bg-primary shadow-[0_0_8px_1px_oklch(0.7163_0.1706_53.45/70%)]"
 		></span>
 
-		<div class="relative flex items-center gap-2.5">
+		<a
+			href={resolve('/')}
+			class="relative flex w-fit items-center gap-2.5 transition-opacity hover:opacity-80"
+		>
 			<img src="/brand/mark.svg" alt="" class="h-7 w-7" />
 			<span class="text-lg font-semibold tracking-tight">Cloudflarebase</span>
-		</div>
+		</a>
 
 		<div class="relative max-w-md space-y-6">
 			<h2 class="text-3xl leading-tight font-semibold tracking-tight text-balance">
@@ -112,14 +143,32 @@
 		</div>
 	</aside>
 
-	<main class="relative flex flex-col items-center justify-center px-4 py-10">
-		<ModeToggle class="absolute top-4 right-4" variant="ghost" />
+	<main
+		class="relative flex flex-col items-center px-4 {wide
+			? 'pt-16 pb-10 lg:py-20'
+			: 'justify-center py-10'}"
+	>
+		<div class="absolute top-4 right-4 flex items-center gap-1">
+			{#if signedIn}
+				<Button
+					variant="ghost"
+					size="sm"
+					class="text-muted-foreground"
+					disabled={signingOut}
+					onclick={signOut}
+					data-testid="console-sign-out"
+				>
+					<LogOut class="size-4" /> Sign out
+				</Button>
+			{/if}
+			<ModeToggle variant="ghost" />
+		</div>
 
 		<!-- The mark repeats here only where the brand panel is hidden. -->
-		<div class="mb-8 flex items-center gap-2.5 lg:hidden">
+		<a href={resolve('/')} class="mb-8 flex items-center gap-2.5 lg:hidden">
 			<img src="/brand/mark.svg" alt="" class="h-6 w-6" />
 			<span class="font-semibold tracking-tight">Cloudflarebase</span>
-		</div>
+		</a>
 
 		<div class="w-full {wide ? 'max-w-xl' : 'max-w-sm'}">
 			{@render children()}

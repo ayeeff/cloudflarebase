@@ -132,7 +132,7 @@
 	<title>Projects · Cloudflarebase</title>
 </svelte:head>
 
-<ConsoleShell wide>
+<ConsoleShell wide signedIn>
 	<div class="space-y-8">
 		<div class="flex flex-wrap items-start justify-between gap-3">
 			<div class="space-y-1.5">

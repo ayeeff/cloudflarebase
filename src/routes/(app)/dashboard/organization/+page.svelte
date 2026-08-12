@@ -167,7 +167,7 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<ConsoleShell wide>
+<ConsoleShell wide signedIn>
 	<div class="space-y-8" data-testid="organization-page">
 		<div class="space-y-3">
 			<Button
