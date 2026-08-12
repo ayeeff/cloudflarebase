@@ -5,9 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { addCommand } from './commands/add.js';
 import { deployCommand } from './commands/deploy.js';
 import { initCommand } from './commands/init.js';
+import { linkCommand } from './commands/link.js';
 import { loginCommand } from './commands/login.js';
 import { logoutCommand } from './commands/logout.js';
 import { schemaCommand } from './commands/schema.js';
+import { secretCommand } from './commands/secret.js';
 import { blank, bold, dim, error, info, UserError } from './lib/log.js';
 
 const usage = (): void => {
@@ -16,7 +18,15 @@ const usage = (): void => {
 	info('Usage:');
 	info(`  cloudflarebase init <name>    ${dim('scaffold a Worker with the auth agent installed')}`);
 	info(`  cloudflarebase add <agent>    ${dim('install an agent into an existing Worker')}`);
-	info(`  cloudflarebase deploy         ${dim('deploy, and set TRUSTED_ORIGINS on first run')}`);
+	info(
+		`  cloudflarebase link           ${dim('connect this directory to a managed console project')}`
+	);
+	info(
+		`  cloudflarebase deploy         ${dim('deploy - managed when linked, wrangler otherwise')}`
+	);
+	info(
+		`  cloudflarebase secret set <N> ${dim('set a secret on the linked app (kept across deploys)')}`
+	);
 	info(
 		`  cloudflarebase login <url>    ${dim('authenticate against a console (browser approval)')}`
 	);
@@ -45,8 +55,14 @@ async function main(): Promise<void> {
 		case 'add':
 			await addCommand(cwd, rest);
 			return;
+		case 'link':
+			await linkCommand(cwd, rest);
+			return;
 		case 'deploy':
-			await deployCommand(cwd);
+			await deployCommand(cwd, rest);
+			return;
+		case 'secret':
+			await secretCommand(cwd, rest);
 			return;
 		case 'login':
 			await loginCommand(rest);
