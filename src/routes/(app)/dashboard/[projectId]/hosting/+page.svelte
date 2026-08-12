@@ -231,7 +231,7 @@
 				</Card.Title>
 				<Card.Description>
 					Demo projects cannot deploy apps. Keep this project (the button in the header) to claim it
-					under your account - then <code class="font-mono text-xs">cloudflarebase link</code>
+					under your account - then <code class="font-mono text-xs">cloudflarebase init</code>
 					connects a repository and every deploy ships to
 					<code class="font-mono text-xs">&lt;app&gt;.cfbase.dev</code>.
 				</Card.Description>
@@ -271,7 +271,7 @@
 						<p>
 							In your app's repository:
 							<code class="ml-1 rounded bg-muted px-1.5 py-0.5 font-mono text-xs"
-								>npx @cloudflarebase/cli link</code
+								>npx @cloudflarebase/cli init</code
 							>
 							then
 							<code class="ml-1 rounded bg-muted px-1.5 py-0.5 font-mono text-xs"
@@ -515,7 +515,7 @@
 									Every commit deploys automatically from then on - Workers-Builds-style, with
 									GitHub running the build. Make sure the repo carries the
 									<code class="font-mono">cloudflarebase.json</code> written by
-									<code class="font-mono">cloudflarebase link</code>.
+									<code class="font-mono">cloudflarebase init</code>.
 								</p>
 							</li>
 						</ol>

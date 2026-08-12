@@ -19,7 +19,7 @@ import { readTrustedOrigins } from '../lib/wrangler-config.js';
 /**
  * `cloudflarebase deploy` - deploy, branching on context:
  *
- * - `cloudflarebase.json` present (written by `cloudflarebase link`): MANAGED
+ * - `cloudflarebase.json` present (written by bare `cloudflarebase init`): MANAGED
  *   deploy against the console's hosting API. The git branch decides the
  *   target: the default branch deploys the root, anything else deploys
  *   `<root>--<branch>` (auto-created), so preview-per-git-branch falls out.
@@ -33,8 +33,8 @@ export async function deployCommand(projectDir: string, rest: string[] = []): Pr
 	}
 	if (rest.length) {
 		throw new UserError(
-			'Deploy flags need a linked project.',
-			'Run `cloudflarebase link` first - flags like --branch only apply to managed deploys.'
+			'Deploy flags need an initialized project.',
+			'Run `cloudflarebase init` first - flags like --branch only apply to managed deploys.'
 		);
 	}
 	await selfHostedDeploy(projectDir);
@@ -226,7 +226,7 @@ async function selfHostedDeploy(projectDir: string): Promise<void> {
 	} catch {
 		throw new UserError(
 			'No wrangler.jsonc found - nothing to deploy.',
-			'Run `cloudflarebase init <name>` to scaffold a project, or `cloudflarebase link` for managed hosting.'
+			'Run `cloudflarebase init <name>` to scaffold a project, or bare `cloudflarebase init` for managed hosting.'
 		);
 	}
 

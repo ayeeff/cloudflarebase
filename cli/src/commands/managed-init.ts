@@ -5,13 +5,14 @@ import { blank, bold, dim, info, success, UserError } from '../lib/log.js';
 import { APP_NAME, writeManagedConfig } from '../lib/managed.js';
 
 /**
- * `cloudflarebase link` - connect this directory to a managed console project
- * (docs/managed-service-design.md, Phase B).
- *
- * Picks (or creates) a project, claims an app subdomain - showing the
- * auto-numbered suggestion first when the wanted name is taken, because
- * collisions never fail - and writes `cloudflarebase.json`, which is what
- * flips `cloudflarebase deploy` into managed mode.
+ * Bare `cloudflarebase init` - connect the CURRENT directory to a managed
+ * console project (docs/managed-service-design.md, Phase B). `init <name>`
+ * stays the self-hosted scaffold; the wrangler/Netlify-style bare form is
+ * "initialize cloudflarebase here": pick (or create) a project, claim an app
+ * subdomain - showing the auto-numbered suggestion first when the wanted
+ * name is taken, because collisions never fail - and write
+ * `cloudflarebase.json`, which is what flips `cloudflarebase deploy` into
+ * managed mode.
  */
 
 interface Flags {
@@ -38,7 +39,7 @@ interface RegistryProject {
 	parentId: string | null;
 }
 
-export async function linkCommand(projectDir: string, rest: string[]): Promise<void> {
+export async function managedInitCommand(projectDir: string, rest: string[]): Promise<void> {
 	const flags = parseFlags(rest);
 	const config = await loadConfig();
 
@@ -82,7 +83,7 @@ export async function linkCommand(projectDir: string, rest: string[]): Promise<v
 			}
 		}
 		if (projectId.includes('--')) {
-			throw new UserError('Link the ROOT project - branches are decided per deploy.');
+			throw new UserError('Initialize against the ROOT project - branches are decided per deploy.');
 		}
 
 		// 2. Choose the app name, defaulting to the project id.
@@ -140,7 +141,7 @@ export async function linkCommand(projectDir: string, rest: string[]): Promise<v
 		});
 
 		blank();
-		success(`Linked to ${bold(projectId)} as ${bold(claimed.subdomain)}`);
+		success(`Initialized: ${bold(projectId)} as ${bold(claimed.subdomain)}`);
 		info(`  ${dim('·')} ${file} written - commit it; \`cloudflarebase deploy\` is now managed.`);
 		info(
 			`  ${dim('·')} Root deploys serve at ${bold(`${claimed.subdomain}.cfbase.dev`)}; a branch <b> serves at ${claimed.subdomain}-<b>.cfbase.dev.`

@@ -2,7 +2,7 @@ import { AGENT_REGISTRY } from '$lib/agent-registry';
 import { agentUrl, assertProjectId, requireAgent, toNativeResponse } from '$lib/server/agents';
 import type { RequestHandler } from './$types';
 
-/** Operator proxy: set one secret on a deployed app (`cloudflarebase secret set`). */
+/** Operator proxy: set one secret on a deployed app (`cloudflarebase secret put`). */
 export const POST: RequestHandler = async ({ params, request, url, platform }) => {
 	const projectId = assertProjectId(params.projectId);
 	const entry = AGENT_REGISTRY.hosting;

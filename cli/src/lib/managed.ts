@@ -49,7 +49,7 @@ export async function readManagedConfig(projectDir: string): Promise<ManagedConf
 	) {
 		throw new UserError(
 			`${MANAGED_FILE} is malformed.`,
-			'Run `cloudflarebase link` again to relink this directory.'
+			'Run `cloudflarebase init` again to reconnect this directory.'
 		);
 	}
 	return {

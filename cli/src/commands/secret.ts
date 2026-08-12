@@ -10,7 +10,8 @@ import {
 } from '../lib/managed.js';
 
 /**
- * `cloudflarebase secret set <NAME>` - set a secret on the linked app.
+ * `cloudflarebase secret put <NAME>` - set a secret on the initialized app
+ * (`wrangler secret put` vocabulary on purpose).
  *
  * The console PATCHes the deployed script's settings with `keep_bindings`,
  * so redeploys never drop what is set here. Operator sessions only - deploy
@@ -18,9 +19,9 @@ import {
  */
 export async function secretCommand(projectDir: string, rest: string[]): Promise<void> {
 	const [subcommand, name, ...args] = rest;
-	if (subcommand !== 'set' || !name) {
+	if (subcommand !== 'put' || !name) {
 		throw new UserError(
-			'Usage: cloudflarebase secret set <NAME> [--value <value>] [--branch <name>]'
+			'Usage: cloudflarebase secret put <NAME> [--value <value>] [--branch <name>]'
 		);
 	}
 	if (!/^[A-Z][A-Z0-9_]*$/.test(name)) {
@@ -38,7 +39,7 @@ export async function secretCommand(projectDir: string, rest: string[]): Promise
 
 	const managed = await readManagedConfig(projectDir);
 	if (!managed) {
-		throw new UserError('This directory is not linked.', 'Run `cloudflarebase link` first.');
+		throw new UserError('This directory is not initialized.', 'Run `cloudflarebase init` first.');
 	}
 	const config = await loadConfig();
 	if (config.origin !== managed.origin) {

@@ -8,7 +8,8 @@ import type { RequestHandler } from './$types';
  * Subdomain claims, console-plane (the control plane owns the global
  * namespace). GET lists this project's claims; POST resolves one - with
  * `dry: true` it only reports what WOULD be claimed, which is how
- * `cloudflarebase link` shows the auto-numbered suggestion before claiming.
+ * bare `cloudflarebase init` shows the auto-numbered suggestion before
+ * claiming.
  */
 
 const claimBodySchema = z.object({

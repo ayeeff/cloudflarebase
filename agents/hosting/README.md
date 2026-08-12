@@ -27,9 +27,9 @@ served apps (dispatch namespace, API token, wildcard route).
 - An "app" is one user Worker in the dispatch namespace: a static site, an
   SSR frontend, backend functions, or all three in one artifact (modules plus
   an asset manifest).
-- Deploys go through the Cloudflarebase console (`cloudflarebase link`,
-  `cloudflarebase deploy`), which resolves the subdomain claim in its control
-  plane and pushes it here - this agent owns no global state.
+- Deploys go through the Cloudflarebase console (bare `cloudflarebase init`,
+  then `cloudflarebase deploy`), which resolves the subdomain claim in its
+  control plane and pushes it here - this agent owns no global state.
 - Every script is uploaded with a `pid-<projectId>` tag (project erase
   deletes by tag), fixed CPU/subrequest limits applied at dispatch, and
   injected `PROJECT_ID` / `CLOUDFLAREBASE_URL` vars so the SDK works out of

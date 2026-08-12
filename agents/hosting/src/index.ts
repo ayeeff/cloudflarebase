@@ -60,7 +60,7 @@ function brandedNotFound(subdomain: string, domain: string): Response {
 	<body>
 		<main>
 			<h1>Nothing is deployed at <code>${subdomain}.${domain}</code></h1>
-			<p>Claim it with <code>cloudflarebase link</code> and ship with <code>cloudflarebase deploy</code>.</p>
+			<p>Claim it with <code>cloudflarebase init</code> and ship with <code>cloudflarebase deploy</code>.</p>
 			<p><a href="https://cloudflarebase.com">cloudflarebase.com</a></p>
 		</main>
 	</body>

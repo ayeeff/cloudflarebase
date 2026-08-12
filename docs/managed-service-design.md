@@ -263,8 +263,8 @@ the deploy response, the CLI output, and the dashboard Hosting page. The
 RESOLVED subdomain is persisted on the `app` row for that
 project+branch on FIRST claim and reused verbatim afterwards - never
 re-derived - so URLs stay stable even when neighboring claims appear or
-are released later. Interactive `cloudflarebase link` shows the numbered
-suggestion before claiming; CI and branch deploys just take it.
+are released later. Interactive bare `cloudflarebase init` shows the
+numbered suggestion before claiming; CI and branch deploys just take it.
 Branch deploys inherit the family's app name and claim their own row
 lazily on first deploy - preview environments per branch fall out of
 the id scheme, the branches-design payoff repeating.
@@ -292,11 +292,15 @@ deliberately SMALL:
 
 ### The deploy flow
 
-1. `cloudflarebase link` (new CLI command) signs in via the existing
-   `/cli-auth` hand-off, picks/creates a project, claims an app subdomain
-   (showing the auto-numbered suggestion first when the wanted name is
-   taken), and writes `cloudflarebase.json` (`{ project, app, origin }` -
-   `project` is always the ROOT id; the branch is decided per deploy).
+1. Bare `cloudflarebase init` (amended at build time: originally drafted
+   as a new `link` command, renamed on user preference - the vocabulary
+   follows wrangler/Netlify, where `init` means "set up this directory",
+   while `init <name>` keeps scaffolding a self-hosted Worker) signs in
+   via the existing `/cli-auth` hand-off, picks/creates a project, claims
+   an app subdomain (showing the auto-numbered suggestion first when the
+   wanted name is taken), and writes `cloudflarebase.json`
+   (`{ project, app, origin }` - `project` is always the ROOT id; the
+   branch is decided per deploy).
 2. `cloudflarebase deploy` **branches on context**: `cloudflarebase.json`
    present → managed deploy; otherwise today's self-hosted wrangler path,
    unchanged. Managed deploy resolves the target branch (`--branch`, else
@@ -320,9 +324,9 @@ deliberately SMALL:
    `keep_bindings: ["secret_text"]` so redeploys never drop secrets, and
    bindings - injected `PROJECT_ID` + `CLOUDFLAREBASE_URL` plain-text
    vars so the SDK works out of the box, plus user vars from
-   `cloudflarebase.json`. Secrets: `cloudflarebase secret set <name>`
-   PATCHes the script settings with a `secret_text` binding under the
-   same `keep_bindings` discipline.
+   `cloudflarebase.json`. Secrets: `cloudflarebase secret put <name>`
+   (wrangler's verb) PATCHes the script settings with a `secret_text`
+   binding under the same `keep_bindings` discipline.
 4. The response is the live URL with the subdomain that was ACTUALLY
    claimed. Deploy history lands in the DO; the dashboard's Hosting page
    lists apps, deploys, tokens, and the URL per branch.

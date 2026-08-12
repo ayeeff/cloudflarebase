@@ -1,6 +1,7 @@
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { addCommand } from './add.js';
+import { managedInitCommand } from './managed-init.js';
 import { blank, bold, dim, info, step, success, UserError } from '../lib/log.js';
 import { runOrFail } from '../lib/run.js';
 
@@ -13,11 +14,17 @@ import { runOrFail } from '../lib/run.js';
  * migrations, compatibility flags, vars - arrives through `add auth` from the
  * agent package's own fragment, so there is exactly one definition of a
  * working configuration and `init` can never drift from it.
+ *
+ * BARE `cloudflarebase init` (no name) is the managed-hosting setup instead:
+ * wrangler/Netlify vocabulary for "initialize cloudflarebase in the current
+ * directory" - it connects this app to a console project and writes
+ * cloudflarebase.json (managed-init.ts).
  */
 export async function initCommand(cwd: string, args: string[]): Promise<void> {
 	const name = args[0];
-	if (!name) {
-		throw new UserError('Usage: cloudflarebase init <name>');
+	if (!name || name.startsWith('--')) {
+		await managedInitCommand(cwd, args);
+		return;
 	}
 	if (!/^[a-z0-9]([a-z0-9-]{0,52}[a-z0-9])?$/.test(name)) {
 		throw new UserError(
