@@ -2,13 +2,18 @@
 	import { resolve } from '$app/paths';
 	import GithubLogo from '$lib/components/github-logo.svelte';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
-	import { ShieldCheck } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 
 	/**
 	 * Shell for the pre-project console surfaces - sign-in, first-run claim, and
 	 * the project list. The brand panel is the only place a self-hosted install
 	 * says what it is, so it carries the positioning rather than decoration.
+	 *
+	 * The panel is deliberately theme-STABLE espresso: the scoped `dark` class on
+	 * the aside makes every shadcn token inside it resolve to the dark palette in
+	 * both themes (the `.dark` custom-property block matches the aside itself, and
+	 * the `dark:` variant matches its descendants). Striking against linen in
+	 * light mode, seamless in dark - and never touches the root theme state.
 	 *
 	 * It collapses below `lg`, where the content column takes the full width.
 	 */
@@ -24,13 +29,39 @@
 
 <div class="grid min-h-svh lg:grid-cols-2">
 	<aside
-		class="relative hidden flex-col justify-between overflow-hidden border-r bg-muted/40 p-10 lg:flex"
+		class="dark relative hidden flex-col justify-between overflow-hidden border-r bg-background p-10 text-foreground lg:flex"
 	>
-		<!-- Warm wash behind the panel, keyed off the mark's orange. -->
+		<!-- Faint engineering dot grid, fading toward the lower panel. -->
 		<div
 			aria-hidden="true"
-			class="pointer-events-none absolute -top-32 -left-24 h-96 w-96 rounded-full bg-primary/10 blur-3xl"
+			class="pointer-events-none absolute inset-0 bg-[radial-gradient(oklch(0.93_0.03_80/10%)_1px,transparent_1px)] [mask-image:linear-gradient(200deg,black_15%,transparent_70%)] [background-size:22px_22px]"
 		></div>
+
+		<!-- Ember horizon: the edge network glowing past the fold. -->
+		<div
+			aria-hidden="true"
+			class="pointer-events-none absolute -right-16 -bottom-40 -left-16 h-80 blur-md [background:radial-gradient(ellipse_70%_100%_at_50%_100%,oklch(0.7163_0.1706_53.45/35%),transparent_68%)]"
+		></div>
+		<div
+			aria-hidden="true"
+			class="pointer-events-none absolute -bottom-82 left-1/2 h-130 w-130 -translate-x-1/2 rounded-full border border-primary/20"
+		></div>
+		<div
+			aria-hidden="true"
+			class="pointer-events-none absolute -bottom-62 left-1/2 h-95 w-95 -translate-x-1/2 rounded-full border border-primary/30"
+		></div>
+		<span
+			aria-hidden="true"
+			class="pointer-events-none absolute bottom-28 left-[24%] size-1.5 rounded-full bg-primary shadow-[0_0_8px_1px_oklch(0.7163_0.1706_53.45/70%)]"
+		></span>
+		<span
+			aria-hidden="true"
+			class="pointer-events-none absolute bottom-16 left-[58%] size-1.5 rounded-full bg-primary shadow-[0_0_8px_1px_oklch(0.7163_0.1706_53.45/70%)]"
+		></span>
+		<span
+			aria-hidden="true"
+			class="pointer-events-none absolute bottom-30 left-[78%] size-1.5 rounded-full bg-primary shadow-[0_0_8px_1px_oklch(0.7163_0.1706_53.45/70%)]"
+		></span>
 
 		<div class="relative flex items-center gap-2.5">
 			<img src="/brand/mark.svg" alt="" class="h-7 w-7" />
@@ -46,11 +77,24 @@
 				database, at the edge, in your account.
 			</p>
 
-			<div class="flex items-start gap-3 rounded-lg border bg-background/60 p-4">
-				<ShieldCheck class="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-				<p class="text-sm text-muted-foreground">
-					This console runs on its own auth agent - the same stack your projects use.
+			<div
+				class="space-y-1.5 rounded-lg border bg-card/80 p-4 font-mono text-xs leading-relaxed shadow-[0_10px_26px_-14px_oklch(0.1_0.01_60/60%)]"
+			>
+				<p><span class="text-primary">$</span> npx cloudflarebase init my-app</p>
+				<p><span class="text-primary">$</span> cloudflarebase deploy</p>
+				<p>
+					<span class="text-[oklch(0.72_0.15_150)]">✓</span> Deployed
+					<span class="text-muted-foreground">- my-app.cfbase.dev</span>
 				</p>
+			</div>
+
+			<div
+				class="flex items-center gap-2.5 font-mono text-[11px] tracking-wide text-muted-foreground"
+			>
+				<span
+					class="size-1.5 shrink-0 rounded-full bg-[oklch(0.72_0.15_150)] shadow-[0_0_7px_oklch(0.72_0.15_150/80%)]"
+				></span>
+				console · auth-agent · SQLite at the edge
 			</div>
 		</div>
 

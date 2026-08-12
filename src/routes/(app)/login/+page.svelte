@@ -3,10 +3,13 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import ConsoleShell from '$lib/components/console-shell.svelte';
+	import GithubLogo from '$lib/components/github-logo.svelte';
+	import GoogleLogo from '$lib/components/google-logo.svelte';
 	import { CONSOLE_AUTH_BASE } from '$lib/console';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import type { Component } from 'svelte';
 
 	let { data } = $props();
 
@@ -26,6 +29,13 @@
 		google: 'Google',
 		github: 'GitHub'
 	};
+	const socialLogos: Record<string, Component<{ class?: string }>> = {
+		google: GoogleLogo,
+		github: GithubLogo
+	};
+	// Two known providers sit side by side with short labels; a lone or unknown
+	// provider gets a full-width "Continue with …" button instead.
+	const socialTwoUp = $derived(data.socialProviders.length > 1);
 
 	// OAuth callback failures bounce back here with ?error=<code> - the
 	// errorCallbackURL passed to sign-in/social - instead of Better Auth's
@@ -214,23 +224,31 @@
 			<!-- Also offered on the first-run claim: the agent admits the first
 			     account on every path, so the owner can be a Google/GitHub identity. -->
 			{#if data.socialProviders.length > 0}
-				<div class="space-y-2" data-testid="console-social-providers">
+				<div
+					class="grid gap-2 {socialTwoUp ? 'grid-cols-2' : ''}"
+					data-testid="console-social-providers"
+				>
 					{#each data.socialProviders as provider (provider)}
+						{@const Logo = socialLogos[provider]}
 						<Button
 							type="button"
 							variant="outline"
 							class="w-full"
 							disabled={submitting}
+							aria-label="Continue with {socialLabels[provider] ?? provider}"
 							onclick={() => signInWithProvider(provider)}
 						>
-							Continue with {socialLabels[provider] ?? provider}
+							{#if Logo}<Logo class="size-4" />{/if}
+							{socialTwoUp
+								? (socialLabels[provider] ?? provider)
+								: `Continue with ${socialLabels[provider] ?? provider}`}
 						</Button>
 					{/each}
 				</div>
 
 				<div class="flex items-center gap-3 text-xs text-muted-foreground">
 					<span class="h-px flex-1 bg-border"></span>
-					or with email
+					or continue with email
 					<span class="h-px flex-1 bg-border"></span>
 				</div>
 			{/if}
@@ -264,7 +282,12 @@
 					<p class="text-sm text-destructive" data-testid="console-login-error">{error}</p>
 				{/if}
 
-				<Button type="submit" class="w-full" disabled={submitting} data-testid="console-submit">
+				<Button
+					type="submit"
+					class="w-full bg-linear-to-b from-[oklch(0.745_0.168_55)] to-[oklch(0.695_0.172_51)] shadow-[0_1px_2px_oklch(0.5_0.15_53/35%),0_4px_18px_-6px_oklch(0.7163_0.1706_53.45/50%),inset_0_1px_0_oklch(1_0_0/22%)] transition-[filter] hover:brightness-105"
+					disabled={submitting}
+					data-testid="console-submit"
+				>
 					{submitting
 						? 'Working…'
 						: claiming
