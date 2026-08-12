@@ -13,11 +13,10 @@
 	 * the project list. The brand panel is the only place a self-hosted install
 	 * says what it is, so it carries the positioning rather than decoration.
 	 *
-	 * The panel is deliberately theme-STABLE espresso: the scoped `dark` class on
-	 * the aside makes every shadcn token inside it resolve to the dark palette in
-	 * both themes (the `.dark` custom-property block matches the aside itself, and
-	 * the `dark:` variant matches its descendants). Striking against linen in
-	 * light mode, seamless in dark - and never touches the root theme state.
+	 * The panel follows the theme; only the terminal card inside it is
+	 * theme-stable espresso, via a scoped `dark` class that makes the shadcn
+	 * tokens inside the card resolve dark in both themes (a terminal is
+	 * naturally dark). Never touches the root theme state.
 	 *
 	 * It collapses below `lg`, where the content column takes the full width.
 	 */
@@ -57,39 +56,19 @@
 
 <div class="grid min-h-svh lg:grid-cols-2">
 	<aside
-		class="dark relative hidden flex-col justify-between overflow-hidden border-r bg-background p-10 text-foreground lg:flex"
+		class="relative hidden flex-col justify-between overflow-hidden border-r bg-muted/40 p-10 lg:flex"
 	>
+		<!-- Warm wash behind the panel, keyed off the mark's orange. -->
+		<div
+			aria-hidden="true"
+			class="pointer-events-none absolute -top-32 -left-24 h-96 w-96 rounded-full bg-primary/10 blur-3xl"
+		></div>
+
 		<!-- Faint engineering dot grid, fading toward the lower panel. -->
 		<div
 			aria-hidden="true"
-			class="pointer-events-none absolute inset-0 bg-[radial-gradient(oklch(0.93_0.03_80/10%)_1px,transparent_1px)] mask-[linear-gradient(200deg,black_15%,transparent_70%)] bg-size-[22px_22px]"
+			class="pointer-events-none absolute inset-0 bg-[radial-gradient(var(--color-border)_1px,transparent_1px)] mask-[linear-gradient(200deg,black_15%,transparent_70%)] bg-size-[22px_22px]"
 		></div>
-
-		<!-- Ember horizon: the edge network glowing past the fold. -->
-		<div
-			aria-hidden="true"
-			class="pointer-events-none absolute -right-16 -bottom-40 -left-16 h-80 blur-md [background:radial-gradient(ellipse_70%_100%_at_50%_100%,oklch(0.7163_0.1706_53.45/35%),transparent_68%)]"
-		></div>
-		<div
-			aria-hidden="true"
-			class="pointer-events-none absolute -bottom-82 left-1/2 h-130 w-130 -translate-x-1/2 rounded-full border border-primary/20"
-		></div>
-		<div
-			aria-hidden="true"
-			class="pointer-events-none absolute -bottom-62 left-1/2 h-95 w-95 -translate-x-1/2 rounded-full border border-primary/30"
-		></div>
-		<span
-			aria-hidden="true"
-			class="pointer-events-none absolute bottom-28 left-[24%] size-1.5 rounded-full bg-primary shadow-[0_0_8px_1px_oklch(0.7163_0.1706_53.45/70%)]"
-		></span>
-		<span
-			aria-hidden="true"
-			class="pointer-events-none absolute bottom-16 left-[58%] size-1.5 rounded-full bg-primary shadow-[0_0_8px_1px_oklch(0.7163_0.1706_53.45/70%)]"
-		></span>
-		<span
-			aria-hidden="true"
-			class="pointer-events-none absolute bottom-30 left-[78%] size-1.5 rounded-full bg-primary shadow-[0_0_8px_1px_oklch(0.7163_0.1706_53.45/70%)]"
-		></span>
 
 		<a
 			href={resolve('/')}
@@ -99,7 +78,7 @@
 			<span class="text-lg font-semibold tracking-tight">Cloudflarebase</span>
 		</a>
 
-		<div class="relative max-w-md space-y-6">
+		<div class="relative mx-auto w-full max-w-md space-y-6">
 			<h2 class="text-3xl leading-tight font-semibold tracking-tight text-balance">
 				The open-source backend built on Cloudflare.
 			</h2>
@@ -108,8 +87,10 @@
 				database, at the edge, in your account.
 			</p>
 
+			<!-- A terminal is naturally dark: the scoped `dark` class keeps this
+			     card espresso in both themes while the panel follows the theme. -->
 			<div
-				class="space-y-1.5 rounded-lg border bg-card/80 p-4 font-mono text-xs leading-relaxed shadow-[0_10px_26px_-14px_oklch(0.1_0.01_60/60%)]"
+				class="dark space-y-1.5 rounded-lg border bg-card p-4 font-mono text-xs leading-relaxed text-foreground shadow-[0_10px_26px_-14px_oklch(0.1_0.01_60/60%)]"
 			>
 				<p><span class="text-primary">$</span> npx cloudflarebase init my-app</p>
 				<p><span class="text-primary">$</span> cloudflarebase deploy</p>
