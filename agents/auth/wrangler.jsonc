@@ -120,12 +120,13 @@
 
 			"vars": {
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-				// The managed launch configuration: anonymous demos AND real
-				// accounts. `open` only takes effect once RESEND_API_KEY is set
-				// (`wrangler secret put RESEND_API_KEY --env production`) - until
-				// then the console stays effectively claimed, because open
-				// sign-ups without a verification sender would be a silent trap.
-				"CONSOLE_SIGNUPS": "open",
+				// CONSOLE_SIGNUPS is deliberately ABSENT until launch: mail (the
+				// EMAIL binding + EMAIL_FROM below) is already configured here, so
+				// setting "open" activates public sign-ups the moment this agent
+				// deploys - and the agents deploy BEFORE the web worker whose
+				// ownership guard makes strangers safe. Flip it to "open" as the
+				// LAST launch step: agents deployed, web deployed, backfill run
+				// (docs/managed-service-design.md).
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
 				// Committed on purpose: env.production is cloudflarebase.com's own
@@ -255,9 +256,8 @@
 
 			"vars": {
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-				// Same managed policy as production; inert until the preview
-				// worker gets its own RESEND_API_KEY secret.
-				"CONSOLE_SIGNUPS": "open",
+				// Preview may flip CONSOLE_SIGNUPS=open ahead of production to
+				// rehearse the launch; absent, same as production, until then.
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
 				"EMAIL_FROM": "auth@notifications.cloudflarebase.com",

@@ -11,11 +11,8 @@ interface Env {
 	/**
 	 * Console registration policy (docs/managed-service-design.md): unset or
 	 * `claimed` = first claim wins then invitation-only; `open` = public
-	 * sign-ups with required email verification (needs RESEND_API_KEY).
+	 * sign-ups with required email verification (needs the EMAIL binding and
+	 * EMAIL_FROM configured, or the mode stays effectively claimed).
 	 */
 	CONSOLE_SIGNUPS?: string;
-	/** Resend-shaped HTTP mail provider - the sender open sign-ups require. */
-	RESEND_API_KEY?: string;
-	/** Override the provider endpoint (any POST /emails-shaped sender fits). */
-	RESEND_BASE_URL?: string;
 }

@@ -384,7 +384,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 							if (this.env.CONSOLE_SIGNUPS === 'open') {
 								// Configured open but no usable sender: a loud config error
 								// beats silently registering users who can never verify.
-								return 'CONSOLE_SIGNUPS=open requires an outbound mail sender - set RESEND_API_KEY and EMAIL_FROM';
+								return 'CONSOLE_SIGNUPS=open requires outbound mail - configure the EMAIL binding and EMAIL_FROM';
 							}
 							if (user.email && (await this.hasPendingInvitation(user.email))) return null;
 							if (this.env.DEMO_MODE === 'true') {
@@ -459,25 +459,21 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		);
 	}
 
-	/** An HTTP mail provider that can reach ARBITRARY recipients - unlike the
-	 * EMAIL binding, which only delivers to verified destinations. */
-	private get resendConfigured(): boolean {
-		return !!(this.env.RESEND_API_KEY && this.env.EMAIL_FROM);
-	}
-
+	/** Cloudflare Email Service: the EMAIL binding delivers transactional mail
+	 * to arbitrary recipients from the configured sender. */
 	private get mailConfigured(): boolean {
-		return this.resendConfigured || !!(this.env.EMAIL && this.env.EMAIL_FROM);
+		return !!(this.env.EMAIL && this.env.EMAIL_FROM);
 	}
 
 	/**
 	 * Console registration policy (docs/managed-service-design.md). `open` only
-	 * counts when a sender that reaches arbitrary addresses is configured -
-	 * without one, verification mail cannot leave, so the console stays
-	 * effectively claimed and the sign-up paths answer a loud config error
-	 * instead of registering users who could never verify.
+	 * counts when the mail sender is configured - without one, verification
+	 * mail cannot leave, so the console stays effectively claimed and the
+	 * sign-up paths answer a loud config error instead of registering users
+	 * who could never verify.
 	 */
 	private get consoleSignups(): 'claimed' | 'open' {
-		return this.env.CONSOLE_SIGNUPS === 'open' && this.resendConfigured ? 'open' : 'claimed';
+		return this.env.CONSOLE_SIGNUPS === 'open' && this.mailConfigured ? 'open' : 'claimed';
 	}
 
 	/** A pending, unexpired org invitation for this email - the authorization
@@ -729,41 +725,13 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		}
 	}
 
-	/**
-	 * Outbound transport. The Resend-shaped HTTP provider wins when configured:
-	 * it reaches arbitrary recipients, which open console sign-ups require -
-	 * the EMAIL binding (Email Workers) only delivers to verified destinations.
-	 * RESEND_BASE_URL exists so any provider with the same POST /emails shape
-	 * (or a test sink) fits the seam.
-	 */
+	/** Outbound transport: Cloudflare Email Service via the EMAIL binding. */
 	private async deliverEmail(
 		to: string,
 		subject: string,
 		text: string,
 		html: string,
 	): Promise<void> {
-		if (this.resendConfigured) {
-			const base = (this.env.RESEND_BASE_URL ?? 'https://api.resend.com').replace(/\/$/, '');
-			const response = await fetch(`${base}/emails`, {
-				method: 'POST',
-				headers: {
-					authorization: `Bearer ${this.env.RESEND_API_KEY}`,
-					'content-type': 'application/json',
-				},
-				body: JSON.stringify({
-					from: `Cloudflarebase Auth <${this.env.EMAIL_FROM}>`,
-					to: [to],
-					subject,
-					text,
-					html,
-				}),
-			});
-			if (!response.ok) {
-				throw new Error(`the mail provider responded ${response.status}`);
-			}
-			this.writeAuthEvent('email.sent', { provider: 'resend' });
-			return;
-		}
 		if (this.env.EMAIL && this.env.EMAIL_FROM) {
 			await this.env.EMAIL.send({
 				to,
@@ -873,7 +841,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				return Response.json(
 					{
 						error:
-							'CONSOLE_SIGNUPS=open requires an outbound mail sender - set RESEND_API_KEY and EMAIL_FROM',
+							'CONSOLE_SIGNUPS=open requires outbound mail - configure the EMAIL binding and EMAIL_FROM',
 					},
 					{ status: 503 },
 				);

@@ -3,13 +3,13 @@
 Status: Phase A IMPLEMENTED (2026-08-11; drafted the same day). Phase B
 (hosting) is approved and next. Phase C (billing/metering) and Phase D
 (custom domains, orgs billing, BYO-account enterprise) are deferred and
-only sketched here. Phase A launch checklist for cloudflarebase.com:
-deploy agents by hand (auth -> db), deploy the web worker, set
-`RESEND_API_KEY` on the auth worker (env.production already declares
-`CONSOLE_SIGNUPS=open`, inert until the secret exists), sign in once to
-mint the founder's personal org, then run
+only sketched here. Phase A launch checklist for cloudflarebase.com, in
+ORDER (mail is already configured, so flipping the mode is the switch
+that opens sign-ups - it must come last, after the ownership guard is
+live): 1. deploy agents by hand (auth -> db), 2. deploy the web worker, 3. sign in once to mint the founder's personal org, 4. run
 `node scripts/backfill-org.mjs --org <orgId>` so no pre-org registry row
-stays visible to every account.
+stays visible to every account, 5. set `CONSOLE_SIGNUPS=open` in the
+auth worker's env.production vars and redeploy it.
 
 cloudflarebase.com becomes a managed Firebase alternative: sign up, create a
 project, `cloudflarebase deploy`, and your app is live at
@@ -93,14 +93,17 @@ agent's "first customer"). The managed service deepens that, deliberately:
   Managed mode multiplies operators, so Phase A enables Better Auth's
   signed `cookieCache` (60s) for the console instance - session reads
   become local signature checks and the DO sees sign-ins, not polling.
-- **Outbound mail becomes real.** The `EMAIL` binding (Email Workers) only
-  delivers to verified destinations - useless for arbitrary sign-up
-  verification. The agent's mail module gains an HTTP provider transport
-  (Resend-shaped, `RESEND_API_KEY` secret) as an alternative to the
-  binding. Self-hosted installs stay zero-config: no provider means no
-  verification mail, which is fine in claimed mode (the owner verified
-  nothing today either); `open` mode REQUIRES a configured sender and the
-  agent refuses to open sign-ups without one.
+- **Outbound mail: Cloudflare Email Service.** (Amended at build time -
+  the draft assumed the EMAIL binding was verified-destinations-only and
+  planned a third-party HTTP transport; the deployment's binding is
+  Cloudflare Email Service, which delivers to arbitrary recipients and is
+  proven on real sign-up traffic, so no external provider exists.) Mail
+  is the `EMAIL` binding + `EMAIL_FROM`, unchanged. Self-hosted installs
+  stay zero-config: no sender means no verification mail, which is fine
+  in claimed mode (the owner verified nothing today either); `open` mode
+  REQUIRES the configured sender and the agent refuses to open sign-ups
+  without one - so on a mail-configured deployment, setting
+  `CONSOLE_SIGNUPS=open` is itself the launch switch.
 
 ### Control plane and console changes
 
@@ -315,9 +318,9 @@ verifiable where the wildcard exists.
   cell-per-region accounts, a Phase-much-later concern.
 - **WfP economics**: $25/mo base + $0.02/script/mo past 1,000 + request/
   CPU overage, billed to us - why B ships with hard caps and C exists.
-- **Email provider dependency**: `open` sign-ups stand on a third-party
-  sender; the agent refusing open mode without one turns a silent failure
-  into a config error at deploy time.
+- **Email dependency**: `open` sign-ups stand on Cloudflare Email
+  Service delivering; the agent refusing open mode without a configured
+  sender turns a silent failure into a config error at deploy time.
 - **Subdomain squatting**: reserved list + charset now; rate of claims per
   org and reclaim policy when it becomes a real problem, not before.
 - **Script-name migrations**: the subdomain-is-script-name scheme means a
@@ -326,8 +329,8 @@ verifiable where the wildcard exists.
 
 ## Decisions to confirm at build time
 
-- Email provider (Resend-shaped API assumed; any HTTP sender fits the
-  transport seam).
+- ~~Email provider~~ CONFIRMED at build time: Cloudflare Email Service
+  (the existing `EMAIL` binding) - no third-party sender.
 - Better Auth organization plugin option surface (roles beyond
   owner/admin/member, invitation expiry) - pin against the installed
   version's `getAuthTables()` when the schema lands.
