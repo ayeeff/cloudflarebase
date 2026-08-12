@@ -108,7 +108,10 @@
 				},
 			],
 			"vars": {
-				"SENTRY_DSN": "",
+				// Committed on purpose: env.production is cloudflarebase.com's own
+				// block (forks deploy the top level, whose DSN stays empty), same as
+				// the auth/db/web workers.
+				"SENTRY_DSN": "https://50ed6e26b886124ac39e983efb72144d@o4510375271530496.ingest.de.sentry.io/4511764380778576",
 				"SENTRY_ENV": "production",
 				"HOSTING_DOMAIN": "cfbase.dev",
 				"DISPATCH_NAMESPACE": "cfbase-apps",
@@ -140,13 +143,20 @@
 				},
 			],
 			"vars": {
-				"SENTRY_DSN": "",
+				"SENTRY_DSN": "https://093f7505d223a871223f9a15130ef116@o4510375271530496.ingest.de.sentry.io/4511764377043024",
 				"SENTRY_ENV": "preview",
 				// Preview has no cfbase.dev route, so serving never triggers; the
 				// upload path is still real, which is what the opt-in e2e exercises.
 				"HOSTING_DOMAIN": "",
 				"DISPATCH_NAMESPACE": "cfbase-apps-preview",
 				"DISPATCH_OUTBOUND": "true",
+			},
+			// Preview drives the REAL Cloudflare API against cfbase-apps-preview
+			// (the RUN_HOSTING_E2E spec depends on it), so it needs the same
+			// credentials production requires - without this block a preview
+			// deploy succeeds silently and every real upload fails at the API.
+			"secrets": {
+				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN"],
 			},
 		},
 	},
