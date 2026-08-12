@@ -5,52 +5,52 @@
 // in the consumer's config. Regenerate with `npm run migrations`.
 
 const journal = {
-	"version": "7",
-	"dialect": "sqlite",
-	"entries": [
+	version: '7',
+	dialect: 'sqlite',
+	entries: [
 		{
-			"idx": 0,
-			"version": "6",
-			"when": 1784483488397,
-			"tag": "0000_worried_grim_reaper",
-			"breakpoints": true
+			idx: 0,
+			version: '6',
+			when: 1784483488397,
+			tag: '0000_worried_grim_reaper',
+			breakpoints: true,
 		},
 		{
-			"idx": 1,
-			"version": "6",
-			"when": 1784486196314,
-			"tag": "0001_real_bastion",
-			"breakpoints": true
+			idx: 1,
+			version: '6',
+			when: 1784486196314,
+			tag: '0001_real_bastion',
+			breakpoints: true,
 		},
 		{
-			"idx": 2,
-			"version": "6",
-			"when": 1784489733764,
-			"tag": "0002_stiff_daredevil",
-			"breakpoints": true
+			idx: 2,
+			version: '6',
+			when: 1784489733764,
+			tag: '0002_stiff_daredevil',
+			breakpoints: true,
 		},
 		{
-			"idx": 3,
-			"version": "6",
-			"when": 1784512063872,
-			"tag": "0003_reflective_tinkerer",
-			"breakpoints": true
+			idx: 3,
+			version: '6',
+			when: 1784512063872,
+			tag: '0003_reflective_tinkerer',
+			breakpoints: true,
 		},
 		{
-			"idx": 4,
-			"version": "6",
-			"when": 1784607935612,
-			"tag": "0004_thin_hercules",
-			"breakpoints": true
+			idx: 4,
+			version: '6',
+			when: 1784607935612,
+			tag: '0004_thin_hercules',
+			breakpoints: true,
 		},
 		{
-			"idx": 5,
-			"version": "6",
-			"when": 1786501645504,
-			"tag": "0005_busy_cobalt_man",
-			"breakpoints": true
-		}
-	]
+			idx: 5,
+			version: '6',
+			when: 1786501645504,
+			tag: '0005_busy_cobalt_man',
+			breakpoints: true,
+		},
+	],
 };
 
 const m0000 = `CREATE TABLE \`account\` (
@@ -182,6 +182,6 @@ export default {
 		m0002,
 		m0003,
 		m0004,
-		m0005
-	}
+		m0005,
+	},
 };

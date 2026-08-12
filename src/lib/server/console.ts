@@ -76,9 +76,7 @@ export async function consoleAuthConfig(
 	const parsed = consoleConfigSchema.safeParse(body);
 	if (!parsed.success) return fallback;
 	return {
-		socialProviders: parsed.data.providers.filter(
-			(name) => name === 'google' || name === 'github'
-		),
+		socialProviders: parsed.data.providers.filter((name) => name === 'google' || name === 'github'),
 		consoleSignups: parsed.data.consoleSignups
 	};
 }

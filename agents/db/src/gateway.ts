@@ -70,6 +70,9 @@ export class DbGateway extends DurableObject<Env> {
 	 * latency wobble only - replicas forward, primaries always serve. */
 	private routing = new Map<string, ShardRoutingEntry>();
 	private origins: { allowed: string[]; expires: number } | null = null;
+	/** Whether demo caps apply, from the parent (the claim flag lives there);
+	 * cached like origins. Staleness only delays a cap LIFT briefly. */
+	private demo: { value: boolean; expires: number } | null = null;
 	/** In-memory on purpose: hibernation resets it and the next accepted
 	 * socket re-reports - self-healing, like the replica twin. */
 	private lastReportedSockets: number | null = null;
@@ -147,10 +150,9 @@ export class DbGateway extends DurableObject<Env> {
 		query: unknown,
 		token: string | undefined,
 	): Promise<void> {
-		const cap =
-			this.env.DEMO_MODE === 'true' && DEMO_PROJECT_PATTERN.test(this.projectId)
-				? DEMO_GATEWAY_MAX_SUBSCRIPTIONS_PER_CONNECTION
-				: GATEWAY_MAX_SUBSCRIPTIONS_PER_CONNECTION;
+		const cap = (await this.isDemoProject())
+			? DEMO_GATEWAY_MAX_SUBSCRIPTIONS_PER_CONNECTION
+			: GATEWAY_MAX_SUBSCRIPTIONS_PER_CONNECTION;
 		const [held] = await this.db
 			.select({ value: count() })
 			.from(gatewaySubs)
@@ -418,6 +420,29 @@ export class DbGateway extends DurableObject<Env> {
 		}
 		this.routing.set(name, entry);
 		return entry;
+	}
+
+	/**
+	 * Whether demo caps apply to this project. The env+shape check is only the
+	 * cheap negative (self-hosted installs and named projects never ask the
+	 * parent); demo-shaped ids consult the parent because the CLAIM flag lives
+	 * there, and a claimed demo must shed its gateway caps too. Failing toward
+	 * capped is the safe direction.
+	 */
+	private async isDemoProject(): Promise<boolean> {
+		if (!(this.env.DEMO_MODE === 'true' && DEMO_PROJECT_PATTERN.test(this.projectId))) {
+			return false;
+		}
+		const now = Date.now();
+		if (this.demo && this.demo.expires > now) return this.demo.value;
+		let value = true;
+		try {
+			value = await this.parentStub().isEphemeralProject();
+		} catch {
+			// unreachable parent: stay capped
+		}
+		this.demo = { value, expires: now + this.routingTtl() };
+		return value;
 	}
 
 	private async allowedOrigins(): Promise<string[]> {

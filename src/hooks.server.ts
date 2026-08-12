@@ -278,10 +278,7 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 				if (access.kind === 'page') {
 					redirect(303, '/dashboard');
 				}
-				return Response.json(
-					{ error: 'you do not have access to this project' },
-					{ status: 403 }
-				);
+				return Response.json({ error: 'you do not have access to this project' }, { status: 403 });
 			}
 		}
 		return resolve(event);

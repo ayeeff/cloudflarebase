@@ -76,6 +76,41 @@
 	// empty state, while the initial history request is in flight.
 	let copilotHistoryLoading = $state(true);
 
+	// --- Demo claim: "Keep this project" (docs/managed-service-design.md).
+	// A SYNTHESIZED branch context (branchCtx?.demo) is the unclaimed signal -
+	// the moment the claim registers the row, the layout load serves the
+	// registry-backed context instead and the affordance disappears. Anonymous
+	// visitors route through /login and land back here with ?claim=1, which
+	// auto-claims on mount.
+	let claimBusy = $state(false);
+	let claimError = $state(false);
+
+	async function claimDemo(targetId: string): Promise<void> {
+		if (claimBusy) return;
+		claimBusy = true;
+		claimError = false;
+		try {
+			const response = await fetch(`/api/registry/projects/${targetId}/claim`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({})
+			});
+			// 207: claimed, but an agent kept its demo limits - ownership holds,
+			// so the console proceeds like a success.
+			if (!response.ok && response.status !== 207) {
+				claimError = true;
+				return;
+			}
+			await goto(resolve('/(app)/dashboard/[projectId]', { projectId: targetId }), {
+				invalidateAll: true
+			});
+		} catch {
+			claimError = true;
+		} finally {
+			claimBusy = false;
+		}
+	}
+
 	const overviewHref = $derived(resolve('/(app)/dashboard/[projectId]', { projectId }));
 	const apiHref = $derived(resolve('/(app)/dashboard/[projectId]/api', { projectId }));
 	const isApi = $derived(page.url.pathname.startsWith(apiHref));
@@ -193,8 +228,21 @@
 	// data-hydrated on the trigger, the suite's convention: the dropdown only
 	// answers clicks after hydration, so tests wait for this before clicking.
 	let hydrated = $state(false);
+	/** Unclaimed demo family = synthesized branch context (only ever built in
+	 * demo mode); signed-in = the registry list reached the page data. */
+	const claimableDemo = $derived(!!branchCtx?.demo);
+	const signedIn = $derived(data.projects !== null);
+	const loginClaimHref = $derived(
+		`${resolve('/(app)/login')}?next=${encodeURIComponent(
+			`${resolve('/(app)/dashboard/[projectId]', { projectId: rootId })}?claim=1`
+		)}`
+	);
 	onMount(() => {
 		hydrated = true;
+		// The post-login landing: /login bounced the visitor back with ?claim=1.
+		if (page.url.searchParams.has('claim') && signedIn && claimableDemo) {
+			void claimDemo(rootId);
+		}
 	});
 
 	// Below lg the sidebar becomes a hamburger drawer: the SAME aside slides
@@ -851,6 +899,34 @@
 				</div>
 
 				<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
+					{#if claimableDemo}
+						<!-- The trial-to-signed-up bridge: the id never changes, so
+						     data, users, and integration snippets all survive the
+						     claim. Anonymous visitors sign in first and land back
+						     here with ?claim=1. -->
+						{#if signedIn}
+							<Button
+								size="sm"
+								class="h-8 gap-1.5"
+								disabled={claimBusy}
+								data-testid="claim-project"
+								onclick={() => claimDemo(rootId)}
+							>
+								<Sparkles class="h-3.5 w-3.5" />
+								{claimError ? 'Retry keeping it' : claimBusy ? 'Claiming…' : 'Keep this project'}
+							</Button>
+						{:else}
+							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve()-built login href with a next param -->
+							<Button
+								size="sm"
+								class="h-8 gap-1.5"
+								href={loginClaimHref}
+								data-testid="claim-project"
+							>
+								<Sparkles class="h-3.5 w-3.5" /> Keep this project
+							</Button>
+						{/if}
+					{/if}
 					<ModeToggle class="h-8 w-8" testId="theme-toggle" />
 				</div>
 			</header>

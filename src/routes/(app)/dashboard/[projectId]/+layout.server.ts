@@ -20,21 +20,34 @@ export const load: LayoutServerLoad = async ({ cookies, params, platform, locals
 			: null;
 	const [branches, projects] = await Promise.all([
 		// Null hides the branch controls (unregistered projects, unreachable
-		// control plane). Demo families get a SYNTHESIZED context instead -
-		// production/preview plus every branch this visitor minted (remembered
-		// in a cookie, since demo branches are ids and not registry rows), so
-		// demo visitors experience branching without touching the registry.
-		// Re-runs only when the project param changes, so subpage navigation
-		// costs no registry reads.
+		// control plane). UNCLAIMED demo families get a SYNTHESIZED context
+		// instead - production/preview plus every branch this visitor minted
+		// (remembered in a cookie, since demo branches are ids and not registry
+		// rows), so demo visitors experience branching without touching the
+		// registry. A CLAIMED demo is a registered project: for signed-in
+		// operators the registry is consulted first and only a missing row
+		// falls back to the synthesized context. Re-runs only when the project
+		// param changes, so subpage navigation costs no registry reads.
 		locals.demoMode && isDemoProjectId(params.projectId)
-			? Promise.resolve(
-					demoBranchContext(params.projectId, rememberDemoBranch(cookies, params.projectId))
+			? (locals.consoleUser
+					? getBranchContext(platform, params.projectId)
+					: Promise.resolve(null)
+				).then(
+					(registered) =>
+						registered ??
+						demoBranchContext(params.projectId, rememberDemoBranch(cookies, params.projectId))
 				)
 			: getBranchContext(platform, params.projectId),
-		// The breadcrumb project switcher's list - operators only. Demo mode
-		// serves this layout to anonymous visitors, and the installation's
-		// project registry must never appear in their page data.
-		locals.consoleUser ? listProjects(platform) : Promise.resolve(null)
+		// The breadcrumb project switcher's list - operators only, scoped to
+		// their org memberships. Demo mode serves this layout to anonymous
+		// visitors, and the installation's project registry must never appear
+		// in their page data.
+		locals.consoleUser
+			? listProjects(
+					platform,
+					locals.consoleIdentity?.organizations.map((org) => org.id)
+				)
+			: Promise.resolve(null)
 	]);
 	return {
 		copilot: {

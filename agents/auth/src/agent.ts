@@ -111,6 +111,7 @@ export interface AuthActivityEvent {
 	id: string;
 	type:
 		| 'project.provisioned'
+		| 'project.claimed'
 		| 'user.created'
 		| 'user.deleted'
 		| 'user.role-changed'
@@ -365,8 +366,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			// Open console sign-ups are only real with a sender that can reach
 			// arbitrary addresses; the console gets the cookie cache and personal
 			// orgs so operator polling and ownership work out of the box.
-			requireEmailVerification:
-				this.name === CONSOLE_PROJECT_ID && this.consoleSignups === 'open',
+			requireEmailVerification: this.name === CONSOLE_PROJECT_ID && this.consoleSignups === 'open',
 			cookieCache: this.name === CONSOLE_PROJECT_ID,
 			autoPersonalOrg: this.name === CONSOLE_PROJECT_ID,
 			// Console registration policy, enforced where every path converges -
@@ -419,10 +419,44 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 	 * Whether this project is a throwaway demo instance. Both halves matter: a
 	 * self-hosted install must never expire a project just because someone
 	 * named it `demo-...`, and the public deployment must never expire a named
-	 * one.
+	 * one. A CLAIMED demo keeps its id but stops being throwaway: the claim
+	 * flag lifts every demo cap and disarms the TTL erase.
 	 */
 	private get isEphemeral(): boolean {
-		return this.env.DEMO_MODE === 'true' && DEMO_PROJECT_PATTERN.test(this.name);
+		return this.env.DEMO_MODE === 'true' && DEMO_PROJECT_PATTERN.test(this.name) && !this.claimed;
+	}
+
+	/** Durable claim flag (docs/managed-service-design.md): set over the
+	 * service-binding-only claim route when an operator keeps a demo project.
+	 * Loaded in onStart so the synchronous isEphemeral getter can consult it. */
+	private claimed = false;
+
+	/**
+	 * Claims this demo project for an owner, over Durable Object RPC from the
+	 * worker's PUT /internal/projects/:id/claim. Idempotent. Cancelling the
+	 * pending schedule is best-effort - expireDemoProject re-checks
+	 * isEphemeral before destroying (the same belt-and-braces as its
+	 * DEMO_MODE re-check), so a surviving alarm can never delete a claimed
+	 * project.
+	 */
+	async claimProject(): Promise<void> {
+		if (this.claimed) return;
+		await this.ctx.storage.put('demo-claimed', true);
+		this.claimed = true;
+		// The instance baked demo gating (mail off, user caps) into its config.
+		this._auth = null;
+		try {
+			for (const schedule of this.getSchedules()) {
+				if (schedule.callback === 'expireDemoProject') await this.cancelSchedule(schedule.id);
+			}
+		} catch {
+			// the re-check in expireDemoProject is the real guarantee
+		}
+		this.writeAuthEvent('project.claimed');
+		await this.recordEvent(
+			'project.claimed',
+			'demo project claimed - caps lifted, expiry disarmed',
+		);
 	}
 
 	/** An HTTP mail provider that can reach ARBITRARY recipients - unlike the
@@ -517,6 +551,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 
 	async onStart(): Promise<void> {
 		this.signingSecret = await this.resolveSigningSecret();
+		this.claimed = (await this.ctx.storage.get<boolean>('demo-claimed')) === true;
 
 		// Idempotent - drizzle tracks applied migrations in its own table.
 		await migrate(this.db, migrations);
@@ -934,11 +969,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			});
 		}
 
-		if (
-			subPath === '/console/me' &&
-			request.method === 'GET' &&
-			this.name === CONSOLE_PROJECT_ID
-		) {
+		if (subPath === '/console/me' && request.method === 'GET' && this.name === CONSOLE_PROJECT_ID) {
 			return Response.json(await this.getConsoleMe(request));
 		}
 
@@ -1199,9 +1230,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 	 * owner from before Phase A acquires one without a migration.
 	 */
 	private async getConsoleMe(request: Request): Promise<ConsoleMe | null> {
-		const resolved = await this.auth.api
-			.getSession({ headers: request.headers })
-			.catch(() => null);
+		const resolved = await this.auth.api.getSession({ headers: request.headers }).catch(() => null);
 		if (!resolved) return null;
 		const user = resolved.user as typeof resolved.user & {
 			isAnonymous?: boolean | null;

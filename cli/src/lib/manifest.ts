@@ -26,6 +26,7 @@ export const agentManifestSchema = z.strictObject({
 		.min(1),
 	entrypoint: z.strictObject({ assertEnvType: z.string().min(1) }),
 	erase: z.strictObject({ method: z.literal('DELETE'), path: z.string().startsWith('/') }),
+	claim: z.strictObject({ method: z.literal('PUT'), path: z.string().startsWith('/') }).optional(),
 	bindings: z.strictObject({
 		ai: z.boolean().optional(),
 		sendEmail: z.array(z.string()).optional(),
@@ -62,7 +63,8 @@ export const agentManifestSchema = z.strictObject({
 			z.strictObject({
 				path: z.string().startsWith('/'),
 				title: z.string().min(1),
-				testId: z.string().min(1)
+				testId: z.string().min(1),
+				icon: z.string().min(1).optional()
 			})
 		)
 	})

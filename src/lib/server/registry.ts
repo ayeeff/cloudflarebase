@@ -292,7 +292,113 @@ export async function createBranch(
 
 	await enableRegistryAgents(db, created.id);
 
+	// A branch of a CLAIMED demo root is itself demo-shaped, so its agents
+	// armed demo caps and a TTL the moment they woke. Registering it here is
+	// the claim for that id - fan the flag out like the root's claim did.
+	if (isDemoProjectId(created.id)) {
+		await claimProjectData(platform, created.id);
+	}
+
 	return { ok: true, project: toDto(created) };
+}
+
+export type ClaimDemoResult =
+	| { ok: true; project: RegistryProject; warning?: string }
+	| { ok: false; status: number; error: string };
+
+/**
+ * Claims a demo project for an organization (docs/managed-service-design.md):
+ * inserts the registry row - from that instant the guard requires ownership,
+ * so anonymous access ends - THEN fans out the claim flag that lifts each
+ * agent's demo caps and disarms the TTL erase. This is the ONLY minter of
+ * demo-shaped registry rows; first-claim-wins rides the primary key. Demo
+ * access is possession-based, so the claim is too: whoever holds the id and
+ * is signed in claims it.
+ */
+export async function claimDemoProject(
+	platform: App.Platform | undefined,
+	projectId: string,
+	orgId: string,
+	name: string
+): Promise<ClaimDemoResult> {
+	if (!projectIdSchema.safeParse(projectId).success || !isDemoProjectId(projectId)) {
+		return { ok: false, status: 400, error: 'only demo projects can be claimed' };
+	}
+	if (demoRootId(projectId) !== projectId) {
+		return {
+			ok: false,
+			status: 400,
+			error: 'claim the demo root - its branches register as ordinary branch rows afterwards'
+		};
+	}
+
+	const db = await getDb(platform);
+	const rows = await db.select({ id: project.id }).from(project);
+	if (rows.length >= MAX_PROJECTS) {
+		return {
+			ok: false,
+			status: 409,
+			error: `this installation is limited to ${MAX_PROJECTS} projects`
+		};
+	}
+
+	// PK atomicity IS the first-claim-wins: the loser's insert affects nothing
+	// and returns no row.
+	const [created] = await db
+		.insert(project)
+		.values({ id: projectId, name: name.trim() || 'Claimed demo', orgId, createdAt: new Date() })
+		.onConflictDoNothing()
+		.returning();
+	if (!created) {
+		return { ok: false, status: 409, error: 'this demo project has already been claimed' };
+	}
+
+	await enableRegistryAgents(db, created.id);
+
+	const failures = await claimProjectData(platform, created.id);
+	if (failures.length) {
+		// The row exists (ownership holds), but an unreachable agent kept its
+		// demo caps and TTL armed - retryable, and worth a loud warning.
+		return {
+			ok: true,
+			project: toDto(created),
+			warning: `demo limits could not be lifted in: ${failures.join(', ')}`
+		};
+	}
+	return { ok: true, project: toDto(created) };
+}
+
+/** Fan-out of the claim flag to every agent that declares a claim route.
+ * Returns the names of agents that could not be reached. */
+async function claimProjectData(
+	platform: App.Platform | undefined,
+	projectId: string
+): Promise<string[]> {
+	const failures: string[] = [];
+
+	for (const entry of Object.values(AGENT_REGISTRY)) {
+		const { manifest } = entry;
+		if (!manifest.claim) continue;
+		try {
+			const agent = requireAgent(platform, entry);
+			// Synthetic host: like the erase route, the claim route sits outside
+			// /agents/* and is reachable only over the service binding.
+			const path = manifest.claim.path.replace(':projectId', encodeURIComponent(projectId));
+			const response = await agent.fetch(`https://${manifest.worker}${path}`, {
+				method: manifest.claim.method
+			});
+			if (!response.ok) throw new Error(`${manifest.name} agent responded ${response.status}`);
+		} catch (cause) {
+			console.error(`failed to claim project "${projectId}" in the ${manifest.name} agent`, cause);
+			Sentry.captureException(cause, {
+				level: 'error',
+				tags: { projectId, agent: manifest.name, operation: 'claim-project' }
+			});
+			failures.push(manifest.name);
+		}
+	}
+
+	return failures;
 }
 
 export interface BranchContext {

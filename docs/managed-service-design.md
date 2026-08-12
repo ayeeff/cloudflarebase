@@ -61,10 +61,10 @@ agent's "first customer"). The managed service deepens that, deliberately:
     unknown-account bounce is claimed-mode behaviour). Composes with
     `DEMO_MODE=true`: anonymous demos and real accounts coexist, which is
     cloudflarebase.com's launch configuration.
-  The `denyUserCreation` veto in the user-creation database hook - the
-  enforcement point every path converges on, social callback included -
-  branches on the same mode. `GET /config` on the console instance reports
-  the mode so `/login` can render sign-up affordances honestly.
+    The `denyUserCreation` veto in the user-creation database hook - the
+    enforcement point every path converges on, social callback included -
+    branches on the same mode. `GET /config` on the console instance reports
+    the mode so `/login` can render sign-up affordances honestly.
 - **The `organization` plugin** joins the plugin list for every project
   (anonymous users excluded from org creation). New Better Auth tables
   (`organization`, `member`, `invitation`, plus `session.activeOrganizationId`)
@@ -195,8 +195,7 @@ A new primitive following the agent contract (`docs/agent-contract.md`):
 - **The same worker serves `*.cfbase.dev`** - role decided by hostname,
   the LiveShard precedent: requests on the wildcard route resolve the
   subdomain and `env.DISPATCH.get(subdomain)`, zero lookup, because **the
-  script name IS the subdomain**. Unclaimed subdomain = no script = branded
-  404. Reserved names (`www`, `api`, `console`, `admin`, `docs`, `status`,
+  script name IS the subdomain**. Unclaimed subdomain = no script = branded 404. Reserved names (`www`, `api`, `console`, `admin`, `docs`, `status`,
   `mail`, `cfbase`, ...) never dispatch.
 - **Bindings**: `DISPATCH` (namespace `cfbase-apps`, `-preview` per env),
   `CF_ACCOUNT_ID` var, `CF_HOSTING_API_TOKEN` secret (Workers Scripts
@@ -286,11 +285,11 @@ verifiable where the wildcard exists.
   agents via a service-binding-only `PUT /internal/projects/:id/plan`
   (the erase-route precedent) replacing demo-cap constants with plan caps;
   WfP namespace analytics by script tag + outbound-worker egress metering
-  + DO storage sizes rolled into a D1 usage table; Stripe subscriptions on
-  the org (Phase A made orgs the billable entity on purpose); dunning
-  downgrades caps, termination reuses the delete pipeline. Per-project
-  throughput ceilings land here (the documented gap: per-IP limiting is an
-  abuse ceiling, not tenant fair-share).
+  - DO storage sizes rolled into a D1 usage table; Stripe subscriptions on
+    the org (Phase A made orgs the billable entity on purpose); dunning
+    downgrades caps, termination reuses the delete pipeline. Per-project
+    throughput ceilings land here (the documented gap: per-IP limiting is an
+    abuse ceiling, not tenant fair-share).
 - **D - growth**: customer custom domains (Cloudflare for SaaS), org
   billing roles, cloud builds (git push → build), tail-worker log
   streaming into the console, BYO-account managed enterprise (the console

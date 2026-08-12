@@ -121,6 +121,7 @@ export interface DbActivityEvent {
 	id: string;
 	type:
 		| 'project.provisioned'
+		| 'project.claimed'
 		| 'collection.created'
 		| 'collection.deleted'
 		| 'collection.configured'
@@ -204,7 +205,57 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	}
 
 	private get isEphemeral(): boolean {
-		return this.env.DEMO_MODE === 'true' && DEMO_PROJECT_PATTERN.test(this.name);
+		return this.env.DEMO_MODE === 'true' && DEMO_PROJECT_PATTERN.test(this.name) && !this.claimed;
+	}
+
+	/** Durable claim flag (docs/managed-service-design.md): a claimed demo
+	 * keeps its id but stops being throwaway. Loaded in onStart so the
+	 * synchronous isEphemeral getter can consult it. */
+	private claimed = false;
+
+	/**
+	 * Claims this demo project for an owner, over RPC from the worker's
+	 * PUT /internal/projects/:id/claim (service-binding-only). Lifts the demo
+	 * caps everywhere they are enforced: this instance immediately
+	 * (isEphemeral), each shard child by a config re-push (their caps ride
+	 * `config.demo`), and the gateways within their 60s parent-poll. The TTL
+	 * schedule cancel is best-effort - expireDemoProject re-checks isEphemeral
+	 * before destroying, so a surviving alarm can never delete a claimed
+	 * project.
+	 */
+	async claimProject(): Promise<void> {
+		if (this.claimed) return;
+		await this.ctx.storage.put('demo-claimed', true);
+		this.claimed = true;
+		try {
+			for (const schedule of this.getSchedules()) {
+				if (schedule.callback === 'expireDemoProject') await this.cancelSchedule(schedule.id);
+			}
+		} catch {
+			// the re-check in expireDemoProject is the real guarantee
+		}
+		const rows = await this.db.select().from(collections);
+		for (const row of rows) {
+			try {
+				if (row.kind === 'table') await this.pushTableConfig(row);
+				else await this.pushConfig(row);
+			} catch (error) {
+				// A child that missed the push keeps demo caps until its next
+				// config push - degraded but safe, and worth seeing.
+				Sentry.captureException(error, {
+					level: 'error',
+					tags: { projectId: this.name, operation: 'claim-config-push', shard: row.name },
+				});
+			}
+		}
+		this.writeDbEvent('project.claimed');
+		this.recordEvent('project.claimed', 'demo project claimed - caps lifted, expiry disarmed');
+	}
+
+	/** Whether demo caps currently apply - the gateways' cached lookup (their
+	 * own env check cannot see the claim flag, which lives here). */
+	async isEphemeralProject(): Promise<boolean> {
+		return this.isEphemeral;
 	}
 
 	/** A row's replication, normalized to the union. The column defaults to
@@ -218,6 +269,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	async onStart(): Promise<void> {
 		// Idempotent - drizzle tracks applied migrations in its own table.
 		await migrate(this.db, migrations);
+		this.claimed = (await this.ctx.storage.get<boolean>('demo-claimed')) === true;
 
 		if (this.env.LOCAL_ANALYTICS) {
 			await this.env.LOCAL_ANALYTICS.batch([
