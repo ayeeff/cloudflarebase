@@ -10,8 +10,10 @@
 	let { data } = $props();
 
 	// First run: no owner yet, so the page claims the console instead of
-	// signing in. The agent permits exactly one sign-up on this instance.
-	const claiming = $derived(!data.ownerExists);
+	// signing in. Open mode has no claim step - the first account is just the
+	// first sign-up - so claiming only ever renders in claimed mode.
+	const claiming = $derived(!data.ownerExists && data.consoleSignups !== 'open');
+	const open = $derived(data.consoleSignups === 'open');
 
 	// A demo deployment has no operators at all - the agent refuses the claim,
 	// so offering the form would only collect a doomed submission. The web and
@@ -24,11 +26,19 @@
 		github: 'GitHub'
 	};
 
+	// 'sign-in' | 'sign-up': what the form submits. Open mode offers both;
+	// claimed mode keeps sign-up behind the "invited?" link (the agent admits
+	// only emails holding a pending invitation).
+	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
 	let name = $state('');
 	let email = $state('');
 	let password = $state('');
 	let error = $state<string | null>(null);
 	let submitting = $state(false);
+	// Open-mode sign-up ends here: no session until the email is verified.
+	let verifyNotice = $state(false);
+
+	const signingUp = $derived(claiming || mode === 'sign-up');
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
@@ -37,11 +47,11 @@
 
 		try {
 			const response = await fetch(
-				`${CONSOLE_AUTH_BASE}/${claiming ? 'sign-up' : 'sign-in'}/email`,
+				`${CONSOLE_AUTH_BASE}/${signingUp ? 'sign-up' : 'sign-in'}/email`,
 				{
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify(claiming ? { name, email, password } : { email, password })
+					body: JSON.stringify(signingUp ? { name, email, password } : { email, password })
 				}
 			);
 
@@ -49,7 +59,16 @@
 				const body = (await response.json().catch(() => null)) as { message?: string } | null;
 				error =
 					body?.message ??
-					(claiming ? 'Could not create the owner account.' : 'Incorrect email or password.');
+					(signingUp
+						? 'Could not create the account.'
+						: 'Incorrect email or password, or the email is not verified yet.');
+				return;
+			}
+
+			// Open sign-ups require email verification, so there is no session to
+			// land in yet - tell the visitor what happens next instead.
+			if (signingUp && open) {
+				verifyNotice = true;
 				return;
 			}
 
@@ -65,9 +84,9 @@
 	/**
 	 * Better Auth's social flow: the POST returns the provider's authorization
 	 * URL and the browser navigates there; the OAuth callback lands the session
-	 * cookie and redirects to callbackURL. Sign-in only - the console instance
-	 * refuses to create users beyond the owner, so an unknown account bounces
-	 * rather than registering.
+	 * cookie and redirects to callbackURL. In claimed mode unknown accounts
+	 * bounce (the console refuses to create users beyond the owner and invited
+	 * emails); open mode registers them implicitly.
 	 */
 	async function signInWithProvider(provider: string) {
 		submitting = true;
@@ -123,15 +142,39 @@
 				</p>
 			</div>
 		</div>
+	{:else if verifyNotice}
+		<div data-testid="console-verify-notice" class="space-y-6">
+			<div class="space-y-1.5">
+				<h1 class="text-2xl font-semibold tracking-tight">Check your inbox</h1>
+				<p class="text-sm text-muted-foreground">
+					We sent a verification link to <span class="font-medium">{email}</span>. Follow it, then
+					sign in - accounts only activate once their email is verified.
+				</p>
+			</div>
+			<Button
+				variant="outline"
+				class="w-full"
+				onclick={() => {
+					verifyNotice = false;
+					mode = 'sign-in';
+				}}
+			>
+				Back to sign in
+			</Button>
+		</div>
 	{:else}
 		<div data-testid="console-login" class="space-y-6">
 			<div class="space-y-1.5">
 				<h1 class="text-2xl font-semibold tracking-tight">
-					{claiming ? 'Set up your console' : 'Sign in'}
+					{claiming ? 'Set up your console' : signingUp ? 'Create your account' : 'Sign in'}
 				</h1>
 				<p class="text-sm text-muted-foreground">
 					{#if claiming}
 						No owner yet. Create the first account - sign-up closes as soon as it exists.
+					{:else if signingUp && open}
+						Your projects, your data, on Cloudflare's edge. Verification email included.
+					{:else if signingUp}
+						Invited to an organization? Register with the invited email address.
 					{:else}
 						Sign in to manage your projects.
 					{/if}
@@ -161,7 +204,7 @@
 			{/if}
 
 			<form class="space-y-4" onsubmit={submit}>
-				{#if claiming}
+				{#if signingUp}
 					<div class="space-y-1.5">
 						<Label for="name">Name</Label>
 						<Input id="name" bind:value={name} required autocomplete="name" />
@@ -180,8 +223,8 @@
 						type="password"
 						bind:value={password}
 						required
-						minlength={claiming ? 8 : undefined}
-						autocomplete={claiming ? 'new-password' : 'current-password'}
+						minlength={signingUp ? 8 : undefined}
+						autocomplete={signingUp ? 'new-password' : 'current-password'}
 					/>
 				</div>
 
@@ -189,10 +232,63 @@
 					<p class="text-sm text-destructive" data-testid="console-login-error">{error}</p>
 				{/if}
 
-				<Button type="submit" class="w-full" disabled={submitting}>
-					{submitting ? 'Working…' : claiming ? 'Create owner account' : 'Sign in'}
+				<Button type="submit" class="w-full" disabled={submitting} data-testid="console-submit">
+					{submitting
+						? 'Working…'
+						: claiming
+							? 'Create owner account'
+							: signingUp
+								? 'Create account'
+								: 'Sign in'}
 				</Button>
 			</form>
+
+			{#if !claiming}
+				<p class="text-center text-xs text-muted-foreground">
+					{#if signingUp}
+						Already have an account?
+						<button
+							type="button"
+							class="underline"
+							data-testid="console-mode-signin"
+							onclick={() => {
+								mode = 'sign-in';
+								error = null;
+							}}
+						>
+							Sign in
+						</button>
+					{:else if open}
+						New here?
+						<button
+							type="button"
+							class="underline"
+							data-testid="console-mode-signup"
+							onclick={() => {
+								mode = 'sign-up';
+								error = null;
+							}}
+						>
+							Create an account
+						</button>
+					{:else}
+						<!-- Claimed consoles admit invited emails - teams without open
+						     registration (docs/managed-service-design.md). -->
+						Invited to an organization?
+						<button
+							type="button"
+							class="underline"
+							data-testid="console-mode-signup"
+							onclick={() => {
+								mode = 'sign-up';
+								error = null;
+							}}
+						>
+							Create your account
+						</button>
+					{/if}
+				</p>
+			{/if}
 		</div>
 	{/if}
 </ConsoleShell>

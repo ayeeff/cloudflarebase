@@ -2,15 +2,67 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import ConsoleShell from '$lib/components/console-shell.svelte';
+	import { CONSOLE_AUTH_BASE } from '$lib/console';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { projectIdSchema } from '$lib/schemas/auth';
-	import { ChevronRight, Database, GitBranch } from '@lucide/svelte';
+	import {
+		Building2,
+		Check,
+		ChevronRight,
+		ChevronsUpDown,
+		Database,
+		GitBranch,
+		Mail
+	} from '@lucide/svelte';
 
 	let { data } = $props();
+
+	// --- Organizations (docs/managed-service-design.md). The switcher keys on
+	// the session's activeOrganizationId; switching re-scopes this list. ---
+	const activeOrgEntry = $derived(
+		data.organizations.find((org) => org.id === data.activeOrgId) ?? data.organizations[0] ?? null
+	);
+	let orgBusy = $state(false);
+
+	async function setActiveOrg(organizationId: string) {
+		if (orgBusy || organizationId === activeOrgEntry?.id) return;
+		orgBusy = true;
+		try {
+			await fetch(`${CONSOLE_AUTH_BASE}/organization/set-active`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ organizationId })
+			});
+			await invalidateAll();
+		} finally {
+			orgBusy = false;
+		}
+	}
+
+	let inviteBusy = $state<string | null>(null);
+
+	async function answerInvitation(invitationId: string, accept: boolean) {
+		if (inviteBusy) return;
+		inviteBusy = invitationId;
+		try {
+			await fetch(
+				`${CONSOLE_AUTH_BASE}/organization/${accept ? 'accept-invitation' : 'reject-invitation'}`,
+				{
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ invitationId })
+				}
+			);
+			await invalidateAll();
+		} finally {
+			inviteBusy = null;
+		}
+	}
 
 	// Branches group under their root project instead of listing as siblings
 	// (docs/branches-design.md). parentId decides - never the id's shape, so
@@ -82,12 +134,95 @@
 
 <ConsoleShell wide>
 	<div class="space-y-8">
-		<div class="space-y-1.5">
-			<h1 class="text-2xl font-semibold tracking-tight">Projects</h1>
-			<p class="text-sm text-muted-foreground">
-				Each project runs its own agent, backed by its own database.
-			</p>
+		<div class="flex flex-wrap items-start justify-between gap-3">
+			<div class="space-y-1.5">
+				<h1 class="text-2xl font-semibold tracking-tight">Projects</h1>
+				<p class="text-sm text-muted-foreground">
+					Each project runs its own agent, backed by its own database.
+				</p>
+			</div>
+
+			{#if activeOrgEntry}
+				<div class="flex items-center gap-2">
+					<DropdownMenu.Root>
+						<DropdownMenu.Trigger>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									size="sm"
+									variant="outline"
+									class="h-8 max-w-64 gap-1.5"
+									disabled={orgBusy}
+									data-testid="org-switcher"
+								>
+									<Building2 class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+									<span class="truncate">{activeOrgEntry.name}</span>
+									<ChevronsUpDown class="h-3 w-3 shrink-0 text-muted-foreground" />
+								</Button>
+							{/snippet}
+						</DropdownMenu.Trigger>
+						<DropdownMenu.Content align="end" class="w-64">
+							{#each data.organizations as org (org.id)}
+								<DropdownMenu.Item
+									data-testid={`org-item-${org.slug}`}
+									onclick={() => setActiveOrg(org.id)}
+								>
+									<span class="truncate">{org.name}</span>
+									{#if org.id === activeOrgEntry.id}<Check class="ml-auto h-4 w-4" />{/if}
+								</DropdownMenu.Item>
+							{/each}
+							<DropdownMenu.Separator />
+							<DropdownMenu.Item data-testid="org-settings-link">
+								{#snippet child({ props })}
+									<a {...props} href={resolve('/(app)/dashboard/organization')}>
+										<Building2 class="h-4 w-4" />
+										Organization settings
+									</a>
+								{/snippet}
+							</DropdownMenu.Item>
+						</DropdownMenu.Content>
+					</DropdownMenu.Root>
+				</div>
+			{/if}
 		</div>
+
+		{#each data.pendingInvitations as invitation (invitation.id)}
+			<div
+				class="flex flex-wrap items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 p-4"
+				data-testid="pending-invitation"
+			>
+				<Mail class="h-5 w-5 shrink-0 text-primary" />
+				<div class="min-w-0 flex-1">
+					<p class="text-sm font-medium">
+						You have been invited to <span class="font-semibold">{invitation.organizationName}</span
+						>
+					</p>
+					{#if invitation.inviterEmail}
+						<p class="truncate text-xs text-muted-foreground">
+							Invited by {invitation.inviterEmail}
+						</p>
+					{/if}
+				</div>
+				<div class="flex shrink-0 gap-2">
+					<Button
+						size="sm"
+						disabled={inviteBusy === invitation.id}
+						data-testid="accept-invitation"
+						onclick={() => answerInvitation(invitation.id, true)}
+					>
+						Accept
+					</Button>
+					<Button
+						size="sm"
+						variant="outline"
+						disabled={inviteBusy === invitation.id}
+						onclick={() => answerInvitation(invitation.id, false)}
+					>
+						Decline
+					</Button>
+				</div>
+			</div>
+		{/each}
 
 		{#if data.projects.length}
 			<div class="grid gap-2" data-testid="project-list">

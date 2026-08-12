@@ -1,3 +1,4 @@
+import { activeOrg } from '$lib/console';
 import { recordDemoProject } from '$lib/server/demo-log';
 import { listProjects } from '$lib/server/registry';
 import { redirect } from '@sveltejs/kit';
@@ -36,8 +37,26 @@ export const load: PageServerLoad = async ({ cookies, locals, platform }) => {
 		redirect(307, `/dashboard/${projectId}`);
 	}
 
-	const projects = await listProjects(platform);
-	if (projects.length === 1) redirect(307, `/dashboard/${projects[0].id}`);
+	// The overview lists the ACTIVE org's projects (plus unowned rows every
+	// operator may see); accounts with no orgs - agents from before
+	// organizations - keep the unscoped list they always had.
+	const identity = locals.consoleIdentity;
+	const active = identity ? activeOrg(identity) : null;
+	const projects = await listProjects(platform, active ? [active.id] : undefined);
+	// Skip-the-list only when there is nothing else to surface: an operator
+	// with pending invitations or several orgs needs the overview.
+	if (
+		projects.length === 1 &&
+		!identity?.pendingInvitations.length &&
+		(identity?.organizations.length ?? 0) <= 1
+	) {
+		redirect(307, `/dashboard/${projects[0].id}`);
+	}
 
-	return { projects };
+	return {
+		projects,
+		organizations: identity?.organizations ?? [],
+		activeOrgId: active?.id ?? null,
+		pendingInvitations: identity?.pendingInvitations ?? []
+	};
 };
