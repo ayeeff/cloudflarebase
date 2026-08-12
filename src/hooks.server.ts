@@ -1,8 +1,10 @@
 import { dev } from '$app/environment';
 import { agentByApiPrefix, agentByWorkerSegment, routeAccess } from '$lib/agent-registry';
+import { RESERVED_PROJECT_IDS } from '$lib/console';
 import { projectIdSchema } from '$lib/schemas/auth';
 import { agentFetcher, agentUrl } from '$lib/server/agents';
-import { getConsoleSession, isDemoMode, isDemoProjectId } from '$lib/server/console';
+import { getConsoleIdentity, isDemoMode, isDemoProjectId } from '$lib/server/console';
+import { getProjectOwnership, type ProjectOwnership } from '$lib/server/registry';
 import { handleErrorWithSentry, initCloudflareSentryHandle, sentryHandle } from '@sentry/sveltekit';
 import { redirect } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
@@ -153,6 +155,13 @@ function classifyAccess(pathname: string): Access {
 	// Everything under /api is operator surface unless published below, so a
 	// route added later is private until someone deliberately opens it.
 	if (segments[0] === 'api') {
+		// Registry mutations name their project in the path; surfacing the id
+		// here is what routes them through the same ownership gate as the
+		// project-scoped proxies (deleting or claiming a project is as
+		// project-scoped as reading it).
+		if (segments[1] === 'registry' && segments[2] === 'projects' && segments[3]) {
+			return { scope: 'operator', projectId: segments[3], kind: 'api' };
+		}
 		if (segments[1] === 'projects') {
 			const rest = segments.slice(3);
 			// /api/projects/<id>/<apiPrefix>/... proxies onto an agent; translate
@@ -196,48 +205,85 @@ function classifyAccess(pathname: string): Access {
 }
 
 /**
- * Requires an operator session for every console surface. Fails closed: an
- * install that never sets DEMO_MODE is private the moment it is deployed.
+ * Requires an operator session for every console surface, and - since Phase A
+ * of the managed service - membership in the owning org for project-scoped
+ * ones. Fails closed: an install that never sets DEMO_MODE is private the
+ * moment it is deployed.
  */
 const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 	event.locals.demoMode = isDemoMode(event.platform);
 	event.locals.consoleUser = null;
+	event.locals.consoleIdentity = null;
 
 	const access = classifyAccess(event.url.pathname);
 	if (access.scope === 'open') return resolve(event);
 
+	// Ownership of the target project, resolved once per request. Registered
+	// rows carry their org; an unregistered demo id inherits a claimed root's
+	// registration, so claiming ends anonymous access for the whole family.
+	// Reserved ids (the console instance itself) are never registry rows.
+	const ownership: ProjectOwnership | null =
+		access.projectId && !RESERVED_PROJECT_IDS.has(access.projectId)
+			? await getProjectOwnership(event.platform, access.projectId)
+			: null;
+
 	// Public demo: anonymous visitors may drive ephemeral demo projects, whose
 	// ids are unguessable and whose data self-destructs. Named projects always
-	// require an operator session, even on the demo deployment.
-	if (event.locals.demoMode && access.projectId && isDemoProjectId(access.projectId)) {
+	// require an operator session, even on the demo deployment - and so does a
+	// CLAIMED demo: the registry row is what flips it from possession-based to
+	// owned (docs/managed-service-design.md).
+	if (
+		event.locals.demoMode &&
+		access.projectId &&
+		isDemoProjectId(access.projectId) &&
+		!ownership?.registered
+	) {
 		return resolve(event);
 	}
 
 	// The bare /dashboard entry decides for itself: in demo mode it hands an
 	// anonymous visitor a throwaway project, while a signed-in operator gets
 	// the real project list. Its loader branches on consoleUser, so the
-	// session must be resolved here too (getConsoleSession no-ops without a
+	// session must be resolved here too (getConsoleIdentity no-ops without a
 	// cookie, keeping the first-time demo visit free of a session lookup).
 	// Scoped to that one entry: other project-less operator pages (/cli-auth)
 	// keep the hard bounce through /login even on the public demo.
 	if (event.locals.demoMode && access.demoEntry) {
-		event.locals.consoleUser = await getConsoleSession(
+		event.locals.consoleIdentity = await getConsoleIdentity(
 			event.platform,
 			event.url.origin,
 			event.request.headers.get('cookie')
 		);
+		event.locals.consoleUser = event.locals.consoleIdentity?.user ?? null;
 		return resolve(event);
 	}
 
-	const user = await getConsoleSession(
+	const identity = await getConsoleIdentity(
 		event.platform,
 		event.url.origin,
 		event.request.headers.get('cookie'),
 		event.request.headers.get('authorization')
 	);
 
-	if (user) {
-		event.locals.consoleUser = user;
+	if (identity) {
+		event.locals.consoleIdentity = identity;
+		event.locals.consoleUser = identity.user;
+
+		// Owned projects require membership in the owning org. Rows with a null
+		// org stay visible to any operator (the self-hosted contract), and
+		// unregistered ids keep their pre-ownership behaviour.
+		if (ownership?.registered && ownership.orgId) {
+			const isMember = identity.organizations.some((org) => org.id === ownership.orgId);
+			if (!isMember) {
+				if (access.kind === 'page') {
+					redirect(303, '/dashboard');
+				}
+				return Response.json(
+					{ error: 'you do not have access to this project' },
+					{ status: 403 }
+				);
+			}
+		}
 		return resolve(event);
 	}
 

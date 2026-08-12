@@ -100,6 +100,60 @@ export async function listProjects(
 	}
 }
 
+export interface ProjectOwnership {
+	/** Whether a registry row governs this id (directly, or - for demo ids -
+	 * via a claimed root: claiming a demo ends anonymous access for the whole
+	 * id family, minted branches included). */
+	registered: boolean;
+	/** The owning org; null on unowned rows (visible to any operator). */
+	orgId: string | null;
+}
+
+/**
+ * The guard's per-request ownership lookup. Unregistered ids answer
+ * `registered: false` - they keep today's any-operator (or, for demo
+ * families, anonymous) behaviour. Returns that same answer when the control
+ * plane is unreachable: failing open preserves the pre-ownership behaviour
+ * during an outage instead of locking every operator out, and the capture
+ * keeps it visible.
+ */
+export async function getProjectOwnership(
+	platform: App.Platform | undefined,
+	projectId: string
+): Promise<ProjectOwnership> {
+	if (!projectIdSchema.safeParse(projectId).success) {
+		return { registered: false, orgId: null };
+	}
+	try {
+		const db = await getDb(platform);
+		const [row] = await db
+			.select({ orgId: project.orgId })
+			.from(project)
+			.where(eq(project.id, projectId))
+			.limit(1);
+		if (row) return { registered: true, orgId: row.orgId };
+		if (isDemoProjectId(projectId)) {
+			const rootId = demoRootId(projectId);
+			if (rootId !== projectId) {
+				const [root] = await db
+					.select({ orgId: project.orgId })
+					.from(project)
+					.where(eq(project.id, rootId))
+					.limit(1);
+				if (root) return { registered: true, orgId: root.orgId };
+			}
+		}
+		return { registered: false, orgId: null };
+	} catch (cause) {
+		console.error('project ownership lookup failed', cause);
+		Sentry.captureException(cause, {
+			level: 'error',
+			tags: { operation: 'project-ownership', projectId }
+		});
+		return { registered: false, orgId: null };
+	}
+}
+
 export type CreateProjectResult =
 	{ ok: true; project: RegistryProject } | { ok: false; status: number; error: string };
 

@@ -1,7 +1,9 @@
 import * as Sentry from '@sentry/sveltekit';
-import { CONSOLE_PROJECT_ID } from '$lib/console';
+import { CONSOLE_PROJECT_ID, type ConsoleIdentity } from '$lib/console';
 import { agentUrl, requireAuthAgent } from '$lib/server/auth-agent';
 import { z } from 'zod';
+
+export type { ConsoleIdentity } from '$lib/console';
 
 /**
  * The console authenticates its operators against a dedicated AuthAgent - the
@@ -41,29 +43,44 @@ const consoleOverviewSchema = z.object({
 });
 
 const consoleConfigSchema = z.object({
-	providers: z.array(z.string())
+	providers: z.array(z.string()),
+	consoleSignups: z.enum(['claimed', 'open']).default('claimed')
 });
 
+export interface ConsoleAuthConfig {
+	/** Social providers the sign-in form can offer (google/github only). */
+	socialProviders: string[];
+	/** The console's EFFECTIVE registration policy, for honest /login copy. */
+	consoleSignups: 'claimed' | 'open';
+}
+
 /**
- * Social providers configured on the console's own auth instance, so the login
- * page can offer the matching buttons. Reads the same public /config the
- * integration tab uses; only google/github are actionable on the sign-in form.
+ * The console auth instance's public /config, narrowed to what the login page
+ * needs: which social buttons to offer and whether public sign-up is open
+ * (docs/managed-service-design.md - the agent reports the effective mode, so
+ * a misconfigured `open` never renders a doomed sign-up form).
  */
-export async function consoleSocialProviders(
+export async function consoleAuthConfig(
 	platform: App.Platform | undefined,
 	origin: string
-): Promise<string[]> {
+): Promise<ConsoleAuthConfig> {
 	const agent = requireAuthAgent(platform);
 	const response = await agent
 		.fetch(agentUrl(origin, CONSOLE_PROJECT_ID, '/config'))
 		.catch(() => null);
 
-	if (!response || !response.ok) return [];
+	const fallback: ConsoleAuthConfig = { socialProviders: [], consoleSignups: 'claimed' };
+	if (!response || !response.ok) return fallback;
 
 	const body = await (response as unknown as Response).json().catch(() => null);
 	const parsed = consoleConfigSchema.safeParse(body);
-	if (!parsed.success) return [];
-	return parsed.data.providers.filter((name) => name === 'google' || name === 'github');
+	if (!parsed.success) return fallback;
+	return {
+		socialProviders: parsed.data.providers.filter(
+			(name) => name === 'google' || name === 'github'
+		),
+		consoleSignups: parsed.data.consoleSignups
+	};
 }
 
 export type ConsoleUser = z.infer<typeof consoleSessionSchema>['user'];
@@ -138,6 +155,114 @@ export async function getConsoleSession(
 
 	const { user } = parsed.data;
 	return { ...user, name: user.name || user.email };
+}
+
+const consoleIdentitySchema = z
+	.object({
+		user: z.object({
+			id: z.string().min(1),
+			email: z.email(),
+			name: z.string().default(''),
+			role: z.string().default('user'),
+			emailVerified: z.boolean().default(false)
+		}),
+		session: z.object({ activeOrganizationId: z.string().nullable().default(null) }),
+		organizations: z.array(
+			z.object({
+				id: z.string().min(1),
+				name: z.string(),
+				slug: z.string(),
+				role: z.string().default('member')
+			})
+		),
+		pendingInvitations: z
+			.array(
+				z.object({
+					id: z.string().min(1),
+					organizationId: z.string(),
+					organizationName: z.string(),
+					role: z.string().nullable().default(null),
+					inviterEmail: z.string().nullable().default(null),
+					expiresAt: z.string()
+				})
+			)
+			.default([])
+	})
+	.nullable();
+
+/**
+ * Resolves the operator's identity - session AND org memberships - in one
+ * agent round trip via GET /console/me. This is what the per-request guard
+ * uses: ownership checks need memberships, and the dashboard must never pay
+ * two RPCs per request (memoized as `locals.consoleIdentity`).
+ *
+ * A 404 falls back to the plain session lookup with no memberships: an agent
+ * deployed before /console/me existed must degrade to the pre-ownership
+ * behaviour (null org visibility), never sign every operator out.
+ */
+export async function getConsoleIdentity(
+	platform: App.Platform | undefined,
+	origin: string,
+	cookie: string | null,
+	authorization: string | null = null
+): Promise<ConsoleIdentity | null> {
+	if (!cookie && !authorization) return null;
+
+	const headers: [string, string][] = [['origin', origin]];
+	if (cookie) headers.push(['cookie', cookie]);
+	if (authorization) headers.push(['authorization', authorization]);
+
+	const agent = requireAuthAgent(platform);
+	const response = await agent
+		.fetch(agentUrl(origin, CONSOLE_PROJECT_ID, '/console/me'), { method: 'GET', headers })
+		.catch((cause: unknown) => {
+			Sentry.captureException(cause, {
+				level: 'error',
+				tags: { operation: 'console-identity' },
+				extra: { note: 'operators are being signed out - the console guard cannot verify' }
+			});
+			return null;
+		});
+
+	if (!response) return null;
+	if (response.status === 404) {
+		const user = await getConsoleSession(platform, origin, cookie, authorization);
+		if (!user) return null;
+		return {
+			user: { ...user, emailVerified: false },
+			activeOrganizationId: null,
+			organizations: [],
+			pendingInvitations: []
+		};
+	}
+	if (!response.ok) {
+		if (response.status !== 401 && response.status !== 403) {
+			Sentry.captureMessage(`console identity lookup responded ${response.status}`, {
+				level: 'error',
+				tags: { operation: 'console-identity' }
+			});
+		}
+		return null;
+	}
+
+	const body: unknown = await (response as unknown as Response).json().catch(() => undefined);
+	if (body === null) return null;
+	const parsed = consoleIdentitySchema.safeParse(body);
+	if (!parsed.success || !parsed.data) {
+		Sentry.captureMessage('console identity response did not match the expected shape', {
+			level: 'error',
+			tags: { operation: 'console-identity' }
+		});
+		return null;
+	}
+
+	const { user, session, organizations, pendingInvitations } = parsed.data;
+	return {
+		user: { ...user, name: user.name || user.email, emailVerified: user.emailVerified },
+		activeOrganizationId: session.activeOrganizationId,
+		organizations,
+		pendingInvitations
+	};
 }
 
 /**
