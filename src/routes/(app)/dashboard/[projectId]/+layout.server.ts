@@ -1,4 +1,4 @@
-import { isDemoProjectId } from '$lib/server/console';
+import { consoleAuthConfig, isDemoProjectId } from '$lib/server/console';
 import {
 	demoBranchContext,
 	getBranchContext,
@@ -11,7 +11,7 @@ import type { LayoutServerLoad } from './$types';
 // the dashboard layout on resize/toggle) so SSR renders the saved layout
 // directly - restoring a resized pane never flashes the default widths.
 // Format: "open:70:30" | "closed:70:30".
-export const load: LayoutServerLoad = async ({ cookies, params, platform, locals }) => {
+export const load: LayoutServerLoad = async ({ cookies, params, platform, locals, url }) => {
 	const [state, ...rest] = (cookies.get('cfbase-copilot') ?? '').split(':');
 	const sizes = rest.map(Number);
 	const layout =
@@ -49,12 +49,26 @@ export const load: LayoutServerLoad = async ({ cookies, params, platform, locals
 				)
 			: Promise.resolve(null)
 	]);
+
+	// Whether the "Keep this project" claim CTA can lead anywhere. A signed-in
+	// operator always can (they have an account to own it). An ANONYMOUS demo
+	// visitor can only complete the flow when the console reports open
+	// sign-ups - on a claimed console the /login hand-off is a dead end, so
+	// the button must not exist. Resolved only for anonymous demo families,
+	// and only when the project param changes.
+	const demoClaimable = locals.consoleUser
+		? true
+		: locals.demoMode && isDemoProjectId(params.projectId)
+			? (await consoleAuthConfig(platform, url.origin)).consoleSignups === 'open'
+			: false;
+
 	return {
 		copilot: {
 			open: state !== 'closed',
 			layout
 		},
 		branches,
-		projects
+		projects,
+		demoClaimable
 	};
 };

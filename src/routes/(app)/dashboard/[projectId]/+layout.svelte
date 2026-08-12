@@ -229,8 +229,10 @@
 	// answers clicks after hydration, so tests wait for this before clicking.
 	let hydrated = $state(false);
 	/** Unclaimed demo family = synthesized branch context (only ever built in
-	 * demo mode); signed-in = the registry list reached the page data. */
-	const claimableDemo = $derived(!!branchCtx?.demo);
+	 * demo mode); demoClaimable = the flow can actually complete (signed-in,
+	 * or the console reports open sign-ups - a claimed console's /login is a
+	 * dead end for an anonymous visitor, so no button). */
+	const claimableDemo = $derived(!!branchCtx?.demo && data.demoClaimable);
 	const signedIn = $derived(data.projects !== null);
 	const loginClaimHref = $derived(
 		`${resolve('/(app)/login')}?next=${encodeURIComponent(

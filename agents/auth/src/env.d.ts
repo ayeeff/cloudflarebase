@@ -8,11 +8,8 @@ interface Env {
 	/** Enable Analytics Engine SQL API querying (writes need no credentials). */
 	CF_ACCOUNT_ID?: string;
 	CF_ANALYTICS_API_TOKEN?: string;
-	/**
-	 * Console registration policy (docs/managed-service-design.md): unset or
-	 * `claimed` = first claim wins then invitation-only; `open` = public
-	 * sign-ups with required email verification (needs the EMAIL binding and
-	 * EMAIL_FROM configured, or the mode stays effectively claimed).
-	 */
-	CONSOLE_SIGNUPS?: string;
 }
+// CONSOLE_SIGNUPS is not augmented here: env.local declares it, so it lives
+// in the generated worker-configuration.d.ts (docs/managed-service-design.md
+// - unset/claimed = invitation-only, open = public sign-ups, and open only
+// takes effect while the EMAIL binding + EMAIL_FROM are configured).

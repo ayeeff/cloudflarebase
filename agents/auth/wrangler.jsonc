@@ -159,6 +159,11 @@
 				"binding": "AI",
 				"remote": true,
 			},
+			// Local mail: wrangler dev intercepts send_email and writes each
+			// message as an .eml file (path logged in the agent's terminal),
+			// verification links included - which is what lets local dev run
+			// the real open-signup flow end to end.
+			"send_email": [{ "name": "EMAIL" }],
 
 			"durable_objects": {
 				"bindings": [
@@ -171,8 +176,14 @@
 
 			"vars": {
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+				// The launch configuration (open sign-ups + anonymous demos), so
+				// the managed flows - registration, verification, demo claim -
+				// are all exercisable on a laptop. env.test stays claimed: the
+				// e2e owner-claim setup depends on it.
+				"CONSOLE_SIGNUPS": "open",
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
+				"EMAIL_FROM": "auth@example.com",
 				"TRUSTED_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8788",
 				"WAE_DATASET": "cloudflarebase_auth_events_local",
 			},
@@ -256,8 +267,12 @@
 
 			"vars": {
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-				// Preview may flip CONSOLE_SIGNUPS=open ahead of production to
-				// rehearse the launch; absent, same as production, until then.
+				// Preview IS the launch rehearsal: open sign-ups + demos, the
+				// managed configuration. Safe here because the preview WEB version
+				// (Workers Builds, preview branch) already carries the ownership
+				// guard - production stays unset until its own web deploy and
+				// backfill have run (docs/managed-service-design.md).
+				"CONSOLE_SIGNUPS": "open",
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
 				"EMAIL_FROM": "auth@notifications.cloudflarebase.com",
