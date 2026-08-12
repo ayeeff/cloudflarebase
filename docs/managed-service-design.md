@@ -1,8 +1,11 @@
 # Managed service: accounts, organizations, and app hosting
 
 Status: Phase A IMPLEMENTED (2026-08-11; drafted the same day). Phase B
-(hosting) is approved and next. Phase C (billing/metering) and Phase D
-(custom domains, orgs billing, BYO-account enterprise) are deferred and
+(hosting) IMPLEMENTED (2026-08-12; amended the same day - subdomain
+scheme, collision auto-numbering, GitHub deploys + deploy tokens; the
+Phase B launch checklist lives at the end of the Phase B section). Phase
+C (billing/metering) and Phase D (custom domains, orgs billing,
+BYO-account enterprise) are deferred and
 only sketched here. Phase A launch checklist for cloudflarebase.com, in
 ORDER (mail is already configured, so flipping the mode is the switch
 that opens sign-ups - it must come last, after the ownership guard is
@@ -209,91 +212,206 @@ A new primitive following the agent contract (`docs/agent-contract.md`):
   data plane - the DO stores metadata; the code and assets live in the
   dispatch namespace.
 - **The same worker serves `*.cfbase.dev`** - role decided by hostname,
-  the LiveShard precedent: requests on the wildcard route resolve the
-  subdomain and `env.DISPATCH.get(subdomain)`, zero lookup, because **the
-  script name IS the subdomain**. Unclaimed subdomain = no script = branded 404. Reserved names (`www`, `api`, `console`, `admin`, `docs`, `status`,
-  `mail`, `cfbase`, ...) never dispatch.
-- **Bindings**: `DISPATCH` (namespace `cfbase-apps`, `-preview` per env),
+  the LiveShard precedent: requests on the wildcard route take the first
+  host label and `env.DISPATCH.get(hostLabel)`, zero lookup, because **the
+  script name IS the full subdomain**. Dispatch NEVER parses the
+  subdomain into app and branch - any ambiguity between an app named
+  `x-2` and branch `2` of app `x` is resolved by the claims table at
+  deploy time, never by string surgery at serve time. Unclaimed
+  subdomain = no script = branded 404. Reserved names (`www`, `api`,
+  `console`, `admin`, `docs`, `status`, `mail`, `cfbase`, ...) never
+  dispatch.
+- **Bindings**: `DISPATCH` (namespace `cfbase-apps` in `env.production`,
+  `cfbase-apps-preview` in `env.preview`; **absent from the top-level
+  self-hosted default** - Workers for Platforms is a paid add-on, and a
+  binding to a namespace the account does not have would fail a fresh
+  clone's zero-config deploy, so the agent treats a missing `DISPATCH`
+  as "hosting not configured" and answers 503 with a pointer instead),
   `CF_ACCOUNT_ID` var, `CF_HOSTING_API_TOKEN` secret (Workers Scripts
   edit, scoped to the namespace operations), optional `SENTRY_DSN`. No
   registry access - subdomain claims go through the console, which owns
   the control plane, so no agent owns global state.
 - **Erase fan-out**: `DELETE /internal/projects/:id` lists namespace
-  scripts by the project-id **tag** every deploy stamps, deletes them,
-  then destroys the DO. A new call in `deleteProject`, per the contract.
+  scripts by the project-id **tag** every deploy stamps (`pid-<id>` -
+  NOT the drafted `project:<id>`, because the scripts-by-tag filter
+  grammar is `?tags=<tag>:yes|no`, so a colon inside a tag collides with
+  the filter syntax), deletes them, then destroys the DO. A new call in
+  `deleteProject`, per the contract. The console also releases the
+  project's rows in the `app` claims table.
 
-### Subdomain claims
+### Subdomains and claims
 
-Global namespace, so claims live in the control plane: new D1 table `app`
-(`subdomain` PK, `project_id`, `created_at`). Charset
-`/^[a-z0-9][a-z0-9-]{2,47}$/`, no `--` (the branch separator), reserved
-list enforced at claim. First deploy claims; project delete releases.
-**Branch deploys inherit the family claim**: a deploy from `<root>--<b>`
-serves at `<app>--<b>.cfbase.dev` - preview environments per branch fall
-out of the id scheme for free, the branches-design payoff repeating.
+Global namespace, so claims live in the control plane: D1 table `app` -
+`subdomain` PK, `project_id` (the FULL registry id, branch ids included:
+a branch is its own registry row, so it is its own claim row),
+`app_name` (the operator-chosen name the subdomain was derived from),
+`created_at`. App-name charset `/^[a-z0-9][a-z0-9-]{2,47}$/`, no `--`,
+reserved list enforced at claim. Project delete releases the row.
+
+**The subdomain scheme** (amended 2026-08-12, wins over the earlier
+`<app>--<b>` draft):
+
+- A deploy from the ROOT project serves at `<app>.cfbase.dev`.
+- A deploy from branch `<root>--<b>` serves at `<app>-<b>.cfbase.dev` -
+  single dash. `main` never appears in a URL: it aliases the root and is
+  a refused branch name, so the bare subdomain IS main.
+
+**Collisions auto-number, never fail.** If the wanted subdomain is
+taken, the claim takes the first free `<wanted>-2`, `<wanted>-3`, ..., and
+what was actually claimed is reported everywhere the operator sees it:
+the deploy response, the CLI output, and the dashboard Hosting page. The
+RESOLVED subdomain is persisted on the `app` row for that
+project+branch on FIRST claim and reused verbatim afterwards - never
+re-derived - so URLs stay stable even when neighboring claims appear or
+are released later. Interactive `cloudflarebase link` shows the numbered
+suggestion before claiming; CI and branch deploys just take it.
+Branch deploys inherit the family's app name and claim their own row
+lazily on first deploy - preview environments per branch fall out of
+the id scheme, the branches-design payoff repeating.
+
+### Deploy tokens
+
+CI cannot deploy on an operator session - bearers expire with the
+session. Deploy tokens are the durable, revocable credential, designed
+deliberately SMALL:
+
+- **Minted and revoked from the Hosting page** (root projects only; a
+  token covers the root and all its branches). The secret is
+  `cfbd_<64 hex>`, shown once at mint.
+- **Stored HASHED in the control plane**: D1 table `deploy_token` - `id`
+  PK, `project_id` (root), `name`, `token_hash` (SHA-256 hex),
+  `created_at`, `last_used_at`. Revocation deletes the row; the digest
+  means a control-plane leak never yields a working credential.
+- **Accepted ONLY by the deploy surface**: the console guard recognizes
+  the `cfbd_` bearer prefix and admits it solely for
+  `POST /api/projects/<id>/hosting/apps/<app>/deploys` and
+  `POST /api/projects/<id>/branches` (CI auto-creating the branch row
+  for a new git branch), where `<id>` must be the token's root or one of
+  its branches. Everywhere else a deploy token is a plain 401 - it is
+  never a session, never an identity, and mints nothing but deploys.
 
 ### The deploy flow
 
 1. `cloudflarebase link` (new CLI command) signs in via the existing
-   `/cli-auth` hand-off, picks/creates a project, claims an app subdomain,
-   and writes `cloudflarebase.json` (`{ project, app, origin }`).
+   `/cli-auth` hand-off, picks/creates a project, claims an app subdomain
+   (showing the auto-numbered suggestion first when the wanted name is
+   taken), and writes `cloudflarebase.json` (`{ project, app, origin }` -
+   `project` is always the ROOT id; the branch is decided per deploy).
 2. `cloudflarebase deploy` **branches on context**: `cloudflarebase.json`
    present → managed deploy; otherwise today's self-hosted wrangler path,
-   unchanged. Managed deploy runs the build (respects the user's
-   `wrangler.jsonc` `main`/`assets` via jsonc-parser, already a CLI dep;
-   a bare assets directory deploys as an assets-only Worker), then
-   multipart-uploads bundle + asset manifest to
-   `POST /api/projects/<id>/hosting/apps/<app>/deploys` with the CLI
-   bearer token - the ordinary guard path, now ownership-checked by
-   Phase A.
-3. The console proxies to the `HostingAgent`, which drives the Cloudflare
-   API: asset upload session (manifest → wanted hashes → base64 uploads →
-   completion token), then
-   `PUT /dispatch/namespaces/<ns>/scripts/<subdomain>` with metadata:
-   modules, assets token, **tags** (`project:<id>`), **limits** (fixed v1
-   caps: 50ms CPU, 50 subrequests), and bindings - injected
-   `PROJECT_ID` + `CLOUDFLAREBASE_URL` vars so the SDK works out of the
-   box, plus user vars from `cloudflarebase.json`. Secrets:
-   `cloudflarebase secret set <name>` PATCHes the script with
-   `keep_bindings` so redeploys never drop them.
-4. The response is the live URL. Deploy history lands in the DO; the
-   dashboard's Hosting page lists apps, deploys, and the URL per branch.
+   unchanged. Managed deploy resolves the target branch (`--branch`, else
+   the current git branch: the default git branch maps to the root,
+   anything else to `<root>--<branch>`), bundles the Worker if the user's
+   `wrangler.jsonc` declares a `main` (via `wrangler deploy --dry-run
+   --outdir` so wrangler does the bundling; a bare assets directory
+   deploys as an assets-only Worker), then multipart-uploads modules +
+   assets to `POST /api/projects/<id>/hosting/apps/<app>/deploys` with
+   the CLI bearer token OR a deploy token - the ordinary guard path,
+   ownership-checked by Phase A.
+3. **The console resolves the claim before proxying** (claims are control
+   plane; the agent owns no global state): reuse the persisted `app` row
+   for this project+branch or mint one per the auto-numbering rule, refuse
+   demo ids with the 403 upsell, then forward to the `HostingAgent` with
+   the resolved subdomain. The agent drives the Cloudflare API: asset
+   upload session (project-salted manifest hashes → wanted buckets →
+   base64 uploads → completion token), then
+   `PUT /dispatch/namespaces/<ns>/scripts/<subdomain>` with multipart
+   metadata: modules, assets token + config, **tags** (`pid-<id>`),
+   `keep_bindings: ["secret_text"]` so redeploys never drop secrets, and
+   bindings - injected `PROJECT_ID` + `CLOUDFLAREBASE_URL` plain-text
+   vars so the SDK works out of the box, plus user vars from
+   `cloudflarebase.json`. Secrets: `cloudflarebase secret set <name>`
+   PATCHes the script settings with a `secret_text` binding under the
+   same `keep_bindings` discipline.
+4. The response is the live URL with the subdomain that was ACTUALLY
+   claimed. Deploy history lands in the DO; the dashboard's Hosting page
+   lists apps, deploys, tokens, and the URL per branch.
+
+### GitHub deploys - Workers-Builds-style without running a build farm
+
+Phase B ships CI deploys as an official GitHub Actions workflow, not a
+hosted build service (webhook-driven builds on our infra stay Phase D):
+
+- **The workflow is checkout → user's build → `cloudflarebase deploy`**,
+  authenticated by a deploy token in the repo's secrets
+  (`CLOUDFLAREBASE_DEPLOY_TOKEN`, read by the CLI from the environment).
+- **Git branch maps to cloudflarebase branch**: the default git branch
+  deploys the root; any other branch deploys `<root>--<branch>`,
+  auto-creating the branch row through the existing `createBranch` when
+  missing (the deploy token authorizes exactly that) - so
+  preview-per-git-branch falls out of the branches design.
+- **The dashboard Hosting page has a "Connect GitHub" card** that mints a
+  deploy token and generates the ready-to-commit workflow YAML with the
+  project and app filled in. Nothing to install, no GitHub App, no OAuth
+  - the trust anchor is the token the operator pastes into their repo
+  secrets.
 
 ### Guardrails from day one
 
 - **Custom limits** on every script (CPU ms, subrequests) - fixed in B,
-  plan-driven in C.
+  plan-driven in C. (Amended at build time: the current WfP API applies
+  limits at DISPATCH time - `env.DISPATCH.get(name, {}, { limits:
+  { cpuMs, subRequests } })` - not in upload metadata, which is strictly
+  better for us: C can change a tenant's caps without touching their
+  deployed script.)
 - **Outbound Worker** on the namespace from the first deploy: v1 is
-  pass-through plus the project tag in its parameters, which is exactly
-  what C's egress metering and policy blocking hook into without a
-  redeploy of user scripts.
+  pass-through plus the dispatched subdomain in its parameters (the
+  project is joinable offline via the claims table - the serve path stays
+  zero-lookup), which is what C's egress metering and policy blocking
+  hook into without a redeploy of user scripts. It is its own tiny Worker
+  (`hosting-outbound`, shipped inside `agents/hosting`), because the
+  outbound service is named in the dispatch-namespace binding and must
+  exist before the hosting worker deploys.
 - **Hard fixed caps**: apps per project (2), deploys per day (50), bundle
-  size (5 MB gzip), assets count/size within platform limits. Enforced in
-  the HostingAgent; C replaces the constants with plan lookups.
+  size (5 MB gzip), assets (1000 files / 25 MB per deploy, within
+  platform limits). Enforced in the HostingAgent; C replaces the
+  constants with plan lookups.
 - **No demo hosting.** Anonymous code execution is an abuse machine; demo
-  projects get an upsell card, the deploy route answers 403 for demo ids.
+  projects get an upsell card, and BOTH the console deploy route and the
+  agent answer 403 for demo ids.
 - **Assets stay per-tenant**: identical-hash assets are shared within a
-  namespace unless hashes are salted - we salt the manifest hashing with
-  the project id so one tenant can never probe another's content by hash.
+  namespace unless hashes are salted - the agent computes manifest hashes
+  as SHA-256 over the project id plus the file bytes, so one tenant can
+  never probe another's content by hash.
 
 ### Serving, DNS, TLS
 
 The `cfbase.dev` zone (to register) carries a proxied wildcard
 `*.cfbase.dev` route to `hosting-agent` in `env.production`. Universal SSL
 covers exactly one wildcard level, which the flat `<app>.cfbase.dev` and
-`<app>--<branch>.cfbase.dev` scheme respects by construction. Customer
-custom domains are Phase D (Cloudflare for SaaS custom hostnames on the
-same dispatch path).
+`<app>-<branch>.cfbase.dev` scheme respects by construction. The zone
+apex redirects to cloudflarebase.com. Customer custom domains are Phase D
+(Cloudflare for SaaS custom hostnames on the same dispatch path).
 
 ### Local dev and e2e
 
 Dynamic script upload has no local simulator. `HOSTING_STUB=true`
 (env.local/test) makes the agent record deploys in DO state and the
-dispatch path serve a fixed stub - the full CLI → console → agent contract
-runs in Playwright without the Cloudflare API. Real upload/serve coverage
-is a small opt-in spec against the `-preview` namespace (the `RUN_AI_E2E`
-precedent), because preview has no `cfbase.dev` route and serving is only
-verifiable where the wildcard exists.
+dispatch path serve a fixed stub page - the full CLI → console → agent
+contract runs in Playwright without the Cloudflare API. In stub mode the
+serve path also honours an `x-cfbase-host` header in place of the Host
+header, because local workerd is dialled by port, not by subdomain; the
+header is ignored everywhere else. The hosting agent takes the next port
+pair: dev 8790, e2e 8800. Real upload/serve coverage is a small opt-in
+spec (`RUN_HOSTING_E2E=1`, the `RUN_AI_E2E` precedent) against the
+`-preview` namespace, because preview has no `cfbase.dev` route and
+serving is only verifiable where the wildcard exists.
+
+### Phase B launch checklist for cloudflarebase.com (manual, in order)
+
+1. Register the `cfbase.dev` zone on the Cloudflare account.
+2. Subscribe to Workers for Platforms and create the dispatch
+   namespaces: `npx wrangler dispatch-namespace create cfbase-apps` and
+   `... create cfbase-apps-preview`.
+3. Mint the `CF_HOSTING_API_TOKEN` API token (Account > Workers Scripts:
+   Edit) and set it with `wrangler secret put` on the hosting worker
+   (production and preview), plus `CF_ACCOUNT_ID` as a var.
+4. Deploy `hosting-outbound`, then the hosting agent
+   (`npm run deploy:production` inside `agents/hosting` deploys both in
+   order), then the web worker.
+5. Add the wildcard route: `*.cfbase.dev/*` → `hosting-agent` on the
+   `cfbase.dev` zone (declared in the agent's `env.production` routes;
+   the deploy claims it once the zone exists).
 
 ## Deferred: Phase C and D sketches
 
