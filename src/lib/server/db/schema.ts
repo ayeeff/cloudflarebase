@@ -87,6 +87,60 @@ export const chatMessage = sqliteTable(
 );
 
 /**
+ * Hosting subdomain claims (docs/managed-service-design.md, Phase B). The
+ * dispatch namespace is global, so claims are control-plane state - no agent
+ * may own the namespace without every project depending on that one instance.
+ * One row per project+app: `project_id` is the FULL registry id (a branch is
+ * its own registry row, so it is its own claim row), and `subdomain` is what
+ * was ACTUALLY claimed under the auto-numbering rule - persisted on first
+ * claim and reused verbatim, never re-derived, so URLs stay stable when
+ * neighboring claims appear or are released.
+ */
+export const app = sqliteTable(
+	'app',
+	{
+		/** The claimed subdomain of cfbase.dev; also the dispatch script name. */
+		subdomain: text('subdomain').primaryKey(),
+		projectId: text('project_id').notNull(),
+		/** The operator-chosen app name the subdomain was derived from. */
+		appName: text('app_name').notNull(),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' })
+			.notNull()
+			.default(sql`(unixepoch() * 1000)`)
+	},
+	(table) => [index('app_project').on(table.projectId, table.appName)]
+);
+
+export type AppRow = typeof app.$inferSelect;
+
+/**
+ * Project-scoped deploy tokens (docs/managed-service-design.md, Phase B) -
+ * the durable credential CI deploys ride, minted on ROOT projects and valid
+ * for the root and its branches. Only the SHA-256 digest is stored, so a
+ * control-plane leak never yields a working credential; the guard accepts
+ * the `cfbd_` bearer solely on the deploy and branch-create endpoints.
+ */
+export const deployToken = sqliteTable(
+	'deploy_token',
+	{
+		id: text('id').primaryKey(),
+		projectId: text('project_id').notNull(),
+		name: text('name').notNull(),
+		tokenHash: text('token_hash').notNull(),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' })
+			.notNull()
+			.default(sql`(unixepoch() * 1000)`),
+		lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' })
+	},
+	(table) => [
+		index('deploy_token_project').on(table.projectId),
+		index('deploy_token_hash').on(table.tokenHash)
+	]
+);
+
+export type DeployTokenRow = typeof deployToken.$inferSelect;
+
+/**
  * Which agents a project has enabled. Groundwork from the agent contract: v1
  * default-enables every registry agent and offers no opt-out UI, and deletion
  * deliberately does NOT read this table - erase fans out to every registry

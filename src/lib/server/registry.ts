@@ -4,6 +4,7 @@ import { AGENT_REGISTRY } from '$lib/agent-registry';
 import type { RegistryProject } from '$lib/agents';
 import { getDb } from '$lib/server/db';
 import { project, projectAgent } from '$lib/server/db/schema';
+import { releaseHostingRows } from '$lib/server/hosting';
 import { requireAgent } from '$lib/server/agents';
 import { projectIdSchema } from '$lib/schemas/auth';
 import type { Cookies } from '@sveltejs/kit';
@@ -570,6 +571,10 @@ export async function deleteProject(
 	if (!deleted.length) {
 		return { ok: false, status: 404, error: 'no such project' };
 	}
+
+	// Release hosting claims and deploy tokens for the whole family - the
+	// subdomains return to the pool the moment the rows are gone.
+	await releaseHostingRows(db, [projectId, ...branches.map((branch) => branch.id)]);
 
 	failures.push(...(await eraseProjectData(platform, projectId)));
 	if (failures.length) {

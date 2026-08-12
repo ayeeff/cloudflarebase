@@ -43,7 +43,24 @@ const SCHEMA_STATEMENTS = [
 		content text NOT NULL,
 		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL
 	)`,
-	`CREATE INDEX IF NOT EXISTS chat_message_thread ON chat_message (project_id, client_key, created_at)`
+	`CREATE INDEX IF NOT EXISTS chat_message_thread ON chat_message (project_id, client_key, created_at)`,
+	`CREATE TABLE IF NOT EXISTS app (
+		subdomain text PRIMARY KEY NOT NULL,
+		project_id text NOT NULL,
+		app_name text NOT NULL,
+		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS app_project ON app (project_id, app_name)`,
+	`CREATE TABLE IF NOT EXISTS deploy_token (
+		id text PRIMARY KEY NOT NULL,
+		project_id text NOT NULL,
+		name text NOT NULL,
+		token_hash text NOT NULL,
+		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL,
+		last_used_at integer
+	)`,
+	`CREATE INDEX IF NOT EXISTS deploy_token_project ON deploy_token (project_id)`,
+	`CREATE INDEX IF NOT EXISTS deploy_token_hash ON deploy_token (token_hash)`
 ];
 
 /**
