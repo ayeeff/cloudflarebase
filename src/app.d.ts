@@ -17,6 +17,12 @@ declare global {
 			consoleIdentity: import('$lib/console').ConsoleIdentity | null;
 			/** Whether this deployment runs as a public demo (DEMO_MODE=true). */
 			demoMode: boolean;
+			/**
+			 * Deploy-token grant when the request authenticated with a `cfbd_`
+			 * bearer (docs/managed-service-design.md, Phase B). Only ever set on
+			 * the deploy and branch-create endpoints; never a session.
+			 */
+			deployToken: import('$lib/server/hosting').DeployTokenGrant | null;
 		}
 
 		interface Platform {
@@ -25,6 +31,8 @@ declare global {
 				AUTH_AGENT: Fetcher;
 				/** Service binding to the db-agent worker (fetch-only interface). */
 				DB_AGENT: Fetcher;
+				/** Service binding to the hosting-agent worker (fetch-only interface). */
+				HOSTING_AGENT: Fetcher;
 			};
 			cf: CfProperties;
 			ctx: ExecutionContext;

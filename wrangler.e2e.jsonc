@@ -24,7 +24,8 @@
 	],
 	"services": [
 		{ "binding": "AUTH_AGENT", "service": "auth-agent-test" },
-		{ "binding": "DB_AGENT", "service": "db-agent-test" }
+		{ "binding": "DB_AGENT", "service": "db-agent-test" },
+		{ "binding": "HOSTING_AGENT", "service": "hosting-agent-test" }
 	],
 	// Fixed test-only admin password for the /admin fleet dashboard; keep
 	// aligned with root wrangler.jsonc env.test and e2e/admin.ui.spec.ts.

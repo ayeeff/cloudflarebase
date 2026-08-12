@@ -4,6 +4,11 @@ import { RESERVED_PROJECT_IDS } from '$lib/console';
 import { projectIdSchema } from '$lib/schemas/auth';
 import { agentFetcher, agentUrl } from '$lib/server/agents';
 import { getConsoleIdentity, isDemoMode, isDemoProjectId } from '$lib/server/console';
+import {
+	deployTokenCoversProject,
+	isDeployTokenSurface,
+	verifyDeployToken
+} from '$lib/server/hosting';
 import { getProjectOwnership, type ProjectOwnership } from '$lib/server/registry';
 import { handleErrorWithSentry, initCloudflareSentryHandle, sentryHandle } from '@sentry/sveltekit';
 import { redirect } from '@sveltejs/kit';
@@ -214,9 +219,37 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 	event.locals.demoMode = isDemoMode(event.platform);
 	event.locals.consoleUser = null;
 	event.locals.consoleIdentity = null;
+	event.locals.deployToken = null;
 
 	const access = classifyAccess(event.url.pathname);
 	if (access.scope === 'open') return resolve(event);
+
+	// Deploy tokens (docs/managed-service-design.md, Phase B): a `cfbd_` bearer
+	// is CI's durable credential, accepted SOLELY on the deploy and
+	// branch-create endpoints for the token's root project and its branches.
+	// Any other use of one - wrong surface, wrong project, revoked - is a
+	// plain 401 here, never a fall-through to session resolution: a deploy
+	// token must never behave like a session.
+	const bearer = event.request.headers
+		.get('authorization')
+		?.match(/^Bearer\s+(cfbd_[0-9a-f]{64})$/i)?.[1];
+	if (bearer) {
+		if (
+			access.projectId &&
+			isDeployTokenSurface(event.url.pathname, event.request.method) &&
+			!isDemoProjectId(access.projectId)
+		) {
+			const grant = await verifyDeployToken(event.platform, bearer.toLowerCase());
+			if (
+				grant &&
+				(await deployTokenCoversProject(event.platform, grant.projectId, access.projectId))
+			) {
+				event.locals.deployToken = grant;
+				return resolve(event);
+			}
+		}
+		return Response.json({ error: 'invalid deploy token' }, { status: 401 });
+	}
 
 	// Ownership of the target project, resolved once per request. Registered
 	// rows carry their org; an unregistered demo id inherits a claimed root's

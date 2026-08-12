@@ -628,6 +628,110 @@ export const dbServerFrameSchema = z
 			'Server frames on the live-query WebSocket: an initial snapshot in query order, then added/modified/removed deltas as writes happen.'
 	});
 
+// --- Hosting agent (mirrors agents/hosting/src/agent.ts) ---
+
+export const hostingAppSchema = z
+	.object({
+		name: z.string().describe('The operator-chosen app name.'),
+		subdomain: z
+			.string()
+			.describe('What was ACTUALLY claimed - auto-numbered when the wanted name was taken.'),
+		url: z.string().nullable().describe('Live URL; null while no serving domain is configured.'),
+		deployCount: z.number().int(),
+		lastDeployAt: z.iso.datetime().nullable(),
+		createdAt: z.iso.datetime()
+	})
+	.meta({
+		id: 'HostingApp',
+		description: 'One deployed app: a user Worker (assets and/or modules) in the dispatch namespace.'
+	});
+
+export const hostingDeploySchema = z
+	.object({
+		id: z.string(),
+		appName: z.string(),
+		subdomain: z.string(),
+		url: z.string().nullable(),
+		status: z.enum(['live', 'stub']),
+		hasWorker: z.boolean(),
+		assetCount: z.number().int(),
+		assetBytes: z.number().int(),
+		moduleBytes: z.number().int(),
+		createdAt: z.iso.datetime()
+	})
+	.meta({
+		id: 'HostingDeploy',
+		description: 'One deploy. `stub` means recorded without a dispatch namespace (local/e2e).'
+	});
+
+export const hostingOverviewSchema = z
+	.object({
+		projectId: z.string(),
+		provisionedAt: z.iso.datetime().nullable(),
+		apps: z.array(hostingAppSchema),
+		recentDeploys: z.array(hostingDeploySchema),
+		totalDeploys: z.number().int(),
+		configured: z.boolean().describe('Whether deploys can complete on this install.'),
+		stub: z.boolean()
+	})
+	.meta({ id: 'HostingOverview' });
+
+export const hostingDeployPageSchema = z
+	.object({
+		deploys: z.array(hostingDeploySchema),
+		total: z.number().int(),
+		cursor: z
+			.string()
+			.nullable()
+			.describe('Keyset cursor for the next page; null on the last one.')
+	})
+	.meta({ id: 'HostingDeployPage' });
+
+export const hostingClaimSchema = z
+	.object({
+		subdomain: z.string(),
+		appName: z.string(),
+		created: z.boolean().describe('False when an existing claim was reused (or on a dry run).')
+	})
+	.meta({
+		id: 'HostingClaim',
+		description:
+			'A resolved subdomain claim. Taken names auto-number (`name-2`, `name-3`, ...) - the resolved subdomain is persisted on first claim and reused verbatim afterwards.'
+	});
+
+export const hostingClaimRequestSchema = z
+	.object({
+		app: z.string().describe('The wanted app name (subdomain charset, 3-48 chars).'),
+		dry: z.boolean().optional().describe('Only report what would be claimed.')
+	})
+	.meta({ id: 'HostingClaimRequest' });
+
+export const deployTokenSchema = z
+	.object({
+		id: z.string(),
+		name: z.string(),
+		createdAt: z.iso.datetime(),
+		lastUsedAt: z.iso.datetime().nullable()
+	})
+	.meta({
+		id: 'DeployToken',
+		description:
+			'Deploy-token metadata. The secret is shown once at mint and stored only as a SHA-256 digest.'
+	});
+
+export const mintDeployTokenSchema = z
+	.object({ name: z.string().describe('A label, e.g. the repository this token deploys from.') })
+	.meta({ id: 'MintDeployTokenRequest' });
+
+export const mintedDeployTokenSchema = z
+	.object({
+		id: z.string(),
+		name: z.string(),
+		token: z.string().describe('The `cfbd_...` secret - shown exactly once.'),
+		createdAt: z.iso.datetime()
+	})
+	.meta({ id: 'MintedDeployToken' });
+
 export type AuthActivityEvent = z.infer<typeof authActivityEventSchema>;
 export type RoleDefinition = z.infer<typeof roleDefinitionSchema>;
 export type AuthAgentState = z.infer<typeof authAgentStateSchema>;
@@ -668,3 +772,10 @@ export type DbRestorePoints = z.infer<typeof dbRestorePointsSchema>;
 export type DbReplicationMode = z.infer<typeof dbReplicationModeSchema>;
 export type DbReplica = z.infer<typeof dbReplicaSchema>;
 export type DbReplicationStatus = z.infer<typeof dbReplicationStatusSchema>;
+export type HostingApp = z.infer<typeof hostingAppSchema>;
+export type HostingDeploy = z.infer<typeof hostingDeploySchema>;
+export type HostingOverview = z.infer<typeof hostingOverviewSchema>;
+export type HostingDeployPage = z.infer<typeof hostingDeployPageSchema>;
+export type HostingClaim = z.infer<typeof hostingClaimSchema>;
+export type DeployTokenInfo = z.infer<typeof deployTokenSchema>;
+export type MintedDeployToken = z.infer<typeof mintedDeployTokenSchema>;

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { authOpenApi } from './auth';
 import { consoleOpenApi } from './console';
 import { dbOpenApi } from './db';
+import { hostingOpenApi } from './hosting';
 import type { AgentOpenApiModule } from './shared';
 
 /**
@@ -19,7 +20,7 @@ import type { AgentOpenApiModule } from './shared';
  * what z.toJSONSchema emits, so the component schemas need no translation.
  */
 
-const MODULES: AgentOpenApiModule[] = [authOpenApi, dbOpenApi, consoleOpenApi];
+const MODULES: AgentOpenApiModule[] = [authOpenApi, dbOpenApi, hostingOpenApi, consoleOpenApi];
 
 /** Named schemas that become components.schemas entries. */
 const registry = z.registry<{ id: string }>();
