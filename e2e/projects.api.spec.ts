@@ -162,7 +162,12 @@ test.describe('project agents (backend)', () => {
 		expect(claims.email).toBe(email);
 
 		// Custom roles must be defined in the project registry before assignment.
-		const unknownRole = await request.put(rolePath(created.id), { data: { role: 'editor' } });
+		// A role this spec NEVER defines: on a reused local stack the `editor`
+		// definition below persists in agent state, so probing with `editor`
+		// here answered 200 on every run after the first.
+		const unknownRole = await request.put(rolePath(created.id), {
+			data: { role: 'undefined-role' }
+		});
 		expect(unknownRole.status()).toBe(400);
 
 		const defineRole = await request.put(`/api/projects/${project}/admin/roles`, {
