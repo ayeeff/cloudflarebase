@@ -50,8 +50,12 @@ agent's "first customer"). The managed service deepens that, deliberately:
   one email sign-up (the first-run owner claim) and refuses the rest;
   `DEMO_MODE` refuses the claim entirely. A new env var on the auth worker,
   `CONSOLE_SIGNUPS`, selects the behaviour:
-  - unset / `claimed` - the self-hosted default, exactly today's behaviour
-    (first claim wins, then closed; refused under `DEMO_MODE`).
+  - unset / `claimed` - the self-hosted default: first claim wins, then
+    closed to strangers (refused under `DEMO_MODE`), exactly today - with
+    ONE addition: the `denyUserCreation` veto allows a sign-up whose email
+    holds a pending org invitation. Today's self-hosted console is
+    literally single-operator; invitations give it teams without opening
+    registration, so the private-by-default posture survives.
   - `open` - managed mode: public email sign-up with **required email
     verification**, and social sign-up creates users implicitly (today's
     unknown-account bounce is claimed-mode behaviour). Composes with
@@ -115,10 +119,47 @@ agent's "first customer"). The managed service deepens that, deliberately:
   org's projects and keeps the branch nesting. Demo visitors see none of
   this - `locals.consoleUser` already gates the registry surfaces.
 
+### Demo claim - the trial-to-signed-up bridge
+
+Demo mode stays, and composes with open sign-ups: an anonymous visitor
+drives a `demo-<hex>` project, likes it, signs up - and **keeps it**.
+Nothing today connects a demo to an account (demos self-erase after
+`DEMO_TTL_HOURS`, 720h = 30 days on cloudflarebase.com), so Phase A adds a
+claim flow:
+
+- **The registry decides, never the string shape** - the principle that
+  already governs grandfathered `--` ids extends to demos. Claiming
+  inserts a registry row for the demo id under the claimer's org; from
+  that moment the guard sees a registered project and requires ownership,
+  so anonymous access to a claimed demo ENDS at the same instant it gains
+  an owner. Unregistered demo-shaped ids keep today's anonymous behaviour.
+- **Agents learn by push, not by shape**: the console fans out
+  `PUT /internal/projects/:id/claim` (service-binding-only, the erase-route
+  precedent) to both agents; each sets a durable `claimed` flag that lifts
+  the demo caps and cancels the TTL erase (`expireDemoProject` re-checks
+  the flag before destroying, the same belt-and-braces as its existing
+  `DEMO_MODE` re-check, so a pending alarm can never delete a claimed
+  project).
+- **The id never changes**, so data, users, JWKS trust, live sockets, and
+  integration snippets all survive the claim with zero copying. The
+  display name is editable; the id was always immutable. Demo branches the
+  visitor minted are just derived ids - claiming the root lets them be
+  registered as ordinary branch rows via the existing `createBranch`.
+- The dashboard offers the claim at the moment of highest intent: a
+  "Keep this project" affordance on demo surfaces that routes through
+  sign-up and lands back on the claimed project.
+- **The claim route is the ONLY minter of demo-shaped registry rows**:
+  ordinary project creation refuses `demo-` ids (a row inserted without
+  the agent fan-out would leave the TTL armed under a registered project).
+  Demo access is possession-based, so the claim is too: whoever holds the
+  id and is signed in claims it, first-claim-wins by primary-key
+  atomicity - the same trust model the demo itself has.
+
 ### What Phase A deliberately does NOT change
 
-Self-hosted defaults (claimed console, no mail, no orgs UI), the agents'
-hot paths, the db agent, demo mode's flows and caps, the CLI (its login
+Self-hosted defaults (claimed console, no mail, no open registration -
+orgs arrive there too, but only invitations can mint users), the agents'
+hot paths, the db agent, unclaimed demo flows and caps, the CLI (its login
 against the console instance keeps working verbatim - bearer sessions are
 mode-independent), `/admin`, and the publishing model.
 
