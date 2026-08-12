@@ -33,6 +33,8 @@
 		Minus
 	} from '@lucide/svelte';
 
+	let { data } = $props();
+
 	// Deliberately short: the header is not a table of contents. Everything
 	// else stays reachable by scroll and the footer links.
 	type MenuItem = { name: string; href: string };
@@ -1260,15 +1262,18 @@
 								{/each}
 							</ul>
 						</div>
+						<!-- Account corner, Supabase-style: signed-in operators get their
+						     console; everyone else gets Log in / Sign up. The demo CTA
+						     lives in the hero - it is the pitch, not the account. -->
 						<div class="flex w-full flex-col space-y-3 sm:flex-row sm:gap-3 sm:space-y-0 md:w-fit">
-							<Button href="/dashboard" size="sm" class={cn(isScrolled && 'lg:hidden')}
-								>Open live demo</Button
-							>
-							<Button
-								href="/dashboard"
-								size="sm"
-								class={cn('hidden', isScrolled && 'lg:inline-flex')}>Live demo</Button
-							>
+							{#if data.signedIn}
+								<Button href="/dashboard" size="sm" data-testid="nav-dashboard">Dashboard</Button>
+							{:else}
+								<Button href="/login" size="sm" variant="ghost" data-testid="nav-login"
+									>Log in</Button
+								>
+								<Button href="/login?signup=1" size="sm" data-testid="nav-signup">Sign up</Button>
+							{/if}
 						</div>
 					</div>
 				</div>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import ConsoleShell from '$lib/components/console-shell.svelte';
 	import { CONSOLE_AUTH_BASE } from '$lib/console';
 	import { Button } from '$lib/components/ui/button';
@@ -28,8 +29,11 @@
 
 	// 'sign-in' | 'sign-up': what the form submits. Open mode offers both;
 	// claimed mode keeps sign-up behind the "invited?" link (the agent admits
-	// only emails holding a pending invitation).
-	let mode = $state<'sign-in' | 'sign-up'>('sign-in');
+	// only emails holding a pending invitation). ?signup=1 (the landing nav's
+	// Sign up button) starts on the registration form.
+	let mode = $state<'sign-in' | 'sign-up'>(
+		page.url.searchParams.has('signup') ? 'sign-up' : 'sign-in'
+	);
 	let name = $state('');
 	let email = $state('');
 	let password = $state('');
