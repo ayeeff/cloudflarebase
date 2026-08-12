@@ -102,6 +102,13 @@ export interface AuthAgentBindings {
 
 	/** Test-only. Exhausting persisted rate-limit buckets breaks reused stacks. */
 	DISABLE_RATE_LIMIT?: 'true';
+
+	/**
+	 * Local-dev only. Open console sign-ups normally refuse sign-in until the
+	 * email is verified; local mail lands in wrangler's .eml files, so this
+	 * lets sign-up flow straight into a session instead.
+	 */
+	DISABLE_EMAIL_VERIFICATION?: 'true';
 }
 
 /**

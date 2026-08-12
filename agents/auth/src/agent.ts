@@ -362,7 +362,13 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			// Open console sign-ups are only real with a sender that can reach
 			// arbitrary addresses; the console gets the cookie cache and personal
 			// orgs so operator polling and ownership work out of the box.
-			requireEmailVerification: this.name === CONSOLE_PROJECT_ID && this.consoleSignups === 'open',
+			// DISABLE_EMAIL_VERIFICATION is the env.local escape: wrangler dev
+			// writes mail to .eml files, so requiring verification would dead-end
+			// every local sign-up behind a file hunt.
+			requireEmailVerification:
+				this.name === CONSOLE_PROJECT_ID &&
+				this.consoleSignups === 'open' &&
+				this.env.DISABLE_EMAIL_VERIFICATION !== 'true',
 			cookieCache: this.name === CONSOLE_PROJECT_ID,
 			autoPersonalOrg: this.name === CONSOLE_PROJECT_ID,
 			// Console registration policy, enforced where every path converges -

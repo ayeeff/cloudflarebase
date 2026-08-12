@@ -95,6 +95,6 @@ Expiry uses `this.schedule(seconds, 'expireDemoProject', undefined, { idempotent
 
 ## Development and tests
 
-`npm run dev` starts `wrangler dev --env local` on :8788 with state in `../../.wrangler/state/`, shared with the root app's dev proxy.
+`npm run dev` starts `wrangler dev --env local` on :8788 with state in `../../.wrangler/state/`, shared with the root app's dev proxy. `env.local` also sets `DISABLE_EMAIL_VERIFICATION=true`: open-mode sign-up lands a session immediately, because the verification mail only reaches wrangler's `.eml` files locally. Deployed opens keep the requirement (the flag exists for `env.local` and nothing else), and the login page decides "check your inbox" vs "you're in" from the sign-up response's `token`, not the mode.
 
 Playwright starts `auth-agent-test` on :8798 with persistence in `../../.wrangler/test-state/auth-agent`, local D1 analytics, the fixed test secret, and rate limiting off. Windows cleanup goes through the root `scripts/kill-port.mjs` and `scripts/clean-dir.mjs`; never replace them with unscoped process kills or directory deletion.

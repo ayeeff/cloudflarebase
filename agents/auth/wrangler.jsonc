@@ -181,6 +181,11 @@
 				// are all exercisable on a laptop. env.test stays claimed: the
 				// e2e owner-claim setup depends on it.
 				"CONSOLE_SIGNUPS": "open",
+				// Local sign-up flows straight into a session: the verification
+				// mail only lands in wrangler's .eml files, so requiring it would
+				// dead-end every local account behind a file hunt. Local-only -
+				// deployed opens keep the requirement.
+				"DISABLE_EMAIL_VERIFICATION": "true",
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
 				"EMAIL_FROM": "auth@example.com",

@@ -98,11 +98,17 @@
 				return;
 			}
 
-			// Open sign-ups require email verification, so there is no session to
-			// land in yet - tell the visitor what happens next instead.
+			// Open sign-ups require email verification, so there is usually no
+			// session to land in yet - tell the visitor what happens next. A null
+			// token is how Better Auth says "no session": a deployment that
+			// disables verification (local dev) returns a real one, and that
+			// sign-up falls through to the dashboard like a sign-in.
 			if (signingUp && open) {
-				verifyNotice = true;
-				return;
+				const body = (await response.json().catch(() => null)) as { token?: string | null } | null;
+				if (!body?.token) {
+					verifyNotice = true;
+					return;
+				}
 			}
 
 			await invalidateAll();
