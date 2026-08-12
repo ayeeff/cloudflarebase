@@ -12,6 +12,9 @@ export type {
 	AuthAgentState,
 	AuthAnalytics,
 	AuthOverview,
+	ConsoleMe,
+	ConsoleOrgMembership,
+	ConsolePendingInvitation,
 	FleetProjectCounts,
 } from './agent';
 export type { FleetOverview, FleetProject, FleetTotals } from './fleet';

@@ -120,6 +120,12 @@
 
 			"vars": {
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+				// The managed launch configuration: anonymous demos AND real
+				// accounts. `open` only takes effect once RESEND_API_KEY is set
+				// (`wrangler secret put RESEND_API_KEY --env production`) - until
+				// then the console stays effectively claimed, because open
+				// sign-ups without a verification sender would be a silent trap.
+				"CONSOLE_SIGNUPS": "open",
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
 				// Committed on purpose: env.production is cloudflarebase.com's own
@@ -249,6 +255,9 @@
 
 			"vars": {
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+				// Same managed policy as production; inert until the preview
+				// worker gets its own RESEND_API_KEY secret.
+				"CONSOLE_SIGNUPS": "open",
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
 				"EMAIL_FROM": "auth@notifications.cloudflarebase.com",

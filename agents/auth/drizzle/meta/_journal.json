@@ -36,6 +36,13 @@
       "when": 1784607935612,
       "tag": "0004_thin_hercules",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1786501645504,
+      "tag": "0005_busy_cobalt_man",
+      "breakpoints": true
     }
   ]
 }

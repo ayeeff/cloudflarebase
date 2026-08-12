@@ -83,6 +83,7 @@ export const RESERVED_PROJECT_IDS = new Set([
 	'new',
 	'health',
 	'fleet',
+	'organization',
 ]);
 
 export const createProjectRequestSchema = z.strictObject({
