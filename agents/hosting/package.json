@@ -1,6 +1,6 @@
 {
 	"name": "@cloudflarebase/hosting",
-	"version": "0.1.0",
+	"version": "0.3.0",
 	"description": "Apps and functions on Cloudflare Workers for Platforms - static assets and server code in one deploy, one Durable Object orchestrator per project - the hosting primitive behind Cloudflarebase.",
 	"license": "Apache-2.0",
 	"type": "module",
