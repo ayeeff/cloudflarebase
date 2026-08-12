@@ -91,6 +91,13 @@ export default defineConfig({
 				},
 				{
 					command:
+						'node scripts/kill-port.mjs 8800 && node scripts/clean-dir.mjs .wrangler/test-state/hosting-agent && npm run dev:test --prefix agents/hosting',
+					url: 'http://localhost:8800/health',
+					reuseExistingServer: !process.env.CI,
+					timeout: 120_000
+				},
+				{
+					command:
 						'node scripts/kill-port.mjs 8797 && cross-env E2E_BUILD=true npm run build && node scripts/clean-dir.mjs .wrangler/test-state/web && wrangler dev --config wrangler.e2e.jsonc --port 8797 --persist-to .wrangler/test-state/web',
 					url: 'http://localhost:8797/',
 					reuseExistingServer: !process.env.CI,
