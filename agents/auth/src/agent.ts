@@ -1230,15 +1230,44 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 	 * owner from before Phase A acquires one without a migration.
 	 */
 	private async getConsoleMe(request: Request): Promise<ConsoleMe | null> {
-		const resolved = await this.auth.api.getSession({ headers: request.headers }).catch(() => null);
-		if (!resolved) return null;
-		const user = resolved.user as typeof resolved.user & {
-			isAnonymous?: boolean | null;
-			role?: string;
+		// Resolved through the real Better Auth HANDLER, not auth.api.getSession:
+		// only the handler runs the bearer plugin's header-to-cookie conversion.
+		// The pinned precedence is that an Authorization bearer is AUTHORITATIVE:
+		// an invalid bearer is refused even when a valid cookie rides along (the
+		// CLI contract). The bearer plugin used to guarantee that by overwriting
+		// the session cookie, but the cookieCache's session_data cookie is
+		// consulted before the token - so when a bearer is present, cookies are
+		// dropped from the lookup entirely and the token decides alone.
+		const origin = new URL(request.url).origin;
+		const sessionHeaders = new Headers(request.headers);
+		if (sessionHeaders.get('authorization')) sessionHeaders.delete('cookie');
+		const sessionResponse = await this.auth
+			.handler(
+				new Request(`${origin}/api/auth/get-session`, { method: 'GET', headers: sessionHeaders }),
+			)
+			.catch(() => null);
+		if (!sessionResponse || !sessionResponse.ok) return null;
+		const resolved = (await sessionResponse.json().catch(() => null)) as {
+			user?: {
+				id?: string;
+				email?: string;
+				name?: string;
+				emailVerified?: boolean;
+				isAnonymous?: boolean | null;
+				role?: string;
+			};
+			session?: { activeOrganizationId?: string | null };
+		} | null;
+		if (!resolved?.user?.id || !resolved.user.email) return null;
+		const user = {
+			id: resolved.user.id,
+			email: resolved.user.email,
+			name: resolved.user.name ?? '',
+			emailVerified: !!resolved.user.emailVerified,
+			isAnonymous: resolved.user.isAnonymous ?? null,
+			role: resolved.user.role,
 		};
-		const session = resolved.session as typeof resolved.session & {
-			activeOrganizationId?: string | null;
-		};
+		const session: { activeOrganizationId?: string | null } = resolved.session ?? {};
 
 		if (!user.isAnonymous) {
 			await ensurePersonalOrg(this.db, user);
