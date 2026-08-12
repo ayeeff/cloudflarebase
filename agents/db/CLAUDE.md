@@ -79,6 +79,8 @@ Row first, then push: `PUT /admin/collections/:name` upserts the parent row, the
 
 `demo-<20hex>` + `DEMO_MODE=true` (both halves): 5 collections, 200 docs/collection, 8 KB docs, 5 subscriptions/connection, TTL erase after `DEMO_TTL_HOURS` (idempotent schedule, re-checked before destroy). Always-on: 128 KB docs, 10 subscriptions/connection, query limit <= 200, 200 collections/project.
 
+**Demo claim** (docs/managed-service-design.md): the worker's service-binding-only `PUT /internal/projects/:id/claim` sets a durable `demo-claimed` flag on the parent, folded into `isEphemeral` - caps lift, the TTL disarms (`expireDemoProject` re-checks), the parent re-pushes every shard config so children shed their `config.demo` caps, and the gateway consults the parent (`isEphemeralProject`, cached like origins) instead of deciding demo-ness from the env alone.
+
 ## Publishing as `@cloudflarebase/db`
 
 Same regime as auth: `files` ships `dist`, `template`, `NOTICE`, `cloudflarebase.agent.json` only; never ship `worker-configuration.d.ts` (would clobber the consumer's global `Env`) or `src/env.d.ts`. `AssertDbAgentEnv` + `bindings.test-d.ts` lock the binding contract (`tsc --noEmit` is the whole test suite for it). The fragment is a FRESH v1 declaring BOTH classes. The `./client` subpath is the browser/Node SDK and must stay free of Workers imports.

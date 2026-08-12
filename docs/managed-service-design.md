@@ -1,8 +1,15 @@
 # Managed service: accounts, organizations, and app hosting
 
-Status: DRAFT (drafted 2026-08-11). Phases A and B are approved for
-execution. Phase C (billing/metering) and Phase D (custom domains, orgs
-billing, BYO-account enterprise) are deferred and only sketched here.
+Status: Phase A IMPLEMENTED (2026-08-11; drafted the same day). Phase B
+(hosting) is approved and next. Phase C (billing/metering) and Phase D
+(custom domains, orgs billing, BYO-account enterprise) are deferred and
+only sketched here. Phase A launch checklist for cloudflarebase.com:
+deploy agents by hand (auth -> db), deploy the web worker, set
+`RESEND_API_KEY` on the auth worker (env.production already declares
+`CONSOLE_SIGNUPS=open`, inert until the secret exists), sign in once to
+mint the founder's personal org, then run
+`node scripts/backfill-org.mjs --org <orgId>` so no pre-org registry row
+stays visible to every account.
 
 cloudflarebase.com becomes a managed Firebase alternative: sign up, create a
 project, `cloudflarebase deploy`, and your app is live at
