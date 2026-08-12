@@ -26,10 +26,16 @@ const proxy: RequestHandler = async ({ params, request, url, platform }) => {
 
 	// Pass url + init (not a Request object): in dev the service binding is a
 	// miniflare proxy that can't consume Requests from the Node realm.
+	// redirect: 'manual' because Better Auth answers OAuth callbacks and emailed
+	// links with 302s the BROWSER must follow. fetch's default 'follow' replays
+	// the Location against this same service binding - which routes by binding,
+	// not host, so the agent worker sees a non-/agents path and 404s - and the
+	// session Set-Cookie riding the redirect is swallowed with it.
 	const response = await agent.fetch(target, {
 		method: request.method,
 		headers: [...headers],
-		body
+		body,
+		redirect: 'manual'
 	});
 	return toNativeResponse(response as unknown as Response);
 };

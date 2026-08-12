@@ -96,4 +96,20 @@ test.describe('auth lifecycle (backend)', () => {
 		expect((await request.delete(adminUserPath(PROJECT, 'missing-user'))).status()).toBe(404);
 		expect((await request.delete(adminSessionPath(PROJECT, 'missing-session'))).status()).toBe(404);
 	});
+
+	test('OAuth callback redirects escape the proxy un-followed', async ({ request }) => {
+		// Better Auth answers /callback/<provider> with a 302 the BROWSER must
+		// follow. The proxy once used fetch's default redirect: 'follow', which
+		// replayed the Location against the auth service binding - the agent
+		// worker saw a non-/agents path and 404'd, and a real sign-in's session
+		// Set-Cookie rode the swallowed redirect. A bogus state must surface as
+		// Better Auth's own error redirect, never a proxy-minted 404.
+		const callback = await request.get(authPath(PROJECT, 'callback/google?state=bogus&code=x'), {
+			maxRedirects: 0
+		});
+		expect(callback.status()).toBe(302);
+		const location = callback.headers()['location'];
+		expect(location).toContain(`/api/projects/${PROJECT}/auth/error`);
+		expect(location).toContain('error=state_mismatch');
+	});
 });
