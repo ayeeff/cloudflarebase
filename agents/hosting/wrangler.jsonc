@@ -1,0 +1,150 @@
+/**
+ * Cloudflarebase hosting agent - apps and functions on Workers for Platforms.
+ *
+ * The TOP LEVEL is the self-hosted default, deployable by someone who does
+ * not own this project's domains or Cloudflare account. Workers for Platforms
+ * is a paid add-on, so the default deliberately has NO `dispatch_namespaces`
+ * binding: a binding to a namespace the account does not have would fail a
+ * fresh clone's zero-config deploy. Without it the agent answers hosting
+ * requests with a 503 pointing at the setup steps, and everything else in the
+ * install keeps working. cloudflarebase.com's own values live in
+ * env.production / env.preview.
+ *
+ * The outbound Worker (`hosting-outbound`, wrangler.outbound.jsonc) must be
+ * deployed BEFORE any env that names it in `dispatch_namespaces.outbound` -
+ * `npm run deploy:production` encodes the order.
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "hosting-agent",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-07-10",
+	"compatibility_flags": ["nodejs_compat", "nodejs_als"],
+	"migrations": [{ "new_sqlite_classes": ["HostingAgent"], "tag": "v1" }],
+	"durable_objects": {
+		"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }]
+	},
+	"observability": {
+		"logs": { "enabled": true, "invocation_logs": true },
+		"traces": { "enabled": true }
+	},
+	"upload_source_maps": true,
+	"workers_dev": false,
+	"preview_urls": false,
+	"vars": {
+		// Empty on purpose: a committed DSN would collect every fork's errors.
+		// Set your own with `wrangler secret put SENTRY_DSN` to turn it on.
+		"SENTRY_DSN": "",
+		"SENTRY_ENV": "production",
+		// Apex domain apps serve under. Empty disables the serving path - set it
+		// (plus a wildcard route on your zone) to serve apps from a self-hosted
+		// install.
+		"HOSTING_DOMAIN": "",
+		// Name of the Workers for Platforms dispatch namespace the DISPATCH
+		// binding targets - the REST upload API needs the name, which the
+		// binding does not reveal.
+		"DISPATCH_NAMESPACE": ""
+	},
+	"secrets": {
+		// No secret has to be set for this Worker to deploy. CF_ACCOUNT_ID and
+		// CF_HOSTING_API_TOKEN (Workers Scripts edit) unlock real deploys once
+		// the namespace exists.
+		"required": []
+	},
+	"env": {
+		"local": {
+			"name": "hosting-agent-local",
+			"durable_objects": {
+				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }]
+			},
+			"vars": {
+				"SENTRY_DSN": "",
+				"SENTRY_ENV": "development",
+				// No Cloudflare API locally: deploys are recorded in the agent and
+				// the dispatch path serves a fixed stub page.
+				"HOSTING_STUB": "true",
+				"HOSTING_DOMAIN": "cfbase.dev",
+				"DISPATCH_NAMESPACE": ""
+			}
+		},
+		"test": {
+			"name": "hosting-agent-test",
+			"durable_objects": {
+				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }]
+			},
+			"vars": {
+				"SENTRY_DSN": "",
+				"SENTRY_ENV": "test",
+				// The e2e suite runs the full CLI -> console -> agent contract
+				// against the stub; real upload coverage is the opt-in
+				// RUN_HOSTING_E2E spec against the -preview namespace.
+				"HOSTING_STUB": "true",
+				"HOSTING_DOMAIN": "cfbase.dev",
+				"DISPATCH_NAMESPACE": ""
+			}
+		},
+		"production": {
+			// Pinned name: the web Worker's HOSTING_AGENT service binding and the
+			// db/auth precedent both resolve `hosting-agent`.
+			"name": "hosting-agent",
+			"workers_dev": false,
+			"preview_urls": false,
+			"durable_objects": {
+				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }]
+			},
+			// The serving path: every subdomain of cfbase.dev lands here and
+			// dispatches by host label. Deploying this env requires the zone to
+			// exist on the account first (Phase B launch checklist).
+			"routes": [{ "pattern": "*.cfbase.dev/*", "zone_name": "cfbase.dev" }],
+			"dispatch_namespaces": [
+				{
+					"binding": "DISPATCH",
+					"namespace": "cfbase-apps",
+					// v1 pass-through outbound worker; the dispatched subdomain rides
+					// its parameters so Phase C's egress metering can join to the
+					// project via the control plane's claims table - the serve path
+					// itself stays zero-lookup.
+					"outbound": { "service": "hosting-outbound", "parameters": ["subdomain"] }
+				}
+			],
+			"vars": {
+				"SENTRY_DSN": "",
+				"SENTRY_ENV": "production",
+				"HOSTING_DOMAIN": "cfbase.dev",
+				"DISPATCH_NAMESPACE": "cfbase-apps",
+				// Set only alongside an `outbound` block above: tells the serve path
+				// to pass outbound parameters, which throw when the binding has none.
+				"DISPATCH_OUTBOUND": "true",
+				// Requests to the bare apex have no app to dispatch to.
+				"HOSTING_APEX_REDIRECT": "https://cloudflarebase.com"
+			},
+			"secrets": {
+				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN"]
+			}
+		},
+		"preview": {
+			"name": "hosting-agent-preview",
+			"workers_dev": false,
+			"preview_urls": false,
+			"durable_objects": {
+				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }]
+			},
+			"dispatch_namespaces": [
+				{
+					"binding": "DISPATCH",
+					"namespace": "cfbase-apps-preview",
+					"outbound": { "service": "hosting-outbound", "parameters": ["subdomain"] }
+				}
+			],
+			"vars": {
+				"SENTRY_DSN": "",
+				"SENTRY_ENV": "preview",
+				// Preview has no cfbase.dev route, so serving never triggers; the
+				// upload path is still real, which is what the opt-in e2e exercises.
+				"HOSTING_DOMAIN": "",
+				"DISPATCH_NAMESPACE": "cfbase-apps-preview",
+				"DISPATCH_OUTBOUND": "true"
+			}
+		}
+	}
+}
