@@ -26,7 +26,7 @@ const sentryOptions = (env: Env) => ({
 	dsn: env.SENTRY_DSN,
 	environment: env.SENTRY_ENV,
 	tracesSampleRate: 0.1,
-	enableRpcTracePropagation: true
+	enableRpcTracePropagation: true,
 });
 
 const DO_RESET_PATTERN = /abort\(\) to reset|durable object reset/i;
@@ -65,7 +65,7 @@ function brandedNotFound(subdomain: string, domain: string): Response {
 		</main>
 	</body>
 </html>`,
-		{ status: 404, headers: { 'content-type': 'text/html; charset=utf-8' } }
+		{ status: 404, headers: { 'content-type': 'text/html; charset=utf-8' } },
 	);
 }
 
@@ -81,7 +81,7 @@ function stubPage(subdomain: string, domain: string): Response {
 		<p>This deployment records apps without a dispatch namespace; <code>${subdomain}.${domain}</code> would serve your deploy in production.</p>
 	</body>
 </html>`,
-		{ status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } }
+		{ status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } },
 	);
 }
 
@@ -194,7 +194,7 @@ class HostingService extends WorkerEntrypoint<Env> {
 		const options: DynamicDispatchOptions = {
 			// Fixed v1 caps, applied at dispatch (plan-driven in Phase C - which
 			// then changes THIS call, never the deployed scripts).
-			limits: { cpuMs: 50, subRequests: 50 }
+			limits: { cpuMs: 50, subRequests: 50 },
 		};
 		if (this.env.DISPATCH_OUTBOUND === 'true') {
 			// The subdomain rides the outbound parameters - joinable to a project
@@ -222,9 +222,9 @@ class HostingService extends WorkerEntrypoint<Env> {
 				level: 'error',
 				tags: { 'http.method': request.method, 'http.status_code': response.status },
 				contexts: {
-					response: { body, contentType: response.headers.get('content-type') ?? '' }
+					response: { body, contentType: response.headers.get('content-type') ?? '' },
 				},
-				extra: { pathname: url.pathname }
+				extra: { pathname: url.pathname },
 			});
 		} catch {
 			// reporting must never replace the response
@@ -234,7 +234,7 @@ class HostingService extends WorkerEntrypoint<Env> {
 
 export const HostingAgent = Sentry.instrumentDurableObjectWithSentry(
 	sentryOptions,
-	HostingAgentBase
+	HostingAgentBase,
 );
 
 export type { HostingAgentState, HostingAppSummary, HostingDeploySummary } from './agent';

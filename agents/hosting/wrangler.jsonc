@@ -22,11 +22,11 @@
 	"compatibility_flags": ["nodejs_compat", "nodejs_als"],
 	"migrations": [{ "new_sqlite_classes": ["HostingAgent"], "tag": "v1" }],
 	"durable_objects": {
-		"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }]
+		"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }],
 	},
 	"observability": {
 		"logs": { "enabled": true, "invocation_logs": true },
-		"traces": { "enabled": true }
+		"traces": { "enabled": true },
 	},
 	"upload_source_maps": true,
 	"workers_dev": false,
@@ -43,19 +43,19 @@
 		// Name of the Workers for Platforms dispatch namespace the DISPATCH
 		// binding targets - the REST upload API needs the name, which the
 		// binding does not reveal.
-		"DISPATCH_NAMESPACE": ""
+		"DISPATCH_NAMESPACE": "",
 	},
 	"secrets": {
 		// No secret has to be set for this Worker to deploy. CF_ACCOUNT_ID and
 		// CF_HOSTING_API_TOKEN (Workers Scripts edit) unlock real deploys once
 		// the namespace exists.
-		"required": []
+		"required": [],
 	},
 	"env": {
 		"local": {
 			"name": "hosting-agent-local",
 			"durable_objects": {
-				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }]
+				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }],
 			},
 			"vars": {
 				"SENTRY_DSN": "",
@@ -64,13 +64,13 @@
 				// the dispatch path serves a fixed stub page.
 				"HOSTING_STUB": "true",
 				"HOSTING_DOMAIN": "cfbase.dev",
-				"DISPATCH_NAMESPACE": ""
-			}
+				"DISPATCH_NAMESPACE": "",
+			},
 		},
 		"test": {
 			"name": "hosting-agent-test",
 			"durable_objects": {
-				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }]
+				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }],
 			},
 			"vars": {
 				"SENTRY_DSN": "",
@@ -80,8 +80,8 @@
 				// RUN_HOSTING_E2E spec against the -preview namespace.
 				"HOSTING_STUB": "true",
 				"HOSTING_DOMAIN": "cfbase.dev",
-				"DISPATCH_NAMESPACE": ""
-			}
+				"DISPATCH_NAMESPACE": "",
+			},
 		},
 		"production": {
 			// Pinned name: the web Worker's HOSTING_AGENT service binding and the
@@ -90,7 +90,7 @@
 			"workers_dev": false,
 			"preview_urls": false,
 			"durable_objects": {
-				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }]
+				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }],
 			},
 			// The serving path: every subdomain of cfbase.dev lands here and
 			// dispatches by host label. Deploying this env requires the zone to
@@ -104,8 +104,8 @@
 					// its parameters so Phase C's egress metering can join to the
 					// project via the control plane's claims table - the serve path
 					// itself stays zero-lookup.
-					"outbound": { "service": "hosting-outbound", "parameters": ["subdomain"] }
-				}
+					"outbound": { "service": "hosting-outbound", "parameters": ["subdomain"] },
+				},
 			],
 			"vars": {
 				"SENTRY_DSN": "",
@@ -116,25 +116,25 @@
 				// to pass outbound parameters, which throw when the binding has none.
 				"DISPATCH_OUTBOUND": "true",
 				// Requests to the bare apex have no app to dispatch to.
-				"HOSTING_APEX_REDIRECT": "https://cloudflarebase.com"
+				"HOSTING_APEX_REDIRECT": "https://cloudflarebase.com",
 			},
 			"secrets": {
-				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN"]
-			}
+				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN"],
+			},
 		},
 		"preview": {
 			"name": "hosting-agent-preview",
 			"workers_dev": false,
 			"preview_urls": false,
 			"durable_objects": {
-				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }]
+				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }],
 			},
 			"dispatch_namespaces": [
 				{
 					"binding": "DISPATCH",
 					"namespace": "cfbase-apps-preview",
-					"outbound": { "service": "hosting-outbound", "parameters": ["subdomain"] }
-				}
+					"outbound": { "service": "hosting-outbound", "parameters": ["subdomain"] },
+				},
 			],
 			"vars": {
 				"SENTRY_DSN": "",
@@ -143,8 +143,8 @@
 				// upload path is still real, which is what the opt-in e2e exercises.
 				"HOSTING_DOMAIN": "",
 				"DISPATCH_NAMESPACE": "cfbase-apps-preview",
-				"DISPATCH_OUTBOUND": "true"
-			}
-		}
-	}
+				"DISPATCH_OUTBOUND": "true",
+			},
+		},
+	},
 }

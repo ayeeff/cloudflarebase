@@ -113,9 +113,7 @@ export async function linkCommand(projectDir: string, rest: string[]): Promise<v
 		}
 		const suggested = (await preview.json()) as { subdomain: string };
 		if (suggested.subdomain !== appName) {
-			info(
-				`${bold(appName)} is taken - the next free subdomain is ${bold(suggested.subdomain)}.`
-			);
+			info(`${bold(appName)} is taken - the next free subdomain is ${bold(suggested.subdomain)}.`);
 		}
 		if (!flags.yes) {
 			const confirm = (

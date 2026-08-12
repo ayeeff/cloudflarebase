@@ -643,7 +643,8 @@ export const hostingAppSchema = z
 	})
 	.meta({
 		id: 'HostingApp',
-		description: 'One deployed app: a user Worker (assets and/or modules) in the dispatch namespace.'
+		description:
+			'One deployed app: a user Worker (assets and/or modules) in the dispatch namespace.'
 	});
 
 export const hostingDeploySchema = z
@@ -680,10 +681,7 @@ export const hostingDeployPageSchema = z
 	.object({
 		deploys: z.array(hostingDeploySchema),
 		total: z.number().int(),
-		cursor: z
-			.string()
-			.nullable()
-			.describe('Keyset cursor for the next page; null on the last one.')
+		cursor: z.string().nullable().describe('Keyset cursor for the next page; null on the last one.')
 	})
 	.meta({ id: 'HostingDeployPage' });
 

@@ -14,7 +14,7 @@ export const apps = sqliteTable('apps', {
 	subdomain: text('subdomain').notNull(),
 	createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 	lastDeployAt: integer('last_deploy_at', { mode: 'timestamp_ms' }),
-	deployCount: integer('deploy_count').notNull().default(0)
+	deployCount: integer('deploy_count').notNull().default(0),
 });
 
 export type AppRecord = typeof apps.$inferSelect;
@@ -30,7 +30,7 @@ export const deploys = sqliteTable('deploys', {
 	assetCount: integer('asset_count').notNull(),
 	assetBytes: integer('asset_bytes').notNull(),
 	moduleBytes: integer('module_bytes').notNull(),
-	createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull()
+	createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 });
 
 export type DeployRecord = typeof deploys.$inferSelect;

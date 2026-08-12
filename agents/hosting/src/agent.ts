@@ -10,7 +10,7 @@ import {
 	uploadAssets,
 	type AssetFile,
 	type CfApi,
-	type ModuleFile
+	type ModuleFile,
 } from './cloudflare';
 import * as schema from './db/schema';
 import { apps, deploys, type AppRecord, type DeployRecord } from './db/schema';
@@ -22,7 +22,7 @@ import {
 	deployMetaSchema,
 	projectIdSchema,
 	secretBodySchema,
-	subdomainSchema
+	subdomainSchema,
 } from './schemas';
 
 /**
@@ -99,7 +99,7 @@ const EXTENSION_TYPES: Record<string, string> = {
 	woff: 'font/woff',
 	woff2: 'font/woff2',
 	map: 'application/json',
-	webmanifest: 'application/manifest+json'
+	webmanifest: 'application/manifest+json',
 };
 
 function contentTypeFor(path: string, provided: string): string {
@@ -125,7 +125,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 		apps: [],
 		recentDeploys: [],
 		totalDeploys: 0,
-		rev: 0
+		rev: 0,
 	};
 
 	db: DrizzleSqliteDODatabase<typeof schema>;
@@ -142,7 +142,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			this.setState({
 				...this.state,
 				projectId: this.name,
-				provisionedAt: new Date().toISOString()
+				provisionedAt: new Date().toISOString(),
 			});
 		}
 	}
@@ -158,7 +158,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 		return {
 			accountId: CF_ACCOUNT_ID,
 			apiToken: CF_HOSTING_API_TOKEN,
-			namespace: DISPATCH_NAMESPACE
+			namespace: DISPATCH_NAMESPACE,
 		};
 	}
 
@@ -173,7 +173,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			url: this.appUrl(row.subdomain),
 			deployCount: row.deployCount,
 			lastDeployAt: row.lastDeployAt?.toISOString() ?? null,
-			createdAt: row.createdAt.toISOString()
+			createdAt: row.createdAt.toISOString(),
 		};
 	}
 
@@ -188,7 +188,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			assetCount: row.assetCount,
 			assetBytes: row.assetBytes,
 			moduleBytes: row.moduleBytes,
-			createdAt: row.createdAt.toISOString()
+			createdAt: row.createdAt.toISOString(),
 		};
 	}
 
@@ -205,7 +205,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			apps: appRows.map((row) => this.toAppSummary(row)),
 			recentDeploys: recent.map((row) => this.toDeploySummary(row)),
 			totalDeploys: total?.value ?? 0,
-			rev: this.state.rev + 1
+			rev: this.state.rev + 1,
 		});
 	}
 
@@ -234,7 +234,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			name: appName,
 			subdomain,
 			createdAt: new Date(),
-			deployCount: 0
+			deployCount: 0,
 		});
 		await this.syncState();
 		return { ok: true };
@@ -312,7 +312,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			totalDeploys: total?.value ?? 0,
 			// Honest config report, so the dashboard can explain instead of 502.
 			configured: this.stub || (!!this.env.DISPATCH && this.cfApi() !== null),
-			stub: this.stub
+			stub: this.stub,
 		};
 	}
 
@@ -329,7 +329,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			const at = new Date(Number(ms));
 			cursorFilter = or(
 				lt(deploys.createdAt, at),
-				and(eq(deploys.createdAt, at), lt(deploys.id, id))
+				and(eq(deploys.createdAt, at), lt(deploys.id, id)),
 			);
 		}
 		const rows = await this.db
@@ -347,7 +347,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 		return Response.json({
 			deploys: page.map((row) => this.toDeploySummary(row)),
 			total: total?.value ?? 0,
-			cursor: next ? `${next.createdAt.getTime()}:${next.id}` : null
+			cursor: next ? `${next.createdAt.getTime()}:${next.id}` : null,
 		});
 	}
 
@@ -362,7 +362,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			// this without one means the agent surface was dialled directly.
 			return Response.json(
 				{ error: 'app is not linked - deploy through the console or the CLI' },
-				{ status: 409 }
+				{ status: 409 },
 			);
 		}
 
@@ -374,7 +374,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 		if ((recent?.value ?? 0) >= MAX_DEPLOYS_PER_DAY) {
 			return Response.json(
 				{ error: `projects are limited to ${MAX_DEPLOYS_PER_DAY} deploys per day` },
-				{ status: 429 }
+				{ status: 429 },
 			);
 		}
 
@@ -387,7 +387,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 
 		const metaRaw = form.get('meta');
 		const meta = deployMetaSchema.safeParse(
-			typeof metaRaw === 'string' ? JSON.parse(metaRaw || 'null') : null
+			typeof metaRaw === 'string' ? JSON.parse(metaRaw || 'null') : null,
 		);
 		if (!meta.success) {
 			return Response.json({ error: 'invalid deploy meta' }, { status: 400 });
@@ -424,7 +424,10 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			return Response.json({ error: 'the Worker bundle exceeds 5 MB' }, { status: 400 });
 		}
 		if (assets.length > MAX_ASSET_COUNT) {
-			return Response.json({ error: `deploys are limited to ${MAX_ASSET_COUNT} assets` }, { status: 400 });
+			return Response.json(
+				{ error: `deploys are limited to ${MAX_ASSET_COUNT} assets` },
+				{ status: 400 },
+			);
 		}
 		if (assetBytes > MAX_ASSET_TOTAL_BYTES) {
 			return Response.json({ error: 'assets exceed 25 MB' }, { status: 400 });
@@ -445,9 +448,9 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 				return Response.json(
 					{
 						error:
-							'hosting is not configured - this install needs a Workers for Platforms dispatch namespace (DISPATCH binding, DISPATCH_NAMESPACE, CF_ACCOUNT_ID, CF_HOSTING_API_TOKEN)'
+							'hosting is not configured - this install needs a Workers for Platforms dispatch namespace (DISPATCH binding, DISPATCH_NAMESPACE, CF_ACCOUNT_ID, CF_HOSTING_API_TOKEN)',
 					},
-					{ status: 503 }
+					{ status: 503 },
 				);
 			}
 			try {
@@ -465,12 +468,12 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 						...meta.data.vars,
 						// Injected last so the SDK vars always win.
 						PROJECT_ID: this.name,
-						CLOUDFLAREBASE_URL: new URL(request.url).origin
-					}
+						CLOUDFLAREBASE_URL: new URL(request.url).origin,
+					},
 				});
 			} catch (cause) {
 				Sentry.captureException(cause, {
-					tags: { operation: 'hosting-deploy', projectId: this.name }
+					tags: { operation: 'hosting-deploy', projectId: this.name },
 				});
 				const message = cause instanceof Error ? cause.message : 'upload failed';
 				return Response.json({ error: `deploy failed - ${message}` }, { status: 502 });
@@ -486,7 +489,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			assetCount: assets.length,
 			assetBytes,
 			moduleBytes,
-			createdAt: new Date()
+			createdAt: new Date(),
 		};
 		await this.db.insert(deploys).values(record);
 		await this.db
@@ -499,9 +502,9 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			{
 				deploy: this.toDeploySummary(record),
 				subdomain: app.subdomain,
-				url: this.appUrl(app.subdomain)
+				url: this.appUrl(app.subdomain),
 			},
-			{ status: 201 }
+			{ status: 201 },
 		);
 	}
 
@@ -525,7 +528,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			await patchScriptSecret(api, app.subdomain, body.data.name, body.data.value);
 		} catch (cause) {
 			Sentry.captureException(cause, {
-				tags: { operation: 'hosting-secret', projectId: this.name }
+				tags: { operation: 'hosting-secret', projectId: this.name },
 			});
 			return Response.json({ error: 'setting the secret failed' }, { status: 502 });
 		}

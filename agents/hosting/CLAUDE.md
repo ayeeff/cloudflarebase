@@ -44,7 +44,7 @@ mechanism; `files` ships `dist`, `template`, `NOTICE`, and the manifest).
 - **`hosting-outbound` is its own tiny worker** (`src/outbound.ts`,
   `wrangler.outbound.jsonc`): the namespace binding names the service, so it
   must exist before any env referencing it deploys - `npm run
-  deploy:production` deploys it first. v1 is pass-through; Phase C's egress
+deploy:production` deploys it first. v1 is pass-through; Phase C's egress
   metering hooks in here without touching user scripts.
 - **No demo hosting.** `DEMO_PROJECT_PATTERN` ids are refused at deploy
   (403) in both the console and the agent; there is no claim manifest entry

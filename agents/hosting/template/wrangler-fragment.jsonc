@@ -29,7 +29,7 @@
 {
 	"migrations": [{ "new_sqlite_classes": ["HostingAgent"], "tag": "v1" }],
 	"durable_objects": {
-		"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }]
+		"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }],
 	},
 	"vars": {
 		// Empty disables the serving path; set your apex domain to enable it.
@@ -38,9 +38,9 @@
 		"DISPATCH_NAMESPACE": "",
 		// Set your own with `wrangler secret put SENTRY_DSN` to turn on error
 		// reporting; empty disables it.
-		"SENTRY_DSN": ""
+		"SENTRY_DSN": "",
 	},
 	"secrets": {
-		"required": []
-	}
+		"required": [],
+	},
 }

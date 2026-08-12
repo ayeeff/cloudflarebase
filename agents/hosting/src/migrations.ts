@@ -5,17 +5,17 @@
 // in the consumer's config. Regenerate with `npm run migrations`.
 
 const journal = {
-	"version": "7",
-	"dialect": "sqlite",
-	"entries": [
+	version: '7',
+	dialect: 'sqlite',
+	entries: [
 		{
-			"idx": 0,
-			"version": "6",
-			"when": 1786556374566,
-			"tag": "0000_red_la_nuit",
-			"breakpoints": true
-		}
-	]
+			idx: 0,
+			version: '6',
+			when: 1786556374566,
+			tag: '0000_red_la_nuit',
+			breakpoints: true,
+		},
+	],
 };
 
 const m0000 = `CREATE TABLE \`apps\` (
@@ -42,6 +42,6 @@ CREATE TABLE \`deploys\` (
 export default {
 	journal,
 	migrations: {
-		m0000
-	}
+		m0000,
+	},
 };

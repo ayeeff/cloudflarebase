@@ -159,9 +159,7 @@ export const hostingOpenApi: AgentOpenApiModule = {
 				tags: [HOSTING_TAG],
 				summary: 'Revoke a deploy token',
 				security: [{ sessionCookie: [] }],
-				parameters: [
-					{ name: 'tokenId', in: 'path', required: true, schema: { type: 'string' } }
-				],
+				parameters: [{ name: 'tokenId', in: 'path', required: true, schema: { type: 'string' } }],
 				responses: {
 					'200': { description: 'Revoked.' },
 					'401': UNAUTHORIZED,

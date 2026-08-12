@@ -57,8 +57,8 @@ async function cfFetch<T>(api: CfApi, path: string, init: RequestInit = {}): Pro
 		...init,
 		headers: {
 			authorization: `Bearer ${api.apiToken}`,
-			...(init.headers ?? {})
-		}
+			...(init.headers ?? {}),
+		},
 	});
 	const body = (await response.json().catch(() => null)) as CfEnvelope<T> | null;
 	if (!response.ok || !body?.success) {
@@ -101,7 +101,7 @@ export async function uploadAssets(
 	api: CfApi,
 	scriptName: string,
 	projectId: string,
-	files: AssetFile[]
+	files: AssetFile[],
 ): Promise<string | undefined> {
 	if (!files.length) return undefined;
 
@@ -119,8 +119,8 @@ export async function uploadAssets(
 		{
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ manifest })
-		}
+			body: JSON.stringify({ manifest }),
+		},
 	);
 
 	const buckets = session.buckets ?? [];
@@ -134,11 +134,14 @@ export async function uploadAssets(
 			if (!file) throw new Error(`Cloudflare asked for an unknown asset hash ${hash}`);
 			form.append(hash, new Blob([toBase64(file.bytes)], { type: file.contentType }), hash);
 		}
-		const response = await fetch(`${API_BASE}/accounts/${api.accountId}/workers/assets/upload?base64=true`, {
-			method: 'POST',
-			headers: { authorization: `Bearer ${session.jwt}` },
-			body: form
-		});
+		const response = await fetch(
+			`${API_BASE}/accounts/${api.accountId}/workers/assets/upload?base64=true`,
+			{
+				method: 'POST',
+				headers: { authorization: `Bearer ${session.jwt}` },
+				body: form,
+			},
+		);
 		const body = (await response.json().catch(() => null)) as CfEnvelope<{
 			jwt?: string;
 		}> | null;
@@ -154,11 +157,15 @@ export async function uploadAssets(
 
 /** Uploads the script to the dispatch namespace. The script name IS the
  * subdomain; the `pid-` tag is what erase deletes by. */
-export async function putScript(api: CfApi, scriptName: string, options: PutScriptOptions): Promise<void> {
+export async function putScript(
+	api: CfApi,
+	scriptName: string,
+	options: PutScriptOptions,
+): Promise<void> {
 	const bindings: Record<string, string>[] = Object.entries(options.vars).map(([name, text]) => ({
 		type: 'plain_text',
 		name,
-		text
+		text,
 	}));
 	if (options.assetsJwt && options.mainModule) {
 		bindings.push({ type: 'assets', name: 'ASSETS' });
@@ -172,7 +179,7 @@ export async function putScript(api: CfApi, scriptName: string, options: PutScri
 		// `?tags=<tag>:yes`, so a colon inside a tag collides with it.
 		tags: [`pid-${options.projectId}`, `app-${options.appName}`],
 		// Secrets are PATCHed separately; redeploys must never drop them.
-		keep_bindings: ['secret_text']
+		keep_bindings: ['secret_text'],
 	};
 	if (options.mainModule) metadata.main_module = options.mainModule;
 	if (options.assetsJwt) {
@@ -181,24 +188,28 @@ export async function putScript(api: CfApi, scriptName: string, options: PutScri
 			config: {
 				html_handling: 'auto-trailing-slash',
 				not_found_handling:
-					options.notFoundHandling ?? (options.mainModule ? 'none' : 'single-page-application')
-			}
+					options.notFoundHandling ?? (options.mainModule ? 'none' : 'single-page-application'),
+			},
 		};
 	}
 
 	const form = new FormData();
-	form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }), 'metadata');
+	form.append(
+		'metadata',
+		new Blob([JSON.stringify(metadata)], { type: 'application/json' }),
+		'metadata',
+	);
 	for (const module of options.modules) {
 		form.append(
 			module.name,
 			new Blob([module.bytes], { type: 'application/javascript+module' }),
-			module.name
+			module.name,
 		);
 	}
 
 	await cfFetch(api, `/workers/dispatch/namespaces/${api.namespace}/scripts/${scriptName}`, {
 		method: 'PUT',
-		body: form
+		body: form,
 	});
 }
 
@@ -208,8 +219,8 @@ export async function deleteScriptsByTag(api: CfApi, tag: string): Promise<void>
 		`${API_BASE}/accounts/${api.accountId}/workers/dispatch/namespaces/${api.namespace}/scripts?tags=${encodeURIComponent(`${tag}:yes`)}`,
 		{
 			method: 'DELETE',
-			headers: { authorization: `Bearer ${api.apiToken}` }
-		}
+			headers: { authorization: `Bearer ${api.apiToken}` },
+		},
 	);
 	// 404 means nothing carried the tag - erase is idempotent.
 	if (!response.ok && response.status !== 404) {
@@ -222,7 +233,7 @@ export async function patchScriptSecret(
 	api: CfApi,
 	scriptName: string,
 	name: string,
-	value: string
+	value: string,
 ): Promise<void> {
 	const form = new FormData();
 	form.append(
@@ -233,15 +244,19 @@ export async function patchScriptSecret(
 					bindings: [{ type: 'secret_text', name, text: value }],
 					// Keep everything the deploy put there - this call only adds.
 					keep_bindings: ['plain_text', 'secret_text', 'assets'],
-					keep_assets: true
-				})
+					keep_assets: true,
+				}),
 			],
-			{ type: 'application/json' }
+			{ type: 'application/json' },
 		),
-		'settings'
+		'settings',
 	);
-	await cfFetch(api, `/workers/dispatch/namespaces/${api.namespace}/scripts/${scriptName}/settings`, {
-		method: 'PATCH',
-		body: form
-	});
+	await cfFetch(
+		api,
+		`/workers/dispatch/namespaces/${api.namespace}/scripts/${scriptName}/settings`,
+		{
+			method: 'PATCH',
+			body: form,
+		},
+	);
 }

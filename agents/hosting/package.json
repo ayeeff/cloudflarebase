@@ -35,7 +35,12 @@
 		"./cloudflarebase.agent.json": "./cloudflarebase.agent.json",
 		"./package.json": "./package.json"
 	},
-	"files": ["dist", "template", "NOTICE", "cloudflarebase.agent.json"],
+	"files": [
+		"dist",
+		"template",
+		"NOTICE",
+		"cloudflarebase.agent.json"
+	],
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
 		"typecheck": "tsc --noEmit",

@@ -126,7 +126,9 @@ async function managedDeploy(
 		}
 		const entryGuess = `${path.basename(wrangler.main).replace(/\.[jt]sx?$/, '')}.js`;
 		mainModule =
-			emitted.length === 1 ? emitted[0] : (emitted.find((name) => name === entryGuess) ?? 'index.js');
+			emitted.length === 1
+				? emitted[0]
+				: (emitted.find((name) => name === entryGuess) ?? 'index.js');
 		if (!mainModule || !emitted.includes(mainModule)) {
 			throw new UserError(
 				'Could not identify the entry module in the wrangler bundle.',
@@ -143,11 +145,19 @@ async function managedDeploy(
 	// Assets: wrangler's directory, the cloudflarebase.json override, or the
 	// conventional build outputs. A bare assets directory deploys as an
 	// assets-only Worker.
-	const assetsDir = await findAssetsDirectory(projectDir, managed.assets, wrangler?.assetsDirectory);
+	const assetsDir = await findAssetsDirectory(
+		projectDir,
+		managed.assets,
+		wrangler?.assetsDirectory
+	);
 	let assetCount = 0;
 	if (assetsDir) {
 		for (const file of await collectAssets(assetsDir)) {
-			form.append(`asset:${file.name}`, new Blob([new Uint8Array(file.bytes)]), path.basename(file.name));
+			form.append(
+				`asset:${file.name}`,
+				new Blob([new Uint8Array(file.bytes)]),
+				path.basename(file.name)
+			);
 			assetCount += 1;
 		}
 	}

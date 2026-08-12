@@ -48,14 +48,14 @@ export const deployMetaSchema = z.strictObject({
 	/** Plain-text vars injected as bindings beside PROJECT_ID/CLOUDFLAREBASE_URL. */
 	vars: z.record(z.string().regex(/^[A-Z][A-Z0-9_]*$/), z.string().max(5000)).optional(),
 	/** Static-asset serving behaviour; defaults chosen for app-shaped sites. */
-	notFoundHandling: z.enum(['single-page-application', '404-page', 'none']).optional()
+	notFoundHandling: z.enum(['single-page-application', '404-page', 'none']).optional(),
 });
 
 export type DeployMeta = z.infer<typeof deployMetaSchema>;
 
 export const secretBodySchema = z.strictObject({
 	name: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
-	value: z.string().min(1).max(5000)
+	value: z.string().min(1).max(5000),
 });
 
 /** Keyset cursor for the deploy list: `<createdAtMs>:<id>`. */

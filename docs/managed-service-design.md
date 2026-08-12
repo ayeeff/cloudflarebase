@@ -303,7 +303,7 @@ deliberately SMALL:
    the current git branch: the default git branch maps to the root,
    anything else to `<root>--<branch>`), bundles the Worker if the user's
    `wrangler.jsonc` declares a `main` (via `wrangler deploy --dry-run
-   --outdir` so wrangler does the bundling; a bare assets directory
+--outdir` so wrangler does the bundling; a bare assets directory
    deploys as an assets-only Worker), then multipart-uploads modules +
    assets to `POST /api/projects/<id>/hosting/apps/<app>/deploys` with
    the CLI bearer token OR a deploy token - the ordinary guard path,
@@ -344,14 +344,14 @@ hosted build service (webhook-driven builds on our infra stay Phase D):
   deploy token and generates the ready-to-commit workflow YAML with the
   project and app filled in. Nothing to install, no GitHub App, no OAuth
   - the trust anchor is the token the operator pastes into their repo
-  secrets.
+    secrets.
 
 ### Guardrails from day one
 
 - **Custom limits** on every script (CPU ms, subrequests) - fixed in B,
   plan-driven in C. (Amended at build time: the current WfP API applies
   limits at DISPATCH time - `env.DISPATCH.get(name, {}, { limits:
-  { cpuMs, subRequests } })` - not in upload metadata, which is strictly
+{ cpuMs, subRequests } })` - not in upload metadata, which is strictly
   better for us: C can change a tenant's caps without touching their
   deployed script.)
 - **Outbound Worker** on the namespace from the first deploy: v1 is

@@ -16,5 +16,5 @@ interface OutboundEnv {
 export default {
 	async fetch(request: Request, _env: OutboundEnv): Promise<Response> {
 		return fetch(request);
-	}
+	},
 } satisfies ExportedHandler<OutboundEnv>;

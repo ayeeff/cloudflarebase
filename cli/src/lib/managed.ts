@@ -104,6 +104,19 @@ export async function hostingFetch(
  * null for the root.
  */
 export async function resolveGitBranch(projectDir: string): Promise<string | null> {
+	// CI first: actions/checkout leaves a detached HEAD, so `rev-parse` cannot
+	// name the branch there. The official workflow passes both vars; plain
+	// GitHub Actions still gets GITHUB_REF_NAME with a main/master heuristic.
+	const envBranch =
+		process.env.CLOUDFLAREBASE_GIT_BRANCH?.trim() || process.env.GITHUB_REF_NAME?.trim();
+	if (envBranch) {
+		const envDefault = process.env.CLOUDFLAREBASE_DEFAULT_BRANCH?.trim();
+		const isDefault = envDefault
+			? envBranch === envDefault
+			: envBranch === 'main' || envBranch === 'master';
+		return isDefault ? null : envBranch;
+	}
+
 	const current = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
 		cwd: projectDir,
 		capture: true
@@ -116,8 +129,7 @@ export async function resolveGitBranch(projectDir: string): Promise<string | nul
 		cwd: projectDir,
 		capture: true
 	});
-	const defaultBranch =
-		head.code === 0 ? head.stdout.trim().replace(/^origin\//, '') : null;
+	const defaultBranch = head.code === 0 ? head.stdout.trim().replace(/^origin\//, '') : null;
 	if (defaultBranch ? branch === defaultBranch : branch === 'main' || branch === 'master') {
 		return null;
 	}

@@ -41,6 +41,7 @@
 		Plug,
 		Plus,
 		Radio,
+		Rocket,
 		SendHorizontal,
 		Settings,
 		ShieldCheck,
@@ -48,8 +49,7 @@
 		Table2,
 		TerminalSquare,
 		UsersRound,
-		X,
-		Zap
+		X
 	} from '@lucide/svelte';
 
 	let { children, data } = $props();
@@ -129,6 +129,7 @@
 		globe: Globe,
 		history: History,
 		plug: Plug,
+		rocket: Rocket,
 		settings: Settings,
 		'shield-check': ShieldCheck,
 		table: Table2,
@@ -139,9 +140,10 @@
 	// /db/tables); the API reference keeps its own prefix check via isApi.
 	const navActive = (href: string) => page.url.pathname === href;
 
+	// Functions left this list when the hosting agent shipped - apps and
+	// functions are the same artifact there (Phase B).
 	const comingSoon = [
 		{ label: 'Storage', icon: HardDrive },
-		{ label: 'Functions', icon: Zap },
 		{ label: 'Realtime', icon: Radio },
 		{ label: 'Cron & Queues', icon: Clock }
 	];
