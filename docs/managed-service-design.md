@@ -419,9 +419,11 @@ serving is only verifiable where the wildcard exists.
 3. Mint the `CF_HOSTING_API_TOKEN` API token (Account > Workers Scripts:
    Edit) and set it with `wrangler secret put` on the hosting worker
    (production and preview), plus `CF_ACCOUNT_ID` as a var.
-4. Deploy `hosting-outbound`, then the hosting agent
-   (`npm run deploy:production` inside `agents/hosting` deploys both in
-   order), then the web worker.
+4. Deploy the environment's outbound worker, then the hosting agent
+   (`npm run deploy:production` / `deploy:preview` inside `agents/hosting`
+   deploy both in order; preview gets its own `hosting-outbound-preview`
+   so preview-branch outbound code never serves production egress), then
+   the web worker.
 5. Add the wildcard route: `*.cfbase.dev/*` → `hosting-agent` on the
    `cfbase.dev` zone (declared in the agent's `env.production` routes;
    the deploy claims it once the zone exists).

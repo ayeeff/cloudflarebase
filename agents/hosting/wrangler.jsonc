@@ -133,7 +133,10 @@
 				{
 					"binding": "DISPATCH",
 					"namespace": "cfbase-apps-preview",
-					"outbound": { "service": "hosting-outbound", "parameters": ["subdomain"] },
+					// Preview's OWN outbound: the preview CI redeploys the outbound
+					// on every push, and a shared service would put preview-branch
+					// code on production apps' egress.
+					"outbound": { "service": "hosting-outbound-preview", "parameters": ["subdomain"] },
 				},
 			],
 			"vars": {

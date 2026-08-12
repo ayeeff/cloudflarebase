@@ -44,8 +44,13 @@ mechanism; `files` ships `dist`, `template`, `NOTICE`, and the manifest).
 - **`hosting-outbound` is its own tiny worker** (`src/outbound.ts`,
   `wrangler.outbound.jsonc`): the namespace binding names the service, so it
   must exist before any env referencing it deploys - `npm run
-deploy:production` deploys it first. v1 is pass-through; Phase C's egress
-  metering hooks in here without touching user scripts.
+deploy:production` / `deploy:preview` deploy it first. v1 is pass-through;
+  Phase C's egress metering hooks in here without touching user scripts.
+  **One outbound per environment** (`hosting-outbound-preview` for the
+  preview namespace): the preview CI redeploys the outbound on every push
+  to `preview`, so a shared instance would put preview-branch outbound code
+  on production apps' egress - and Phase C's metering must be rehearsable
+  on preview without touching production.
 - **No demo hosting.** `DEMO_PROJECT_PATTERN` ids are refused at deploy
   (403) in both the console and the agent; there is no claim manifest entry
   because there are no demo caps to lift.
@@ -71,6 +76,7 @@ deploy:production` deploys it first. v1 is pass-through; Phase C's egress
 | `npm run dev:test`          | env.test on :8800 (the e2e stack's port)                             |
 | `npm run build`             | Emit `dist/` for the published package                               |
 | `npm run deploy:production` | Deploy `hosting-outbound` then the agent (`--env production`)        |
+| `npm run deploy:preview`    | Deploy `hosting-outbound-preview` then the agent (`--env preview`)   |
 
 ## Gotchas
 

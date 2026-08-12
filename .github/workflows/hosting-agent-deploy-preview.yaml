@@ -32,8 +32,10 @@ jobs:
         run: npm ci
 
       # The dispatch-namespace binding in env.preview names this service, so
-      # it must exist before the agent deploys. One outbound worker serves
-      # both namespaces - the pass-through has no per-environment state.
+      # it must exist before the agent deploys. Preview has its OWN outbound
+      # (hosting-outbound-preview): this workflow redeploys it on every push,
+      # and a shared instance would put preview-branch outbound code on
+      # production apps' egress.
       - name: Deploy Outbound Worker
         uses: cloudflare/wrangler-action@v3
         with:
@@ -42,7 +44,7 @@ jobs:
           accountId: ${{ secrets.CF_ACCOUNT_ID}}
           workingDirectory: 'agents/hosting'
           packageManager: npm
-          command: deploy --config wrangler.outbound.jsonc
+          command: deploy --config wrangler.outbound.jsonc --env preview
 
       - name: Deploy Preview
         uses: cloudflare/wrangler-action@v3
