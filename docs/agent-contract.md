@@ -101,8 +101,8 @@ that ships one.
 	// `peek` (default 1) is how many leading pages stay visible while the
 	// sidebar section is folded - sections fold by default, so this is what
 	// the console shows of the agent before anyone opens it. The agent picks,
-	// because only it knows which pages represent it (db needs two:
-	// documents AND tables).
+	// because only it knows which pages represent it (auth and db both take
+	// three: their primary surfaces, not just the hub page).
 	"console": {
 		"section": "Build",
 		"icon": "key-round",
