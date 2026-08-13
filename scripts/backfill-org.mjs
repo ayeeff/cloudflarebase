@@ -15,6 +15,21 @@
  * chosen environment. Self-hosted installs need none of this.
  */
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+
+// Wrangler is invoked through its JS entrypoint, never `npx`: since Node 20.12
+// execFileSync refuses to spawn a `.cmd` without a shell (EINVAL on Windows),
+// and handing this SQL to a shell would need quoting we do not want to own.
+// The bin is reached via the resolved main rather than a `wrangler/bin/...`
+// subpath, which the package's `exports` map does not publish.
+const wranglerBin = path.join(
+	path
+		.dirname(createRequire(import.meta.url).resolve('wrangler'))
+		.replace(/([\\/]node_modules[\\/]wrangler)[\\/].*$/, '$1'),
+	'bin',
+	'wrangler.js'
+);
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -44,8 +59,8 @@ const database =
 
 function d1(sql) {
 	const output = execFileSync(
-		process.platform === 'win32' ? 'npx.cmd' : 'npx',
-		['wrangler', 'd1', 'execute', database, '--env', env, '--remote', '--json', '--command', sql],
+		process.execPath,
+		[wranglerBin, 'd1', 'execute', database, '--env', env, '--remote', '--json', '--command', sql],
 		{ encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }
 	);
 	return JSON.parse(output);
