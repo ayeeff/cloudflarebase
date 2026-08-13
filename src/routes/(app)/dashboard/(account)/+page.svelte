@@ -229,7 +229,13 @@
 									<p class="font-mono text-[10px] tracking-[0.1em] text-muted-foreground uppercase">
 										Branches
 									</p>
-									<p class="mt-0.5 text-[13px] font-medium tabular-nums">{branches.length}</p>
+									<!-- +1 for the root itself: `main` IS the bare project id,
+									     which is why createBranch refuses that name and why the
+									     switcher lists it. A project with no derived rows still
+									     has one branch, so 0 would never be a true answer. -->
+									<p class="mt-0.5 text-[13px] font-medium tabular-nums">
+										{branches.length + 1}
+									</p>
 								</div>
 							</div>
 						</a>
