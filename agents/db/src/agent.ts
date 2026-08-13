@@ -43,6 +43,17 @@ import {
 } from './schemas';
 import { drainUnusedBody } from './access';
 import { primaryLocation, type PrimaryLocation } from './colo';
+
+/** The persisted form of the coordinator's location: the probe result plus
+ * when it was taken, so a relocated instance can correct itself. */
+interface StoredLocation extends PrimaryLocation {
+	probedAt: number;
+}
+
+/** How stale a stored location may get before the next read refreshes it in
+ * the background. Matches the isolate-level cache in colo.ts - a shorter
+ * window here would only re-read that cache and write the same value back. */
+const LOCATION_REFRESH_MS = 6 * 60 * 60 * 1000;
 import { planDdl, uniqueViolationColumn } from './table-schema';
 import type { DbCollection } from './collection';
 import type { DbGateway } from './gateway';
@@ -600,24 +611,43 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	}
 
 	/**
-	 * The coordinator's own colo, probed once and then persisted.
+	 * The coordinator's own colo, persisted so a cold isolate never has to pay
+	 * a trace probe before the replication map can place its hub.
 	 *
 	 * DO KV storage, deliberately NOT a SQLite column: this is one row of
 	 * per-instance state, the key-value API is exactly what that is for, and a
 	 * migration to carry two nullable strings would have to ship in every
 	 * consumer's deployed agent before the console could read it.
 	 *
-	 * Nulls are never written, so local dev (where the trace probe cannot
-	 * answer) re-probes instead of freezing an empty answer forever, and the
-	 * first deployed wake that reaches the network settles it. `deleteAll()`
-	 * in destroy() drops it with everything else.
+	 * Stored WITH the time it was probed, and refreshed in the background once
+	 * stale. An instance is not guaranteed to stay where it started - a
+	 * relocated DO whose location was written once would report the old colo
+	 * forever, which is the exact failure this field exists to fix. The stale
+	 * value still answers immediately: a location a few hours out of date is
+	 * worth far more than a blocked response, and the next read has the new
+	 * one.
+	 *
+	 * Nulls are never written, so local dev (where the probe cannot answer)
+	 * keeps retrying instead of freezing an empty answer. `deleteAll()` in
+	 * destroy() drops the key with everything else.
 	 */
 	private async selfLocation(): Promise<PrimaryLocation> {
-		const stored = await this.ctx.storage.get<PrimaryLocation>('agent-location');
-		if (stored) return stored;
+		const stored = await this.ctx.storage.get<StoredLocation>('agent-location');
+		if (!stored) return await this.probeLocation();
 
+		const location = { colo: stored.colo, country: stored.country };
+		if (Date.now() - stored.probedAt >= LOCATION_REFRESH_MS) {
+			// Behind the response, never in front of it.
+			this.ctx.waitUntil(this.probeLocation());
+		}
+		return location;
+	}
+
+	private async probeLocation(): Promise<PrimaryLocation> {
 		const probed = await primaryLocation();
-		if (probed.colo || probed.country) await this.ctx.storage.put('agent-location', probed);
+		if (probed.colo || probed.country) {
+			await this.ctx.storage.put('agent-location', { ...probed, probedAt: Date.now() });
+		}
 		return probed;
 	}
 
