@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import type {
 		DeployTokenInfo,
 		GithubConnectionInfo,
@@ -154,6 +156,25 @@
 	// --- GitHub App path: one connection per app, made on the ROOT project.
 	// A connection covers the root and all its branches, like a deploy token.
 	let connectOpen = $state(false);
+
+	// Coming back from installing on GitHub, open the picker straight away:
+	// the operator's intent was "connect a repository", and the install was
+	// only a step inside it. Landing on a static page and making them click
+	// Connect again is where the flow felt broken. The param is stripped so a
+	// refresh (or a later Back) does not reopen it.
+	let preferInstallation = $state<number | null>(null);
+	$effect(() => {
+		const returned = page.url.searchParams.get('installation');
+		if (!returned) return;
+		// Preselect the account they just installed on, not merely the first.
+		preferInstallation = Number(returned) || null;
+		connectOpen = true;
+		void goto(resolve('/(app)/dashboard/[projectId]/hosting', { projectId: data.projectId }), {
+			replaceState: true,
+			noScroll: true,
+			keepFocus: true
+		});
+	});
 	let disconnectTarget = $state<GithubConnectionInfo | null>(null);
 	let disconnectBusy = $state(false);
 	const connection = $derived(data.github.connections[0] ?? null);
@@ -618,6 +639,7 @@
 	projectId={data.projectId}
 	installations={data.github.installations}
 	takenApps={(data.claims ?? []).map((claim) => claim.appName)}
+	{preferInstallation}
 />
 
 <!-- Disconnecting stops deploys immediately; the workflow file goes with it. -->

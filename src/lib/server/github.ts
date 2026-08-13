@@ -289,6 +289,16 @@ export async function verifyWebhookSignature(
 	return timingSafeEqual(`sha256=${digest}`, header);
 }
 
+/**
+ * Where the signed install state is parked for the return leg.
+ *
+ * GitHub's INSTALL redirect is not the user-authorization redirect, and it
+ * does not reliably echo a `state` parameter back - so the callback reads the
+ * query first and falls back to this cookie. Same token, same verification;
+ * the cookie only removes the dependency on GitHub round-tripping it.
+ */
+export const INSTALL_STATE_COOKIE = 'cfbase-gh-install';
+
 export interface InstallState {
 	/** Project the operator started the install from. */
 	projectId: string;

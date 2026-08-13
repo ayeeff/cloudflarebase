@@ -381,7 +381,16 @@ Mechanism:
   trustworthy** - it arrives on a redirect anyone can craft, so it is only
   believed while accompanied by state we signed, for the operator holding
   the session. The callback records the installation → org binding once;
-  every later connect checks that binding instead of the id.
+  every later connect checks that binding instead of the id. The signed
+  state rides BOTH the URL and a 15-minute `cfbase-gh-install` cookie,
+  because GitHub's install redirect (unlike user authorization) does not
+  reliably echo `state` back - the cookie removes that dependency without
+  weakening anything, since it is the same token verified the same way.
+- **Installing is a step INSIDE "connect a repository", not a destination.**
+  The callback returns to the Hosting page with `?installation=<id>`, which
+  reopens the connect dialog with that account preselected and strips the
+  param. Landing on a static page and making the operator click Connect
+  again is what made the first version feel broken.
 - **Two independent checks authorize a deploy**: GitHub's signature proves
   which REPOSITORY is calling, and the `github_connection` table says
   which PROJECT that repository may deploy to. A verified token for an
@@ -507,10 +516,19 @@ self-hosted install).
 1. **Register the App** at
    `https://github.com/settings/apps/new` (or under an org):
    - Homepage URL: `<origin>`
-   - Callback URL: `<origin>/api/github/callback`, "Request user
-     authorization (OAuth) during installation" OFF - the console binds
-     the installation through its own signed state, not a user token.
-   - Setup URL: leave blank (the callback handles the redirect).
+   - **Setup URL: `<origin>/api/github/callback`** - this is the one that
+     matters, and getting it wrong is silent. With "Request user
+     authorization (OAuth) during installation" OFF, an install is NOT
+     the user-authorization flow, so GitHub never touches the Callback
+     URL: it redirects to the SETUP URL. Leave it blank and the operator
+     authorizes, gets stranded on github.com, and nothing is ever
+     recorded. Tick "Redirect on update" too, so changing which
+     repositories the App can see also comes back.
+   - Callback URL: `<origin>/api/github/callback` as well (harmless, and
+     correct if user authorization is ever turned on). Leave "Request
+     user authorization (OAuth) during installation" OFF - the console
+     binds the installation through its own signed state, not a user
+     token, and turning it on only adds a second consent screen.
    - Webhook URL `<origin>/api/github/webhook`, Active ON, and a secret
      you generate (`openssl rand -hex 32`).
    - Repository permissions: **Contents: Read and write** (writes the

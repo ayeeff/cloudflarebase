@@ -41,12 +41,15 @@
 		open = $bindable(false),
 		projectId,
 		installations,
-		takenApps
+		takenApps,
+		preferInstallation = null
 	}: {
 		open?: boolean;
 		projectId: string;
 		installations: Installation[];
 		takenApps: string[];
+		/** Account to preselect - the one just installed, on the return leg. */
+		preferInstallation?: number | null;
 	} = $props();
 
 	let installationId = $state<number | null>(null);
@@ -111,7 +114,15 @@
 	// accounts reloads them and drops a selection that is no longer in the list.
 	$effect(() => {
 		if (!open) return;
-		const installation = installationId ?? installations[0]?.id ?? null;
+		const installation =
+			installationId ??
+			// Only honour the hint if it actually landed in the list; a stale one
+			// would leave the picker pointing at an account that is not there.
+			(preferInstallation && installations.some((entry) => entry.id === preferInstallation)
+				? preferInstallation
+				: null) ??
+			installations[0]?.id ??
+			null;
 		if (installation === null) return;
 		installationId = installation;
 		selected = null;

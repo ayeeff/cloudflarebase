@@ -1,4 +1,10 @@
-import { appJwt, githubAppConfig, githubFetch, verifyInstallState } from '$lib/server/github';
+import {
+	appJwt,
+	githubAppConfig,
+	githubFetch,
+	INSTALL_STATE_COOKIE,
+	verifyInstallState
+} from '$lib/server/github';
 import { recordInstallation } from '$lib/server/github-connect';
 import { getProjectOwnership } from '$lib/server/registry';
 import { redirect } from '@sveltejs/kit';
@@ -17,11 +23,18 @@ import type { RequestHandler } from './$types';
  * It always lands the operator somewhere useful; a failure is a message on
  * the Hosting page, never a bare error.
  */
-export const GET: RequestHandler = async ({ url, platform, locals }) => {
+export const GET: RequestHandler = async ({ url, platform, locals, cookies }) => {
 	const config = githubAppConfig(platform);
 	if (!config) redirect(303, '/dashboard');
 
-	const state = await verifyInstallState(config, url.searchParams.get('state'));
+	// Query first, cookie second: GitHub's install redirect does not reliably
+	// echo `state`, and without the fallback the operator lands back here with
+	// nothing to prove which project they started from.
+	const state = await verifyInstallState(
+		config,
+		url.searchParams.get('state') ?? cookies.get(INSTALL_STATE_COOKIE) ?? null
+	);
+	cookies.delete(INSTALL_STATE_COOKIE, { path: '/' });
 	const installationId = Number(url.searchParams.get('installation_id'));
 	if (
 		!state ||
