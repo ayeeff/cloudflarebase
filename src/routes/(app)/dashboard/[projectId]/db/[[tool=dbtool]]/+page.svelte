@@ -1605,6 +1605,7 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 				projectId={data.projectId}
 				collections={agentState.collections}
 				tables={agentState.tables ?? []}
+				agentLocation={overview.location}
 			/>
 		{/if}
 

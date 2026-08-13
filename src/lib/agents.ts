@@ -588,6 +588,12 @@ export const dbOverviewSchema = z
 		projectId: z.string(),
 		collections: z.array(dbCollectionSummarySchema),
 		tables: z.array(dbTableSummarySchema).catch([]),
+		/** Where the coordinator DO runs. Places the Replication map's hub
+		 * before any shard exists to report its own colo; `.catch` because an
+		 * agent deployed before this field existed simply omits it. */
+		location: z
+			.object({ colo: z.string().nullable(), country: z.string().nullable() })
+			.catch({ colo: null, country: null }),
 		state: dbAgentStateSchema
 	})
 	.meta({ id: 'DbOverview' });

@@ -42,6 +42,18 @@ import {
 	type TableConfig,
 } from './schemas';
 import { drainUnusedBody } from './access';
+import { primaryLocation, type PrimaryLocation } from './colo';
+
+/** The persisted form of the coordinator's location: the probe result plus
+ * when it was taken, so a relocated instance can correct itself. */
+interface StoredLocation extends PrimaryLocation {
+	probedAt: number;
+}
+
+/** How stale a stored location may get before the next read refreshes it in
+ * the background. Matches the isolate-level cache in colo.ts - a shorter
+ * window here would only re-read that cache and write the same value back. */
+const LOCATION_REFRESH_MS = 6 * 60 * 60 * 1000;
 import { planDdl, uniqueViolationColumn } from './table-schema';
 import type { DbCollection } from './collection';
 import type { DbGateway } from './gateway';
@@ -178,6 +190,16 @@ export interface DbOverview {
 	projectId: string;
 	collections: DbCollectionSummary[];
 	tables: DbTableSummary[];
+	/**
+	 * Where the COORDINATOR runs. Shards self-report their colo in `repStatus`,
+	 * which is what normally places the dashboard's replication hub - but a
+	 * project with no shards yet has nobody to ask, and the map fell back to a
+	 * fixed mid-continent point that is a guess dressed as a fact. The parent
+	 * is a Durable Object with a real location of its own, and it is where the
+	 * first shard will be created, so it is the honest answer until one exists.
+	 * Nulls in local dev, like every other colo probe.
+	 */
+	location: PrimaryLocation;
 	state: DbAgentState;
 }
 
@@ -588,11 +610,53 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return Response.json({ error: 'not found' }, { status: 404 });
 	}
 
+	/**
+	 * The coordinator's own colo, persisted so a cold isolate never has to pay
+	 * a trace probe before the replication map can place its hub.
+	 *
+	 * DO KV storage, deliberately NOT a SQLite column: this is one row of
+	 * per-instance state, the key-value API is exactly what that is for, and a
+	 * migration to carry two nullable strings would have to ship in every
+	 * consumer's deployed agent before the console could read it.
+	 *
+	 * Stored WITH the time it was probed, and refreshed in the background once
+	 * stale. An instance is not guaranteed to stay where it started - a
+	 * relocated DO whose location was written once would report the old colo
+	 * forever, which is the exact failure this field exists to fix. The stale
+	 * value still answers immediately: a location a few hours out of date is
+	 * worth far more than a blocked response, and the next read has the new
+	 * one.
+	 *
+	 * Nulls are never written, so local dev (where the probe cannot answer)
+	 * keeps retrying instead of freezing an empty answer. `deleteAll()` in
+	 * destroy() drops the key with everything else.
+	 */
+	private async selfLocation(): Promise<PrimaryLocation> {
+		const stored = await this.ctx.storage.get<StoredLocation>('agent-location');
+		if (!stored) return await this.probeLocation();
+
+		const location = { colo: stored.colo, country: stored.country };
+		if (Date.now() - stored.probedAt >= LOCATION_REFRESH_MS) {
+			// Behind the response, never in front of it.
+			this.ctx.waitUntil(this.probeLocation());
+		}
+		return location;
+	}
+
+	private async probeLocation(): Promise<PrimaryLocation> {
+		const probed = await primaryLocation();
+		if (probed.colo || probed.country) {
+			await this.ctx.storage.put('agent-location', { ...probed, probedAt: Date.now() });
+		}
+		return probed;
+	}
+
 	async getOverview(): Promise<DbOverview> {
 		return {
 			projectId: this.name,
 			collections: this.state.collections,
 			tables: this.state.tables ?? [],
+			location: await this.selfLocation(),
 			state: this.state,
 		};
 	}

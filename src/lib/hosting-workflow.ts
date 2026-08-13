@@ -46,7 +46,27 @@ const buildSteps = `      - uses: actions/setup-node@v4
       # Adjust to your stack; skipped when package.json has no build script.
       - name: Build
         if: hashFiles('package.json') != ''
-        run: npm run build --if-present`;
+        # Bounded separately from the job so a hang is ATTRIBUTED. A job-level
+        # timeout alone reports "the job was cancelled", which does not say
+        # which step stopped - and a build that never exits is the likeliest
+        # thing to stop here, since the runner cannot start the deploy until
+        # this process exits.
+        timeout-minutes: 10
+        run: |
+          # Node picks its own heap limit from the machine, which is fine
+          # until a large SSR build reaches it - and reaching it does not
+          # crash cleanly, it degrades into GC thrashing that looks exactly
+          # like a hang, for hours. Set it explicitly to two thirds of this
+          # runner's RAM: enough that a bigger runner is actually used,
+          # conservative enough that the heap plus everything else stays
+          # inside the box (overshooting trades a clean heap error for the
+          # OOM killer, which is the worse failure).
+          # Guarded on \`free\` so a non-Linux runs-on still builds, and
+          # appended so a NODE_OPTIONS you set yourself still wins.
+          if command -v free >/dev/null 2>&1; then
+            export NODE_OPTIONS="--max-old-space-size=$(free -m | awk '/^Mem:/ {print int($2 * 2 / 3)}') $NODE_OPTIONS"
+          fi
+          npm run build --if-present`;
 
 export function deployWorkflowYaml(): string {
 	return `# Deploys this repository to Cloudflarebase on every push.
@@ -66,6 +86,11 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # GitHub's default is 360 minutes. A deploy that has not finished in 15 is
+    # not slow, it is stuck - a build waiting on a prompt, a prerender fetching
+    # a URL that never answers - and six hours of billed minutes is a bad way
+    # to find that out. Raise it if a genuine build needs longer.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 ${buildSteps}
@@ -120,6 +145,11 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # GitHub's default is 360 minutes. A deploy that has not finished in 15 is
+    # not slow, it is stuck - a build waiting on a prompt, a prerender fetching
+    # a URL that never answers - and six hours of billed minutes is a bad way
+    # to find that out. Raise it if a genuine build needs longer.
+    timeout-minutes: 15
     permissions:
       contents: read
       # Mints the identity token the console verifies. Without it the deploy

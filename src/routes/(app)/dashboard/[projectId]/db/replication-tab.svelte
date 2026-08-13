@@ -18,11 +18,15 @@
 	let {
 		projectId,
 		collections,
-		tables
+		tables,
+		agentLocation = null
 	}: {
 		projectId: string;
 		collections: DbCollectionSummary[];
 		tables: DbTableSummary[];
+		/** Where the coordinator DO runs, from GET /overview. Places the hub
+		 * before any shard exists to report a colo of its own. */
+		agentLocation?: { colo: string | null; country: string | null } | null;
 	} = $props();
 
 	type Shard = { name: string; kind: 'collection' | 'table'; replication: 'off' | 'auto' };
@@ -229,13 +233,23 @@
 		TR: 'me'
 	};
 
-	/** First reported primary location across the fanned-out statuses. */
+	/**
+	 * First reported primary location across the fanned-out statuses, else the
+	 * coordinator's own.
+	 *
+	 * A project with no shards has no primary to ask, and the fixed fallback
+	 * point placed the hub in mid-North-America for everyone - a guess that
+	 * reads as a fact on a map. The parent DO runs somewhere real, and it is
+	 * where the first shard will be created, so it answers honestly until a
+	 * shard exists to speak for itself.
+	 */
 	const primaryLocation = $derived.by(() => {
 		for (const status of Object.values(statuses)) {
 			if (status.primary && (status.primary.colo || status.primary.country)) {
 				return status.primary;
 			}
 		}
+		if (agentLocation?.colo || agentLocation?.country) return agentLocation;
 		return null;
 	});
 	const hub = $derived.by(() => {
