@@ -84,4 +84,15 @@ test.describe('landing page (signed in)', () => {
 		await expect(page.getByRole('link', { name: 'Open your dashboard' }).first()).toBeVisible();
 		await expect(page.getByRole('link', { name: 'Open the live demo' })).toHaveCount(0);
 	});
+
+	test('/login bounces a signed-in operator to their destination', async ({ page }) => {
+		// /login is an open route the guard never resolves a session for; the
+		// loader must do it itself, or the demo funnel's ?signup=1 link would
+		// offer a sign-in form to someone who already has a session.
+		await page.goto('/login?signup=1');
+		await expect(page).toHaveURL(/\/dashboard$/);
+
+		await page.goto('/login?next=%2Fdashboard%2Forganization');
+		await expect(page).toHaveURL(/\/dashboard\/organization$/);
+	});
 });
