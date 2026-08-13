@@ -60,7 +60,31 @@ const SCHEMA_STATEMENTS = [
 		last_used_at integer
 	)`,
 	`CREATE INDEX IF NOT EXISTS deploy_token_project ON deploy_token (project_id)`,
-	`CREATE INDEX IF NOT EXISTS deploy_token_hash ON deploy_token (token_hash)`
+	`CREATE INDEX IF NOT EXISTS deploy_token_hash ON deploy_token (token_hash)`,
+	`CREATE TABLE IF NOT EXISTS github_installation (
+		id integer PRIMARY KEY NOT NULL,
+		org_id text,
+		account_login text NOT NULL,
+		installed_by text NOT NULL,
+		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS github_installation_org ON github_installation (org_id)`,
+	`CREATE TABLE IF NOT EXISTS github_connection (
+		id text PRIMARY KEY NOT NULL,
+		project_id text NOT NULL,
+		app_name text NOT NULL,
+		installation_id integer NOT NULL,
+		repo_id integer NOT NULL,
+		repo_full_name text NOT NULL,
+		default_branch text NOT NULL,
+		mode text NOT NULL,
+		assets_dir text,
+		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL,
+		last_event_at integer
+	)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS github_connection_app ON github_connection (project_id, app_name)`,
+	`CREATE INDEX IF NOT EXISTS github_connection_repo ON github_connection (repo_id)`,
+	`CREATE INDEX IF NOT EXISTS github_connection_installation ON github_connection (installation_id)`
 ];
 
 /**

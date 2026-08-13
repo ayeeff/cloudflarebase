@@ -4,6 +4,7 @@ import { RESERVED_PROJECT_IDS } from '$lib/console';
 import { projectIdSchema } from '$lib/schemas/auth';
 import { agentFetcher, agentUrl } from '$lib/server/agents';
 import { getConsoleIdentity, isDemoMode, isDemoProjectId } from '$lib/server/console';
+import { verifyGithubDeployGrant } from '$lib/server/github-connect';
 import {
 	deployTokenCoversProject,
 	isDeployTokenSurface,
@@ -220,6 +221,7 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 	event.locals.consoleUser = null;
 	event.locals.consoleIdentity = null;
 	event.locals.deployToken = null;
+	event.locals.githubDeploy = null;
 
 	const access = classifyAccess(event.url.pathname);
 	if (access.scope === 'open') return resolve(event);
@@ -249,6 +251,33 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 			}
 		}
 		return Response.json({ error: 'invalid deploy token' }, { status: 401 });
+	}
+
+	// GitHub Actions OIDC (docs/managed-service-design.md, Phase B): a
+	// `build`-mode connection deploys with NO stored credential at all - the
+	// workflow presents a short-lived token GitHub signed, describing the
+	// repository it ran in, and the connection table says which project that
+	// repository may deploy to. Same surfaces and same all-or-nothing contract
+	// as a deploy token: never a fall-through to session resolution.
+	//
+	// Only attempted on the deploy surfaces, so a three-segment console session
+	// bearer on any other route still reaches the session path below.
+	const oidcBearer =
+		access.projectId && isDeployTokenSurface(event.url.pathname, event.request.method)
+			? event.request.headers.get('authorization')?.match(/^Bearer\s+([\w-]+\.[\w-]+\.[\w-]+)$/)?.[1]
+			: undefined;
+	if (oidcBearer) {
+		const grant = await verifyGithubDeployGrant(
+			event.platform,
+			oidcBearer,
+			event.url.origin,
+			access.projectId!
+		);
+		if (grant) {
+			event.locals.githubDeploy = grant;
+			return resolve(event);
+		}
+		return Response.json({ error: 'invalid GitHub deploy token' }, { status: 401 });
 	}
 
 	// Public demo: anonymous visitors may drive ephemeral demo projects, whose

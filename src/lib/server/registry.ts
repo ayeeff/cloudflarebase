@@ -4,6 +4,7 @@ import { AGENT_REGISTRY } from '$lib/agent-registry';
 import type { RegistryProject } from '$lib/agents';
 import { getDb } from '$lib/server/db';
 import { project, projectAgent } from '$lib/server/db/schema';
+import { releaseGithubRows } from '$lib/server/github-connect';
 import { releaseHostingRows } from '$lib/server/hosting';
 import { requireAgent } from '$lib/server/agents';
 import { projectIdSchema } from '$lib/schemas/auth';
@@ -557,9 +558,12 @@ export async function deleteProject(
 		return { ok: false, status: 404, error: 'no such project' };
 	}
 
-	// Release hosting claims and deploy tokens for the whole family - the
-	// subdomains return to the pool the moment the rows are gone.
-	await releaseHostingRows(db, [projectId, ...branches.map((branch) => branch.id)]);
+	// Release hosting claims, deploy tokens, and GitHub connections for the
+	// whole family - the subdomains return to the pool the moment the rows are
+	// gone, and a deleted project stops accepting pushes.
+	const family = [projectId, ...branches.map((branch) => branch.id)];
+	await releaseHostingRows(db, family);
+	await releaseGithubRows(db, family);
 
 	failures.push(...(await eraseProjectData(platform, projectId)));
 	if (failures.length) {

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /**
  * Control-plane schema, held in D1 on the dashboard Worker.
@@ -139,6 +139,86 @@ export const deployToken = sqliteTable(
 );
 
 export type DeployTokenRow = typeof deployToken.$inferSelect;
+
+/**
+ * GitHub App installations, bound to the console org that installed them.
+ *
+ * The binding is what stops one operator connecting another account's repo:
+ * `installation_id` arrives from GitHub on a redirect the operator controls,
+ * so it is only trustworthy at the moment the signed install `state` comes
+ * back. The callback records the binding once; every later connect checks it
+ * instead of trusting the id again. Null `org_id` matches a null-org project
+ * (legacy/self-hosted rows, already visible to any operator).
+ */
+export const githubInstallation = sqliteTable(
+	'github_installation',
+	{
+		/** GitHub's numeric installation id - the unit access tokens are minted for. */
+		id: integer('id').primaryKey(),
+		orgId: text('org_id'),
+		/** The GitHub account the App is installed on (`acme`), for display. */
+		accountLogin: text('account_login').notNull(),
+		/** Console user id that completed the install - audit, and the fallback
+		 * owner when the project carries no org. */
+		installedBy: text('installed_by').notNull(),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' })
+			.notNull()
+			.default(sql`(unixepoch() * 1000)`)
+	},
+	(table) => [index('github_installation_org').on(table.orgId)]
+);
+
+export type GithubInstallationRow = typeof githubInstallation.$inferSelect;
+
+/**
+ * A repository connected to one project+app - the push-to-deploy link.
+ *
+ * Minted on a ROOT project and valid for its branches, exactly like a deploy
+ * token: a push to the default branch deploys the root, any other branch
+ * deploys `<root>--<branch>`. Two modes, chosen per connection:
+ *
+ * - `build` writes `.github/workflows/cloudflarebase.yml` into the repo and
+ *   trusts the Actions OIDC token it presents. GitHub's runners do the build;
+ *   we run no build farm and hold no repo secret.
+ * - `direct` needs no runner and no file in the repo at all: the push webhook
+ *   hands the pushed tree straight to the hosting agent. Only viable when
+ *   there is nothing to build, which is why `assets_dir` is captured here.
+ *
+ * `repo_id` is the numeric id, not the name: repositories get renamed and the
+ * webhook must still find its connection. `repo_full_name` is what the OIDC
+ * `repository` claim is matched against, and is re-synced from webhook
+ * payloads so a rename cannot silently break build-mode trust.
+ */
+export const githubConnection = sqliteTable(
+	'github_connection',
+	{
+		id: text('id').primaryKey(),
+		/** The ROOT project; branches ride the same connection. */
+		projectId: text('project_id').notNull(),
+		appName: text('app_name').notNull(),
+		installationId: integer('installation_id').notNull(),
+		repoId: integer('repo_id').notNull(),
+		repoFullName: text('repo_full_name').notNull(),
+		defaultBranch: text('default_branch').notNull(),
+		mode: text('mode').$type<'build' | 'direct'>().notNull(),
+		/** Direct mode: repo-relative directory published as assets ('' = root). */
+		assetsDir: text('assets_dir'),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' })
+			.notNull()
+			.default(sql`(unixepoch() * 1000)`),
+		/** Last push we accepted - the Hosting page's "last deploy from GitHub". */
+		lastEventAt: integer('last_event_at', { mode: 'timestamp_ms' })
+	},
+	(table) => [
+		// One repo per app. Not unique on repo_id: the same repository legitimately
+		// deploys to several projects (a monorepo, or prod and a scratch project).
+		uniqueIndex('github_connection_app').on(table.projectId, table.appName),
+		index('github_connection_repo').on(table.repoId),
+		index('github_connection_installation').on(table.installationId)
+	]
+);
+
+export type GithubConnectionRow = typeof githubConnection.$inferSelect;
 
 /**
  * Which agents a project has enabled. Groundwork from the agent contract: v1
