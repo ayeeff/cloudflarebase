@@ -94,10 +94,7 @@ export async function getConnectionsByRepo(
 	repoId: number
 ): Promise<Connection[]> {
 	const db = await getDb(platform);
-	const rows = await db
-		.select()
-		.from(githubConnection)
-		.where(eq(githubConnection.repoId, repoId));
+	const rows = await db.select().from(githubConnection).where(eq(githubConnection.repoId, repoId));
 	return rows.map(toConnection);
 }
 
@@ -238,9 +235,7 @@ export async function forgetInstallation(
 	installationId: number
 ): Promise<void> {
 	const db = await getDb(platform);
-	await db
-		.delete(githubConnection)
-		.where(eq(githubConnection.installationId, installationId));
+	await db.delete(githubConnection).where(eq(githubConnection.installationId, installationId));
 	await db.delete(githubInstallation).where(eq(githubInstallation.id, installationId));
 	forgetInstallationToken(installationId);
 }

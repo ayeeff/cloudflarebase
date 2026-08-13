@@ -25,15 +25,18 @@ async function fixtureEntries() {
 
 test('parses every regular file out of a real tarball', async () => {
 	const names = (await fixtureEntries()).map((entry) => entry.name).sort();
-	assert.deepEqual(names, [
-		'owner-repo-abc123def/.github/workflows/ci.yml',
-		'owner-repo-abc123def/.gitignore',
-		'owner-repo-abc123def/README.md',
-		'owner-repo-abc123def/dist/app.css',
-		'owner-repo-abc123def/dist/index.html',
-		'owner-repo-abc123def/dist/assets/a-very-long-directory-name-to-push-the-header-past-one-hundred-characters/nested-further-still/deep.js',
-		'owner-repo-abc123def/node_modules/pkg/index.js',
-	].sort());
+	assert.deepEqual(
+		names,
+		[
+			'owner-repo-abc123def/.github/workflows/ci.yml',
+			'owner-repo-abc123def/.gitignore',
+			'owner-repo-abc123def/README.md',
+			'owner-repo-abc123def/dist/app.css',
+			'owner-repo-abc123def/dist/index.html',
+			'owner-repo-abc123def/dist/assets/a-very-long-directory-name-to-push-the-header-past-one-hundred-characters/nested-further-still/deep.js',
+			'owner-repo-abc123def/node_modules/pkg/index.js',
+		].sort(),
+	);
 });
 
 test('reads a path too long for the tar name field', async () => {

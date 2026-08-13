@@ -6,6 +6,7 @@ import {
 	collectAssets,
 	findAssetsDirectory,
 	hostingFetch,
+	managedConfigFromEnv,
 	readManagedConfig,
 	readUserWranglerConfig,
 	resolveGitBranch,
@@ -13,20 +14,25 @@ import {
 	targetProjectId,
 	type ManagedConfig
 } from '../lib/managed.js';
+import { actionsIdToken, inGithubActions } from '../lib/oidc.js';
 import { run, runOrFail } from '../lib/run.js';
 import { readTrustedOrigins } from '../lib/wrangler-config.js';
 
 /**
  * `cloudflarebase deploy` - deploy, branching on context:
  *
- * - `cloudflarebase.json` present (written by bare `cloudflarebase init`): MANAGED
- *   deploy against the console's hosting API. The git branch decides the
- *   target: the default branch deploys the root, anything else deploys
- *   `<root>--<branch>` (auto-created), so preview-per-git-branch falls out.
+ * - `cloudflarebase.json` present (written by bare `cloudflarebase init`), OR
+ *   the CLOUDFLAREBASE_PROJECT/APP/URL trio in the environment (written into
+ *   the workflow by the console's GitHub App): MANAGED deploy against the
+ *   console's hosting API. The git branch decides the target: the default
+ *   branch deploys the root, anything else deploys `<root>--<branch>`
+ *   (auto-created), so preview-per-git-branch falls out.
  * - otherwise: the self-hosted wrangler path, unchanged.
  */
 export async function deployCommand(projectDir: string, rest: string[] = []): Promise<void> {
-	const managed = await readManagedConfig(projectDir);
+	// The file wins: a directory someone deliberately linked is never
+	// redirected by an ambient variable.
+	const managed = (await readManagedConfig(projectDir)) ?? managedConfigFromEnv();
 	if (managed) {
 		await managedDeploy(projectDir, managed, parseManagedFlags(rest));
 		return;
@@ -64,9 +70,17 @@ async function managedDeploy(
 	managed: ManagedConfig,
 	flags: ManagedFlags
 ): Promise<void> {
-	// CI rides a deploy token (env var or --token); interactive sessions ride
-	// the stored login against the same console the directory was linked to.
+	// Three credentials, most explicit first: an operator-supplied deploy
+	// token, GitHub's identity token (a connected repository stores nothing -
+	// the console verifies the token against GitHub's public keys), then the
+	// stored login for interactive runs.
 	let token = flags.token ?? process.env.CLOUDFLAREBASE_DEPLOY_TOKEN;
+	if (!token) {
+		// The audience is the console origin; a token minted for anything else
+		// is refused, which is what stops one being replayed here.
+		token = (await actionsIdToken(managed.origin)) ?? undefined;
+		if (token) step('Authenticating with the GitHub identity token');
+	}
 	if (!token) {
 		const config = await loadConfig();
 		if (config.origin !== managed.origin) {
@@ -207,7 +221,9 @@ async function managedDeploy(
 
 async function failureText(response: Response): Promise<string> {
 	if (response.status === 401) {
-		return 'the credential was refused - the deploy token may be revoked, or sign in again';
+		return inGithubActions()
+			? 'the credential was refused - reconnect the repository from the console Hosting page, or check CLOUDFLAREBASE_DEPLOY_TOKEN'
+			: 'the credential was refused - the deploy token may be revoked, or sign in again';
 	}
 	const body = (await response.json().catch(() => null)) as { error?: string } | null;
 	return body?.error ?? `the console responded ${response.status}`;

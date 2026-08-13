@@ -130,8 +130,7 @@ export async function inspectRepo(
 	}
 
 	const entries = (rootResponse.ok ? rootResponse.body : null) as
-		| { name?: string; type?: string }[]
-		| null;
+		{ name?: string; type?: string }[] | null;
 	const names = Array.isArray(entries) ? entries : [];
 	const hasIndexHtml = names.some((entry) => entry.name === 'index.html' && entry.type === 'file');
 	const staticDirs = STATIC_DIRS.filter((dir) =>

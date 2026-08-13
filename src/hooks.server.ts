@@ -273,7 +273,9 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 	// bearer on any other route still reaches the session path below.
 	const oidcBearer =
 		access.projectId && isDeployTokenSurface(event.url.pathname, event.request.method)
-			? event.request.headers.get('authorization')?.match(/^Bearer\s+([\w-]+\.[\w-]+\.[\w-]+)$/)?.[1]
+			? event.request.headers
+					.get('authorization')
+					?.match(/^Bearer\s+([\w-]+\.[\w-]+\.[\w-]+)$/)?.[1]
 			: undefined;
 	if (oidcBearer) {
 		const grant = await verifyGithubDeployGrant(

@@ -113,10 +113,7 @@ function decodeSegment(segment: string): unknown {
  * audience a workflow asks for, so checking it is what stops a token minted
  * for some other service being replayed here.
  */
-export async function verifyOidcToken(
-	token: string,
-	audience: string
-): Promise<OidcClaims | null> {
+export async function verifyOidcToken(token: string, audience: string): Promise<OidcClaims | null> {
 	if (!OIDC_TOKEN.test(token)) return null;
 	try {
 		const [headerSegment, payloadSegment, signatureSegment] = token.split('.');

@@ -174,7 +174,11 @@ export async function installationToken(
 	const cached = installationTokens.get(installationId);
 	if (cached && cached.expiresAt > now + 60_000) return cached.token;
 
-	const response = await githubFetch(await appJwt(config), 'POST', `/app/installations/${installationId}/access_tokens`);
+	const response = await githubFetch(
+		await appJwt(config),
+		'POST',
+		`/app/installations/${installationId}/access_tokens`
+	);
 	const body = response.body as { token?: string; expires_at?: string } | null;
 	if (!response.ok || !body?.token) {
 		// A revoked or suspended installation is ordinary, not exceptional - the
@@ -316,7 +320,8 @@ export async function verifyInstallState(
 ): Promise<InstallState | null> {
 	const [payload, signature] = token?.split('.') ?? [];
 	if (!payload || !signature) return null;
-	if (!timingSafeEqual(base64url(await hmac(config.webhookSecret, payload)), signature)) return null;
+	if (!timingSafeEqual(base64url(await hmac(config.webhookSecret, payload)), signature))
+		return null;
 	try {
 		const decoded = JSON.parse(
 			new TextDecoder().decode(decodeBase64(payload.replace(/-/g, '+').replace(/_/g, '/')))

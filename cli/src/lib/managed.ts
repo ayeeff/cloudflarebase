@@ -61,6 +61,31 @@ export async function readManagedConfig(projectDir: string): Promise<ManagedConf
 	};
 }
 
+/**
+ * The same configuration from the environment, for a repository connected
+ * through the console's GitHub App.
+ *
+ * The console knows the project and app when it writes the workflow, so it
+ * passes them as env - which means connecting in the console is the entire
+ * setup and the repository needs no `cloudflarebase.json` and no local CLI
+ * run. Null unless all three are present, so a stray variable can never
+ * silently redirect a deploy that has a file.
+ */
+export function managedConfigFromEnv(): ManagedConfig | null {
+	const origin = process.env.CLOUDFLAREBASE_URL?.trim();
+	const project = process.env.CLOUDFLAREBASE_PROJECT?.trim();
+	const app = process.env.CLOUDFLAREBASE_APP?.trim();
+	if (!origin || !project || !app) return null;
+	if (!PROJECT_ID.test(project) || !APP_NAME.test(app)) {
+		throw new UserError(
+			'CLOUDFLAREBASE_PROJECT or CLOUDFLAREBASE_APP is malformed.',
+			'Reconnect the repository from the console Hosting page to rewrite the workflow.'
+		);
+	}
+	const assets = process.env.CLOUDFLAREBASE_ASSETS?.trim();
+	return { project, app, origin: new URL(origin).origin, assets: assets || undefined };
+}
+
 export async function writeManagedConfig(
 	projectDir: string,
 	config: ManagedConfig
