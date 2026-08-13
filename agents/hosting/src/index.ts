@@ -146,6 +146,42 @@ class HostingService extends WorkerEntrypoint<Env> {
 			return Response.json(result);
 		}
 
+		// Direct deploys (Phase B): a push webhook the console verified, whose
+		// repository needs no build. The console resolved the claim and the
+		// download URL first, so the agent receives a plain URL and never holds
+		// a GitHub credential. Service-binding-only, like the routes above.
+		const gitDeploy = url.pathname.match(
+			/^\/internal\/projects\/([^/]+)\/apps\/([^/]+)\/git-deploy$/,
+		);
+		if (gitDeploy && request.method === 'POST') {
+			const projectId = decodeURIComponent(gitDeploy[1]);
+			const appName = decodeURIComponent(gitDeploy[2]);
+			const body = (await request.json().catch(() => null)) as {
+				tarballUrl?: string;
+				assetsDir?: string;
+			} | null;
+			if (
+				!projectIdSchema.safeParse(projectId).success ||
+				!appNameSchema.safeParse(appName).success ||
+				typeof body?.tarballUrl !== 'string' ||
+				// Only GitHub's own download hosts - this URL is fetched server side.
+				!/^https:\/\/(codeload|api)\.github\.com\//.test(body.tarballUrl)
+			) {
+				return Response.json({ error: 'invalid git deploy' }, { status: 400 });
+			}
+			const agent = await getAgentByName<Env, HostingAgentBase>(this.env.HostingAgent, projectId);
+			const result = await agent.gitDeploy({
+				appName,
+				tarballUrl: body.tarballUrl,
+				assetsDir: typeof body.assetsDir === 'string' ? body.assetsDir : '',
+				origin: url.origin,
+			});
+			return new Response(result.json, {
+				status: result.status,
+				headers: { 'content-type': 'application/json' },
+			});
+		}
+
 		const response =
 			(await routeAgentRequest(request, this.env)) ??
 			Response.json({ error: 'not found' }, { status: 404 });

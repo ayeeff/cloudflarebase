@@ -12,6 +12,8 @@
  *   Its augmentation describes deployment shapes, not the consumer's config.
  * - `bindings.test-d.ts` (the binding-contract negatives), executed by
  *   `tsc --noEmit` instead.
+ * - `*.unit.test.ts` and the archive fixture they read, which are run by
+ *   `npm run test:unit` and have no business in a consumer's bundle.
  *
  * The emitted declarations name `Env` instead of inlining it, so in a consumer
  * project it resolves to their `wrangler types` output. `AssertHostingAgentEnv`
@@ -26,5 +28,5 @@
 		"rootDir": "src"
 	},
 	"include": ["src/**/*"],
-	"exclude": ["src/**/*.test-d.ts", "src/**/*.unit.test.ts"]
+	"exclude": ["src/**/*.test-d.ts", "src/**/*.unit.test.ts", "src/**/*.fixture.ts"]
 }

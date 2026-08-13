@@ -3,7 +3,7 @@ import { isDemoProjectId } from '$lib/console';
 import { connectedWorkflowYaml } from '$lib/hosting-workflow';
 import { getDb, type ControlPlaneDatabase } from '$lib/server/db';
 import { githubConnection, githubInstallation, project } from '$lib/server/db/schema';
-import { githubAppConfig, REPO_FULL_NAME } from '$lib/server/github';
+import { forgetInstallationToken, githubAppConfig, REPO_FULL_NAME } from '$lib/server/github';
 import { verifyOidcToken } from '$lib/server/github-oidc';
 import {
 	deleteWorkflowFile,
@@ -226,6 +226,23 @@ export async function installationCoversProject(
 		return { ok: false, error: 'that GitHub installation belongs to another organization' };
 	}
 	return { ok: true, accountLogin: installation.accountLogin };
+}
+
+/**
+ * Drops an installation and every connection riding it - what an
+ * `installation.deleted` webhook means. The connections are dead the moment
+ * the installation is: no token can be minted for it again.
+ */
+export async function forgetInstallation(
+	platform: App.Platform | undefined,
+	installationId: number
+): Promise<void> {
+	const db = await getDb(platform);
+	await db
+		.delete(githubConnection)
+		.where(eq(githubConnection.installationId, installationId));
+	await db.delete(githubInstallation).where(eq(githubInstallation.id, installationId));
+	forgetInstallationToken(installationId);
 }
 
 export async function listInstallationsForOrg(

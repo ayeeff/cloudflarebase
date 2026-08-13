@@ -23,7 +23,9 @@ import {
 	projectIdSchema,
 	secretBodySchema,
 	subdomainSchema,
+	type DeployMeta,
 } from './schemas';
+import { gunzip, parseTar, toAssetPaths } from './tar';
 
 /**
  * HostingAgent - one Durable Object per project: the app registry for that
@@ -45,6 +47,11 @@ const MAX_ASSET_COUNT = 1000;
 const MAX_ASSET_TOTAL_BYTES = 25 * 1024 * 1024;
 const MAX_ASSET_FILE_BYTES = 10 * 1024 * 1024;
 const RECENT_DEPLOYS = 10;
+/** Decompressed ceiling for a direct deploy's tarball. Above the 25 MB asset
+ * cap because the archive also carries source we filter out - the deploy
+ * itself is still bounded by the asset caps in publish(). */
+const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
+const MAX_ARCHIVE_FILES = 20_000;
 
 export interface HostingAppSummary {
 	name: string;
@@ -351,7 +358,12 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 		});
 	}
 
-	private async deployApp(appName: string, request: Request): Promise<Response> {
+	/**
+	 * The checks every deploy passes before its body is even read: no demo
+	 * hosting, the app must carry a console-pushed claim, and the daily
+	 * ceiling. Returns the app row, or the Response to send instead.
+	 */
+	private async gateDeploy(appName: string): Promise<AppRecord | Response> {
 		if (DEMO_PROJECT_PATTERN.test(this.name)) {
 			// Belt to the console's braces: no demo hosting, ever.
 			return Response.json({ error: 'demo projects cannot deploy apps' }, { status: 403 });
@@ -377,6 +389,13 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 				{ status: 429 },
 			);
 		}
+		return app;
+	}
+
+	private async deployApp(appName: string, request: Request): Promise<Response> {
+		const gate = await this.gateDeploy(appName);
+		if (gate instanceof Response) return gate;
+		const app = gate;
 
 		let form: FormData;
 		try {
@@ -395,8 +414,6 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 
 		const modules: ModuleFile[] = [];
 		const assets: AssetFile[] = [];
-		let moduleBytes = 0;
-		let assetBytes = 0;
 		for (const [key, value] of form.entries()) {
 			if (typeof value === 'string') continue;
 			const bytes = new Uint8Array(await value.arrayBuffer());
@@ -405,20 +422,40 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 				if (!/^[A-Za-z0-9._-]+\.(?:js|mjs)$/.test(name)) {
 					return Response.json({ error: `invalid module name "${name}"` }, { status: 400 });
 				}
-				moduleBytes += bytes.length;
 				modules.push({ name, bytes });
 			} else if (key.startsWith('asset:')) {
 				const path = key.slice('asset:'.length);
 				if (!path.startsWith('/') || path.includes('..') || path.length > 512) {
 					return Response.json({ error: `invalid asset path "${path}"` }, { status: 400 });
 				}
-				if (bytes.length > MAX_ASSET_FILE_BYTES) {
-					return Response.json({ error: `asset "${path}" exceeds 10 MB` }, { status: 400 });
-				}
-				assetBytes += bytes.length;
 				assets.push({ path, bytes, contentType: contentTypeFor(path, value.type) });
 			}
 		}
+
+		// Size ceilings are enforced in publish(), so both deploy paths meet
+		// exactly the same limits.
+		return this.publish(appName, app, {
+			modules,
+			assets,
+			meta: meta.data,
+			origin: new URL(request.url).origin,
+		});
+	}
+
+	/**
+	 * Uploads a prepared deploy and records it. Shared by the multipart route
+	 * (the CLI's path) and the git route (a push webhook), so the caps and the
+	 * bookkeeping can never diverge between them - the two differ only in
+	 * where the bytes came from.
+	 */
+	private async publish(
+		appName: string,
+		app: AppRecord,
+		input: { modules: ModuleFile[]; assets: AssetFile[]; meta: DeployMeta; origin: string },
+	): Promise<Response> {
+		const { modules, assets, meta } = input;
+		const moduleBytes = modules.reduce((total, module) => total + module.bytes.length, 0);
+		const assetBytes = assets.reduce((total, asset) => total + asset.bytes.length, 0);
 
 		if (moduleBytes > MAX_MODULE_BYTES) {
 			return Response.json({ error: 'the Worker bundle exceeds 5 MB' }, { status: 400 });
@@ -432,13 +469,16 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 		if (assetBytes > MAX_ASSET_TOTAL_BYTES) {
 			return Response.json({ error: 'assets exceed 25 MB' }, { status: 400 });
 		}
+		if (assets.some((asset) => asset.bytes.length > MAX_ASSET_FILE_BYTES)) {
+			return Response.json({ error: 'an asset exceeds 10 MB' }, { status: 400 });
+		}
 		if (!modules.length && !assets.length) {
 			return Response.json({ error: 'nothing to deploy' }, { status: 400 });
 		}
-		if (modules.length && !meta.data.mainModule) {
+		if (modules.length && !meta.mainModule) {
 			return Response.json({ error: 'deploys with modules need meta.mainModule' }, { status: 400 });
 		}
-		if (meta.data.mainModule && !modules.some((module) => module.name === meta.data.mainModule)) {
+		if (meta.mainModule && !modules.some((module) => module.name === meta.mainModule)) {
 			return Response.json({ error: 'meta.mainModule is not among the modules' }, { status: 400 });
 		}
 
@@ -458,17 +498,17 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 				await putScript(api, app.subdomain, {
 					projectId: this.name,
 					appName,
-					mainModule: meta.data.mainModule,
+					mainModule: meta.mainModule,
 					modules,
-					compatibilityDate: meta.data.compatibilityDate ?? '2026-07-10',
-					compatibilityFlags: meta.data.compatibilityFlags ?? [],
+					compatibilityDate: meta.compatibilityDate ?? '2026-07-10',
+					compatibilityFlags: meta.compatibilityFlags ?? [],
 					assetsJwt,
-					notFoundHandling: meta.data.notFoundHandling,
+					notFoundHandling: meta.notFoundHandling,
 					vars: {
-						...meta.data.vars,
+						...meta.vars,
 						// Injected last so the SDK vars always win.
 						PROJECT_ID: this.name,
-						CLOUDFLAREBASE_URL: new URL(request.url).origin,
+						CLOUDFLAREBASE_URL: input.origin,
 					},
 				});
 			} catch (cause) {
@@ -506,6 +546,69 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			},
 			{ status: 201 },
 		);
+	}
+
+	/**
+	 * Deploys a repository tarball - the no-runner path (Phase B, direct
+	 * deploys). The console resolved the claim and the download URL, so this
+	 * receives a plain URL and never holds a GitHub credential.
+	 *
+	 * Only static assets: a repository that needs a build is a build-mode
+	 * connection and arrives through the ordinary multipart route instead.
+	 */
+	async gitDeploy(input: {
+		appName: string;
+		tarballUrl: string;
+		assetsDir: string;
+		origin: string;
+	}): Promise<{ status: number; json: string }> {
+		const gate = await this.gateDeploy(input.appName);
+		if (gate instanceof Response) {
+			return { status: gate.status, json: await gate.text() };
+		}
+
+		let assets: AssetFile[];
+		try {
+			const response = await fetch(input.tarballUrl);
+			if (!response.ok || !response.body) {
+				return {
+					status: 502,
+					json: JSON.stringify({ error: 'could not download the repository archive' }),
+				};
+			}
+			const buffer = await gunzip(response.body, MAX_ARCHIVE_BYTES);
+			const entries = parseTar(buffer, MAX_ARCHIVE_FILES);
+			assets = toAssetPaths(entries, input.assetsDir).map(({ path, bytes }) => ({
+				path,
+				bytes,
+				contentType: contentTypeFor(path, ''),
+			}));
+		} catch (cause) {
+			Sentry.captureException(cause, {
+				tags: { operation: 'hosting-git-deploy', projectId: this.name },
+			});
+			const message = cause instanceof Error ? cause.message : 'could not read the archive';
+			return { status: 400, json: JSON.stringify({ error: message }) };
+		}
+
+		if (!assets.length) {
+			return {
+				status: 400,
+				json: JSON.stringify({
+					error: input.assetsDir
+						? `nothing to deploy - "${input.assetsDir}" is empty or missing in this commit`
+						: 'nothing to deploy - the repository has no publishable files',
+				}),
+			};
+		}
+
+		const response = await this.publish(input.appName, gate, {
+			modules: [],
+			assets,
+			meta: { notFoundHandling: 'single-page-application' },
+			origin: input.origin,
+		});
+		return { status: response.status, json: await response.text() };
 	}
 
 	private async setSecret(appName: string, request: Request): Promise<Response> {

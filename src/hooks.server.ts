@@ -161,6 +161,15 @@ function classifyAccess(pathname: string): Access {
 	// Everything under /api is operator surface unless published below, so a
 	// route added later is private until someone deliberately opens it.
 	if (segments[0] === 'api') {
+		// GitHub's webhook is the one unauthenticated route here, and it has to
+		// be: GitHub carries no session and never will. Its HMAC signature is
+		// the credential, checked in the route before the payload is parsed.
+		// The install CALLBACK stays operator-only on purpose - it runs in the
+		// operator's own browser, and binding the installation to them is the
+		// entire point of it.
+		if (segments[1] === 'github' && segments[2] === 'webhook' && segments.length === 3) {
+			return { scope: 'open' };
+		}
 		// Registry mutations name their project in the path; surfacing the id
 		// here is what routes them through the same ownership gate as the
 		// project-scoped proxies (deleting a project is as project-scoped as
