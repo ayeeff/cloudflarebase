@@ -56,11 +56,15 @@ export const agentManifestSchema = z.strictObject({
 	),
 	proxy: z.strictObject({ apiPrefix: z.string().min(1), agentBasePath: z.string() }),
 	permissions: z.array(z.string()),
-	console: z.strictObject({
+	// Deliberately NOT strict, unlike every other block: the CLI reads nothing
+	// under `console` - it is the dashboard's presentation contract - and an
+	// install must never fail because the installed agent package ships a
+	// console field this CLI version predates.
+	console: z.object({
 		section: z.string().min(1),
 		icon: z.string().min(1),
 		pages: z.array(
-			z.strictObject({
+			z.object({
 				path: z.string().startsWith('/'),
 				title: z.string().min(1),
 				testId: z.string().min(1),

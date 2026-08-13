@@ -107,14 +107,15 @@
 	// /db/tables); the API reference keeps its own prefix check via isApi.
 	const navActive = (href: string) => page.url.pathname === href;
 
-	// --- Contextual accordion (the compact sidebar). Inside a tool section
-	// only THAT section stays expanded and the others fold to their header;
-	// on hub pages with no active tool (Overview, Settings, API reference)
-	// every section opens, because the hub is where the operator picks a
-	// destination - and it is also what keeps every e2e nav click reachable.
-	// Manual folds are per pageview and reset when the ACTIVE section
-	// changes, mirroring the old always-open groups' unsaved folding. Derived
-	// from the URL on both server and client, so SSR never flashes. ---
+	// --- Contextual accordion with a peek (the compact sidebar). Every section
+	// folds by default - including on hub pages - and only the section owning
+	// the current page expands, so the sidebar is a short list of destinations
+	// rather than a wall of every tool page. A folded section is never empty:
+	// it keeps its manifest `peek` of lead pages plus a "<n> more" row, which
+	// is how the console still says what the platform holds without listing
+	// it. Manual folds are per pageview and reset when the ACTIVE section
+	// changes. Derived from the URL on both server and client, so SSR never
+	// flashes. ---
 	const activeSection = $derived(
 		agentNav.find((section) => section.items.some((item) => navActive(item.href)))?.section ?? null
 	);
@@ -123,13 +124,13 @@
 		void activeSection;
 		sectionOverrides = {};
 	});
-	const sectionOpen = (section: string) =>
-		sectionOverrides[section] ?? (activeSection === null || section === activeSection);
-	function toggleSection(section: string) {
-		sectionOverrides = { ...sectionOverrides, [section]: !sectionOpen(section) };
+	const sectionOpen = (section: string) => sectionOverrides[section] ?? section === activeSection;
+	function setSection(section: string, open: boolean) {
+		sectionOverrides = { ...sectionOverrides, [section]: open };
 	}
-	// Not-yet-shipped primitives fold away by default - they advertise, they
-	// don't navigate, so they never earn the accordion's auto-open.
+	// Not-yet-shipped primitives peek like everything else - one name, then a
+	// count. They advertise, they don't navigate, so they never earn the
+	// accordion's auto-open.
 	let comingSoonOpen = $state(false);
 
 	// Functions left this list when the hosting agent shipped - apps and
@@ -466,6 +467,22 @@
 	</DropdownMenu.Item>
 {/snippet}
 
+{#snippet moreRow(hidden: number, section: string, testId: string, expand: () => void)}
+	<!-- The folded section's tail: how many pages are behind the header, so an
+	     operator knows whether opening is worth it. Shares the item grid (16px
+	     icon column, same indent) so it reads as the list continuing. -->
+	<button
+		type="button"
+		data-testid={testId}
+		aria-label={`Show ${hidden} more in ${section}`}
+		class="flex w-full items-center gap-3 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground/70 transition-colors hover:bg-accent hover:text-accent-foreground"
+		onclick={expand}
+	>
+		<ChevronDown class="h-4 w-4 shrink-0" />
+		{hidden} more
+	</button>
+{/snippet}
+
 {#snippet copilotPanel(desktop: boolean)}
 	<section
 		class="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
@@ -687,14 +704,18 @@
 
 			<!-- One FOLDABLE group per agent (Authentication ▾, Database ▾, ...),
 			     each listing its tool pages as nested items, driven entirely by
-			     the manifest registry's console.pages. Contextual accordion: the
-			     section owning the current page is expanded, the others fold to
-			     their header; hub pages (no active tool) open everything. Hand-
-			     rolled instead of the Collapsible component because the open
-			     state is URL-derived and must follow navigation - a controlled
-			     prop fighting the component's own state is where that breaks. -->
+			     the manifest registry's console.pages. Contextual accordion with
+			     a peek: the section owning the current page is expanded, every
+			     other section folds to its header plus its manifest `peek` of
+			     lead pages and a "<n> more" row. Hand-rolled instead of the
+			     Collapsible component because the open state is URL-derived and
+			     must follow navigation - a controlled prop fighting the
+			     component's own state is where that breaks. -->
 			{#each agentNav as navSection (navSection.section)}
 				{@const open = sectionOpen(navSection.section)}
+				{@const shown = open
+					? navSection.items.length
+					: Math.min(navSection.peek, navSection.items.length)}
 				<div>
 					<button
 						type="button"
@@ -702,33 +723,39 @@
 						data-testid={`nav-section-${navSection.section.toLowerCase()}`}
 						data-state={open ? 'open' : 'closed'}
 						aria-expanded={open}
-						onclick={() => toggleSection(navSection.section)}
+						onclick={() => setSection(navSection.section, !open)}
 					>
 						{navSection.section}
 						<ChevronDown class={['h-3.5 w-3.5 transition-transform', !open && '-rotate-90']} />
 					</button>
-					{#if open}
-						<div class="space-y-0.5 pl-2">
-							<!-- eslint-disable svelte/no-navigation-without-resolve -- manifest-driven hrefs are prebuilt project-relative paths -->
-							{#each navSection.items as item (item.testId)}
-								{@const NavIcon = navIcons[item.icon] ?? KeyRound}
-								<a
-									href={item.href}
-									data-testid={item.testId}
-									class={[
-										'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-										navActive(item.href)
-											? 'bg-primary/10 text-primary'
-											: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-									]}
-								>
-									<NavIcon class="h-4 w-4" />
-									{item.title}
-								</a>
-							{/each}
-							<!-- eslint-enable svelte/no-navigation-without-resolve -->
-						</div>
-					{/if}
+					<div class="space-y-0.5 pl-2">
+						<!-- eslint-disable svelte/no-navigation-without-resolve -- manifest-driven hrefs are prebuilt project-relative paths -->
+						{#each navSection.items.slice(0, shown) as item (item.testId)}
+							{@const NavIcon = navIcons[item.icon] ?? KeyRound}
+							<a
+								href={item.href}
+								data-testid={item.testId}
+								class={[
+									'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+									navActive(item.href)
+										? 'bg-primary/10 text-primary'
+										: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+								]}
+							>
+								<NavIcon class="h-4 w-4" />
+								{item.title}
+							</a>
+						{/each}
+						<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						{#if navSection.items.length > shown}
+							{@render moreRow(
+								navSection.items.length - shown,
+								navSection.section,
+								`nav-more-${navSection.section.toLowerCase()}`,
+								() => setSection(navSection.section, true)
+							)}
+						{/if}
+					</div>
 				</div>
 			{/each}
 
@@ -746,21 +773,27 @@
 						class={['h-3.5 w-3.5 transition-transform', !comingSoonOpen && '-rotate-90']}
 					/>
 				</button>
-				{#if comingSoonOpen}
-					<div class="space-y-0.5 pl-2">
-						{#each comingSoon as item (item.label)}
-							<span
-								class="flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
+				<div class="space-y-0.5 pl-2">
+					{#each comingSoonOpen ? comingSoon : comingSoon.slice(0, 1) as item (item.label)}
+						<span
+							class="flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
+						>
+							<item.icon class="h-4 w-4" />
+							{item.label}
+							<Badge variant="outline" class="ml-auto text-[10px] text-muted-foreground/60"
+								>soon</Badge
 							>
-								<item.icon class="h-4 w-4" />
-								{item.label}
-								<Badge variant="outline" class="ml-auto text-[10px] text-muted-foreground/60"
-									>soon</Badge
-								>
-							</span>
-						{/each}
-					</div>
-				{/if}
+						</span>
+					{/each}
+					{#if !comingSoonOpen}
+						{@render moreRow(
+							comingSoon.length - 1,
+							'Coming soon',
+							'nav-more-coming-soon',
+							() => (comingSoonOpen = true)
+						)}
+					{/if}
+				</div>
 			</div>
 
 			<div>

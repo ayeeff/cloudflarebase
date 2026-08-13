@@ -1,11 +1,19 @@
 import * as Sentry from '@sentry/sveltekit';
 import { isDemoProjectId } from '$lib/console';
+import { connectedWorkflowYaml } from '$lib/hosting-workflow';
 import { getDb, type ControlPlaneDatabase } from '$lib/server/db';
 import { githubConnection, githubInstallation, project } from '$lib/server/db/schema';
-import { deployTokenCoversProject } from '$lib/server/hosting';
+import { githubAppConfig, REPO_FULL_NAME } from '$lib/server/github';
 import { verifyOidcToken } from '$lib/server/github-oidc';
+import {
+	deleteWorkflowFile,
+	listInstallationRepos,
+	writeWorkflowFile
+} from '$lib/server/github-repo';
+import { appNameSchema, deployTokenCoversProject, resolveAppClaim } from '$lib/server/hosting';
 import { projectIdSchema } from '$lib/schemas/auth';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { z } from 'zod';
 
 /**
  * Connections between a GitHub repository and a project+app, and the trust
@@ -230,6 +238,140 @@ export async function listInstallationsForOrg(
 		.from(githubInstallation)
 		.where(orgId === null ? isNull(githubInstallation.orgId) : eq(githubInstallation.orgId, orgId));
 	return rows.map((row) => ({ id: row.id, accountLogin: row.accountLogin }));
+}
+
+// --- Connecting ------------------------------------------------------------
+
+/** A repo-relative directory: no absolute paths, no traversal, no drive. */
+const assetsDirSchema = z
+	.string()
+	.max(200)
+	.refine((value) => !value.startsWith('/') && !value.split('/').includes('..'), {
+		message: 'assets directory must be a path inside the repository'
+	});
+
+export const connectSchema = z.object({
+	installationId: z.number().int().positive(),
+	repoFullName: z.string().regex(REPO_FULL_NAME, 'expected owner/repository'),
+	appName: appNameSchema,
+	mode: z.enum(['build', 'direct']),
+	assetsDir: assetsDirSchema.optional()
+});
+
+export type ConnectResult =
+	| { ok: true; connection: Connection; subdomain: string; workflowWritten: boolean }
+	| { ok: false; status: number; error: string };
+
+/**
+ * Connects a repository to a project+app.
+ *
+ * Order matters: the subdomain claim is resolved BEFORE anything is written
+ * to GitHub, so a workflow never lands in someone's repository pointing at an
+ * app that could not be claimed. Build mode then writes the workflow; direct
+ * mode writes nothing at all - the repository is left exactly as it was and
+ * the push webhook does the work.
+ */
+export async function connectRepository(
+	platform: App.Platform | undefined,
+	projectId: string,
+	input: unknown,
+	origin: string
+): Promise<ConnectResult> {
+	if (isDemoProjectId(projectId)) {
+		return { ok: false, status: 403, error: 'demo projects cannot deploy apps' };
+	}
+	const config = githubAppConfig(platform);
+	if (!config) {
+		return { ok: false, status: 503, error: 'no GitHub App is configured on this console' };
+	}
+	const parsed = connectSchema.safeParse(input);
+	if (!parsed.success) {
+		return { ok: false, status: 400, error: parsed.error.issues[0]?.message ?? 'invalid request' };
+	}
+	const { installationId, repoFullName, appName, mode } = parsed.data;
+
+	const db = await getDb(platform);
+	const [row] = await db.select().from(project).where(eq(project.id, projectId)).limit(1);
+	if (!row) return { ok: false, status: 404, error: 'no such project' };
+	if (row.parentId) {
+		// One connection covers the root and every branch - a push to a git
+		// branch deploys `<root>--<branch>` without a second connection.
+		return { ok: false, status: 400, error: 'connect repositories on the root project' };
+	}
+
+	const covers = await installationCoversProject(platform, installationId, projectId);
+	if (!covers.ok) return { ok: false, status: 403, error: covers.error };
+
+	// Never trust the caller's view of the repository: re-read it from the
+	// installation, which is also what proves the installation can see it.
+	const repos = await listInstallationRepos(config, installationId);
+	if (!repos) {
+		return {
+			ok: false,
+			status: 409,
+			error: 'the GitHub installation is no longer valid - reinstall the app'
+		};
+	}
+	const repo = repos.find((candidate) => candidate.fullName === repoFullName);
+	if (!repo) {
+		return { ok: false, status: 404, error: 'that repository is not in this installation' };
+	}
+
+	// Claim first: a workflow committed for an unclaimable app would deploy
+	// into a 404 on every future push.
+	const claim = await resolveAppClaim(platform, projectId, appName);
+	if (!claim.ok) return { ok: false, status: claim.status, error: claim.error };
+
+	let workflowWritten = false;
+	if (mode === 'build') {
+		const written = await writeWorkflowFile(
+			config,
+			installationId,
+			repo.fullName,
+			repo.defaultBranch,
+			connectedWorkflowYaml({ origin, projectId, appName: claim.appName })
+		);
+		if (!written.ok) return { ok: false, status: written.status, error: written.error };
+		workflowWritten = true;
+	}
+
+	const connection = await saveConnection(platform, {
+		projectId,
+		appName: claim.appName,
+		installationId,
+		repoId: repo.id,
+		repoFullName: repo.fullName,
+		defaultBranch: repo.defaultBranch,
+		mode,
+		assetsDir: mode === 'direct' ? (parsed.data.assetsDir ?? '') : null
+	});
+	return { ok: true, connection, subdomain: claim.subdomain, workflowWritten };
+}
+
+/**
+ * Drops a connection, and removes the workflow it wrote. Removing the file is
+ * best effort but deliberate: connect created it, so disconnect should not
+ * leave the repository failing CI on every push forever.
+ */
+export async function disconnectRepository(
+	platform: App.Platform | undefined,
+	projectId: string,
+	appName: string
+): Promise<{ ok: boolean; workflowRemoved: boolean }> {
+	const connection = await getConnection(platform, projectId, appName);
+	if (!connection) return { ok: false, workflowRemoved: false };
+
+	let workflowRemoved = false;
+	const config = githubAppConfig(platform);
+	if (config && connection.mode === 'build') {
+		workflowRemoved = await deleteWorkflowFile(
+			config,
+			connection.installationId,
+			connection.repoFullName,
+			connection.defaultBranch
+		);
+	}
+	return { ok: await deleteConnection(platform, projectId, appName), workflowRemoved };
 }
 
 // --- The deploy grant ------------------------------------------------------

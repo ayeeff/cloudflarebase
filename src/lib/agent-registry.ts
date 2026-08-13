@@ -64,6 +64,13 @@ export const agentManifestSchema = z.strictObject({
 	console: z.strictObject({
 		section: z.string().min(1),
 		icon: z.string().min(1),
+		/**
+		 * How many leading pages stay visible while the sidebar section is
+		 * folded. Sections fold by default, so this is what the console shows
+		 * of an agent before anyone opens it - the agent decides which of its
+		 * pages represent it (the db agent needs two: documents AND tables).
+		 */
+		peek: z.number().int().min(1).max(4).optional(),
 		pages: z.array(
 			z.strictObject({
 				path: z.string().startsWith('/'),
@@ -153,23 +160,32 @@ export interface ConsoleNavItem {
 }
 export interface ConsoleNavSection {
 	section: string;
+	/** Leading items that stay visible while the section is folded. */
+	peek: number;
 	items: ConsoleNavItem[];
 }
 
 /** Sidebar/nav entries contributed by agents, grouped by manifest section. */
 export function buildConsoleNav(projectId: string): ConsoleNavSection[] {
-	const sections = new Map<string, ConsoleNavItem[]>();
+	const sections = new Map<string, ConsoleNavSection>();
 	for (const { manifest } of Object.values(AGENT_REGISTRY)) {
-		const items = sections.get(manifest.console.section) ?? [];
+		const section = sections.get(manifest.console.section) ?? {
+			section: manifest.console.section,
+			peek: 1,
+			items: []
+		};
+		// Two agents sharing a section name share one peek: the widest wins, so
+		// neither agent's lead page can be folded away by the other's default.
+		section.peek = Math.max(section.peek, manifest.console.peek ?? 1);
 		for (const page of manifest.console.pages) {
-			items.push({
+			section.items.push({
 				href: `/dashboard/${projectId}${page.path}`,
 				title: page.title,
 				icon: page.icon ?? manifest.console.icon,
 				testId: page.testId
 			});
 		}
-		sections.set(manifest.console.section, items);
+		sections.set(manifest.console.section, section);
 	}
-	return [...sections.entries()].map(([section, items]) => ({ section, items }));
+	return [...sections.values()];
 }
