@@ -18,6 +18,10 @@
 
 	let { data } = $props();
 
+	// The synthesized branch context is the demo signal (layout data merges
+	// into page data); registered projects get the grown-up copy.
+	const isDemo = $derived(!!data.branches?.demo);
+
 	const authHref = $derived(
 		resolve('/(app)/dashboard/[projectId]/auth', { projectId: data.projectId })
 	);
@@ -37,7 +41,7 @@
 	<title>{data.projectId} · Project Overview · Cloudflarebase</title>
 	<meta
 		name="description"
-		content="Manage the isolated Cloudflarebase demo backend for project {data.projectId}."
+		content="Manage the Cloudflarebase backend for project {data.projectId}."
 	/>
 </svelte:head>
 
@@ -45,8 +49,9 @@
 	<div>
 		<h1 class="text-2xl font-semibold">Project Overview</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
-			Your browser's isolated Auth Agent sandbox. Build against it immediately - no account or
-			credit card.
+			{isDemo
+				? "Your browser's isolated Auth Agent sandbox. Build against it immediately - no account or credit card."
+				: 'Everything this project runs, in one place.'}
 		</p>
 	</div>
 
@@ -54,16 +59,18 @@
 		<Card.Root class="border-primary/25 bg-primary/[0.04] lg:col-span-2">
 			<Card.Header
 				><Card.Title class="flex items-center gap-2"
-					><ShieldCheck class="h-5 w-5 text-primary" /> Your private demo backend is ready</Card.Title
+					><ShieldCheck class="h-5 w-5 text-primary" />
+					{isDemo ? 'Your private demo backend is ready' : 'Your backend is ready'}</Card.Title
 				><Card.Description
-					>This unguessable project ID is saved in this browser for 30 days. Identity data is
-					isolated in its own Durable Object.</Card.Description
+					>{isDemo
+						? 'This unguessable project ID is saved in this browser for 30 days. Identity data is isolated in its own Durable Object.'
+						: 'Auth, database, and hosting run as agents owned by this project - each keeps its data in its own Durable Object.'}</Card.Description
 				></Card.Header
 			>
 			<Card.Content class="flex flex-wrap gap-2"
 				><Button href={authHref}><KeyRound class="mr-1.5 h-4 w-4" /> Open Auth Agent</Button><Button
-					href={`${authHref}/integration`}
-					variant="outline"><CodeXml class="mr-1.5 h-4 w-4" /> View integration guide</Button
+					href={dbHref}
+					variant="outline"><Database class="mr-1.5 h-4 w-4" /> Open Database</Button
 				></Card.Content
 			>
 		</Card.Root>
@@ -93,7 +100,7 @@
 
 	<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
 		<!-- Authentication - live -->
-		<Card.Root class="border-primary/30" data-testid="product-auth">
+		<Card.Root class="flex flex-col border-primary/30" data-testid="product-auth">
 			<Card.Header>
 				<div class="flex items-center justify-between">
 					<div
@@ -112,7 +119,7 @@
 					sign-in.
 				</Card.Description>
 			</Card.Header>
-			<Card.Content class="flex flex-wrap items-end justify-between gap-4">
+			<Card.Content class="mt-auto flex flex-nowrap items-end justify-between gap-4">
 				<div class="flex gap-6">
 					<div>
 						<p class="text-2xl font-semibold tabular-nums" data-testid="overview-users-count">
@@ -127,14 +134,19 @@
 						<p class="text-xs text-muted-foreground">sessions</p>
 					</div>
 				</div>
-				<Button href={authHref} size="sm" variant="outline">
-					Open <ArrowRight class="ml-1 h-3.5 w-3.5" />
-				</Button>
+				<div class="flex shrink-0 gap-2">
+					<Button href={`${authHref}/integration`} size="sm" variant="outline">
+						<CodeXml class="mr-1 h-3.5 w-3.5" /> Integration
+					</Button>
+					<Button href={authHref} size="sm" variant="outline">
+						Open <ArrowRight class="ml-1 h-3.5 w-3.5" />
+					</Button>
+				</div>
 			</Card.Content>
 		</Card.Root>
 
 		<!-- Database - live -->
-		<Card.Root class="border-primary/30" data-testid="product-db">
+		<Card.Root class="flex flex-col border-primary/30" data-testid="product-db">
 			<Card.Header>
 				<div class="flex items-center justify-between">
 					<div
@@ -149,11 +161,11 @@
 				</div>
 				<Card.Title class="pt-2">Database</Card.Title>
 				<Card.Description>
-					JSON documents with live queries - one isolated Durable Object per collection, pushed to
-					subscribers as writes happen.
+					JSON documents and typed SQL tables, both with live queries - one isolated Durable Object
+					per collection or table, pushed to subscribers as writes happen.
 				</Card.Description>
 			</Card.Header>
-			<Card.Content class="flex flex-wrap items-end justify-between gap-4">
+			<Card.Content class="mt-auto flex flex-nowrap items-end justify-between gap-4">
 				<div class="flex gap-6">
 					<div>
 						<p class="text-2xl font-semibold tabular-nums" data-testid="overview-collections-count">
@@ -168,9 +180,14 @@
 						<p class="text-xs text-muted-foreground">documents</p>
 					</div>
 				</div>
-				<Button href={dbHref} size="sm" variant="outline">
-					Open <ArrowRight class="ml-1 h-3.5 w-3.5" />
-				</Button>
+				<div class="flex shrink-0 gap-2">
+					<Button href={`${dbHref}/integration`} size="sm" variant="outline">
+						<CodeXml class="mr-1 h-3.5 w-3.5" /> Integration
+					</Button>
+					<Button href={dbHref} size="sm" variant="outline">
+						Open <ArrowRight class="ml-1 h-3.5 w-3.5" />
+					</Button>
+				</div>
 			</Card.Content>
 		</Card.Root>
 	</div>

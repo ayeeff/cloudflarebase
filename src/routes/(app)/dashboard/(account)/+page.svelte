@@ -2,20 +2,23 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { CONSOLE_AUTH_BASE } from '$lib/console';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { projectIdSchema } from '$lib/schemas/auth';
-	import { ChevronRight, Database, GitBranch, Mail, Plus } from '@lucide/svelte';
+	import { ChevronRight, Database, GitBranch, Globe, Mail, Plus } from '@lucide/svelte';
 
 	let { data } = $props();
 
 	// The create form lives in a dialog behind the "+ New project" button
 	// (Supabase-style); the empty state opens the same dialog.
 	let createOpen = $state(false);
+
+	// Client-side filter over the (org-scoped, <=100 rows) list - matches the
+	// root's name/id or any branch id, so a branch search surfaces its root.
+	let query = $state('');
 
 	let inviteBusy = $state<string | null>(null);
 
@@ -52,6 +55,16 @@
 				branches: data.projects.filter((branch) => branch.parentId === root.id)
 			}))
 	);
+	const filteredGroups = $derived.by(() => {
+		const needle = query.trim().toLowerCase();
+		if (!needle) return groups;
+		return groups.filter(
+			({ root, branches }) =>
+				root.name.toLowerCase().includes(needle) ||
+				root.id.toLowerCase().includes(needle) ||
+				branches.some((branch) => branch.id.toLowerCase().includes(needle))
+		);
+	});
 
 	let name = $state('');
 	let id = $state('');
@@ -163,45 +176,73 @@
 	{/each}
 
 	{#if data.projects.length}
-		<div class="grid gap-2" data-testid="project-list">
-			{#each groups as { root: project, branches } (project.id)}
-				<a
-					href={resolve('/(app)/dashboard/[projectId]', { projectId: project.id })}
-					class="group flex items-center gap-3 rounded-lg border bg-card p-4 transition-colors hover:border-primary hover:bg-accent/40"
-				>
-					<Database class="h-5 w-5 shrink-0 text-muted-foreground" />
-					<div class="min-w-0 flex-1">
-						<p class="truncate font-medium">{project.name}</p>
-						<p class="truncate font-mono text-xs text-muted-foreground">{project.id}</p>
-					</div>
-					{#if branches.length}
-						<Badge variant="outline" class="shrink-0 gap-1 text-xs text-muted-foreground">
-							<GitBranch class="h-3 w-3" />
-							{branches.length}
-							{branches.length === 1 ? 'branch' : 'branches'}
-						</Badge>
-					{/if}
-					<ChevronRight
-						class="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-					/>
-				</a>
-				{#each branches as branch (branch.id)}
-					<a
-						href={resolve('/(app)/dashboard/[projectId]', { projectId: branch.id })}
-						class="group ml-7 flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:border-primary hover:bg-accent/40"
-						data-testid="branch-row"
+		<div class="space-y-4">
+			{#if groups.length > 5}
+				<Input
+					bind:value={query}
+					placeholder="Search projects…"
+					class="max-w-xs"
+					data-testid="project-search"
+				/>
+			{/if}
+			<div class="grid items-start gap-4 sm:grid-cols-2" data-testid="project-list">
+				{#each filteredGroups as { root: project, branches } (project.id)}
+					<div
+						class="group flex flex-col overflow-hidden rounded-xl border bg-card transition-colors hover:border-primary/60"
 					>
-						<GitBranch class="h-4 w-4 shrink-0 text-muted-foreground" />
-						<div class="min-w-0 flex-1">
-							<p class="truncate font-mono text-sm font-medium">{branch.branchName}</p>
-							<p class="truncate font-mono text-xs text-muted-foreground">{branch.id}</p>
-						</div>
-						<ChevronRight
-							class="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-						/>
-					</a>
+						<a
+							href={resolve('/(app)/dashboard/[projectId]', { projectId: project.id })}
+							class="flex min-h-36 flex-1 flex-col gap-4 p-6 transition-colors hover:bg-accent/40"
+						>
+							<div class="flex items-start gap-3">
+								<div
+									class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-background"
+								>
+									<Database class="h-4 w-4 text-muted-foreground" />
+								</div>
+								<div class="min-w-0 flex-1">
+									<p class="truncate font-medium">{project.name}</p>
+									<p class="truncate font-mono text-xs text-muted-foreground">{project.id}</p>
+								</div>
+								<ChevronRight
+									class="mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+								/>
+							</div>
+							<!-- The quiet flex: a fresh project is already served from
+							     Cloudflare's whole network, replicas included. -->
+							<div class="mt-auto flex items-start gap-2.5">
+								<Globe class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+								<div class="min-w-0 text-xs">
+									<p class="flex items-center gap-1.5 font-medium">
+										Region:
+										<span
+											class="h-1.5 w-1.5 shrink-0 rounded-full bg-[oklch(0.72_0.15_150)] shadow-[0_0_6px_oklch(0.72_0.15_150/80%)]"
+											aria-hidden="true"
+										></span>
+										Earth
+									</p>
+									<p class="mt-0.5 text-muted-foreground">Served from 300+ edge locations</p>
+								</div>
+							</div>
+						</a>
+						{#if branches.length}
+							<div class="space-y-0.5 border-t bg-muted/30 px-2 py-2">
+								{#each branches as branch (branch.id)}
+									<a
+										href={resolve('/(app)/dashboard/[projectId]', { projectId: branch.id })}
+										class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent"
+										data-testid="branch-row"
+									>
+										<GitBranch class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+										<span class="shrink-0 font-mono font-medium">{branch.branchName}</span>
+										<span class="truncate font-mono text-muted-foreground">{branch.id}</span>
+									</a>
+								{/each}
+							</div>
+						{/if}
+					</div>
 				{/each}
-			{/each}
+			</div>
 		</div>
 	{/if}
 

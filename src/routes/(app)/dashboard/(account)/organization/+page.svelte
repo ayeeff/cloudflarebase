@@ -6,7 +6,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Building2, Mail, UsersRound } from '@lucide/svelte';
+	import { Mail, UsersRound } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
 	let { data } = $props();
@@ -166,14 +166,11 @@
 </svelte:head>
 
 <div class="space-y-8" data-testid="organization-page">
-	<div class="flex items-center gap-3">
-		<Building2 class="h-6 w-6 text-muted-foreground" />
-		<div>
-			<h1 class="text-2xl font-semibold tracking-tight" data-testid="org-name">
-				{data.org.name}
-			</h1>
-			<p class="font-mono text-xs text-muted-foreground">{data.org.slug}</p>
-		</div>
+	<div class="space-y-1.5">
+		<h1 class="text-2xl font-semibold tracking-tight" data-testid="org-name">
+			{data.org.name}
+		</h1>
+		<p class="font-mono text-xs text-muted-foreground">{data.org.slug}</p>
 	</div>
 
 	<Card.Root>
@@ -189,14 +186,20 @@
 			{#if listsLoading}
 				<p class="text-sm text-muted-foreground">Loading…</p>
 			{:else}
-				<div class="grid gap-2" data-testid="member-list">
+				<div class="divide-y overflow-hidden rounded-lg border" data-testid="member-list">
 					{#each members as member (member.id)}
-						<div class="flex items-center gap-3 rounded-lg border bg-card p-3">
+						<div class="flex items-center gap-3 px-4 py-3">
+							<div
+								class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary uppercase"
+								aria-hidden="true"
+							>
+								{member.user.name.slice(0, 1)}
+							</div>
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-sm font-medium">{member.user.name}</p>
 								<p class="truncate text-xs text-muted-foreground">{member.user.email}</p>
 							</div>
-							<Badge variant="outline" class="shrink-0 text-xs">{member.role}</Badge>
+							<Badge variant="outline" class="shrink-0 text-xs capitalize">{member.role}</Badge>
 						</div>
 					{/each}
 				</div>

@@ -43,12 +43,19 @@ export const load: LayoutServerLoad = async ({ cookies, params, platform, locals
 			: Promise.resolve(null)
 	]);
 
+	// The header's account controls (avatar + editor). Null for anonymous demo
+	// visitors - the guard never resolves a session on demo routes.
+	const identity = locals.consoleIdentity;
+
 	return {
 		copilot: {
 			open: state !== 'closed',
 			layout
 		},
 		branches,
-		projects
+		projects,
+		accountUser: identity
+			? { name: identity.user.name, email: identity.user.email, image: identity.user.image }
+			: null
 	};
 };

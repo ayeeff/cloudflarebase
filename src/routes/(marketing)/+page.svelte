@@ -1282,7 +1282,9 @@
 								<Button href="/login" size="sm" variant="ghost" data-testid="nav-login"
 									>Log in</Button
 								>
-								<Button href="/login?signup=1" size="sm" data-testid="nav-signup" class="shadow-sm">Sign up</Button>
+								<Button href="/login?signup=1" size="sm" data-testid="nav-signup" class="shadow-sm"
+									>Sign up</Button
+								>
 							{/if}
 						</div>
 					</div>

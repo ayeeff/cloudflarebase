@@ -15,6 +15,8 @@ export const load: LayoutServerLoad = ({ locals }) => {
 	return {
 		organizations: identity?.organizations ?? [],
 		activeOrgId: active?.id ?? null,
-		accountUser: identity ? { name: identity.user.name, email: identity.user.email } : null
+		accountUser: identity
+			? { name: identity.user.name, email: identity.user.email, image: identity.user.image }
+			: null
 	};
 };

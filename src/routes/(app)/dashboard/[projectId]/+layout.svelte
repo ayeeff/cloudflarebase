@@ -16,6 +16,7 @@
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 	import { createBranchSchema, projectIdSchema } from '$lib/schemas/auth';
+	import AccountMenu from '$lib/components/account-menu.svelte';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
 	import SignOutButton from '$lib/components/sign-out-button.svelte';
 	import { onMount, tick } from 'svelte';
@@ -200,6 +201,13 @@
 	onMount(() => {
 		hydrated = true;
 	});
+
+	// The demo-to-real funnel destination: /login offers sign-up and sign-in,
+	// and bounces an already-signed-in operator straight to the overview.
+	const demoSignupHref = `${resolve('/(app)/login')}?signup=1`;
+	// Dismissing the demo disclaimer lasts until the next full page load -
+	// forgetting the project is throwaway is the failure mode it exists for.
+	let demoNoticeDismissed = $state(false);
 
 	// Below lg the sidebar becomes a hamburger drawer: the SAME aside slides
 	// in as a fixed overlay, so mobile and desktop can never drift. Closes on
@@ -727,24 +735,32 @@
 			</div>
 		</nav>
 
-		{#if branchCtx && !branchCtx.demo}
-			<!-- Pinned below the scroll, Supabase-style. Registered projects only:
-			     demos and unregistered ids have no registry row to rename or
-			     delete. -->
-			<div class="shrink-0 border-t border-border px-3 py-2">
-				<a
-					href={settingsHref}
-					data-testid="nav-settings"
-					class={[
-						'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-						navActive(settingsHref)
-							? 'bg-primary/10 text-primary'
-							: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-					]}
-				>
-					<Settings class="h-4 w-4" />
-					Settings
-				</a>
+		{#if (branchCtx && !branchCtx.demo) || data.accountUser}
+			<!-- ONE pinned footer group below the scroll, Supabase-style. Settings
+			     renders for registered projects only (demos and unregistered ids
+			     have no registry row to rename or delete); sign-out rides here
+			     below lg, where the header hides it. -->
+			<div class="shrink-0 space-y-0.5 border-t border-border px-3 py-2">
+				{#if branchCtx && !branchCtx.demo}
+					<a
+						href={settingsHref}
+						data-testid="nav-settings"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive(settingsHref)
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<Settings class="h-4 w-4" />
+						Settings
+					</a>
+				{/if}
+				{#if data.accountUser}
+					<SignOutButton
+						class="h-auto w-full justify-start gap-3 rounded-md px-3 py-2 text-sm font-medium lg:hidden"
+					/>
+				{/if}
 			</div>
 		{/if}
 		<div class="border-t border-border px-5 py-3 text-[11px] text-muted-foreground/60">
@@ -763,7 +779,7 @@
 			minSize={45}
 			order={1}
 			class={[
-				'flex min-w-0 flex-col',
+				'relative flex min-w-0 flex-col',
 				!paneDragging && 'transition-[flex-grow] duration-300 ease-out'
 			]}
 		>
@@ -875,11 +891,13 @@
 				</div>
 
 				<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
-					{#if data.projects}
-						<!-- Operators only: anonymous demo visitors have no session to
-						     end (data.projects is null for them). Same control, same
-						     spot as the account shell. -->
-						<SignOutButton class="hidden h-8 sm:inline-flex" />
+					{#if data.accountUser}
+						<!-- Operators only: anonymous demo visitors have no session
+						     (accountUser is null for them). Same controls, same spot
+						     as the account shell; below lg sign-out lives at the
+						     sidebar drawer's bottom instead. -->
+						<AccountMenu user={data.accountUser} />
+						<SignOutButton class="hidden h-8 lg:inline-flex" />
 					{/if}
 					{#if branchCtx?.demo}
 						<!-- The demo-to-real funnel: demos are throwaway, so the pitch is
@@ -889,11 +907,13 @@
 						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve()-built login href with a signup param -->
 						<Button
 							size="sm"
-							class="h-8 gap-1.5"
-							href={`${resolve('/(app)/login')}?signup=1`}
+							class="h-8 gap-1.5 max-sm:w-8 max-sm:px-0"
+							href={demoSignupHref}
+							aria-label="Create your project"
 							data-testid="demo-signup-cta"
 						>
-							<Sparkles class="h-3.5 w-3.5" /> Create your project
+							<Plus class="h-3.5 w-3.5" />
+							<span class="hidden sm:inline">Create your project</span>
 						</Button>
 					{/if}
 					<ModeToggle class="h-8 w-8" testId="theme-toggle" />
@@ -973,6 +993,47 @@
 					<Sparkles class="h-4 w-4" /> Agent
 				</button>
 			</nav>
+
+			{#if branchCtx?.demo && !demoNoticeDismissed}
+				<!-- The standing reminder that nothing here survives: demos erase
+				     themselves after the TTL. Anchored to the CONTENT pane so it
+				     never covers the agent pane's chat input. Dismiss lasts until
+				     the next full page load - forgetting is the failure mode. -->
+				<div
+					class="pointer-events-none absolute inset-x-0 bottom-0 z-20 hidden justify-end p-4 sm:flex"
+				>
+					<div
+						class="pointer-events-auto flex max-w-sm items-start gap-2.5 rounded-lg border border-primary/30 bg-card/95 p-3 shadow-lg backdrop-blur"
+						role="status"
+						data-testid="demo-disclaimer"
+					>
+						<Sparkles class="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+						<div class="min-w-0 text-xs">
+							<p class="font-medium">This is a throwaway demo project</p>
+							<p class="mt-0.5 text-muted-foreground">
+								Everything here expires automatically and cannot be kept.
+								<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve()-built login href with a signup param -->
+								<a
+									href={demoSignupHref}
+									class="font-medium text-primary underline-offset-2 hover:underline"
+								>
+									Create your project
+								</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+								to build for real.
+							</p>
+						</div>
+						<button
+							type="button"
+							class="shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+							aria-label="Dismiss"
+							onclick={() => (demoNoticeDismissed = true)}
+						>
+							<X class="h-3.5 w-3.5" />
+						</button>
+					</div>
+				</div>
+			{/if}
 		</Resizable.Pane>
 
 		{#if !isMobile.current}
