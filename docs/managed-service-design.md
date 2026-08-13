@@ -379,13 +379,25 @@ Mechanism:
   key (verified byte-identical to node's own PKCS#8 encoding).
 - **The install callback is the ONE moment an `installation_id` is
   trustworthy** - it arrives on a redirect anyone can craft, so it is only
-  believed while accompanied by state we signed, for the operator holding
-  the session. The callback records the installation → org binding once;
-  every later connect checks that binding instead of the id. The signed
-  state rides BOTH the URL and a 15-minute `cfbase-gh-install` cookie,
-  because GitHub's install redirect (unlike user authorization) does not
-  reliably echo `state` back - the cookie removes that dependency without
-  weakening anything, since it is the same token verified the same way.
+  believed while accompanied by state we signed. The callback records the
+  installation → org binding once; every later connect checks that binding
+  instead of the id. The signed state rides BOTH the URL and a 15-minute
+  `cfbase-gh-install` cookie.
+- **The callback is session-less by necessity** (amended 2026-08-13 after
+  it 401'd a real install). It is a cross-site top-level navigation from
+  github.com, where a session cookie is not reliably present, so requiring
+  one strands the operator mid-install with a bare
+  `{"error":"authentication required"}` and records nothing. The SIGNED
+  STATE is the credential: minted only for a signed-in operator on a
+  specific project, expiring in minutes, unforgeable without the webhook
+  secret. The route resolves a session itself (the `/login` precedent) and
+  refuses when one is present but belongs to someone else - a replay in
+  another browser - while an absent one is expected and fine.
+  The residual risk is narrow and accepted: someone holding a live state
+  string could bind THEIR installation to that operator's project, and
+  gains nothing by it, because `installationCoversProject` still gates
+  every use on org membership - the installation becomes usable by the
+  victim, not the attacker.
 - **Installing is a step INSIDE "connect a repository", not a destination.**
   The callback returns to the Hosting page with `?installation=<id>`, which
   reopens the connect dialog with that account preselected and strips the

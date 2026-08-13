@@ -161,13 +161,24 @@ function classifyAccess(pathname: string): Access {
 	// Everything under /api is operator surface unless published below, so a
 	// route added later is private until someone deliberately opens it.
 	if (segments[0] === 'api') {
-		// GitHub's webhook is the one unauthenticated route here, and it has to
-		// be: GitHub carries no session and never will. Its HMAC signature is
-		// the credential, checked in the route before the payload is parsed.
-		// The install CALLBACK stays operator-only on purpose - it runs in the
-		// operator's own browser, and binding the installation to them is the
-		// entire point of it.
-		if (segments[1] === 'github' && segments[2] === 'webhook' && segments.length === 3) {
+		// The two GitHub routes the guard cannot gate, both authenticated by an
+		// HMAC we control rather than by a session:
+		//
+		// - `webhook`: GitHub carries no session and never will. Its
+		//   X-Hub-Signature-256 is the credential, checked over the raw body.
+		// - `callback`: the return leg of an App install. It arrives as a
+		//   cross-site top-level navigation from github.com, where a session
+		//   cookie is not reliably present - requiring one stranded operators
+		//   mid-install. The signed install state IS the credential here: it is
+		//   minted only for a signed-in operator on a specific project, expires
+		//   in minutes, and cannot be forged without the webhook secret. The
+		//   route verifies it before writing anything, and still cross-checks a
+		//   session when the browser does send one.
+		if (
+			segments[1] === 'github' &&
+			segments.length === 3 &&
+			(segments[2] === 'webhook' || segments[2] === 'callback')
+		) {
 			return { scope: 'open' };
 		}
 		// Registry mutations name their project in the path; surfacing the id

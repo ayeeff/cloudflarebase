@@ -85,6 +85,9 @@ test.describe('github connect', () => {
 	test('every github surface requires an operator session', async ({ baseURL }) => {
 		const guest = await anonymous(baseURL);
 		try {
+			// The callback is deliberately NOT in this list: it is a cross-site
+			// return from github.com, authenticated by the signed state instead
+			// (covered by its own test below).
 			for (const path of [
 				githubStatePath(rootId),
 				githubInstallPath(rootId),
@@ -124,13 +127,28 @@ test.describe('github connect', () => {
 		}
 	});
 
-	test('the webhook is the ONLY route opened under /api/github', async ({ baseURL }) => {
+	test('the install callback refuses a state it did not sign', async ({ baseURL }) => {
+		// The callback is session-less by necessity - it is a cross-site return
+		// from github.com - so the SIGNED STATE is its credential. A forged or
+		// absent one must record nothing and bounce, never act on the
+		// installation_id in the query.
 		const guest = await anonymous(baseURL);
 		try {
-			// The install callback runs in the operator's browser and binds the
-			// installation to them - opening it would let anyone claim one.
-			const callback = await guest.get('/api/github/callback?installation_id=1&state=x');
-			expect(callback.status(), 'the install callback must stay operator-only').toBe(401);
+			for (const query of [
+				'installation_id=1&state=forged',
+				'installation_id=1&state=eyJwcm9qZWN0SWQiOiJ4In0.bm90LWEtc2ln',
+				'installation_id=1'
+			]) {
+				const callback = await guest.get(`/api/github/callback?${query}`, { maxRedirects: 0 });
+				// Always a bounce, never a 200 and never a 401 - the operator is
+				// mid-install and must land somewhere useful.
+				expect(callback.status(), `${query} must bounce`).toBe(303);
+				// The invariant that matters: nothing was recorded, so the redirect
+				// never carries the installation onward into the connect flow.
+				expect(callback.headers()['location'], `${query} must not be honoured`).not.toContain(
+					'installation='
+				);
+			}
 		} finally {
 			await guest.dispose();
 		}
