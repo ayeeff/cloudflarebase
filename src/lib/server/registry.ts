@@ -141,6 +141,56 @@ export async function getProjectOwnership(
 	}
 }
 
+/** One registry row, or null for unregistered ids and an unreachable control
+ * plane - callers degrade (the settings page explains) instead of erroring. */
+export async function getProject(
+	platform: App.Platform | undefined,
+	projectId: string
+): Promise<RegistryProject | null> {
+	if (!projectIdSchema.safeParse(projectId).success) return null;
+	try {
+		const db = await getDb(platform);
+		const [row] = await db.select().from(project).where(eq(project.id, projectId)).limit(1);
+		return row ? toDto(row) : null;
+	} catch (cause) {
+		console.error('loading project failed', cause);
+		Sentry.captureException(cause, {
+			level: 'error',
+			tags: { operation: 'get-project', projectId }
+		});
+		return null;
+	}
+}
+
+export type RenameProjectResult =
+	{ ok: true; project: RegistryProject } | { ok: false; status: number; error: string };
+
+/** Renames a project's display NAME. The id is the Durable Object name in
+ * every agent and is immutable by construction - names are the only
+ * user-editable identity, and they stay non-unique on purpose. */
+export async function renameProject(
+	platform: App.Platform | undefined,
+	projectId: string,
+	input: unknown
+): Promise<RenameProjectResult> {
+	if (!projectIdSchema.safeParse(projectId).success) {
+		return { ok: false, status: 400, error: 'invalid project id' };
+	}
+	const parsed = createProjectSchema.pick({ name: true }).safeParse(input);
+	if (!parsed.success) {
+		return { ok: false, status: 400, error: parsed.error.issues[0]?.message ?? 'invalid name' };
+	}
+
+	const db = await getDb(platform);
+	const [updated] = await db
+		.update(project)
+		.set({ name: parsed.data.name })
+		.where(eq(project.id, projectId))
+		.returning();
+	if (!updated) return { ok: false, status: 404, error: 'no such project' };
+	return { ok: true, project: toDto(updated) };
+}
+
 export type CreateProjectResult =
 	{ ok: true; project: RegistryProject } | { ok: false; status: number; error: string };
 

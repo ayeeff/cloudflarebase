@@ -17,6 +17,7 @@
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 	import { createBranchSchema, projectIdSchema } from '$lib/schemas/auth';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
+	import SignOutButton from '$lib/components/sign-out-button.svelte';
 	import { onMount, tick } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
@@ -77,6 +78,7 @@
 	let copilotHistoryLoading = $state(true);
 
 	const overviewHref = $derived(resolve('/(app)/dashboard/[projectId]', { projectId }));
+	const settingsHref = $derived(resolve('/(app)/dashboard/[projectId]/settings', { projectId }));
 	const apiHref = $derived(resolve('/(app)/dashboard/[projectId]/api', { projectId }));
 	const isApi = $derived(page.url.pathname.startsWith(apiHref));
 
@@ -591,7 +593,7 @@
 					Project
 				</p>
 				<a
-					href={resolve('/(app)/dashboard')}
+					href={resolve('/(app)/dashboard/(account)')}
 					data-testid="nav-all-projects"
 					class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
 				>
@@ -725,6 +727,26 @@
 			</div>
 		</nav>
 
+		{#if branchCtx && !branchCtx.demo}
+			<!-- Pinned below the scroll, Supabase-style. Registered projects only:
+			     demos and unregistered ids have no registry row to rename or
+			     delete. -->
+			<div class="shrink-0 border-t border-border px-3 py-2">
+				<a
+					href={settingsHref}
+					data-testid="nav-settings"
+					class={[
+						'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+						navActive(settingsHref)
+							? 'bg-primary/10 text-primary'
+							: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+					]}
+				>
+					<Settings class="h-4 w-4" />
+					Settings
+				</a>
+			</div>
+		{/if}
 		<div class="border-t border-border px-5 py-3 text-[11px] text-muted-foreground/60">
 			Running on Cloudflare's network
 		</div>
@@ -810,7 +832,7 @@
 								{#if rootProjects.length}<DropdownMenu.Separator />{/if}
 								<DropdownMenu.Item data-testid="project-item-all">
 									{#snippet child({ props })}
-										<a {...props} href={resolve('/(app)/dashboard')}>
+										<a {...props} href={resolve('/(app)/dashboard/(account)')}>
 											<LayoutGrid class="h-4 w-4" />
 											All projects
 										</a>
@@ -853,6 +875,12 @@
 				</div>
 
 				<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
+					{#if data.projects}
+						<!-- Operators only: anonymous demo visitors have no session to
+						     end (data.projects is null for them). Same control, same
+						     spot as the account shell. -->
+						<SignOutButton class="hidden h-8 sm:inline-flex" />
+					{/if}
 					{#if branchCtx?.demo}
 						<!-- The demo-to-real funnel: demos are throwaway, so the pitch is
 						     a REAL project, not keeping this one. /login offers sign-up

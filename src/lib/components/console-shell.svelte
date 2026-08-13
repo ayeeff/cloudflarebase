@@ -1,17 +1,16 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import GithubLogo from '$lib/components/github-logo.svelte';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { CONSOLE_AUTH_BASE } from '$lib/console';
-	import { LogOut } from '@lucide/svelte';
+	import SignOutButton from '$lib/components/sign-out-button.svelte';
 	import type { Snippet } from 'svelte';
 
 	/**
-	 * Shell for the pre-project console surfaces - sign-in, first-run claim, and
-	 * the project list. The brand panel is the only place a self-hosted install
-	 * says what it is, so it carries the positioning rather than decoration.
+	 * Shell for the AUTH surfaces only - sign-in/sign-up (first-run claim
+	 * included) and the CLI hand-off. Signed-in account pages (projects,
+	 * organization) live in the (account) sidebar shell instead; the brand
+	 * panel is the only place a self-hosted install says what it is, so it
+	 * carries the positioning rather than decoration.
 	 *
 	 * The panel follows the theme; only the terminal card inside it is
 	 * theme-stable espresso, via a scoped `dark` class that makes the shadcn
@@ -28,28 +27,10 @@
 		children: Snippet;
 		/** Widen the content column for lists; forms stay narrow. */
 		wide?: boolean;
-		/** Renders the sign-out control. The operator surfaces that sit in this
-		 * shell (projects, organization, cli-auth) always have a session; the
+		/** Renders the sign-out control. cli-auth always has a session; the
 		 * login page never does. */
 		signedIn?: boolean;
 	} = $props();
-
-	let signingOut = $state(false);
-
-	async function signOut() {
-		signingOut = true;
-		try {
-			await fetch(`${CONSOLE_AUTH_BASE}/sign-out`, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: '{}'
-			});
-			await invalidateAll();
-			await goto(resolve('/login'));
-		} finally {
-			signingOut = false;
-		}
-	}
 </script>
 
 <div class="grid min-h-svh lg:grid-cols-2">
@@ -125,16 +106,7 @@
 	<main class="relative flex flex-col items-center justify-center px-4 py-10">
 		<div class="absolute top-4 right-4 flex items-center gap-1">
 			{#if signedIn}
-				<Button
-					variant="ghost"
-					size="sm"
-					class="text-muted-foreground"
-					disabled={signingOut}
-					onclick={signOut}
-					data-testid="console-sign-out"
-				>
-					<LogOut class="size-4" /> Sign out
-				</Button>
+				<SignOutButton />
 			{/if}
 			<ModeToggle variant="ghost" />
 		</div>

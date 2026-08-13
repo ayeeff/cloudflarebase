@@ -45,14 +45,14 @@ export const load: PageServerLoad = async ({ cookies, locals, platform }) => {
 	// The overview lists the ACTIVE org's projects (plus unowned rows every
 	// operator may see); accounts with no orgs - agents from before
 	// organizations - keep the unscoped list they always had.
+	// The sidebar's org data comes from the (account) layout load; this page
+	// adds the active org's project list and the invitation banner.
 	const identity = locals.consoleIdentity;
 	const active = identity ? activeOrg(identity) : null;
 	const projects = await listProjects(platform, active ? [active.id] : undefined);
 
 	return {
 		projects,
-		organizations: identity?.organizations ?? [],
-		activeOrgId: active?.id ?? null,
 		pendingInvitations: identity?.pendingInvitations ?? []
 	};
 };

@@ -1272,23 +1272,17 @@
 						     lives in the hero - it is the pitch, not the account. -->
 						<div class="flex w-full flex-col space-y-3 sm:flex-row sm:gap-3 sm:space-y-0 md:w-fit">
 							{#if data.signedIn}
-								<!-- The hero CTA's outlined-pill treatment, scaled to the nav. -->
-								<div
-									class="border bg-foreground/10 p-0.5"
-									style="border-radius: calc(0.5rem + 0.125rem + 2px);"
+								<Button
+									href="/dashboard"
+									size="sm"
+									class="w-full rounded-lg shadow-sm"
+									data-testid="nav-dashboard">Dashboard</Button
 								>
-									<Button
-										href="/dashboard"
-										size="sm"
-										class="w-full rounded-lg"
-										data-testid="nav-dashboard">Dashboard</Button
-									>
-								</div>
 							{:else}
 								<Button href="/login" size="sm" variant="ghost" data-testid="nav-login"
 									>Log in</Button
 								>
-								<Button href="/login?signup=1" size="sm" data-testid="nav-signup">Sign up</Button>
+								<Button href="/login?signup=1" size="sm" data-testid="nav-signup" class="shadow-sm">Sign up</Button>
 							{/if}
 						</div>
 					</div>
