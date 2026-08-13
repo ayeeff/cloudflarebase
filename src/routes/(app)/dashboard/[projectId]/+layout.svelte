@@ -132,7 +132,7 @@
 	// Not-yet-shipped primitives peek like the agent sections - one name, then
 	// a count. Advertising IS the job here: a header alone says nothing about
 	// what is coming, and the peek is what makes the roadmap visible.
-	let comingSoonOpen = $state(false);
+	let comingSoonOpen = $state(true);
 
 	// Functions left this list when the hosting agent shipped - apps and
 	// functions are the same artifact there (Phase B).
