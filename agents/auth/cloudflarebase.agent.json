@@ -43,6 +43,7 @@
 	"console": {
 		"section": "Authentication",
 		"icon": "key-round",
+		"peek": 3,
 		"pages": [
 			{ "path": "/auth", "title": "Users", "testId": "nav-auth", "icon": "users" },
 			{

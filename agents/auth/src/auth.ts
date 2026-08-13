@@ -100,6 +100,15 @@ export interface ProjectAuthConfig {
 	 */
 	cookieCache?: boolean;
 	/**
+	 * How long a session survives, in days. Sliding: Better Auth extends it
+	 * once per day of use, so this is idle time, not a hard deadline.
+	 * Defaults to Better Auth's 7. The console runs longer - an operator
+	 * console that signs you out weekly is a nuisance, not a security
+	 * control, and the control that matters (session revocation) is
+	 * immediate either way.
+	 */
+	sessionDays?: number;
+	/**
 	 * Create a personal organization for every new registered user (see
 	 * ensurePersonalOrg). On for the console instance; consumers can enable
 	 * the same hook for their own products.
@@ -189,6 +198,17 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 				'/sign-in/email': { window: 60, max: 10 },
 				'/sign-up/email': { window: 60, max: 10 },
 				'/sign-in/anonymous': { window: 60, max: 20 },
+				// Reading a session is not a guessing surface - the caller already
+				// holds the cookie - and it is the single hottest path here: the
+				// console guard resolves an identity on EVERY operator request
+				// while every dashboard page polls on a 5s timer. Under the
+				// default 100/60s that runs out within a minute of ordinary use,
+				// and a 429 is indistinguishable from "no session" to the caller,
+				// so a signed-in operator gets bounced to /login - which resolves
+				// the session the same way and bounces them back. Sized above any
+				// dashboard's poll rate; still a per-IP ceiling, because
+				// /api/auth/* is publicly reachable through /agents/*.
+				'/get-session': { window: 60, max: 2000 },
 			},
 		},
 		// Guest sign-in (POST /sign-in/anonymous) - adds user.isAnonymous.
@@ -275,6 +295,10 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 			},
 		},
 		session: {
+			// Sliding expiry: Better Auth extends the session once per day of
+			// use, so this bounds IDLE time. Revocation stays immediate.
+			expiresIn: (config.sessionDays ?? 7) * 24 * 60 * 60,
+			updateAge: 24 * 60 * 60,
 			additionalFields: {
 				country: { type: 'string', required: false, input: false },
 			},

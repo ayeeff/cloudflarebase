@@ -34,7 +34,7 @@
 	"console": {
 		"section": "Database",
 		"icon": "database",
-		"peek": 2,
+		"peek": 3,
 		"pages": [
 			{ "path": "/db", "title": "Collections", "testId": "nav-db", "icon": "folder-tree" },
 			{ "path": "/db/tables", "title": "Tables", "testId": "nav-db-tables", "icon": "table" },

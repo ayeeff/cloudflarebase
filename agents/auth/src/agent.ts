@@ -378,6 +378,9 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				this.consoleSignups === 'open' &&
 				this.env.DISABLE_EMAIL_VERIFICATION !== 'true',
 			cookieCache: this.name === CONSOLE_PROJECT_ID,
+			// Operators live in this console for weeks at a time; a 7-day idle
+			// expiry made them re-authenticate constantly for no security gain.
+			sessionDays: this.name === CONSOLE_PROJECT_ID ? 30 : undefined,
 			autoPersonalOrg: this.name === CONSOLE_PROJECT_ID,
 			// Org creation is capped per user (memberships count, personal org
 			// included) so one account cannot mint teams without bound - the
@@ -949,7 +952,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		}
 
 		if (subPath === '/console/me' && request.method === 'GET' && this.name === CONSOLE_PROJECT_ID) {
-			return Response.json(await this.getConsoleMe(request));
+			return this.getConsoleMe(request);
 		}
 
 		if (subPath === '/chat' && request.method === 'GET') {
@@ -1254,7 +1257,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 	 * membership gets their personal org here, which is how the first-run
 	 * owner from before Phase A acquires one without a migration.
 	 */
-	private async getConsoleMe(request: Request): Promise<ConsoleMe | null> {
+	private async getConsoleMe(request: Request): Promise<Response> {
 		// Resolved through the real Better Auth HANDLER, not auth.api.getSession:
 		// only the handler runs the bearer plugin's header-to-cookie conversion.
 		// The pinned precedence is that an Authorization bearer is AUTHORITATIVE:
@@ -1274,7 +1277,20 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				}),
 			)
 			.catch(() => null);
-		if (!sessionResponse || !sessionResponse.ok) return null;
+		// "Signed out" and "could not verify" are DIFFERENT answers and must not
+		// collapse into one. Better Auth answers a signed-out lookup with 200 and
+		// a null body (401/403 is the other ordinary form); a 429 from the rate
+		// limiter or a 5xx means the session was never checked. Reporting that as
+		// "no session" signs a valid operator out and sends them to a /login that
+		// resolves the session exactly the same way - a loop nobody can escape by
+		// signing in again. Say unavailable and let the caller fail loudly.
+		if (!sessionResponse) return this.consoleMeUnavailable();
+		if (!sessionResponse.ok) {
+			if (sessionResponse.status !== 401 && sessionResponse.status !== 403) {
+				return this.consoleMeUnavailable();
+			}
+			return Response.json(null);
+		}
 		const resolved = (await sessionResponse.json().catch(() => null)) as {
 			user?: {
 				id?: string;
@@ -1287,7 +1303,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			};
 			session?: { activeOrganizationId?: string | null };
 		} | null;
-		if (!resolved?.user?.id || !resolved.user.email) return null;
+		if (!resolved?.user?.id || !resolved.user.email) return Response.json(null);
 		const user = {
 			id: resolved.user.id,
 			email: resolved.user.email,
@@ -1334,7 +1350,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				),
 			);
 
-		return {
+		return Response.json({
 			user: {
 				id: user.id,
 				email: user.email,
@@ -1349,7 +1365,20 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				...row,
 				expiresAt: row.expiresAt.toISOString(),
 			})),
-		};
+		} satisfies ConsoleMe);
+	}
+
+	/**
+	 * The console guard's "I could not check" answer. A 503 (not a 200 null)
+	 * because the difference decides whether the dashboard signs someone out,
+	 * and because the worker's 5xx net reports it - the shape of failure that
+	 * used to be invisible was exactly this one, answered 200.
+	 */
+	private consoleMeUnavailable(): Response {
+		return Response.json(
+			{ error: 'session could not be verified' },
+			{ status: 503, headers: { 'retry-after': '5' } },
+		);
 	}
 
 	/** Snapshot used by the dashboard's initial server-side load and polling.

@@ -93,6 +93,32 @@ export async function consoleAuthConfig(
 export type ConsoleUser = z.infer<typeof consoleSessionSchema>['user'];
 
 /**
+ * The headers a session lookup carries to the auth agent.
+ *
+ * `cf-connecting-ip` matters as much as the cookie. A service-binding fetch
+ * keeps NONE of the original request's Cloudflare headers, and Better Auth
+ * rate limits per client IP - so without it the agent cannot resolve an
+ * address and buckets every operator's session read into ONE shared counter
+ * (100/60s). The console guard resolves an identity on every request and every
+ * dashboard page polls on a 5s timer, so that counter runs out in under a
+ * minute of ordinary use, after which the agent answers 429 and the console
+ * reads it as "not signed in". Forwarding the address is what keeps the
+ * limiter a per-client abuse ceiling instead of a console-wide one.
+ */
+function sessionLookupHeaders(
+	origin: string,
+	cookie: string | null,
+	authorization: string | null,
+	clientIp: string | null
+): [string, string][] {
+	const headers: [string, string][] = [['origin', origin]];
+	if (cookie) headers.push(['cookie', cookie]);
+	if (authorization) headers.push(['authorization', authorization]);
+	if (clientIp) headers.push(['cf-connecting-ip', clientIp]);
+	return headers;
+}
+
+/**
  * Resolves the operator session by asking the console's AuthAgent, forwarding
  * the browser's cookies - and, for the CLI, a bearer `Authorization` header
  * (the agent accepts session tokens as bearers; that is the documented
@@ -106,13 +132,12 @@ export async function getConsoleSession(
 	platform: App.Platform | undefined,
 	origin: string,
 	cookie: string | null,
-	authorization: string | null = null
+	authorization: string | null = null,
+	clientIp: string | null = null
 ): Promise<ConsoleUser | null> {
 	if (!cookie && !authorization) return null;
 
-	const headers: [string, string][] = [['origin', origin]];
-	if (cookie) headers.push(['cookie', cookie]);
-	if (authorization) headers.push(['authorization', authorization]);
+	const headers = sessionLookupHeaders(origin, cookie, authorization, clientIp);
 
 	const agent = requireAuthAgent(platform);
 	const response = await agent
@@ -199,6 +224,19 @@ const consoleIdentitySchema = z
 	.nullable();
 
 /**
+ * Three answers, not two. `anonymous` means the agent checked and there is no
+ * session; `unavailable` means it never got to check (unreachable agent, rate
+ * limiter, 5xx). Collapsing the second into the first is what turns a blip
+ * into a sign-out - and into a /login loop, since that page resolves the
+ * session the same way and cannot succeed either.
+ */
+export type ConsoleIdentityResult =
+	{ status: 'ok'; identity: ConsoleIdentity } | { status: 'anonymous' } | { status: 'unavailable' };
+
+const UNAVAILABLE = { status: 'unavailable' } as const;
+const ANONYMOUS = { status: 'anonymous' } as const;
+
+/**
  * Resolves the operator's identity - session AND org memberships - in one
  * agent round trip via GET /console/me. This is what the per-request guard
  * uses: ownership checks need memberships, and the dashboard must never pay
@@ -208,17 +246,16 @@ const consoleIdentitySchema = z
  * deployed before /console/me existed must degrade to the pre-ownership
  * behaviour (null org visibility), never sign every operator out.
  */
-export async function getConsoleIdentity(
+export async function resolveConsoleIdentity(
 	platform: App.Platform | undefined,
 	origin: string,
 	cookie: string | null,
-	authorization: string | null = null
-): Promise<ConsoleIdentity | null> {
-	if (!cookie && !authorization) return null;
+	authorization: string | null = null,
+	clientIp: string | null = null
+): Promise<ConsoleIdentityResult> {
+	if (!cookie && !authorization) return ANONYMOUS;
 
-	const headers: [string, string][] = [['origin', origin]];
-	if (cookie) headers.push(['cookie', cookie]);
-	if (authorization) headers.push(['authorization', authorization]);
+	const headers = sessionLookupHeaders(origin, cookie, authorization, clientIp);
 
 	const agent = requireAuthAgent(platform);
 	const response = await agent
@@ -227,50 +264,74 @@ export async function getConsoleIdentity(
 			Sentry.captureException(cause, {
 				level: 'error',
 				tags: { operation: 'console-identity' },
-				extra: { note: 'operators are being signed out - the console guard cannot verify' }
+				extra: { note: 'the console guard cannot verify sessions - the auth agent is unreachable' }
 			});
 			return null;
 		});
 
-	if (!response) return null;
+	if (!response) return UNAVAILABLE;
 	if (response.status === 404) {
-		const user = await getConsoleSession(platform, origin, cookie, authorization);
-		if (!user) return null;
+		const user = await getConsoleSession(platform, origin, cookie, authorization, clientIp);
+		if (!user) return ANONYMOUS;
 		return {
-			user: { ...user, emailVerified: false, image: null },
-			activeOrganizationId: null,
-			organizations: [],
-			pendingInvitations: []
+			status: 'ok',
+			identity: {
+				user: { ...user, emailVerified: false, image: null },
+				activeOrganizationId: null,
+				organizations: [],
+				pendingInvitations: []
+			}
 		};
 	}
 	if (!response.ok) {
-		if (response.status !== 401 && response.status !== 403) {
-			Sentry.captureMessage(`console identity lookup responded ${response.status}`, {
-				level: 'error',
-				tags: { operation: 'console-identity' }
-			});
-		}
-		return null;
+		// 401/403 is the agent's ordinary "not signed in". Everything else -
+		// a 503 from the agent's own could-not-verify answer, a 429, a 5xx -
+		// is an outage, and an outage must not read as a sign-out.
+		if (response.status === 401 || response.status === 403) return ANONYMOUS;
+		Sentry.captureMessage(`console identity lookup responded ${response.status}`, {
+			level: 'error',
+			tags: { operation: 'console-identity' }
+		});
+		return UNAVAILABLE;
 	}
 
 	const body: unknown = await (response as unknown as Response).json().catch(() => undefined);
-	if (body === null) return null;
+	if (body === null) return ANONYMOUS;
 	const parsed = consoleIdentitySchema.safeParse(body);
 	if (!parsed.success || !parsed.data) {
 		Sentry.captureMessage('console identity response did not match the expected shape', {
 			level: 'error',
 			tags: { operation: 'console-identity' }
 		});
-		return null;
+		return UNAVAILABLE;
 	}
 
 	const { user, session, organizations, pendingInvitations } = parsed.data;
 	return {
-		user: { ...user, name: user.name || user.email, emailVerified: user.emailVerified },
-		activeOrganizationId: session.activeOrganizationId,
-		organizations,
-		pendingInvitations
+		status: 'ok',
+		identity: {
+			user: { ...user, name: user.name || user.email, emailVerified: user.emailVerified },
+			activeOrganizationId: session.activeOrganizationId,
+			organizations,
+			pendingInvitations
+		}
 	};
+}
+
+/**
+ * The identity or nothing, for callers that render the same thing either way
+ * (the landing page, /login). The guard uses `resolveConsoleIdentity` instead:
+ * it is the one caller whose response depends on WHY there is no identity.
+ */
+export async function getConsoleIdentity(
+	platform: App.Platform | undefined,
+	origin: string,
+	cookie: string | null,
+	authorization: string | null = null,
+	clientIp: string | null = null
+): Promise<ConsoleIdentity | null> {
+	const resolved = await resolveConsoleIdentity(platform, origin, cookie, authorization, clientIp);
+	return resolved.status === 'ok' ? resolved.identity : null;
 }
 
 /**
