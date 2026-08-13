@@ -16,8 +16,13 @@ const PROJECT_PATTERN = /^demo-[a-f0-9]{12,20}$/;
  *
  * On the public demo an anonymous visitor is handed their own throwaway
  * project, remembered in a cookie so a reload returns to the same one. For a
- * signed-in operator - the only case on a self-hosted install - it lists the
- * projects in the registry, skipping the list when there is exactly one.
+ * signed-in operator - the only case on a self-hosted install - it always
+ * renders the overview: this page IS project and organization management
+ * (org switcher, invitations, the Organization settings link, new-project),
+ * so it never auto-forwards into a project. It used to skip the list when
+ * exactly one project existed, which - once every account owned a personal
+ * org - made "All projects" bounce straight back and left the org surfaces
+ * unreachable.
  */
 export const load: PageServerLoad = async ({ cookies, locals, platform }) => {
 	if (locals.demoMode && !locals.consoleUser) {
@@ -43,15 +48,6 @@ export const load: PageServerLoad = async ({ cookies, locals, platform }) => {
 	const identity = locals.consoleIdentity;
 	const active = identity ? activeOrg(identity) : null;
 	const projects = await listProjects(platform, active ? [active.id] : undefined);
-	// Skip-the-list only when there is nothing else to surface: an operator
-	// with pending invitations or several orgs needs the overview.
-	if (
-		projects.length === 1 &&
-		!identity?.pendingInvitations.length &&
-		(identity?.organizations.length ?? 0) <= 1
-	) {
-		redirect(307, `/dashboard/${projects[0].id}`);
-	}
 
 	return {
 		projects,
