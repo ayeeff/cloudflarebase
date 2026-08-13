@@ -599,14 +599,34 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return Response.json({ error: 'not found' }, { status: 404 });
 	}
 
+	/**
+	 * The coordinator's own colo, probed once and then persisted.
+	 *
+	 * DO KV storage, deliberately NOT a SQLite column: this is one row of
+	 * per-instance state, the key-value API is exactly what that is for, and a
+	 * migration to carry two nullable strings would have to ship in every
+	 * consumer's deployed agent before the console could read it.
+	 *
+	 * Nulls are never written, so local dev (where the trace probe cannot
+	 * answer) re-probes instead of freezing an empty answer forever, and the
+	 * first deployed wake that reaches the network settles it. `deleteAll()`
+	 * in destroy() drops it with everything else.
+	 */
+	private async selfLocation(): Promise<PrimaryLocation> {
+		const stored = await this.ctx.storage.get<PrimaryLocation>('agent-location');
+		if (stored) return stored;
+
+		const probed = await primaryLocation();
+		if (probed.colo || probed.country) await this.ctx.storage.put('agent-location', probed);
+		return probed;
+	}
+
 	async getOverview(): Promise<DbOverview> {
 		return {
 			projectId: this.name,
 			collections: this.state.collections,
 			tables: this.state.tables ?? [],
-			// Cached per isolate behind a 1.5s cap, so this costs one probe per
-			// wake at most and never delays the overview twice.
-			location: await primaryLocation(),
+			location: await this.selfLocation(),
 			state: this.state,
 		};
 	}
