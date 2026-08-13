@@ -4,7 +4,6 @@
 	import { page } from '$app/state';
 	import AccountMenu from '$lib/components/account-menu.svelte';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
-	import SignOutButton from '$lib/components/sign-out-button.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
@@ -201,11 +200,6 @@
 				</a>
 			{/each}
 		</nav>
-
-		<!-- Below lg the header hides sign-out; the drawer's bottom carries it. -->
-		<div class="shrink-0 border-t border-border px-3 py-2 lg:hidden">
-			<SignOutButton class="h-8 w-full justify-start" />
-		</div>
 	</aside>
 
 	<div class="flex min-w-0 flex-1 flex-col">
@@ -227,15 +221,15 @@
 				Cloudflarebase
 			</a>
 
-			<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
+			<!-- Two controls, not four: the avatar menu owns account settings and
+			     sign-out, so the bar carries only theme and identity. Ghost, not
+			     the default outline - a bordered box around a bare icon was the
+			     heaviest thing in the header. -->
+			<div class="ml-auto flex items-center gap-2">
+				<ModeToggle variant="ghost" class="h-8 w-8" testId="theme-toggle" />
 				{#if data.accountUser}
-					<!-- The avatar IS the account entry point: click to edit name
-					     and email. -->
 					<AccountMenu user={data.accountUser} />
 				{/if}
-				<!-- Below lg the sidebar drawer's bottom carries sign-out instead. -->
-				<SignOutButton class="hidden h-8 lg:inline-flex" />
-				<ModeToggle class="h-8 w-8" testId="theme-toggle" />
 			</div>
 		</header>
 
