@@ -29,6 +29,7 @@
 		ChevronsUpDown,
 		Clock,
 		Database,
+		Ellipsis,
 		FlaskConical,
 		FolderTree,
 		GitBranch,
@@ -470,7 +471,9 @@
 {#snippet moreRow(hidden: number, section: string, testId: string, expand: () => void)}
 	<!-- The folded section's tail: how many pages are behind the header, so an
 	     operator knows whether opening is worth it. Shares the item grid (16px
-	     icon column, same indent) so it reads as the list continuing. -->
+	     icon column, same indent) so it reads as the list continuing - an
+	     ellipsis rather than a chevron, because the row continues a list; the
+	     chevron belongs to the section header, which is the thing that folds. -->
 	<button
 		type="button"
 		data-testid={testId}
@@ -478,7 +481,7 @@
 		class="flex w-full items-center gap-3 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground/70 transition-colors hover:bg-accent hover:text-accent-foreground"
 		onclick={expand}
 	>
-		<ChevronDown class="h-4 w-4 shrink-0" />
+		<Ellipsis class="h-4 w-4 shrink-0" />
 		{hidden} more
 	</button>
 {/snippet}
