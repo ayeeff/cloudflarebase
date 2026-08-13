@@ -278,7 +278,11 @@
 						     the bare id), so omitting it described the project as having
 						     no branches at all. It has no delete - deleting main means
 						     deleting the project, which lives in the project's own
-						     settings behind the same typed-id confirmation. -->
+						     settings behind the same typed-id confirmation - and no id
+						     beside it either, since main's id IS the bare project id
+						     the card header shows two lines up. Branch rows do carry
+						     theirs: `<root>--<branch>` is information nothing else on
+						     the card states. -->
 						<div class="space-y-0.5 border-t bg-muted/30 px-2 py-2">
 							<a
 								href={resolve('/(app)/dashboard/[projectId]', { projectId: project.id })}
@@ -287,7 +291,6 @@
 							>
 								<GitBranch class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 								<span class="shrink-0 font-mono font-medium">main</span>
-								<span class="truncate font-mono text-muted-foreground">{project.id}</span>
 							</a>
 							{#each branches as branch (branch.id)}
 								<div
