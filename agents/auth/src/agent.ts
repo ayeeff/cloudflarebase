@@ -18,6 +18,7 @@ import {
 	chatRequestSchema,
 	DEMO_PROJECT_PATTERN,
 	demoTtlHoursSchema,
+	localResetPasswordSchema,
 	projectIdSchema,
 	resourceIdSchema,
 	roleRequestSchema,
@@ -204,6 +205,7 @@ export interface ConsoleMe {
 		name: string;
 		role: string;
 		emailVerified: boolean;
+		image: string | null;
 	};
 	session: { activeOrganizationId: string | null };
 	organizations: ConsoleOrgMembership[];
@@ -686,9 +688,11 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		const action =
 			message.type === 'password-reset'
 				? 'Reset your password'
-				: message.type === 'invitation'
-					? `Join ${message.invitation?.organization ?? 'an organization'}`
-					: 'Verify your email';
+				: message.type === 'email-change'
+					? 'Approve your new email'
+					: message.type === 'invitation'
+						? `Join ${message.invitation?.organization ?? 'an organization'}`
+						: 'Verify your email';
 		const intro =
 			message.type === 'invitation'
 				? `${message.invitation?.inviter ?? 'A team member'} invited you to "${message.invitation?.organization ?? 'their organization'}" on Cloudflarebase. Sign in - or create an account with this email address - to accept.`
@@ -921,6 +925,10 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				availableSocialProviders: ['google', 'github'],
 				bearerTokens: true,
 				emailDeliveryConfigured: this.mailConfigured,
+				// Local dev only (DISABLE_EMAIL_VERIFICATION): the login page offers
+				// the direct reset form instead of the emailed-token flow, because
+				// the reset mail only lands in wrangler's .eml files locally.
+				localPasswordReset: this.env.DISABLE_EMAIL_VERIFICATION === 'true',
 				// The console instance reports its registration policy so /login
 				// can render sign-up affordances honestly. Effective, not raw:
 				// a misconfigured `open` reports claimed rather than offering a
@@ -990,6 +998,47 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 
 		if (subPath === '/admin/settings' && request.method === 'PUT') {
 			return this.updateSettings(request);
+		}
+
+		// Local-dev escape hatch: with DISABLE_EMAIL_VERIFICATION=true (env.local
+		// only) a password resets directly by email, no token round trip - the
+		// reset MAIL only lands in wrangler's .eml files locally, the same file
+		// hunt the flag exists to spare. Gated hard: everywhere else this route
+		// does not exist, because a token-less reset is account takeover.
+		if (subPath === '/api/auth/local-reset-password' && request.method === 'POST') {
+			if (this.env.DISABLE_EMAIL_VERIFICATION !== 'true') {
+				return Response.json({ error: 'not found' }, { status: 404 });
+			}
+			const body = localResetPasswordSchema.safeParse(await request.json().catch(() => null));
+			if (!body.success) {
+				return Response.json(
+					{ error: 'email and newPassword (8-128 characters) are required' },
+					{ status: 400 },
+				);
+			}
+			const ctx = await this.auth.$context;
+			const found = await ctx.internalAdapter.findUserByEmail(body.data.email.toLowerCase(), {
+				includeAccounts: true,
+			});
+			if (found) {
+				const hash = await ctx.password.hash(body.data.newPassword);
+				const credential = found.accounts.find((account) => account.providerId === 'credential');
+				if (credential) {
+					await ctx.internalAdapter.updatePassword(found.user.id, hash);
+				} else {
+					// Social-only accounts gain a credential, mirroring Better Auth's
+					// own reset-password behaviour.
+					await ctx.internalAdapter.linkAccount({
+						userId: found.user.id,
+						providerId: 'credential',
+						accountId: found.user.id,
+						password: hash,
+					});
+				}
+				await ctx.internalAdapter.deleteSessions([found.user.id]);
+			}
+			// Uniform answer - even local dev keeps account existence unguessable.
+			return Response.json({ status: true });
 		}
 
 		if (subPath === '/api/auth' || subPath.startsWith('/api/auth/')) {
@@ -1223,6 +1272,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				emailVerified?: boolean;
 				isAnonymous?: boolean | null;
 				role?: string;
+				image?: string | null;
 			};
 			session?: { activeOrganizationId?: string | null };
 		} | null;
@@ -1280,6 +1330,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				name: user.name || user.email,
 				role: user.role ?? 'user',
 				emailVerified: !!user.emailVerified,
+				image: resolved.user.image ?? null,
 			},
 			session: { activeOrganizationId: session.activeOrganizationId ?? null },
 			organizations: memberships,

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import ConsoleShell from '$lib/components/console-shell.svelte';
@@ -46,24 +46,107 @@
 	};
 	const oauthError = page.url.searchParams.get('error');
 
-	// 'sign-in' | 'sign-up': what the form submits. Open mode offers both;
-	// claimed mode keeps sign-up behind the "invited?" link (the agent admits
-	// only emails holding a pending invitation). ?signup=1 (the landing nav's
-	// Sign up button) starts on the registration form.
-	let mode = $state<'sign-in' | 'sign-up'>(
-		page.url.searchParams.has('signup') ? 'sign-up' : 'sign-in'
+	// What the form submits. Open mode offers sign-in and sign-up; claimed mode
+	// keeps sign-up behind the "invited?" link (the agent admits only emails
+	// holding a pending invitation). ?signup=1 (the landing nav's Sign up
+	// button) starts on the registration form; ?token= is the emailed
+	// password-reset link landing back here to set the new password.
+	const resetToken = page.url.searchParams.get('token');
+	let mode = $state<'sign-in' | 'sign-up' | 'forgot' | 'reset'>(
+		resetToken ? 'reset' : page.url.searchParams.has('signup') ? 'sign-up' : 'sign-in'
 	);
 	let name = $state('');
 	let email = $state('');
 	let password = $state('');
 	let error = $state<string | null>(
-		oauthError ? (oauthErrors[oauthError] ?? 'Social sign-in failed - try again.') : null
+		oauthError
+			? oauthError === 'INVALID_TOKEN'
+				? 'That reset link is invalid or expired - request a new one.'
+				: (oauthErrors[oauthError] ?? 'Social sign-in failed - try again.')
+			: null
 	);
 	let submitting = $state(false);
 	// Open-mode sign-up ends here: no session until the email is verified.
 	let verifyNotice = $state(false);
+	// Post-action confirmations that render above the sign-in form.
+	let flowNotice = $state<string | null>(null);
 
 	const signingUp = $derived(claiming || mode === 'sign-up');
+
+	/**
+	 * Forgot password. On a mail-configured deployment this is Better Auth's
+	 * emailed-token flow: request-password-reset sends a link whose redirectTo
+	 * lands back on /login?token=..., where the reset form completes it. In
+	 * local dev (the agent reports localPasswordReset - its reset mail only
+	 * lands in wrangler's .eml files) the flag-gated direct route resets the
+	 * password in one step instead.
+	 */
+	async function submitForgot(event: SubmitEvent) {
+		event.preventDefault();
+		submitting = true;
+		error = null;
+		try {
+			if (data.localPasswordReset) {
+				const response = await fetch(`${CONSOLE_AUTH_BASE}/local-reset-password`, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ email, newPassword: password })
+				});
+				if (!response.ok) {
+					const body = (await response.json().catch(() => null)) as { error?: string } | null;
+					error = body?.error ?? 'Could not reset the password.';
+					return;
+				}
+				flowNotice = 'Password updated - sign in with it below.';
+				password = '';
+				mode = 'sign-in';
+				return;
+			}
+
+			const response = await fetch(`${CONSOLE_AUTH_BASE}/request-password-reset`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ email, redirectTo: '/login' })
+			});
+			if (!response.ok) {
+				const body = (await response.json().catch(() => null)) as { message?: string } | null;
+				error = body?.message ?? 'Could not send the reset email.';
+				return;
+			}
+			flowNotice = `If an account exists for ${email}, a reset link is on its way.`;
+			mode = 'sign-in';
+		} catch {
+			error = 'Could not reach the auth agent.';
+		} finally {
+			submitting = false;
+		}
+	}
+
+	/** The emailed link's destination: exchange the token for a new password. */
+	async function submitReset(event: SubmitEvent) {
+		event.preventDefault();
+		submitting = true;
+		error = null;
+		try {
+			const response = await fetch(`${CONSOLE_AUTH_BASE}/reset-password`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ newPassword: password, token: resetToken })
+			});
+			if (!response.ok) {
+				const body = (await response.json().catch(() => null)) as { message?: string } | null;
+				error = body?.message ?? 'That reset link is invalid or expired - request a new one.';
+				return;
+			}
+			flowNotice = 'Password updated - sign in with it below.';
+			password = '';
+			mode = 'sign-in';
+		} catch {
+			error = 'Could not reach the auth agent.';
+		} finally {
+			submitting = false;
+		}
+	}
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
@@ -111,8 +194,11 @@
 				}
 			}
 
-			await invalidateAll();
-			await goto(data.next);
+			// ONE navigation, not invalidateAll-then-goto: invalidating while still
+			// on /login re-runs this page's load, whose signed-in redirect races
+			// the pending goto - the stale data read mid-unmount sent the browser
+			// to /undefined.
+			await goto(data.next, { invalidateAll: true });
 		} catch {
 			error = 'Could not reach the auth agent.';
 		} finally {
@@ -212,10 +298,24 @@
 		<div data-testid="console-login" class="space-y-6">
 			<div class="space-y-1.5">
 				<h1 class="text-2xl font-semibold tracking-tight">
-					{claiming ? 'Set up your console' : signingUp ? 'Create your account' : 'Sign in'}
+					{mode === 'forgot'
+						? 'Reset your password'
+						: mode === 'reset'
+							? 'Set a new password'
+							: claiming
+								? 'Set up your console'
+								: signingUp
+									? 'Create your account'
+									: 'Sign in'}
 				</h1>
 				<p class="text-sm text-muted-foreground">
-					{#if claiming}
+					{#if mode === 'forgot'}
+						{data.localPasswordReset
+							? 'Local dev: set a new password for your account directly.'
+							: 'Enter your account email and we will send a reset link.'}
+					{:else if mode === 'reset'}
+						Choose a new password for your account.
+					{:else if claiming}
 						No owner yet. Create the first account - sign-up closes as soon as it exists.
 					{:else if signingUp && open}
 						Your projects, your data, on Cloudflare's edge. Verification email included.
@@ -227,128 +327,232 @@
 				</p>
 			</div>
 
-			<!-- Also offered on the first-run claim: the agent admits the first
-			     account on every path, so the owner can be a Google/GitHub identity. -->
-			{#if data.socialProviders.length > 0}
-				<div
-					class="grid gap-2 {socialTwoUp ? 'grid-cols-2' : ''}"
-					data-testid="console-social-providers"
+			{#if flowNotice && mode === 'sign-in'}
+				<p
+					class="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
+					data-testid="console-flow-notice"
 				>
-					{#each data.socialProviders as provider (provider)}
-						{@const Logo = socialLogos[provider]}
-						<Button
-							type="button"
-							variant="outline"
-							class="w-full"
-							disabled={submitting}
-							aria-label="Continue with {socialLabels[provider] ?? provider}"
-							onclick={() => signInWithProvider(provider)}
-						>
-							{#if Logo}<Logo class="size-4" />{/if}
-							{socialTwoUp
-								? (socialLabels[provider] ?? provider)
-								: `Continue with ${socialLabels[provider] ?? provider}`}
-						</Button>
-					{/each}
-				</div>
-
-				<div class="flex items-center gap-3 text-xs text-muted-foreground">
-					<span class="h-px flex-1 bg-border"></span>
-					or continue with email
-					<span class="h-px flex-1 bg-border"></span>
-				</div>
+					{flowNotice}
+				</p>
 			{/if}
 
-			<form class="space-y-4" onsubmit={submit}>
-				{#if signingUp}
+			{#if mode === 'forgot'}
+				<form class="space-y-4" onsubmit={submitForgot} data-testid="console-forgot-form">
 					<div class="space-y-1.5">
-						<Label for="name">Name</Label>
-						<Input id="name" bind:value={name} required autocomplete="name" />
+						<Label for="email">Email</Label>
+						<Input id="email" type="email" bind:value={email} required autocomplete="email" />
+					</div>
+					{#if data.localPasswordReset}
+						<div class="space-y-1.5">
+							<Label for="password">New password</Label>
+							<Input
+								id="password"
+								type="password"
+								bind:value={password}
+								required
+								minlength={8}
+								autocomplete="new-password"
+							/>
+						</div>
+					{/if}
+					{#if error}
+						<p class="text-sm text-destructive" data-testid="console-login-error">{error}</p>
+					{/if}
+					<Button type="submit" class="w-full" disabled={submitting} data-testid="console-submit">
+						{submitting
+							? 'Working…'
+							: data.localPasswordReset
+								? 'Reset password'
+								: 'Email me a reset link'}
+					</Button>
+				</form>
+				<p class="text-center text-xs text-muted-foreground">
+					Remembered it?
+					<button
+						type="button"
+						class="underline"
+						data-testid="console-mode-signin"
+						onclick={() => {
+							mode = 'sign-in';
+							error = null;
+						}}
+					>
+						Sign in
+					</button>
+				</p>
+			{:else if mode === 'reset'}
+				<form class="space-y-4" onsubmit={submitReset} data-testid="console-reset-form">
+					<div class="space-y-1.5">
+						<Label for="password">New password</Label>
+						<Input
+							id="password"
+							type="password"
+							bind:value={password}
+							required
+							minlength={8}
+							autocomplete="new-password"
+						/>
+					</div>
+					{#if error}
+						<p class="text-sm text-destructive" data-testid="console-login-error">{error}</p>
+					{/if}
+					<Button type="submit" class="w-full" disabled={submitting} data-testid="console-submit">
+						{submitting ? 'Working…' : 'Set new password'}
+					</Button>
+				</form>
+				<p class="text-center text-xs text-muted-foreground">
+					Link not working?
+					<button
+						type="button"
+						class="underline"
+						onclick={() => {
+							mode = 'forgot';
+							error = null;
+						}}
+					>
+						Request a new one
+					</button>
+				</p>
+			{:else}
+				<!-- Also offered on the first-run claim: the agent admits the first
+			     account on every path, so the owner can be a Google/GitHub identity. -->
+				{#if data.socialProviders.length > 0}
+					<div
+						class="grid gap-2 {socialTwoUp ? 'grid-cols-2' : ''}"
+						data-testid="console-social-providers"
+					>
+						{#each data.socialProviders as provider (provider)}
+							{@const Logo = socialLogos[provider]}
+							<Button
+								type="button"
+								variant="outline"
+								class="w-full"
+								disabled={submitting}
+								aria-label="Continue with {socialLabels[provider] ?? provider}"
+								onclick={() => signInWithProvider(provider)}
+							>
+								{#if Logo}<Logo class="size-4" />{/if}
+								{socialTwoUp
+									? (socialLabels[provider] ?? provider)
+									: `Continue with ${socialLabels[provider] ?? provider}`}
+							</Button>
+						{/each}
+					</div>
+
+					<div class="flex items-center gap-3 text-xs text-muted-foreground">
+						<span class="h-px flex-1 bg-border"></span>
+						or continue with email
+						<span class="h-px flex-1 bg-border"></span>
 					</div>
 				{/if}
 
-				<div class="space-y-1.5">
-					<Label for="email">Email</Label>
-					<Input id="email" type="email" bind:value={email} required autocomplete="email" />
-				</div>
-
-				<div class="space-y-1.5">
-					<Label for="password">Password</Label>
-					<Input
-						id="password"
-						type="password"
-						bind:value={password}
-						required
-						minlength={signingUp ? 8 : undefined}
-						autocomplete={signingUp ? 'new-password' : 'current-password'}
-					/>
-				</div>
-
-				{#if error}
-					<p class="text-sm text-destructive" data-testid="console-login-error">{error}</p>
-				{/if}
-
-				<Button
-					type="submit"
-					class="w-full bg-linear-to-b from-[oklch(0.745_0.168_55)] to-[oklch(0.695_0.172_51)] shadow-[0_1px_2px_oklch(0.5_0.15_53/35%),0_4px_18px_-6px_oklch(0.7163_0.1706_53.45/50%),inset_0_1px_0_oklch(1_0_0/22%)] transition-[filter] hover:brightness-105"
-					disabled={submitting}
-					data-testid="console-submit"
-				>
-					{submitting
-						? 'Working…'
-						: claiming
-							? 'Create owner account'
-							: signingUp
-								? 'Create account'
-								: 'Sign in'}
-				</Button>
-			</form>
-
-			{#if !claiming}
-				<p class="text-center text-xs text-muted-foreground">
+				<form class="space-y-4" onsubmit={submit}>
 					{#if signingUp}
-						Already have an account?
-						<button
-							type="button"
-							class="underline"
-							data-testid="console-mode-signin"
-							onclick={() => {
-								mode = 'sign-in';
-								error = null;
-							}}
-						>
-							Sign in
-						</button>
-					{:else if open}
-						New here?
-						<button
-							type="button"
-							class="underline"
-							data-testid="console-mode-signup"
-							onclick={() => {
-								mode = 'sign-up';
-								error = null;
-							}}
-						>
-							Create an account
-						</button>
-					{:else}
-						<!-- Claimed consoles admit invited emails - teams without open
-						     registration (docs/managed-service-design.md). -->
-						Invited to an organization?
-						<button
-							type="button"
-							class="underline"
-							data-testid="console-mode-signup"
-							onclick={() => {
-								mode = 'sign-up';
-								error = null;
-							}}
-						>
-							Create your account
-						</button>
+						<div class="space-y-1.5">
+							<Label for="name">Name</Label>
+							<Input id="name" bind:value={name} required autocomplete="name" />
+						</div>
 					{/if}
-				</p>
+
+					<div class="space-y-1.5">
+						<Label for="email">Email</Label>
+						<Input id="email" type="email" bind:value={email} required autocomplete="email" />
+					</div>
+
+					<div class="space-y-1.5">
+						<div class="flex items-center justify-between">
+							<Label for="password">Password</Label>
+							{#if !signingUp}
+								<button
+									type="button"
+									class="text-xs text-muted-foreground underline-offset-2 hover:underline"
+									data-testid="console-forgot-link"
+									onclick={() => {
+										mode = 'forgot';
+										error = null;
+										flowNotice = null;
+									}}
+								>
+									Forgot password?
+								</button>
+							{/if}
+						</div>
+						<Input
+							id="password"
+							type="password"
+							bind:value={password}
+							required
+							minlength={signingUp ? 8 : undefined}
+							autocomplete={signingUp ? 'new-password' : 'current-password'}
+						/>
+					</div>
+
+					{#if error}
+						<p class="text-sm text-destructive" data-testid="console-login-error">{error}</p>
+					{/if}
+
+					<Button
+						type="submit"
+						class="w-full bg-linear-to-b from-[oklch(0.745_0.168_55)] to-[oklch(0.695_0.172_51)] shadow-[0_1px_2px_oklch(0.5_0.15_53/35%),0_4px_18px_-6px_oklch(0.7163_0.1706_53.45/50%),inset_0_1px_0_oklch(1_0_0/22%)] transition-[filter] hover:brightness-105"
+						disabled={submitting}
+						data-testid="console-submit"
+					>
+						{submitting
+							? 'Working…'
+							: claiming
+								? 'Create owner account'
+								: signingUp
+									? 'Create account'
+									: 'Sign in'}
+					</Button>
+				</form>
+
+				{#if !claiming}
+					<p class="text-center text-xs text-muted-foreground">
+						{#if signingUp}
+							Already have an account?
+							<button
+								type="button"
+								class="underline"
+								data-testid="console-mode-signin"
+								onclick={() => {
+									mode = 'sign-in';
+									error = null;
+								}}
+							>
+								Sign in
+							</button>
+						{:else if open}
+							New here?
+							<button
+								type="button"
+								class="underline"
+								data-testid="console-mode-signup"
+								onclick={() => {
+									mode = 'sign-up';
+									error = null;
+								}}
+							>
+								Create an account
+							</button>
+						{:else}
+							<!-- Claimed consoles admit invited emails - teams without open
+						     registration (docs/managed-service-design.md). -->
+							Invited to an organization?
+							<button
+								type="button"
+								class="underline"
+								data-testid="console-mode-signup"
+								onclick={() => {
+									mode = 'sign-up';
+									error = null;
+								}}
+							>
+								Create your account
+							</button>
+						{/if}
+					</p>
+				{/if}
 			{/if}
 		</div>
 	{/if}

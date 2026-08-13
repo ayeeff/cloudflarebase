@@ -21,7 +21,7 @@ export interface AuthHookUser {
 }
 
 export interface AuthEmailMessage {
-	type: 'email-verification' | 'password-reset' | 'invitation';
+	type: 'email-verification' | 'password-reset' | 'invitation' | 'email-change';
 	to: string;
 	url: string;
 	/** Extra copy for invitation mail: who invited, into which organization. */
@@ -253,6 +253,17 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 				// Simple RBAC. input: false blocks self-assignment at sign-up; the
 				// dashboard's admin route is the only writer.
 				role: { type: 'string', required: false, defaultValue: 'user', input: false },
+			},
+			changeEmail: {
+				enabled: true,
+				// A VERIFIED account approves the change from its current address;
+				// unverified accounts (local dev with verification disabled) change
+				// immediately - Better Auth's own rule. Without a mail transport the
+				// verified path cannot complete, which is the honest failure.
+				sendChangeEmailVerification: config.sendEmail
+					? async ({ user, url }: { user: { email: string }; url: string }) =>
+							config.sendEmail?.({ type: 'email-change', to: user.email, url })
+					: undefined,
 			},
 		},
 		session: {

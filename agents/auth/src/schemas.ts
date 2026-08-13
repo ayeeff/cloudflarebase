@@ -98,6 +98,13 @@ export const chatRequestSchema = z.strictObject({
 	question: z.string().trim().min(1, 'question is required').max(500),
 });
 
+/** The local-dev direct password reset (DISABLE_EMAIL_VERIFICATION only).
+ * Bounds mirror Better Auth's emailAndPassword min/max. */
+export const localResetPasswordSchema = z.strictObject({
+	email: z.email(),
+	newPassword: z.string().min(8).max(128),
+});
+
 const allowedOriginSchema = z
 	.string()
 	.max(2048)

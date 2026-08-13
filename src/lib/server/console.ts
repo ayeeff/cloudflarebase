@@ -44,7 +44,8 @@ const consoleOverviewSchema = z.object({
 
 const consoleConfigSchema = z.object({
 	providers: z.array(z.string()),
-	consoleSignups: z.enum(['claimed', 'open']).default('claimed')
+	consoleSignups: z.enum(['claimed', 'open']).default('claimed'),
+	localPasswordReset: z.boolean().default(false)
 });
 
 export interface ConsoleAuthConfig {
@@ -52,6 +53,9 @@ export interface ConsoleAuthConfig {
 	socialProviders: string[];
 	/** The console's EFFECTIVE registration policy, for honest /login copy. */
 	consoleSignups: 'claimed' | 'open';
+	/** Local dev only (DISABLE_EMAIL_VERIFICATION on the agent): the login
+	 * page offers the direct reset form instead of the emailed-token flow. */
+	localPasswordReset: boolean;
 }
 
 /**
@@ -69,7 +73,11 @@ export async function consoleAuthConfig(
 		.fetch(agentUrl(origin, CONSOLE_PROJECT_ID, '/config'))
 		.catch(() => null);
 
-	const fallback: ConsoleAuthConfig = { socialProviders: [], consoleSignups: 'claimed' };
+	const fallback: ConsoleAuthConfig = {
+		socialProviders: [],
+		consoleSignups: 'claimed',
+		localPasswordReset: false
+	};
 	if (!response || !response.ok) return fallback;
 
 	const body = await (response as unknown as Response).json().catch(() => null);
@@ -77,7 +85,8 @@ export async function consoleAuthConfig(
 	if (!parsed.success) return fallback;
 	return {
 		socialProviders: parsed.data.providers.filter((name) => name === 'google' || name === 'github'),
-		consoleSignups: parsed.data.consoleSignups
+		consoleSignups: parsed.data.consoleSignups,
+		localPasswordReset: parsed.data.localPasswordReset
 	};
 }
 
@@ -162,7 +171,8 @@ const consoleIdentitySchema = z
 			email: z.email(),
 			name: z.string().default(''),
 			role: z.string().default('user'),
-			emailVerified: z.boolean().default(false)
+			emailVerified: z.boolean().default(false),
+			image: z.string().nullable().default(null)
 		}),
 		session: z.object({ activeOrganizationId: z.string().nullable().default(null) }),
 		organizations: z.array(
@@ -227,7 +237,7 @@ export async function getConsoleIdentity(
 		const user = await getConsoleSession(platform, origin, cookie, authorization);
 		if (!user) return null;
 		return {
-			user: { ...user, emailVerified: false },
+			user: { ...user, emailVerified: false, image: null },
 			activeOrganizationId: null,
 			organizations: [],
 			pendingInvitations: []

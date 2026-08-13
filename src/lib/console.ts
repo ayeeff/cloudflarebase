@@ -84,6 +84,7 @@ export interface ConsoleIdentity {
 		name: string;
 		role: string;
 		emailVerified: boolean;
+		image: string | null;
 	};
 	/** The org the operator is acting as - session state, set via the Better
 	 * Auth organization plugin's set-active endpoint. Falls back to the first

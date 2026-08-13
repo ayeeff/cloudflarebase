@@ -40,6 +40,7 @@ export const load: PageServerLoad = async ({ locals, platform, request, url }) =
 		ownerExists,
 		socialProviders: authConfig.socialProviders,
 		consoleSignups: authConfig.consoleSignups,
+		localPasswordReset: authConfig.localPasswordReset,
 		demoMode: locals.demoMode
 	};
 };
