@@ -16,6 +16,12 @@ export const CONSOLE_AUTH_BASE = `/api/projects/${CONSOLE_PROJECT_ID}/auth`;
 /**
  * Project ids the registry refuses. `console` is the operator auth instance;
  * the rest would collide with dashboard routes or read as system endpoints.
+ *
+ * Refusing to MINT them is only half the contract - the guard also refuses to
+ * ROUTE to them (`consoleGuardHandle`). No session can legitimately own a
+ * reserved id, so a project-scoped request naming one is either a mistake or
+ * an attempt to address the console's own instance, where every operator
+ * account on the deployment lives.
  */
 export const RESERVED_PROJECT_IDS = new Set([
 	'console',
@@ -32,6 +38,15 @@ export const RESERVED_PROJECT_IDS = new Set([
 	'fleet',
 	'organization'
 ]);
+
+/**
+ * Static children of `/dashboard` - console pages, not projects. SvelteKit
+ * resolves them ahead of `[projectId]`, so the guard must classify them as
+ * project-LESS operator pages or they would be refused as reserved project
+ * ids. Every entry MUST also appear in RESERVED_PROJECT_IDS: a project able to
+ * take one of these ids would be permanently shadowed by the static route.
+ */
+export const CONSOLE_DASHBOARD_PAGES = new Set(['organization']);
 
 /**
  * Demo projects are minted per visitor by the demo landing flow. Roots are

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import {
 	adminUserPath,
+	adminUsersPath,
 	analyticsPath,
 	authPath,
 	chatPath,
@@ -156,6 +157,90 @@ test.describe('console guard', () => {
 		// never from Better Auth's content-type check.
 		const guest = await request.post(consoleAuthPath('sign-in/anonymous'), { data: {} });
 		expect(guest.status(), 'the console must never issue guest sessions').toBe(403);
+	});
+
+	test('the console instance is administered, never owned', async ({ request }) => {
+		const signIn = await request.post(consoleAuthPath('sign-in/email'), {
+			data: { email: CONSOLE_OWNER.email, password: CONSOLE_OWNER.password }
+		});
+		expect(signIn.ok(), await signIn.text()).toBeTruthy();
+
+		// The console AuthAgent holds every operator account on the deployment.
+		// It answers to the admin role and nothing else - never to ownership,
+		// which cannot speak for it (it is not a registry row). The owner
+		// claimed this deployment, so the agent healed them into the admin
+		// role and these surfaces open for them.
+		const overview = await request.get(overviewPath('console'));
+		expect(overview.ok(), await overview.text()).toBeTruthy();
+
+		const passthrough = await request.get('/agents/auth-agent/console/admin/users');
+		expect(passthrough.ok(), 'the passthrough follows the same rule').toBeTruthy();
+
+		const page = await request.get('/dashboard/console', { maxRedirects: 0 });
+		expect(page.status(), 'the admin reaches the console dashboard').toBe(200);
+
+		// The console's PUBLIC surfaces are what the login page and the account
+		// menu are built on, and stay reachable regardless of role.
+		const config = await request.get(configPath('console'));
+		expect(config.ok(), 'the login page still reads the console config').toBeTruthy();
+
+		const session = await request.get(consoleAuthPath('get-session'));
+		expect(session.ok(), 'the console auth proxy still serves sessions').toBeTruthy();
+	});
+
+	test('reserved ids other than console are not projects at all', async ({ request }) => {
+		const signIn = await request.post(consoleAuthPath('sign-in/email'), {
+			data: { email: CONSOLE_OWNER.email, password: CONSOLE_OWNER.password }
+		});
+		expect(signIn.ok(), await signIn.text()).toBeTruthy();
+
+		// These name dashboard routes and system endpoints. Nothing legitimate
+		// lives behind them, and reaching one would provision a Durable Object
+		// on a name the registry refuses to mint.
+		for (const reserved of ['admin', 'fleet', 'organization', 'agents']) {
+			const response = await request.get(overviewPath(reserved));
+			expect(response.status(), `${reserved} must not be a project`).toBe(404);
+		}
+
+		// ...and the real console page behind one of those names still works -
+		// it is a console route, not a project.
+		const orgPage = await request.get('/dashboard/organization', { maxRedirects: 0 });
+		expect(orgPage.status(), 'the organization page is not a project surface').toBe(200);
+	});
+
+	test('an unregistered project id is nobody’s project', async ({ request }) => {
+		const signIn = await request.post(consoleAuthPath('sign-in/email'), {
+			data: { email: CONSOLE_OWNER.email, password: CONSOLE_OWNER.password }
+		});
+		expect(signIn.ok(), await signIn.text()).toBeTruthy();
+
+		// Typing an id into the URL used to MINT a backend: the agents
+		// provision a Durable Object on first touch, so any signed-in account
+		// got an auth stack and a database outside every ownership check and
+		// every per-org ceiling - and two accounts guessing the same id landed
+		// in the same data. Only a registry row makes a project.
+		const unminted = `e2e-never-minted-${Date.now().toString(36)}`;
+
+		const overview = await request.get(overviewPath(unminted));
+		expect(overview.status(), 'no row, no project').toBe(404);
+
+		const users = await request.get(adminUsersPath(unminted));
+		expect(users.status()).toBe(404);
+
+		const settings = await request.put(settingsPath(unminted), {
+			data: { allowedOrigins: ['https://evil.example.com'] }
+		});
+		expect(settings.status()).toBe(404);
+
+		const passthrough = await request.get(`/agents/auth-agent/${unminted}/overview`);
+		expect(passthrough.status(), 'the passthrough is not a way around it').toBe(404);
+
+		const page = await request.get(`/dashboard/${unminted}`, { maxRedirects: 0 });
+		expect(page.status()).toBe(303);
+		expect(page.headers()['location']).toBe('/dashboard');
+
+		// The refusal is identical to the one a project owned by someone else
+		// gets (orgs.api.spec.ts), so neither answer tells you the other exists.
 	});
 
 	test('a valid operator session unlocks the same endpoints', async ({ request }) => {

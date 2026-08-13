@@ -1,5 +1,7 @@
 /** Shared constants + helpers for the e2e suite. */
 
+import type { APIRequestContext } from '@playwright/test';
+
 /** Project seeded once per stack by seed.setup.ts - treat as read-only in tests. */
 export const SEED_PROJECT = 'e2e-seed';
 
@@ -45,6 +47,29 @@ let counter = 0;
 export function uniqueEmail(prefix: string): string {
 	counter += 1;
 	return `${prefix}-${Date.now()}-${counter}@example.com`;
+}
+
+/**
+ * Registers a project so operator surfaces can reach it, the way the console's
+ * "+ New project" does.
+ *
+ * There is no other way in: the guard refuses any id without a registry row,
+ * because reaching one used to MINT a backend by URL - the agents provision a
+ * Durable Object on first touch, so /dashboard/<anything> handed out an auth
+ * stack and a database outside every ownership check. The suite used to lean
+ * on exactly that shortcut, which is why this exists.
+ *
+ * Idempotent: 409 means a reused local stack already holds the row, which is
+ * success here. Needs the operator storage state, like any registry call.
+ */
+export async function ensureProject(
+	request: APIRequestContext,
+	projectId: string,
+	name = projectId
+): Promise<void> {
+	const response = await request.post('/api/registry/projects', { data: { id: projectId, name } });
+	if (response.status() === 201 || response.status() === 409) return;
+	throw new Error(`could not register ${projectId}: ${response.status()} ${await response.text()}`);
 }
 
 export function authPath(projectId: string, endpoint: string): string {

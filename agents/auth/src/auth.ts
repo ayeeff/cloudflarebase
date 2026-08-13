@@ -2,7 +2,7 @@ import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { anonymous, bearer, jwt, organization } from 'better-auth/plugins';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq, ne, or, isNull } from 'drizzle-orm';
 import type { DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
 import * as schema from './db/schema';
 
@@ -68,6 +68,43 @@ export async function ensurePersonalOrg(
 		role: 'owner',
 		createdAt: now,
 	});
+}
+
+/**
+ * Guarantees the console instance has an administrator.
+ *
+ * The console's own project surfaces (its user list, session revocation, role
+ * assignment - every operator account on the deployment) answer to the `admin`
+ * role and nothing else. But `role` defaults to `user` and its only writer is
+ * the admin route itself, so a console with no admin can never gain one: the
+ * key is locked inside the box.
+ *
+ * The earliest account is the one that claimed the deployment, so it is the
+ * administrator. Runs only while NO admin exists, which makes it a one-time
+ * heal on consoles that predate this - and a standing repair for a console
+ * whose last admin demoted or deleted themselves, which would otherwise be
+ * unadministrable forever.
+ */
+export async function ensureConsoleAdmin(db: AuthDatabase): Promise<void> {
+	const [admin] = await db
+		.select({ id: schema.user.id })
+		.from(schema.user)
+		.where(eq(schema.user.role, 'admin'))
+		.limit(1);
+	if (admin) return;
+
+	const [first] = await db
+		.select({ id: schema.user.id })
+		.from(schema.user)
+		// Guests are excluded on principle. The console refuses anonymous
+		// sign-in outright, so this should select nothing - but "should" is not
+		// what you want between a guest session and the operator account list.
+		.where(or(isNull(schema.user.isAnonymous), ne(schema.user.isAnonymous, true)))
+		.orderBy(asc(schema.user.createdAt))
+		.limit(1);
+	if (!first) return;
+
+	await db.update(schema.user).set({ role: 'admin' }).where(eq(schema.user.id, first.id));
 }
 
 export interface ProjectAuthConfig {

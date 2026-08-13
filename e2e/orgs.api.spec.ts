@@ -96,9 +96,11 @@ test.describe('organizations and ownership', () => {
 
 			try {
 				// ...so the operator - not a member of it - is refused, and never
-				// sees it listed.
+				// sees it listed. 404, the same answer an unminted id gets: a 403
+				// here would confirm the id exists, which is an enumeration oracle
+				// for other tenants' projects.
 				const denied = await request.get(overviewPath(projectId));
-				expect(denied.status(), await denied.text()).toBe(403);
+				expect(denied.status(), await denied.text()).toBe(404);
 				const operatorList = await (await request.get('/api/registry/projects')).json();
 				expect(operatorList.projects.map((entry: { id: string }) => entry.id)).not.toContain(
 					projectId
@@ -107,6 +109,26 @@ test.describe('organizations and ownership', () => {
 				// The owner reads it fine through the same surface.
 				const allowed = await anon.get(overviewPath(projectId), { headers: asInvitee });
 				expect(allowed.ok(), await allowed.text()).toBeTruthy();
+
+				// An ordinary operator is not an administrator. The console's own
+				// instance - every operator account on this deployment, this
+				// account included - answers to the admin role alone, and a
+				// non-admin gets the same "no such project" as a stranger. Any
+				// registered account used to reach it, delete operators from it,
+				// and reassign their roles.
+				for (const path of [
+					overviewPath('console'),
+					'/agents/auth-agent/console/admin/users',
+					'/agents/auth-agent/console/overview'
+				]) {
+					const refused = await anon.get(path, { headers: asInvitee });
+					expect(refused.status(), `${path} is admin-only`).toBe(404);
+				}
+				const consolePage = await anon.get('/dashboard/console', {
+					headers: asInvitee,
+					maxRedirects: 0
+				});
+				expect(consolePage.status()).toBe(303);
 
 				// Accepting the invitation joins the operator's org.
 				const accept = await anon.post(consoleAuthPath('organization/accept-invitation'), {

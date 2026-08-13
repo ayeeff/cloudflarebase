@@ -208,10 +208,20 @@ test.describe('project branches', () => {
 		const ids = registry.projects.map((p: { id: string }) => p.id);
 		expect(ids).not.toContain(root);
 		expect(ids).not.toContain(`${root}--stg`);
-		expect((await (await request.get(branchesPath(root))).json()).branches).toEqual([]);
+		// The root is not merely branch-less, it is gone: an id with no registry
+		// row is not a project, so its branch list is not a thing to read.
+		expect((await request.get(branchesPath(root))).status()).toBe(404);
 
 		// ...and the branch agent's database is empty rather than merely
 		// unreferenced: the cascade ran a full per-branch erase fan-out.
+		//
+		// Deleted ids are unreachable (no row, no project), so the branch is
+		// re-minted to look: whoever creates `stg` on this root next must get
+		// an empty backend, never the deleted branch's users.
+		await createRoot(request, root);
+		const reborn = await request.post(branchesPath(root), { data: { branch: 'stg' } });
+		expect(reborn.status(), await reborn.text()).toBe(201);
+
 		await expect
 			.poll(
 				async () => {
@@ -221,6 +231,8 @@ test.describe('project branches', () => {
 				{ timeout: 15_000 }
 			)
 			.toBe(0);
+
+		await request.delete(`/api/registry/projects/${root}`);
 	});
 });
 

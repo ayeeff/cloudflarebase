@@ -3,6 +3,7 @@ import {
 	analyticsPath,
 	authPath,
 	configPath,
+	ensureProject,
 	overviewPath,
 	SEED_PROJECT,
 	SEED_TOTAL_USERS,
@@ -11,7 +12,26 @@ import {
 	uniqueEmail
 } from './helpers';
 
+/** Every project this spec drives. A project is a registry row - reaching an
+ * unregistered id is refused, so the suite mints them the way an operator
+ * does rather than conjuring backends by URL. */
+const PROJECTS = [
+	'e2e-api-fresh',
+	'e2e-api-iso-a',
+	'e2e-api-iso-b',
+	'e2e-api-origins',
+	'e2e-api-activity',
+	'e2e-api-rbac',
+	'e2e-api-invalid-settings',
+	'e2e-api-social',
+	'e2e-api-cors'
+];
+
 test.describe('project agents (backend)', () => {
+	test.beforeAll(async ({ request }) => {
+		for (const project of PROJECTS) await ensureProject(request, project);
+	});
+
 	test('fresh project self-provisions with an empty auth stack', async ({ request }) => {
 		const project = 'e2e-api-fresh';
 		const overview = await (await request.get(overviewPath(project))).json();
@@ -58,8 +78,12 @@ test.describe('project agents (backend)', () => {
 	});
 
 	test('invalid project ids are rejected', async ({ request }) => {
+		// 404, not 400: the guard refuses it as "not a project you can reach"
+		// before the route gets to call the id invalid. Same answer as an id
+		// that is merely unregistered, which is the point - the shape of a
+		// project id is not something an outsider gets to probe for.
 		const response = await request.get(overviewPath('Not_A_Valid_Project!'));
-		expect(response.status()).toBe(400);
+		expect(response.status()).toBe(404);
 	});
 
 	test('agent state sync surface is reachable through the web origin', async ({ request }) => {

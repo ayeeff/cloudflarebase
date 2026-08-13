@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { dbAdminCollectionPath, dbAdminImportPath } from './helpers';
+import { dbAdminCollectionPath, dbAdminImportPath, ensureProject } from './helpers';
 
 /**
  * The document browser pages instead of silently truncating. Its own project so
@@ -15,6 +15,11 @@ async function gotoCollection(page: Page, collection: string) {
 }
 
 test.describe('database pagination (frontend)', () => {
+	// Operator surfaces answer only for registered ids.
+	test.beforeAll(async ({ request }) => {
+		await ensureProject(request, PAGE_PROJECT);
+	});
+
 	test('the document browser pages through a collection larger than one page', async ({
 		page,
 		request

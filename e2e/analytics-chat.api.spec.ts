@@ -1,5 +1,15 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
-import { analyticsPath, chatPath, SEED_PROJECT, SEED_TOTAL_USERS, SEED_USERS } from './helpers';
+import {
+	analyticsPath,
+	chatPath,
+	ensureProject,
+	SEED_PROJECT,
+	SEED_TOTAL_USERS,
+	SEED_USERS
+} from './helpers';
+
+/** Chat history is per project + client key, so it needs a project of its own. */
+const CHAT_HISTORY_PROJECT = 'e2e-chat-ip-history';
 
 test.describe('analytics (backend)', () => {
 	test('reports user, activity, provider and country analytics', async ({ request }) => {
@@ -90,7 +100,8 @@ test.describe('agent chat (backend)', () => {
 });
 
 test('chat history is available without an authenticated session', async ({ request }) => {
-	const response = await request.get(chatPath('e2e-chat-ip-history'), {
+	await ensureProject(request, CHAT_HISTORY_PROJECT);
+	const response = await request.get(chatPath(CHAT_HISTORY_PROJECT), {
 		headers: { 'cf-connecting-ip': '203.0.113.7' }
 	});
 	expect(response.ok()).toBe(true);

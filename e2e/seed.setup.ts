@@ -2,7 +2,10 @@ import { expect, request as requestFactory, test as setup } from '@playwright/te
 import {
 	analyticsPath,
 	authPath,
+	DB_PROJECT,
+	ensureProject,
 	overviewPath,
+	SCRATCH_PROJECT,
 	SEED_PROJECT,
 	SEED_TOTAL_USERS,
 	SEED_USERS
@@ -16,6 +19,14 @@ import {
  * guest is only created once per stack.
  */
 setup('seed baseline auth data', async ({ request }) => {
+	// Register the shared projects first. The guard refuses operator access to
+	// any id without a registry row - reaching one used to mint a backend by
+	// URL - so a project the suite never registered is a project the suite
+	// cannot read, exactly as in production.
+	for (const projectId of [SEED_PROJECT, SCRATCH_PROJECT, DB_PROJECT]) {
+		await ensureProject(request, projectId);
+	}
+
 	// One anonymous guest - created first (before any session cookie exists).
 	for (const user of SEED_USERS) {
 		const signUp = await request.post(authPath(SEED_PROJECT, 'sign-up/email'), { data: user });

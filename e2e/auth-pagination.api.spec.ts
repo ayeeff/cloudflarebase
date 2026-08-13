@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { adminSessionsPath, adminUsersPath, authPath, overviewPath, uniqueEmail } from './helpers';
+import {
+	adminSessionsPath,
+	adminUsersPath,
+	authPath,
+	ensureProject,
+	overviewPath,
+	uniqueEmail
+} from './helpers';
 
 /**
  * Users and sessions page KEYSET-style over `(createdAt, id)`. The invariant
@@ -25,6 +32,9 @@ async function seedUsers(
 	request: import('@playwright/test').APIRequestContext,
 	project: string
 ): Promise<string[]> {
+	// Operator surfaces answer only for registered ids, so the project has to
+	// exist in the registry before this spec can read its user list.
+	await ensureProject(request, project);
 	const emails: string[] = [];
 	for (let index = 0; index < USER_COUNT; index += 1) {
 		const email = uniqueEmail(`paged-${index}`);

@@ -1,3 +1,4 @@
+import { agentSegment } from '$lib/server/agents';
 import {
 	agentUrl,
 	assertProjectId,
@@ -10,7 +11,7 @@ export const DELETE: RequestHandler = async ({ params, url, platform }) => {
 	const projectId = assertProjectId(params.projectId);
 	const agent = requireAuthAgent(platform);
 	const response = await agent.fetch(
-		agentUrl(url.origin, projectId, `/admin/users/${encodeURIComponent(params.userId)}`),
+		agentUrl(url.origin, projectId, `/admin/users/${agentSegment(params.userId)}`),
 		{ method: 'DELETE' }
 	);
 	return toNativeResponse(response as unknown as Response);

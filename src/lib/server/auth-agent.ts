@@ -5,6 +5,7 @@
  */
 import { AGENT_REGISTRY } from '$lib/agent-registry';
 import {
+	agentProxyUrl as genericAgentProxyUrl,
 	agentUrl as genericAgentUrl,
 	requireAgent,
 	assertProjectId,
@@ -23,4 +24,16 @@ export function requireAuthAgent(platform: App.Platform | undefined) {
  */
 export function agentUrl(origin: string, projectId: string, subPath: string): string {
 	return genericAgentUrl(origin, AGENT_REGISTRY.auth, projectId, subPath);
+}
+
+/** `agentProxyUrl` for the auth agent - see there for why the prefix is
+ * checked after normalisation rather than trusted. */
+export function agentProxyUrl(
+	origin: string,
+	projectId: string,
+	prefix: string,
+	rest: string,
+	search = ''
+): string {
+	return genericAgentProxyUrl(origin, AGENT_REGISTRY.auth, projectId, prefix, rest, search);
 }

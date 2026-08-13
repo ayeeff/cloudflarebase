@@ -1,3 +1,4 @@
+import { agentSegment } from '$lib/server/agents';
 import {
 	agentUrl,
 	assertProjectId,
@@ -19,7 +20,7 @@ export const PUT: RequestHandler = async ({ params, request, url, platform }) =>
 		);
 	}
 	const response = await agent.fetch(
-		agentUrl(url.origin, projectId, `/admin/users/${encodeURIComponent(params.userId)}/role`),
+		agentUrl(url.origin, projectId, `/admin/users/${agentSegment(params.userId)}/role`),
 		{
 			method: 'PUT',
 			headers: { 'content-type': 'application/json' },

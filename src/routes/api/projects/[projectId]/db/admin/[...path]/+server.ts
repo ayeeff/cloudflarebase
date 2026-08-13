@@ -1,5 +1,5 @@
 import { AGENT_REGISTRY } from '$lib/agent-registry';
-import { agentUrl, assertProjectId, requireAgent, toNativeResponse } from '$lib/server/agents';
+import { agentProxyUrl, assertProjectId, requireAgent, toNativeResponse } from '$lib/server/agents';
 import type { RequestHandler } from './$types';
 
 /**
@@ -13,7 +13,9 @@ const proxy: RequestHandler = async ({ params, request, url, platform }) => {
 	const entry = AGENT_REGISTRY.db;
 	const agent = requireAgent(platform, entry);
 
-	const target = agentUrl(url.origin, entry, projectId, `/admin/${params.path}${url.search}`);
+	// agentProxyUrl: a decoded traversal in `params.path` would otherwise
+	// climb out of this project's /admin prefix into another project's.
+	const target = agentProxyUrl(url.origin, entry, projectId, '/admin', params.path, url.search);
 	const body =
 		request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer();
 
