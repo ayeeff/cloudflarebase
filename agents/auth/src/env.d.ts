@@ -7,6 +7,8 @@ interface Env {
 	GITHUB_CLIENT_ID?: string;
 	GITHUB_CLIENT_SECRET?: string;
 	DISABLE_RATE_LIMIT?: 'true';
+	/** Orgs one user may create (memberships count). Unset = 5. */
+	MAX_ORGS_PER_USER?: string;
 	/** Enable Analytics Engine SQL API querying (writes need no credentials). */
 	CF_ACCOUNT_ID?: string;
 	CF_ANALYTICS_API_TOKEN?: string;

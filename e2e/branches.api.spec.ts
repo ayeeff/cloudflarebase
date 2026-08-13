@@ -139,6 +139,26 @@ test.describe('project branches', () => {
 		expect(demo.status()).toBe(400);
 	});
 
+	test('a root is limited to 5 branches', async ({ request }) => {
+		// The default MAX_BRANCHES_PER_ROOT ceiling - the e2e stack deliberately
+		// does not override it (wrangler.e2e.jsonc raises only the per-org
+		// project ceiling). The root is deleted afterwards so a reused stack
+		// does not accumulate six rows per run.
+		const root = rootId();
+		await createRoot(request, root);
+		try {
+			for (let i = 1; i <= 5; i += 1) {
+				const created = await request.post(branchesPath(root), { data: { branch: `b${i}` } });
+				expect(created.status(), await created.text()).toBe(201);
+			}
+			const refused = await request.post(branchesPath(root), { data: { branch: 'b6' } });
+			expect(refused.status()).toBe(409);
+			expect((await refused.json()).error).toContain('5 branches');
+		} finally {
+			await request.delete(`/api/registry/projects/${root}`);
+		}
+	});
+
 	test('the combined id must fit the 48-char project-id ceiling', async ({ request }) => {
 		// 44-char root: `--stg` would make 49. The name passes the branch-name
 		// schema, so the refusal can only come from the combined-length check.

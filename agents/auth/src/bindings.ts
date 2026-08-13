@@ -103,6 +103,9 @@ export interface AuthAgentBindings {
 	/** Test-only. Exhausting persisted rate-limit buckets breaks reused stacks. */
 	DISABLE_RATE_LIMIT?: 'true';
 
+	/** Ceiling on organizations one user may create (default 5). */
+	MAX_ORGS_PER_USER?: string;
+
 	/**
 	 * Local-dev only. Open console sign-ups normally refuse sign-in until the
 	 * email is verified; local mail lands in wrangler's .eml files, so this

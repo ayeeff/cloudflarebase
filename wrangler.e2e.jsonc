@@ -33,6 +33,11 @@
 	// without an operator session; named projects still require one.
 	"vars": {
 		"ADMIN_SECRET": "e2e-admin-secret",
-		"DEMO_MODE": "true"
+		"DEMO_MODE": "true",
+		// The suite creates registry projects across many specs and a locally
+		// reused stack accumulates them in the owner's personal org, so the
+		// per-org ceiling must not bite here. MAX_BRANCHES_PER_ROOT stays at
+		// its default of 5 on purpose - branches.api.spec.ts pins it.
+		"MAX_PROJECTS_PER_ORG": "1000"
 	}
 }

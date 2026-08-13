@@ -106,6 +106,13 @@ export interface ProjectAuthConfig {
 	 */
 	autoPersonalOrg?: boolean;
 	/**
+	 * Ceiling on organizations one user can CREATE - Better Auth refuses the
+	 * create route once the user already belongs to this many, so memberships
+	 * (personal orgs included) count toward it. Undefined means unlimited.
+	 * ensurePersonalOrg is unaffected: it inserts through Drizzle directly.
+	 */
+	orgLimit?: number;
+	/**
 	 * Veto over user creation, consulted at the database layer with the user
 	 * being created. Returning a reason string rejects the creation with 403.
 	 * Route-level checks cannot cover every path that creates a user - social
@@ -194,6 +201,7 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 				// Guests can hold sessions but never own teams.
 				allowUserToCreateOrganization: (user) =>
 					!(user as { isAnonymous?: boolean | null }).isAnonymous,
+				organizationLimit: config.orgLimit,
 				sendInvitationEmail: config.sendEmail
 					? async (data, request) => {
 							// The console surfaces pending invitations after sign-in, so

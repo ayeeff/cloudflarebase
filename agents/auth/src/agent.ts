@@ -90,6 +90,13 @@ const DEMO_MAX_CHAT_PER_DAY = 50;
 // Analytics Engine ingestion is asynchronous. Keep this short so a query that
 // races a new write is retried quickly instead of holding stale graph data.
 const ANALYTICS_CACHE_MS = 5_000;
+
+/** Env vars are strings; anything that is not a whole positive number means
+ * "not configured" rather than a hard error, so a typo falls back safely. */
+function parsePositiveInt(value: string | undefined): number | undefined {
+	const parsed = Number.parseInt(value ?? '', 10);
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
 function applySocialCredentials(
 	value: ProviderUpdates,
 	existing: SocialCredentials,
@@ -372,6 +379,10 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				this.env.DISABLE_EMAIL_VERIFICATION !== 'true',
 			cookieCache: this.name === CONSOLE_PROJECT_ID,
 			autoPersonalOrg: this.name === CONSOLE_PROJECT_ID,
+			// Org creation is capped per user (memberships count, personal org
+			// included) so one account cannot mint teams without bound - the
+			// console's per-org project ceiling would otherwise multiply freely.
+			orgLimit: parsePositiveInt(this.env.MAX_ORGS_PER_USER) ?? 5,
 			// Console registration policy, enforced where every path converges -
 			// user creation - because social sign-in creates users implicitly on
 			// the OAuth callback. Without this, configuring Google credentials

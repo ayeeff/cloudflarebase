@@ -8,7 +8,7 @@ import { releaseHostingRows } from '$lib/server/hosting';
 import { requireAgent } from '$lib/server/agents';
 import { projectIdSchema } from '$lib/schemas/auth';
 import type { Cookies } from '@sveltejs/kit';
-import { asc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
@@ -43,8 +43,29 @@ export const branchNameSchema = z
 
 export const createBranchSchema = z.object({ branch: branchNameSchema });
 
-/** Ceiling on one installation, to keep an accidental loop from filling D1. */
-const MAX_PROJECTS = 100;
+/** Ceiling on one installation, to keep an accidental loop from filling D1.
+ * A backstop, not a product limit - per-tenant fairness is the org ceiling. */
+const MAX_PROJECTS = 1000;
+
+/**
+ * Per-tenant ceilings: root projects per owning org and branches per root.
+ * Env-overridable (`MAX_PROJECTS_PER_ORG` / `MAX_BRANCHES_PER_ROOT`) so the
+ * e2e stack and generous self-hosted installs can raise them. Unowned rows
+ * (org_id NULL - legacy/pre-org installs) answer only to MAX_PROJECTS: with
+ * no org to attribute them to, a per-tenant count would lump every legacy
+ * operator into one bucket.
+ */
+const DEFAULT_MAX_PROJECTS_PER_ORG = 5;
+const DEFAULT_MAX_BRANCHES_PER_ROOT = 5;
+
+function envLimit(
+	platform: App.Platform | undefined,
+	name: 'MAX_PROJECTS_PER_ORG' | 'MAX_BRANCHES_PER_ROOT',
+	fallback: number
+): number {
+	const parsed = Number.parseInt(platform?.env?.[name] ?? '', 10);
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 function toDto(row: {
 	id: string;
@@ -227,6 +248,23 @@ export async function createProject(
 		};
 	}
 
+	if (orgId) {
+		// Roots only: branches have their own per-root ceiling, so one tenant
+		// tops out at maxRoots × (1 + maxBranches) registry rows.
+		const limit = envLimit(platform, 'MAX_PROJECTS_PER_ORG', DEFAULT_MAX_PROJECTS_PER_ORG);
+		const owned = await db
+			.select({ id: project.id })
+			.from(project)
+			.where(and(eq(project.orgId, orgId), isNull(project.parentId)));
+		if (owned.length >= limit) {
+			return {
+				ok: false,
+				status: 409,
+				error: `your organization is limited to ${limit} projects for now - delete one to make room`
+			};
+		}
+	}
+
 	const [created] = await db
 		.insert(project)
 		.values({ id: parsed.data.id, name: parsed.data.name, orgId, createdAt: new Date() })
@@ -311,6 +349,20 @@ export async function createBranch(
 			ok: false,
 			status: 409,
 			error: `this installation is limited to ${MAX_PROJECTS} projects`
+		};
+	}
+	// Deploy tokens can mint branches too (CI on a new git branch), so this
+	// also caps a runaway workflow, not just the dashboard dialog.
+	const limit = envLimit(platform, 'MAX_BRANCHES_PER_ROOT', DEFAULT_MAX_BRANCHES_PER_ROOT);
+	const siblings = await db
+		.select({ id: project.id })
+		.from(project)
+		.where(eq(project.parentId, rootId));
+	if (siblings.length >= limit) {
+		return {
+			ok: false,
+			status: 409,
+			error: `each project is limited to ${limit} branches for now - delete one to make room`
 		};
 	}
 

@@ -33,6 +33,14 @@ declare global {
 				DB_AGENT: Fetcher;
 				/** Service binding to the hosting-agent worker (fetch-only interface). */
 				HOSTING_AGENT: Fetcher;
+				/**
+				 * Optional per-tenant ceiling overrides (registry.ts defaults both
+				 * to 5). Not in any deployed config's vars, so they are typed here
+				 * instead of the generated worker-configuration.d.ts; the e2e stack
+				 * raises the org ceiling because reused suites accumulate projects.
+				 */
+				MAX_PROJECTS_PER_ORG?: string;
+				MAX_BRANCHES_PER_ROOT?: string;
 			};
 			cf: CfProperties;
 			ctx: ExecutionContext;
