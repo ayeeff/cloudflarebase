@@ -838,7 +838,7 @@
 						]}
 					>
 						<Settings class="h-4 w-4" />
-						Project settings
+						Settings
 					</a>
 				{/if}
 			</div>
