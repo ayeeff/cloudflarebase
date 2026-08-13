@@ -2,16 +2,24 @@
 	import { invalidateAll } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { CONSOLE_AUTH_BASE } from '$lib/console';
+	import { signOutConsole } from '$lib/sign-out';
+	import { LogOut, Settings } from '@lucide/svelte';
 
 	/**
-	 * The operator's avatar, and behind it the account editor - name via Better
-	 * Auth update-user, email via change-email (a VERIFIED account approves the
-	 * change from its current address; unverified ones - local dev - change
-	 * immediately). One component so the account and project shells cannot
-	 * drift. Pictures arrive with social sign-in; editing them waits for R2.
+	 * The operator's avatar menu: who you are signed in as, the account editor -
+	 * name via Better Auth update-user, email via change-email (a VERIFIED
+	 * account approves the change from its current address; unverified ones -
+	 * local dev - change immediately) - and sign-out. One component so the
+	 * account and project shells cannot drift. Pictures arrive with social
+	 * sign-in; editing them waits for R2.
+	 *
+	 * Sign-out lives here rather than beside the avatar because a header that
+	 * spells out its least-used action gives it the most weight. The standalone
+	 * button remains for surfaces with no avatar - the mobile drawers, /login.
 	 */
 	let { user }: { user: { name: string; email: string; image: string | null } } = $props();
 
@@ -92,24 +100,46 @@
 	}
 </script>
 
-<button
-	type="button"
-	class="rounded-full transition-opacity hover:opacity-80"
-	onclick={openAccount}
-	aria-label="Account settings"
-	title={user.email}
-	data-testid="account-button"
->
-	{#if user.image}
-		<img src={user.image} alt="" class="h-8 w-8 rounded-full border object-cover" />
-	{:else}
-		<span
-			class="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary uppercase"
-		>
-			{(user.name || user.email).slice(0, 1)}
-		</span>
-	{/if}
-</button>
+<DropdownMenu.Root>
+	<DropdownMenu.Trigger>
+		{#snippet child({ props })}
+			<button
+				{...props}
+				type="button"
+				class="rounded-full transition-opacity hover:opacity-80"
+				aria-label="Account menu"
+				title={user.email}
+				data-testid="account-button"
+			>
+				{#if user.image}
+					<img src={user.image} alt="" class="h-8 w-8 rounded-full border object-cover" />
+				{:else}
+					<span
+						class="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary uppercase"
+					>
+						{(user.name || user.email).slice(0, 1)}
+					</span>
+				{/if}
+			</button>
+		{/snippet}
+	</DropdownMenu.Trigger>
+	<DropdownMenu.Content align="end" class="w-56">
+		<div class="px-2 py-1.5">
+			<p class="truncate text-sm font-medium">{user.name}</p>
+			<p class="truncate text-xs text-muted-foreground">{user.email}</p>
+		</div>
+		<DropdownMenu.Separator />
+		<DropdownMenu.Item data-testid="account-settings" onclick={openAccount}>
+			<Settings class="h-4 w-4" />
+			Account settings
+		</DropdownMenu.Item>
+		<DropdownMenu.Separator />
+		<DropdownMenu.Item data-testid="console-sign-out" onclick={() => signOutConsole()}>
+			<LogOut class="h-4 w-4" />
+			Sign out
+		</DropdownMenu.Item>
+	</DropdownMenu.Content>
+</DropdownMenu.Root>
 
 <Dialog.Root bind:open>
 	<Dialog.Content data-testid="account-panel">

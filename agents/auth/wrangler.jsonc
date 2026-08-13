@@ -120,13 +120,18 @@
 
 			"vars": {
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-				// CONSOLE_SIGNUPS is deliberately ABSENT until launch: mail (the
-				// EMAIL binding + EMAIL_FROM below) is already configured here, so
-				// setting "open" activates public sign-ups the moment this agent
-				// deploys - and the agents deploy BEFORE the web worker whose
-				// ownership guard makes strangers safe. Flip it to "open" as the
-				// LAST launch step: agents deployed, web deployed, backfill run
-				// (docs/managed-service-design.md).
+				// LAUNCHED 2026-08-13. Public sign-up with required email
+				// verification, the same configuration preview rehearses. It took
+				// effect the moment this agent deployed, which is safe because the
+				// ownership-aware web worker was already live (its OpenAPI serves
+				// /branches and /hosting/*) - a stranger who registers gets their
+				// own personal org and sees nothing else. Mail (the EMAIL binding
+				// + EMAIL_FROM below) is what makes "open" effective; without it
+				// the agent reports "claimed" and 503s sign-up rather than
+				// registering accounts that could never verify.
+				// DEMO_MODE stays on: anonymous visitors keep throwaway projects
+				// alongside real accounts (docs/managed-service-design.md).
+				"CONSOLE_SIGNUPS": "open",
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
 				// Committed on purpose: env.production is cloudflarebase.com's own

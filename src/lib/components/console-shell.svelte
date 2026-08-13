@@ -104,11 +104,14 @@
 	</aside>
 
 	<main class="relative flex flex-col items-center justify-center px-4 py-10">
+		<!-- Same order as both dashboard headers: theme first, leaving last. -->
 		<div class="absolute top-4 right-4 flex items-center gap-1">
+			<ModeToggle variant="ghost" />
+
 			{#if signedIn}
+				<span class="mx-0.5 h-5 w-px bg-border" aria-hidden="true"></span>
 				<SignOutButton />
 			{/if}
-			<ModeToggle variant="ghost" />
 		</div>
 
 		<!-- The mark repeats here only where the brand panel is hidden. -->

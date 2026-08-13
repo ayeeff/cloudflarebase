@@ -8,7 +8,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { projectIdSchema } from '$lib/schemas/auth';
-	import { ChevronRight, Database, GitBranch, Globe, Mail, Plus } from '@lucide/svelte';
+	import { ChevronRight, Database, GitBranch, Mail, Plus } from '@lucide/svelte';
 
 	let { data } = $props();
 
@@ -208,20 +208,28 @@
 									class="mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
 								/>
 							</div>
-							<!-- The quiet flex: a fresh project is already served from
-							     Cloudflare's whole network, replicas included. -->
-							<div class="mt-auto flex items-start gap-2.5">
-								<Globe class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-								<div class="min-w-0 text-xs">
-									<p class="flex items-center gap-1.5 font-medium">
-										Region:
+							<!-- Two facts, labelled like instrument readings rather than
+							     sold: the quiet flex is that a fresh project is already
+							     served from Cloudflare's whole network, and it lands
+							     harder stated once than explained in a second line. -->
+							<div class="mt-auto grid grid-cols-2 gap-4">
+								<div>
+									<p class="font-mono text-[10px] tracking-[0.1em] text-muted-foreground uppercase">
+										Region
+									</p>
+									<p class="mt-0.5 flex items-center gap-1.5 text-[13px] font-medium">
 										<span
 											class="h-1.5 w-1.5 shrink-0 rounded-full bg-[oklch(0.72_0.15_150)] shadow-[0_0_6px_oklch(0.72_0.15_150/80%)]"
 											aria-hidden="true"
 										></span>
 										Earth
 									</p>
-									<p class="mt-0.5 text-muted-foreground">Served from 300+ edge locations</p>
+								</div>
+								<div>
+									<p class="font-mono text-[10px] tracking-[0.1em] text-muted-foreground uppercase">
+										Branches
+									</p>
+									<p class="mt-0.5 text-[13px] font-medium tabular-nums">{branches.length}</p>
 								</div>
 							</div>
 						</a>

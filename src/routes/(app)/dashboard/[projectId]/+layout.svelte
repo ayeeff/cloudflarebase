@@ -17,7 +17,6 @@
 	import { createBranchSchema, projectIdSchema } from '$lib/schemas/auth';
 	import AccountMenu from '$lib/components/account-menu.svelte';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
-	import SignOutButton from '$lib/components/sign-out-button.svelte';
 	import { onMount, tick } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
@@ -842,11 +841,6 @@
 						Project settings
 					</a>
 				{/if}
-				{#if data.accountUser}
-					<SignOutButton
-						class="h-auto w-full justify-start gap-3 rounded-md px-3 py-2 text-sm font-medium lg:hidden"
-					/>
-				{/if}
 			</div>
 		{/if}
 		<div class="border-t border-border px-5 py-3 text-[11px] text-muted-foreground/60">
@@ -976,15 +970,7 @@
 					{/if}
 				</div>
 
-				<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
-					{#if data.accountUser}
-						<!-- Operators only: anonymous demo visitors have no session
-						     (accountUser is null for them). Same controls, same spot
-						     as the account shell; below lg sign-out lives at the
-						     sidebar drawer's bottom instead. -->
-						<AccountMenu user={data.accountUser} />
-						<SignOutButton class="hidden h-8 lg:inline-flex" />
-					{/if}
+				<div class="ml-auto flex items-center gap-2">
 					{#if branchCtx?.demo}
 						<!-- The demo-to-real funnel: demos are throwaway, so the pitch is
 						     a REAL project, not keeping this one. /login offers sign-up
@@ -1002,7 +988,19 @@
 							<span class="hidden sm:inline">Create your project</span>
 						</Button>
 					{/if}
-					<ModeToggle class="h-8 w-8" testId="theme-toggle" />
+					<!-- Ghost, not the default outline: the bordered box was the
+					     heaviest thing in the bar. -->
+					<ModeToggle variant="ghost" class="h-8 w-8" testId="theme-toggle" />
+					{#if data.accountUser}
+						<!-- The rule renders with the avatar, never on its own: a demo
+						     visitor's header would otherwise end on a dangling divider. -->
+						<span class="h-5 w-px bg-border" aria-hidden="true"></span>
+						<!-- Operators only: anonymous demo visitors have no session
+						     (accountUser is null for them). The menu behind the avatar
+						     carries account settings and sign-out, same as the account
+						     shell; the mobile drawer keeps its own sign-out row. -->
+						<AccountMenu user={data.accountUser} />
+					{/if}
 				</div>
 			</header>
 			<!-- Mobile tool navigation lives in the hamburger drawer (the same
