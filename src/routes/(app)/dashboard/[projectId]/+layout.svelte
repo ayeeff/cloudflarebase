@@ -128,9 +128,9 @@
 	function setSection(section: string, open: boolean) {
 		sectionOverrides = { ...sectionOverrides, [section]: open };
 	}
-	// Not-yet-shipped primitives peek like everything else - one name, then a
-	// count. They advertise, they don't navigate, so they never earn the
-	// accordion's auto-open.
+	// Not-yet-shipped primitives get NO peek, unlike the agent sections: they
+	// advertise, they don't navigate, so a permanently visible row would spend
+	// sidebar height on something nobody can click.
 	let comingSoonOpen = $state(false);
 
 	// Functions left this list when the hosting agent shipped - apps and
@@ -773,27 +773,21 @@
 						class={['h-3.5 w-3.5 transition-transform', !comingSoonOpen && '-rotate-90']}
 					/>
 				</button>
-				<div class="space-y-0.5 pl-2">
-					{#each comingSoonOpen ? comingSoon : comingSoon.slice(0, 1) as item (item.label)}
-						<span
-							class="flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
-						>
-							<item.icon class="h-4 w-4" />
-							{item.label}
-							<Badge variant="outline" class="ml-auto text-[10px] text-muted-foreground/60"
-								>soon</Badge
+				{#if comingSoonOpen}
+					<div class="space-y-0.5 pl-2">
+						{#each comingSoon as item (item.label)}
+							<span
+								class="flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
 							>
-						</span>
-					{/each}
-					{#if !comingSoonOpen}
-						{@render moreRow(
-							comingSoon.length - 1,
-							'Coming soon',
-							'nav-more-coming-soon',
-							() => (comingSoonOpen = true)
-						)}
-					{/if}
-				</div>
+								<item.icon class="h-4 w-4" />
+								{item.label}
+								<Badge variant="outline" class="ml-auto text-[10px] text-muted-foreground/60"
+									>soon</Badge
+								>
+							</span>
+						{/each}
+					</div>
+				{/if}
 			</div>
 
 			<div>
