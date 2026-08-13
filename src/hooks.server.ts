@@ -162,8 +162,8 @@ function classifyAccess(pathname: string): Access {
 	if (segments[0] === 'api') {
 		// Registry mutations name their project in the path; surfacing the id
 		// here is what routes them through the same ownership gate as the
-		// project-scoped proxies (deleting or claiming a project is as
-		// project-scoped as reading it).
+		// project-scoped proxies (deleting a project is as project-scoped as
+		// reading it).
 		if (segments[1] === 'registry' && segments[2] === 'projects' && segments[3]) {
 			return { scope: 'operator', projectId: segments[3], kind: 'api' };
 		}
@@ -251,42 +251,22 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		return Response.json({ error: 'invalid deploy token' }, { status: 401 });
 	}
 
+	// Public demo: anonymous visitors may drive ephemeral demo projects, whose
+	// ids are unguessable and whose data self-destructs after the TTL. Demos
+	// are throwaway - never registry rows, never owned - so the visit skips
+	// the ownership lookup and the session resolution entirely. Named projects
+	// always require an operator session, even on the demo deployment.
+	if (event.locals.demoMode && access.projectId && isDemoProjectId(access.projectId)) {
+		return resolve(event);
+	}
+
 	// Ownership of the target project, resolved once per request. Registered
-	// rows carry their org; an unregistered demo id inherits a claimed root's
-	// registration, so claiming ends anonymous access for the whole family.
-	// Reserved ids (the console instance itself) are never registry rows.
+	// rows carry their org. Reserved ids (the console instance itself) are
+	// never registry rows.
 	const ownership: ProjectOwnership | null =
 		access.projectId && !RESERVED_PROJECT_IDS.has(access.projectId)
 			? await getProjectOwnership(event.platform, access.projectId)
 			: null;
-
-	// Public demo: anonymous visitors may drive ephemeral demo projects, whose
-	// ids are unguessable and whose data self-destructs. Named projects always
-	// require an operator session, even on the demo deployment - and so does a
-	// CLAIMED demo: the registry row is what flips it from possession-based to
-	// owned (docs/managed-service-design.md).
-	if (
-		event.locals.demoMode &&
-		access.projectId &&
-		isDemoProjectId(access.projectId) &&
-		!ownership?.registered
-	) {
-		// Access is anonymous, but a signed-in operator's identity must still
-		// resolve: the demo layout's claim flow ("Keep this project", the
-		// ?claim=1 post-login auto-claim) branches on it, and without this the
-		// page renders anonymous even mid-claim - sign-in appeared to do
-		// nothing. getConsoleIdentity no-ops without a cookie, so first-time
-		// demo visits still skip the session lookup entirely.
-		if (event.request.headers.get('cookie')) {
-			event.locals.consoleIdentity = await getConsoleIdentity(
-				event.platform,
-				event.url.origin,
-				event.request.headers.get('cookie')
-			);
-			event.locals.consoleUser = event.locals.consoleIdentity?.user ?? null;
-		}
-		return resolve(event);
-	}
 
 	// The bare /dashboard entry decides for itself: in demo mode it hands an
 	// anonymous visitor a throwaway project, while a signed-in operator gets

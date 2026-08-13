@@ -227,13 +227,12 @@
 		<Card.Root data-testid="hosting-demo-upsell">
 			<Card.Header>
 				<Card.Title class="flex items-center gap-2 text-base">
-					<Sparkles class="h-4 w-4 text-primary" /> Hosting needs a claimed project
+					<Sparkles class="h-4 w-4 text-primary" /> Hosting needs a real project
 				</Card.Title>
 				<Card.Description>
-					Demo projects cannot deploy apps. Keep this project (the button in the header) to claim it
-					under your account - then <code class="font-mono text-xs">cloudflarebase init</code>
-					connects a repository and every deploy ships to
-					<code class="font-mono text-xs">&lt;app&gt;.cfbase.dev</code>.
+					Demo projects are throwaway and cannot deploy apps. Sign in and create a project - then
+					<code class="font-mono text-xs">cloudflarebase init</code> connects a repository and every
+					deploy ships to <code class="font-mono text-xs">&lt;app&gt;.cfbase.dev</code>.
 				</Card.Description>
 			</Card.Header>
 		</Card.Root>

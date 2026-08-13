@@ -20,10 +20,7 @@ export const POST: RequestHandler = async ({ params, request, url, platform }) =
 	if (isDemoProjectId(projectId)) {
 		// No demo hosting: anonymous code execution is an abuse machine. The
 		// dashboard shows an upsell card instead.
-		return Response.json(
-			{ error: 'demo projects cannot deploy apps - claim the project first' },
-			{ status: 403 }
-		);
+		return Response.json({ error: 'demo projects cannot deploy apps' }, { status: 403 });
 	}
 
 	// Reuse the persisted claim or mint one under the auto-numbering rule.

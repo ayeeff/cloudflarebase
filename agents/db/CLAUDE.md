@@ -79,7 +79,7 @@ Row first, then push: `PUT /admin/collections/:name` upserts the parent row, the
 
 `demo-<20hex>` + `DEMO_MODE=true` (both halves): 5 collections, 200 docs/collection, 8 KB docs, 5 subscriptions/connection, TTL erase after `DEMO_TTL_HOURS` (idempotent schedule, re-checked before destroy). Always-on: 128 KB docs, 10 subscriptions/connection, query limit <= 200, 200 collections/project.
 
-**Demo claim** (docs/managed-service-design.md): the worker's service-binding-only `PUT /internal/projects/:id/claim` sets a durable `demo-claimed` flag on the parent, folded into `isEphemeral` - caps lift, the TTL disarms (`expireDemoProject` re-checks), the parent re-pushes every shard config so children shed their `config.demo` caps, and the gateway consults the parent (`isEphemeralProject`, cached like origins) instead of deciding demo-ness from the env alone.
+Demos are throwaway, full stop - nothing lifts the caps or disarms the TTL. The demo-claim machinery (the `/internal/.../claim` route, the durable `demo-claimed` flag, the child config re-push, the gateway's `isEphemeralProject` parent consult) was removed 2026-08-12; every class now decides demo-ness locally from env + id shape.
 
 ## Publishing as `@cloudflarebase/db`
 

@@ -59,12 +59,6 @@ that ships one.
 	// fan-out, so no agent needs to know that another one exists.
 	"erase": { "method": "DELETE", "path": "/internal/projects/:projectId" },
 
-	// Optional: called by the console when a demo project is claimed by an
-	// owner (docs/managed-service-design.md). The agent sets a durable flag
-	// that lifts its demo caps and disarms its TTL erase. Agents without demo
-	// state simply omit this.
-	"claim": { "method": "PUT", "path": "/internal/projects/:projectId/claim" },
-
 	// Merged into the host's wrangler.jsonc. Everything here must be
 	// account-neutral: no ids, no domains, no dataset names tied to one account.
 	"bindings": {

@@ -3,7 +3,7 @@ import { getAgentByName, routeAgentRequest } from 'agents';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { AuthAgent as AuthAgentBase } from './agent';
 import { getFleetOverview } from './fleet';
-import { DEMO_PROJECT_PATTERN, projectIdSchema } from './schemas';
+import { projectIdSchema } from './schemas';
 
 export type {
 	AgentChatReply,
@@ -65,22 +65,6 @@ class AuthService extends WorkerEntrypoint<Env> {
 				if (!/abort\(\) to reset|durable object reset/i.test(message)) throw error;
 			}
 			return Response.json({ erased: true });
-		}
-
-		// Claims a demo project for an owner (docs/managed-service-design.md):
-		// sets the durable flag that lifts demo caps and disarms the TTL erase.
-		// Same trust posture as the erase route above - service-binding-only,
-		// the console owns the fan-out. Demo-shaped ids only: the flag is
-		// meaningless anywhere else.
-		const claim = url.pathname.match(/^\/internal\/projects\/([^/]+)\/claim$/);
-		if (claim && request.method === 'PUT') {
-			const projectId = decodeURIComponent(claim[1]);
-			if (!DEMO_PROJECT_PATTERN.test(projectId)) {
-				return Response.json({ error: 'only demo projects can be claimed' }, { status: 400 });
-			}
-			const agent = await getAgentByName<Env, AuthAgentBase>(this.env.AuthAgent, projectId);
-			await agent.claimProject();
-			return Response.json({ claimed: true });
 		}
 
 		// Fleet rollup for the platform admin dashboard. Not under /agents/*, so

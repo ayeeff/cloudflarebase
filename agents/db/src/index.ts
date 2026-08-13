@@ -8,7 +8,7 @@ import { DbGateway as DbGatewayBase, gatewayName } from './gateway';
 import { DbTable as DbTableBase } from './table';
 import { regionHint, REGION_HINTS } from './region';
 import { replicaName } from './replication';
-import { collectionNameSchema, DEMO_PROJECT_PATTERN, projectIdSchema } from './schemas';
+import { collectionNameSchema, projectIdSchema } from './schemas';
 
 export type {
 	DbActivityEvent,
@@ -203,22 +203,6 @@ class DbService extends WorkerEntrypoint<Env> {
 				if (!isDurableObjectReset(error)) throw error;
 			}
 			return Response.json({ erased: true });
-		}
-
-		// Claims a demo project (docs/managed-service-design.md): the durable
-		// flag lifts demo caps and disarms the TTL erase, and the parent
-		// re-pushes shard configs so the children shed theirs too. Same trust
-		// posture as the erase route - service-binding-only, console-owned
-		// fan-out. Demo-shaped ids only.
-		const claim = url.pathname.match(/^\/internal\/projects\/([^/]+)\/claim$/);
-		if (claim && request.method === 'PUT') {
-			const projectId = decodeURIComponent(claim[1]);
-			if (!DEMO_PROJECT_PATTERN.test(projectId)) {
-				return Response.json({ error: 'only demo projects can be claimed' }, { status: 400 });
-			}
-			const agent = await getAgentByName<Env, DbAgentBase>(this.env.DbAgent, projectId);
-			await agent.claimProject();
-			return Response.json({ claimed: true });
 		}
 
 		// The gateway socket: one client WebSocket for the whole database,

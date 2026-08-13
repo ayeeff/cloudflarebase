@@ -34,9 +34,6 @@ export const agentManifestSchema = z.strictObject({
 		.min(1),
 	entrypoint: z.strictObject({ assertEnvType: z.string().min(1) }),
 	erase: z.strictObject({ method: z.literal('DELETE'), path: z.string().startsWith('/') }),
-	/** Demo-claim fan-in (docs/managed-service-design.md). Optional: agents
-	 * without demo state simply have nothing to do when a demo is claimed. */
-	claim: z.strictObject({ method: z.literal('PUT'), path: z.string().startsWith('/') }).optional(),
 	bindings: z.strictObject({
 		ai: z.boolean().optional(),
 		sendEmail: z.array(z.string()).optional(),

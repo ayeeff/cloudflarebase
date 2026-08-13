@@ -8,7 +8,6 @@
 	"durableObjects": [{ "class": "AuthAgent", "scope": "perProject" }],
 	"entrypoint": { "assertEnvType": "AssertAuthAgentEnv" },
 	"erase": { "method": "DELETE", "path": "/internal/projects/:projectId" },
-	"claim": { "method": "PUT", "path": "/internal/projects/:projectId/claim" },
 	"bindings": {
 		"ai": true,
 		"sendEmail": ["EMAIL"],

@@ -101,9 +101,8 @@ export async function resolveAppClaim(
 		return { ok: false, status: 400, error: 'invalid project id' };
 	}
 	if (isDemoProjectId(projectId)) {
-		// No demo hosting: anonymous code execution is an abuse machine. Claimed
-		// demos keep their demo-shaped id and stay refused - create a named
-		// project to deploy.
+		// No demo hosting: anonymous code execution is an abuse machine. Demos
+		// are throwaway - create a real project to deploy.
 		return { ok: false, status: 403, error: 'demo projects cannot deploy apps' };
 	}
 	const parsedName = appNameSchema.safeParse(input);

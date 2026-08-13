@@ -52,8 +52,8 @@ deploy:production` / `deploy:preview` deploy it first. v1 is pass-through;
   on production apps' egress - and Phase C's metering must be rehearsable
   on preview without touching production.
 - **No demo hosting.** `DEMO_PROJECT_PATTERN` ids are refused at deploy
-  (403) in both the console and the agent; there is no claim manifest entry
-  because there are no demo caps to lift.
+  (403) in both the console and the agent - demos are throwaway and never
+  run code.
 - **Hard v1 caps** in `src/agent.ts`: 2 apps, 50 deploys/day, 5 MB modules
   (measured uncompressed - stricter than the design doc's gzip phrasing),
   1000 assets / 25 MB per deploy. Phase C swaps constants for plan lookups.

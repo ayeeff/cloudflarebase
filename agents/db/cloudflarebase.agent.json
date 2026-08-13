@@ -13,7 +13,6 @@
 	],
 	"entrypoint": { "assertEnvType": "AssertDbAgentEnv" },
 	"erase": { "method": "DELETE", "path": "/internal/projects/:projectId" },
-	"claim": { "method": "PUT", "path": "/internal/projects/:projectId/claim" },
 	"bindings": {
 		"analyticsEngine": [{ "binding": "DB_EVENTS", "dataset": "cloudflarebase_db_events" }],
 		"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent", "optional": true }]

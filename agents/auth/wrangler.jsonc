@@ -177,9 +177,9 @@
 			"vars": {
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 				// The launch configuration (open sign-ups + anonymous demos), so
-				// the managed flows - registration, verification, demo claim -
-				// are all exercisable on a laptop. env.test stays claimed: the
-				// e2e owner-claim setup depends on it.
+				// the managed flows - registration, verification - are all
+				// exercisable on a laptop. env.test stays claimed: the e2e
+				// owner-claim setup depends on it.
 				"CONSOLE_SIGNUPS": "open",
 				// Local sign-up flows straight into a session: the verification
 				// mail only lands in wrangler's .eml files, so requiring it would
