@@ -7,7 +7,6 @@
 	import type { AgentChatMessage, AgentChatReply } from '$lib/agents';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import * as Collapsible from '$lib/components/ui/collapsible';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
@@ -107,6 +106,31 @@
 	// Exact match: tool pages are siblings now (/db must not light on
 	// /db/tables); the API reference keeps its own prefix check via isApi.
 	const navActive = (href: string) => page.url.pathname === href;
+
+	// --- Contextual accordion (the compact sidebar). Inside a tool section
+	// only THAT section stays expanded and the others fold to their header;
+	// on hub pages with no active tool (Overview, Settings, API reference)
+	// every section opens, because the hub is where the operator picks a
+	// destination - and it is also what keeps every e2e nav click reachable.
+	// Manual folds are per pageview and reset when the ACTIVE section
+	// changes, mirroring the old always-open groups' unsaved folding. Derived
+	// from the URL on both server and client, so SSR never flashes. ---
+	const activeSection = $derived(
+		agentNav.find((section) => section.items.some((item) => navActive(item.href)))?.section ?? null
+	);
+	let sectionOverrides = $state<Record<string, boolean>>({});
+	$effect(() => {
+		void activeSection;
+		sectionOverrides = {};
+	});
+	const sectionOpen = (section: string) =>
+		sectionOverrides[section] ?? (activeSection === null || section === activeSection);
+	function toggleSection(section: string) {
+		sectionOverrides = { ...sectionOverrides, [section]: !sectionOpen(section) };
+	}
+	// Not-yet-shipped primitives fold away by default - they advertise, they
+	// don't navigate, so they never earn the accordion's auto-open.
+	let comingSoonOpen = $state(false);
 
 	// Functions left this list when the hosting agent shipped - apps and
 	// functions are the same artifact there (Phase B).
@@ -593,21 +617,26 @@
 			Cloudflarebase
 		</a>
 
-		<nav class="flex-1 space-y-6 overflow-y-auto px-3 py-4">
+		<nav class="flex-1 space-y-5 overflow-y-auto px-3 py-4">
 			<div>
 				<p
 					class="px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase"
 				>
 					Project
 				</p>
-				<a
-					href={resolve('/(app)/dashboard/(account)')}
-					data-testid="nav-all-projects"
-					class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-				>
-					<LayoutGrid class="h-4 w-4" />
-					All projects
-				</a>
+				{#if data.projects}
+					<!-- Operators only: for anonymous demo visitors the registry list
+					     never reaches the page data, and /dashboard would just mint
+					     another demo - the link is a dead end, so it isn't rendered. -->
+					<a
+						href={resolve('/(app)/dashboard/(account)')}
+						data-testid="nav-all-projects"
+						class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+					>
+						<LayoutGrid class="h-4 w-4" />
+						All projects
+					</a>
+				{/if}
 				<a
 					href={overviewHref}
 					data-testid="nav-overview"
@@ -657,60 +686,81 @@
 			</div>
 
 			<!-- One FOLDABLE group per agent (Authentication ▾, Database ▾, ...),
-			     each listing its tool pages as nested items - Neon/Supabase
-			     style, driven entirely by the manifest registry's console.pages.
-			     Open by default; folding is per pageview, deliberately unsaved. -->
+			     each listing its tool pages as nested items, driven entirely by
+			     the manifest registry's console.pages. Contextual accordion: the
+			     section owning the current page is expanded, the others fold to
+			     their header; hub pages (no active tool) open everything. Hand-
+			     rolled instead of the Collapsible component because the open
+			     state is URL-derived and must follow navigation - a controlled
+			     prop fighting the component's own state is where that breaks. -->
 			{#each agentNav as navSection (navSection.section)}
-				<Collapsible.Root open>
-					<Collapsible.Trigger
+				{@const open = sectionOpen(navSection.section)}
+				<div>
+					<button
+						type="button"
 						class="group flex w-full items-center justify-between rounded-md px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase transition-colors hover:text-foreground"
 						data-testid={`nav-section-${navSection.section.toLowerCase()}`}
+						data-state={open ? 'open' : 'closed'}
+						aria-expanded={open}
+						onclick={() => toggleSection(navSection.section)}
 					>
 						{navSection.section}
-						<ChevronDown
-							class="h-3.5 w-3.5 transition-transform group-data-[state=closed]:-rotate-90"
-						/>
-					</Collapsible.Trigger>
-					<Collapsible.Content class="space-y-0.5 pl-2">
-						<!-- eslint-disable svelte/no-navigation-without-resolve -- manifest-driven hrefs are prebuilt project-relative paths -->
-						{#each navSection.items as item (item.testId)}
-							{@const NavIcon = navIcons[item.icon] ?? KeyRound}
-							<a
-								href={item.href}
-								data-testid={item.testId}
-								class={[
-									'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-									navActive(item.href)
-										? 'bg-primary/10 text-primary'
-										: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-								]}
-							>
-								<NavIcon class="h-4 w-4" />
-								{item.title}
-							</a>
-						{/each}
-						<!-- eslint-enable svelte/no-navigation-without-resolve -->
-					</Collapsible.Content>
-				</Collapsible.Root>
+						<ChevronDown class={['h-3.5 w-3.5 transition-transform', !open && '-rotate-90']} />
+					</button>
+					{#if open}
+						<div class="space-y-0.5 pl-2">
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- manifest-driven hrefs are prebuilt project-relative paths -->
+							{#each navSection.items as item (item.testId)}
+								{@const NavIcon = navIcons[item.icon] ?? KeyRound}
+								<a
+									href={item.href}
+									data-testid={item.testId}
+									class={[
+										'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+										navActive(item.href)
+											? 'bg-primary/10 text-primary'
+											: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+									]}
+								>
+									<NavIcon class="h-4 w-4" />
+									{item.title}
+								</a>
+							{/each}
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						</div>
+					{/if}
+				</div>
 			{/each}
 
 			<div>
-				<p
-					class="px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase"
+				<button
+					type="button"
+					class="group flex w-full items-center justify-between rounded-md px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase transition-colors hover:text-foreground"
+					data-testid="nav-section-coming-soon"
+					data-state={comingSoonOpen ? 'open' : 'closed'}
+					aria-expanded={comingSoonOpen}
+					onclick={() => (comingSoonOpen = !comingSoonOpen)}
 				>
 					Coming soon
-				</p>
-				{#each comingSoon as item (item.label)}
-					<span
-						class="flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
-					>
-						<item.icon class="h-4 w-4" />
-						{item.label}
-						<Badge variant="outline" class="ml-auto text-[10px] text-muted-foreground/60"
-							>soon</Badge
-						>
-					</span>
-				{/each}
+					<ChevronDown
+						class={['h-3.5 w-3.5 transition-transform', !comingSoonOpen && '-rotate-90']}
+					/>
+				</button>
+				{#if comingSoonOpen}
+					<div class="space-y-0.5 pl-2">
+						{#each comingSoon as item (item.label)}
+							<span
+								class="flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
+							>
+								<item.icon class="h-4 w-4" />
+								{item.label}
+								<Badge variant="outline" class="ml-auto text-[10px] text-muted-foreground/60"
+									>soon</Badge
+								>
+							</span>
+						{/each}
+					</div>
+				{/if}
 			</div>
 
 			<div>
@@ -753,7 +803,7 @@
 						]}
 					>
 						<Settings class="h-4 w-4" />
-						Settings
+						Project settings
 					</a>
 				{/if}
 				{#if data.accountUser}
