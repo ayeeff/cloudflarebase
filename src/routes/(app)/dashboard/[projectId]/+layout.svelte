@@ -992,6 +992,9 @@
 					     heaviest thing in the bar. -->
 					<ModeToggle variant="ghost" class="h-8 w-8" testId="theme-toggle" />
 					{#if data.accountUser}
+						<!-- The rule renders with the avatar, never on its own: a demo
+						     visitor's header would otherwise end on a dangling divider. -->
+						<span class="h-5 w-px bg-border" aria-hidden="true"></span>
 						<!-- Operators only: anonymous demo visitors have no session
 						     (accountUser is null for them). The menu behind the avatar
 						     carries account settings and sign-out, same as the account

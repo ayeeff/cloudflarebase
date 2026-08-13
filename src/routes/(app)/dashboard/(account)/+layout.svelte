@@ -228,6 +228,9 @@
 			<div class="ml-auto flex items-center gap-2">
 				<ModeToggle variant="ghost" class="h-8 w-8" testId="theme-toggle" />
 				{#if data.accountUser}
+					<!-- The rule separates an appearance control from an identity one -
+					     it renders with the avatar, never on its own. -->
+					<span class="h-5 w-px bg-border" aria-hidden="true"></span>
 					<AccountMenu user={data.accountUser} />
 				{/if}
 			</div>
