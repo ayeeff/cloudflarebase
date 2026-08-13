@@ -488,12 +488,25 @@ header, because local workerd is dialled by port, not by subdomain; the
 header is ignored everywhere else. The hosting agent takes the next port
 pair: dev 8790, e2e 8800. Real upload/serve coverage is a small opt-in
 spec (`RUN_HOSTING_E2E=1`, the `RUN_AI_E2E` precedent) against the
-`-preview` namespace, because preview has no `cfbase.dev` route and
-serving is only verifiable where the wildcard exists.
+`-preview` namespace.
+
+**Preview serves on its own zone, `cfbase-preview.dev`** (added
+2026-08-13, so a preview deploy is reachable end to end rather than only
+recorded). It could not share `*.cfbase.dev`: a wildcard route maps to
+exactly ONE Worker. The obvious alternative, `*.preview.cfbase.dev`, is
+two levels deep - Universal SSL covers the apex plus one level only, so
+it would have required a paid Advanced Certificate Manager subscription
+in perpetuity to certify a preview environment. A separate zone is an
+order of magnitude cheaper and keeps the flat one-label subdomain scheme
+the whole design rests on, rather than paying to work around it. Preview
+apps therefore serve at `<app>.cfbase-preview.dev`, and preview's own
+control-plane D1 keeps its claims from colliding with production's.
 
 ### Phase B launch checklist for cloudflarebase.com (manual, in order)
 
-1. Register the `cfbase.dev` zone on the Cloudflare account.
+1. Register the `cfbase.dev` zone on the Cloudflare account (and
+   `cfbase-preview.dev`, which preview's wildcard route names - a deploy
+   of `--env preview` fails until that zone is active too).
 2. Subscribe to Workers for Platforms and create the dispatch
    namespaces: `npx wrangler dispatch-namespace create cfbase-apps` and
    `... create cfbase-apps-preview`.
@@ -505,9 +518,10 @@ serving is only verifiable where the wildcard exists.
    deploy both in order; preview gets its own `hosting-outbound-preview`
    so preview-branch outbound code never serves production egress), then
    the web worker.
-5. Add the wildcard route: `*.cfbase.dev/*` → `hosting-agent` on the
-   `cfbase.dev` zone (declared in the agent's `env.production` routes;
-   the deploy claims it once the zone exists).
+5. Add the wildcard routes: `*.cfbase.dev/*` → `hosting-agent` on the
+   `cfbase.dev` zone, and `*.cfbase-preview.dev/*` → `hosting-agent-preview`
+   on its own zone (both declared in the agent's env routes; each deploy
+   claims its route once the zone exists).
 
 ### GitHub App checklist (per deployment; optional everywhere)
 

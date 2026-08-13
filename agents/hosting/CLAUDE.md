@@ -2,10 +2,13 @@
 
 Apps and functions on Workers for Platforms (docs/managed-service-design.md,
 Phase B). One `HostingAgent` Durable Object per project orchestrates deploys;
-the SAME worker serves `*.cfbase.dev` by dispatching the first host label
-into the namespace - the script name IS the full subdomain, zero lookup, and
-dispatch NEVER parses a subdomain into app and branch (the control plane's
-claims table resolved that at deploy time).
+the SAME worker serves its environment's apex (`cfbase.dev` in production,
+`cfbase-preview.dev` in preview) by dispatching the first host label into the
+namespace - the script name IS the full subdomain, zero lookup, and dispatch
+NEVER parses a subdomain into app and branch (the control plane's claims
+table resolved that at deploy time). Nothing in the code names a domain:
+`HOSTING_DOMAIN` is a suffix the serve path strips, which is why a second
+zone was a config change and not a code one.
 
 Also read [AGENTS.md](AGENTS.md). Published as `@cloudflarebase/hosting`
 (the Supabase distribution model - see `agents/auth/CLAUDE.md` for the
@@ -105,8 +108,14 @@ deploy:production` / `deploy:preview` deploy it first. v1 is pass-through;
 - Never hand-edit `src/migrations.ts` or `drizzle/`; run `npm run migrations`.
 - Never name a file `src/env.ts` - it collides with `src/env.d.ts` and
   silently kills the ambient `Env` augmentation.
-- `env.production` requires `CF_ACCOUNT_ID` + `CF_HOSTING_API_TOKEN` secrets
-  and carries the `*.cfbase.dev/*` route - deploying it needs the zone to
-  exist first (Phase B launch checklist in the design doc).
+- `env.production` and `env.preview` both require `CF_ACCOUNT_ID` +
+  `CF_HOSTING_API_TOKEN` secrets and both carry a wildcard route -
+  `*.cfbase.dev/*` and `*.cfbase-preview.dev/*`. Deploying either needs its
+  zone to exist on the account first (Phase B launch checklist in the
+  design doc), and a deploy fails outright on a missing zone rather than
+  degrading. Preview has its OWN zone because a wildcard route maps to one
+  Worker, and `*.preview.cfbase.dev` would be two levels deep - beyond
+  Universal SSL's apex-plus-one-level coverage, so it would need paid
+  Advanced Certificate Manager forever.
 - The id schemas (`projectIdSchema`, `DEMO_PROJECT_PATTERN`) are deliberate
   copies mirrored across the console and all agents - keep them in sync.

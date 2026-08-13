@@ -132,6 +132,15 @@
 			"durable_objects": {
 				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }],
 			},
+			// Preview serves on its OWN zone, not a deeper label of cfbase.dev.
+			// A wildcard route maps to exactly one Worker, so preview cannot
+			// share production's - and `*.preview.cfbase.dev` would be two
+			// levels deep, which Universal SSL does not cover (it reaches the
+			// apex plus ONE level), forcing a paid Advanced Certificate Manager
+			// subscription. A separate zone keeps the flat one-label scheme the
+			// whole subdomain design rests on, with free Universal SSL.
+			// Deploying this env requires the zone to exist on the account.
+			"routes": [{ "pattern": "*.cfbase-preview.dev/*", "zone_name": "cfbase-preview.dev" }],
 			"dispatch_namespaces": [
 				{
 					"binding": "DISPATCH",
@@ -145,11 +154,12 @@
 			"vars": {
 				"SENTRY_DSN": "https://093f7505d223a871223f9a15130ef116@o4510375271530496.ingest.de.sentry.io/4511764377043024",
 				"SENTRY_ENV": "preview",
-				// Preview has no cfbase.dev route, so serving never triggers; the
-				// upload path is still real, which is what the opt-in e2e exercises.
-				"HOSTING_DOMAIN": "",
+				// Preview's own apex, matching the route above - so a preview
+				// deploy is reachable end to end and not just recorded.
+				"HOSTING_DOMAIN": "cfbase-preview.dev",
 				"DISPATCH_NAMESPACE": "cfbase-apps-preview",
 				"DISPATCH_OUTBOUND": "true",
+				"HOSTING_APEX_REDIRECT": "https://cloudflarebase.com",
 			},
 			// Preview drives the REAL Cloudflare API against cfbase-apps-preview
 			// (the RUN_HOSTING_E2E spec depends on it), so it needs the same
