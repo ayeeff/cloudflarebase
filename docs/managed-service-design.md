@@ -517,17 +517,25 @@ self-hosted install).
      workflow, reads the tarball) and **Workflows: Read and write**
      (GitHub refuses to create a file under `.github/workflows/` without
      it). Metadata: Read-only is implied.
-   - Subscribe to events: **Push** and **Installation**.
-   - Where can this be installed: "Any account" for a public service.
+   - Subscribe to events: **Push**. Set the PERMISSIONS FIRST - the event
+     list is filtered by them, so on a fresh form Push is not offered at
+     all and only Meta/Security advisory show. `installation` needs no
+     subscription; GitHub delivers it to every App, which is why the
+     webhook's uninstall handling works without a checkbox.
+   - Where can this be installed: **Any account** for a managed service -
+     the default "Only on this account" would let nobody but us connect a
+     repository. Changeable later.
 2. **Generate a private key** on the App's page. It downloads as PKCS#1
    (`BEGIN RSA PRIVATE KEY`) - paste it VERBATIM, no `openssl pkcs8`
    conversion; `server/github.ts` wraps it.
-3. **Set the four secrets** on the WEB worker (`wrangler secret put`, in
-   the right environment): `GITHUB_APP_ID` (the numeric App ID),
-   `GITHUB_APP_SLUG` (the URL slug from
-   `https://github.com/apps/<slug>`), `GITHUB_APP_PRIVATE_KEY`,
+3. **Set the four secrets** on the WEB worker (`wrangler secret put`):
+   `GITHUB_APP_ID` (the numeric App ID), `GITHUB_APP_SLUG` (the URL slug
+   from `https://github.com/apps/<slug>`), `GITHUB_APP_PRIVATE_KEY`,
    `GITHUB_APP_WEBHOOK_SECRET`. All four or the App reads as
-   unconfigured - there is no half-configured state.
+   unconfigured - there is no half-configured state. Running the puts for
+   BOTH `--env production` and `--env preview` is harmless and writes to
+   the same place (one script, one secret store), but they must carry the
+   SAME values: the second put overwrites the first for production too.
 4. **Verify**: the Hosting page's GitHub card should offer "Connect
    repository" instead of the manual token steps, and GitHub's App
    settings → Advanced should show a green `ping` delivery.
