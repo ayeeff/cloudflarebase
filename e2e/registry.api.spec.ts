@@ -80,6 +80,17 @@ test.describe('project registry', () => {
 
 		// ...and the agent's database is empty rather than merely unreferenced.
 		// Dropping only the row would strand a Durable Object holding real users.
+		//
+		// A deleted id is unreachable (no registry row, no project), so the
+		// proof is to REGISTER IT AGAIN: whoever takes the name next must find
+		// an empty backend, not the previous tenant's user list. That is the
+		// invariant that actually matters, and it is stronger than reading the
+		// same id through a hole that no longer exists.
+		const reclaimed = await request.post('/api/registry/projects', {
+			data: { id, name: 'Reclaimed' }
+		});
+		expect(reclaimed.status(), await reclaimed.text()).toBe(201);
+
 		await expect
 			.poll(
 				async () => {
@@ -89,6 +100,8 @@ test.describe('project registry', () => {
 				{ timeout: 15_000 }
 			)
 			.toBe(0);
+
+		await request.delete(`/api/registry/projects/${id}`);
 	});
 
 	test('deleting an unknown project is a 404', async ({ request }) => {

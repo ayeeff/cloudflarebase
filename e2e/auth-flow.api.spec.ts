@@ -1,10 +1,24 @@
 import { expect, test } from '@playwright/test';
-import { adminSessionPath, adminUserPath, authPath, overviewPath, uniqueEmail } from './helpers';
+import {
+	adminSessionPath,
+	adminUserPath,
+	authPath,
+	ensureProject,
+	overviewPath,
+	uniqueEmail
+} from './helpers';
 
 const PROJECT = 'e2e-api-flow';
 const PASSWORD = 'a-strong-password-42';
 
 test.describe('auth lifecycle (backend)', () => {
+	// Operator surfaces answer only for registered ids.
+	test.beforeAll(async ({ request }) => {
+		for (const project of [PROJECT, 'e2e-api-revoke', 'e2e-api-delete-user']) {
+			await ensureProject(request, project);
+		}
+	});
+
 	test('sign up → session → sign out', async ({ request }) => {
 		const email = uniqueEmail('lifecycle');
 

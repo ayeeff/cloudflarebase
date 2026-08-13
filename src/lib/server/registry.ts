@@ -128,14 +128,20 @@ export interface ProjectOwnership {
 	registered: boolean;
 	/** The owning org; null on unowned rows (visible to any operator). */
 	orgId: string | null;
+	/**
+	 * The control plane could not answer. Distinct from `registered: false`,
+	 * and the guard depends on the difference: an unregistered id is nobody's
+	 * project and is refused, so a D1 blip reported as "unregistered" would
+	 * lock every operator out of every project instead of asking for a retry.
+	 */
+	unavailable?: boolean;
 }
 
 /**
- * The guard's per-request ownership lookup. Unregistered ids answer
- * `registered: false` - they keep today's any-operator behaviour. Returns
- * that same answer when the control plane is unreachable: failing open
- * preserves the pre-ownership behaviour during an outage instead of locking
- * every operator out, and the capture keeps it visible.
+ * The guard's per-request ownership lookup. `registered: false` means the id
+ * is nobody's project, which the guard refuses - so an outage must NOT answer
+ * that way. It answers `unavailable` instead, and the guard asks for a retry
+ * rather than telling every operator their projects are gone.
  */
 export async function getProjectOwnership(
 	platform: App.Platform | undefined,
@@ -159,7 +165,7 @@ export async function getProjectOwnership(
 			level: 'error',
 			tags: { operation: 'project-ownership', projectId }
 		});
-		return { registered: false, orgId: null };
+		return { registered: false, orgId: null, unavailable: true };
 	}
 }
 

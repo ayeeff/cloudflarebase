@@ -20,6 +20,19 @@ export function serverError(status: number, message: string, cause?: unknown): n
 	error(status, message);
 }
 
+/**
+ * One path segment built from an untrusted id.
+ *
+ * `encodeURIComponent` is not enough on its own: it leaves `.` alone, so an id
+ * of `..` survives it intact and the URL parser then resolves it, climbing a
+ * level out of the intended prefix. Encoding hides the slashes; this rejects
+ * the dots.
+ */
+export function agentSegment(value: string): string {
+	if (value === '.' || value === '..') error(400, 'invalid resource id');
+	return encodeURIComponent(value);
+}
+
 /** Project ids become Durable Object names and cookie prefixes - keep them tame. */
 export function assertProjectId(projectId: string | undefined): string {
 	const parsed = projectIdSchema.safeParse(projectId);
@@ -53,6 +66,9 @@ export function requireAgent(platform: App.Platform | undefined, entry: AppAgent
 /**
  * Builds the agent-worker URL for a project sub-path, preserving the caller's
  * origin so the agent resolves cookies/redirects against the dashboard.
+ *
+ * For any sub-path containing a ROUTE PARAMETER, use `agentProxyUrl` instead -
+ * this one does not check where the result lands.
  */
 export function agentUrl(
 	origin: string,
@@ -61,6 +77,39 @@ export function agentUrl(
 	subPath: string
 ): string {
 	return `${origin}/agents/${entry.manifest.worker}/${projectId}${subPath}`;
+}
+
+/**
+ * Builds a proxy URL from a FIXED prefix plus an untrusted rest, and refuses
+ * anything that does not land under that prefix.
+ *
+ * This is not paranoia, it is the fix for a live hole. SvelteKit decodes route
+ * parameters, so `%2F` and `%2E%2E` arrive as real slashes and real dot
+ * segments; interpolating them into a URL string hands the URL parser a
+ * traversal, and it resolves it. `/api/projects/<id>/auth/..%2F..%2Fadmin%2Fusers`
+ * therefore normalised to `/agents/auth-agent/<id>/admin/users` - the operator
+ * user list - on a route the guard had already classified PUBLIC from its
+ * `auth/` prefix, so it answered 200 to anyone. One more level up crossed into
+ * another project entirely.
+ *
+ * Normalising first and then requiring the prefix is what makes this
+ * encoding-agnostic: whatever the caller writes, the check runs on the path
+ * the agent will actually see.
+ */
+export function agentProxyUrl(
+	origin: string,
+	entry: AppAgentEntry,
+	projectId: string,
+	prefix: string,
+	rest: string,
+	search = ''
+): string {
+	const base = `/agents/${entry.manifest.worker}/${projectId}${prefix}`;
+	const url = new URL(`${origin}${base}${rest ? `/${rest}` : ''}${search}`);
+	if (url.pathname !== base && !url.pathname.startsWith(`${base}/`)) {
+		error(400, 'invalid agent path');
+	}
+	return url.toString();
 }
 
 /**

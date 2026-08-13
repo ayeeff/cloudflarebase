@@ -1,5 +1,5 @@
 import { AGENT_REGISTRY } from '$lib/agent-registry';
-import { agentUrl, assertProjectId, requireAgent, toNativeResponse } from '$lib/server/agents';
+import { agentProxyUrl, assertProjectId, requireAgent, toNativeResponse } from '$lib/server/agents';
 import type { RequestHandler } from './$types';
 
 /**
@@ -14,7 +14,9 @@ const proxy: RequestHandler = async ({ params, request, url, platform }) => {
 	const entry = AGENT_REGISTRY.db;
 	const agent = requireAgent(platform, entry);
 
-	const target = agentUrl(url.origin, entry, projectId, `/tables/${params.path}${url.search}`);
+	// agentProxyUrl: this prefix is PUBLIC, so a decoded traversal in
+	// `params.path` would climb straight out of it into the operator surface.
+	const target = agentProxyUrl(url.origin, entry, projectId, '/tables', params.path, url.search);
 	const body =
 		request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer();
 	const headers = new Headers(request.headers);

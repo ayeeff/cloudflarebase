@@ -1,5 +1,5 @@
 import {
-	agentUrl,
+	agentProxyUrl,
 	assertProjectId,
 	requireAuthAgent,
 	toNativeResponse
@@ -15,7 +15,10 @@ const proxy: RequestHandler = async ({ params, request, url, platform }) => {
 	const projectId = assertProjectId(params.projectId);
 	const agent = requireAuthAgent(platform);
 
-	const target = agentUrl(url.origin, projectId, `/api/auth/${params.path}${url.search}`);
+	// agentProxyUrl, not agentUrl: `params.path` is decoded, so an encoded
+	// traversal in it would climb out of /api/auth - a PUBLIC prefix - into
+	// this project's operator routes, or into another project entirely.
+	const target = agentProxyUrl(url.origin, projectId, '/api/auth', params.path, url.search);
 	const body =
 		request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer();
 	const headers = new Headers(request.headers);

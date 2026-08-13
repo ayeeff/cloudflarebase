@@ -1,6 +1,6 @@
 import { dev } from '$app/environment';
 import { agentByApiPrefix, agentByWorkerSegment, routeAccess } from '$lib/agent-registry';
-import { RESERVED_PROJECT_IDS } from '$lib/console';
+import { CONSOLE_DASHBOARD_PAGES, CONSOLE_PROJECT_ID, RESERVED_PROJECT_IDS } from '$lib/console';
 import { projectIdSchema } from '$lib/schemas/auth';
 import { agentFetcher, agentUrl, serverError } from '$lib/server/agents';
 import { isDemoMode, isDemoProjectId, resolveConsoleIdentity } from '$lib/server/console';
@@ -101,7 +101,17 @@ const applicationHandle: Handle = async ({ event, resolve }) => {
 };
 
 const apiRateLimitHandle: Handle = async ({ event, resolve }) => {
-	if (event.url.pathname === '/api' || event.url.pathname.startsWith('/api/')) {
+	// `/admin` is in scope as well as `/api`: its login action is a password
+	// form the console guard never sees (the route classifies as open and
+	// carries its own ADMIN_SECRET check), so without this it is the one
+	// credential surface on the deployment that nothing throttles at all. It
+	// also fans out to every project agent once authenticated.
+	const limited =
+		event.url.pathname === '/api' ||
+		event.url.pathname.startsWith('/api/') ||
+		event.url.pathname === '/admin' ||
+		event.url.pathname.startsWith('/admin/');
+	if (limited) {
 		const limiter = event.platform?.env?.API_RATE_LIMITER;
 
 		if (limiter) {
@@ -213,6 +223,12 @@ function classifyAccess(pathname: string): Access {
 	}
 
 	if (segments[0] === 'dashboard') {
+		// A static console page (/dashboard/organization) is not a project page.
+		// SvelteKit resolves it ahead of [projectId]; classifying it as a
+		// project would hand it a reserved id and get it refused below.
+		if (segments[1] && CONSOLE_DASHBOARD_PAGES.has(segments[1])) {
+			return { scope: 'operator', projectId: null, kind: 'page' };
+		}
 		return {
 			scope: 'operator',
 			projectId: segments[1] ?? null,
@@ -248,6 +264,17 @@ function cannotVerifySession(kind: 'page' | 'api'): Response {
 }
 
 /**
+ * "This project is not yours to reach" - deliberately the SAME answer for a
+ * project that does not exist, one someone else owns, and one whose id is
+ * reserved. Distinguishing them would turn the guard into an oracle for
+ * enumerating other tenants' project ids.
+ */
+function noSuchProject(kind: 'page' | 'api'): Response {
+	if (kind === 'page') redirect(303, '/dashboard');
+	return Response.json({ error: 'no such project' }, { status: 404 });
+}
+
+/**
  * Requires an operator session for every console surface, and - since Phase A
  * of the managed service - membership in the owning org for project-scoped
  * ones. Fails closed: an install that never sets DEMO_MODE is private the
@@ -262,6 +289,20 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 
 	const access = classifyAccess(event.url.pathname);
 	if (access.scope === 'open') return resolve(event);
+
+	// Reserved ids are not projects. Everything except `console` names a
+	// dashboard route or a system endpoint and has no instance behind it worth
+	// reaching, so it is refused here - before the session is resolved, so the
+	// answer cannot depend on who is asking. `console` DOES have an instance
+	// (the operator accounts themselves) and is admin-gated further down,
+	// after the identity is known.
+	if (
+		access.projectId &&
+		access.projectId !== CONSOLE_PROJECT_ID &&
+		RESERVED_PROJECT_IDS.has(access.projectId)
+	) {
+		return noSuchProject(access.kind);
+	}
 
 	// Deploy tokens (docs/managed-service-design.md, Phase B): a `cfbd_` bearer
 	// is CI's durable credential, accepted SOLELY on the deploy and
@@ -328,11 +369,11 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		return resolve(event);
 	}
 
-	// Ownership of the target project, resolved once per request. Registered
-	// rows carry their org. Reserved ids (the console instance itself) are
-	// never registry rows.
+	// Ownership of the target project, resolved once per request. The console
+	// instance is exempt: it is not a registry row and answers to the admin
+	// role instead, checked below once the identity is known.
 	const ownership: ProjectOwnership | null =
-		access.projectId && !RESERVED_PROJECT_IDS.has(access.projectId)
+		access.projectId && access.projectId !== CONSOLE_PROJECT_ID
 			? await getProjectOwnership(event.platform, access.projectId)
 			: null;
 
@@ -384,16 +425,35 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		event.locals.consoleIdentity = identity;
 		event.locals.consoleUser = identity.user;
 
-		// Owned projects require membership in the owning org. Rows with a null
-		// org stay visible to any operator (the self-hosted contract), and
-		// unregistered ids keep their pre-ownership behaviour.
-		if (ownership?.registered && ownership.orgId) {
-			const isMember = identity.organizations.some((org) => org.id === ownership.orgId);
-			if (!isMember) {
-				if (access.kind === 'page') {
-					redirect(303, '/dashboard');
-				}
-				return Response.json({ error: 'you do not have access to this project' }, { status: 403 });
+		// The console's own instance holds every operator account on the
+		// deployment, so it is administered, not owned: no registry row can
+		// speak for it, and membership in some org says nothing about it. The
+		// admin role is the only key, and a non-admin gets the same "no such
+		// project" as everyone else rather than a hint that it exists.
+		if (access.projectId === CONSOLE_PROJECT_ID) {
+			if (identity.user.role !== 'admin') return noSuchProject(access.kind);
+			return resolve(event);
+		}
+
+		if (ownership) {
+			// A control plane that cannot answer must not read as "not yours" -
+			// the ownership lookup returns `unavailable` for that, distinct from
+			// a row that genuinely is not there.
+			if (ownership.unavailable) return cannotVerifySession(access.kind);
+
+			// An id with no registry row is nobody's project, and reaching one
+			// used to MINT a working backend by URL: the agents provision a
+			// Durable Object on first touch, so /dashboard/<anything> handed out
+			// an auth stack and a database outside every org ceiling - and any
+			// other account guessing the same id landed in the same data.
+			if (!ownership.registered) return noSuchProject(access.kind);
+
+			// Owned rows require membership in the owning org. Rows with a null
+			// org predate ownership and stay visible to any operator - the
+			// self-hosted contract, where every operator is the same person.
+			if (ownership.orgId) {
+				const isMember = identity.organizations.some((org) => org.id === ownership.orgId);
+				if (!isMember) return noSuchProject(access.kind);
 			}
 		}
 		return resolve(event);

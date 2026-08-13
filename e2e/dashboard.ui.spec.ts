@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
 	authPage,
+	ensureProject,
 	SEED_PASSWORD,
 	SEED_PROJECT,
 	SEED_TOTAL_USERS,
@@ -10,6 +11,23 @@ import {
 
 /** Project used by the interactive flows - separate from the read-only seed. */
 const UI_PROJECT = 'e2e-ui';
+
+/**
+ * Every project this spec drives. A project is a registry row - reaching an
+ * unregistered id is refused - so they are minted the way an operator mints
+ * them instead of appearing because a URL was typed.
+ */
+const UI_PROJECTS = [
+	UI_PROJECT,
+	'e2e-ui-validation',
+	'e2e-ui-dice',
+	'e2e-ui-roles',
+	'e2e-ui-integration',
+	'e2e-ui-settings',
+	'e2e-ui-provider',
+	'e2e-ui-delete',
+	'e2e-ui-deeplink'
+];
 
 function statValue(page: Page, id: string) {
 	return page.getByTestId(`stat-${id}`).getByTestId('stat-value');
@@ -21,6 +39,11 @@ async function gotoAuthPage(page: Page, projectId: string) {
 }
 
 test.describe('authentication page (frontend)', () => {
+	// Operator surfaces answer only for registered ids.
+	test.beforeAll(async ({ request }) => {
+		for (const project of UI_PROJECTS) await ensureProject(request, project);
+	});
+
 	test('shows the seeded project data', async ({ page }) => {
 		await gotoAuthPage(page, SEED_PROJECT);
 

@@ -6,6 +6,7 @@ import * as Sentry from '@sentry/cloudflare';
 import migrations from './migrations';
 import {
 	createProjectAuth,
+	ensureConsoleAdmin,
 	ensurePersonalOrg,
 	type AuthDatabase,
 	type AuthEmailMessage,
@@ -1317,6 +1318,21 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		if (!user.isAnonymous) {
 			await ensurePersonalOrg(this.db, user);
 		}
+		// Console-instance only (the route guarantees it): the deployment's
+		// administrator, healed into place if the role has never been assigned.
+		await ensureConsoleAdmin(this.db);
+
+		// The role is read from the TABLE, not from the session payload. The
+		// console runs a 60s signed cookie cache, and this role now gates the
+		// console's own project surfaces - a demotion that stays unenforced for
+		// a minute is a minute of administrator access nobody granted. It also
+		// makes the heal above take effect on the request that performs it.
+		const [current] = await this.db
+			.select({ role: schema.user.role })
+			.from(schema.user)
+			.where(eq(schema.user.id, user.id))
+			.limit(1);
+		const role = current?.role ?? user.role ?? 'user';
 
 		const memberships = await this.db
 			.select({
@@ -1355,7 +1371,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				id: user.id,
 				email: user.email,
 				name: user.name || user.email,
-				role: user.role ?? 'user',
+				role,
 				emailVerified: !!user.emailVerified,
 				image: resolved.user.image ?? null,
 			},

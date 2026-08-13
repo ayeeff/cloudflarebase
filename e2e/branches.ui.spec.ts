@@ -20,9 +20,13 @@ async function gotoProject(page: Page, projectId: string) {
 }
 
 test.describe('branch switcher (frontend)', () => {
-	test('stays hidden on projects the registry does not know', async ({ page }) => {
-		await page.goto('/dashboard/e2e-seed');
-		await expect(page.getByRole('heading', { name: 'Project Overview' })).toBeVisible();
+	test('a project the registry does not know is not a dashboard at all', async ({ page }) => {
+		// This used to assert the branch switcher merely stayed hidden on an
+		// unregistered id - which meant the id rendered a working console, and
+		// touching it provisioned a real backend. Only a registry row makes a
+		// project now, so the URL lands back on the project list.
+		await page.goto(`/dashboard/e2e-unknown-${Date.now().toString(36)}`);
+		await expect(page).toHaveURL(/\/dashboard$/);
 		await expect(page.getByTestId('branch-switcher')).toHaveCount(0);
 	});
 

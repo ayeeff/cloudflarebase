@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { ensureProject } from './helpers';
 
 /**
  * Database tab (frontend). Uses its own project so collection churn never
@@ -28,6 +29,11 @@ async function createCollection(page: Page, name: string) {
 }
 
 test.describe('database page (frontend)', () => {
+	// Operator surfaces answer only for registered ids.
+	test.beforeAll(async ({ request }) => {
+		await ensureProject(request, DB_UI_PROJECT);
+	});
+
 	test('sidebar and overview expose the database surfaces', async ({ page }) => {
 		await page.goto(`/dashboard/${DB_UI_PROJECT}`);
 		await expect(page.getByTestId('product-db')).toBeVisible();
