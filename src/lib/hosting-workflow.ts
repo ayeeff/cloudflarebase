@@ -66,6 +66,11 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # GitHub's default is 360 minutes. A deploy that has not finished in 15 is
+    # not slow, it is stuck - a build waiting on a prompt, a prerender fetching
+    # a URL that never answers - and six hours of billed minutes is a bad way
+    # to find that out. Raise it if a genuine build needs longer.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 ${buildSteps}
@@ -120,6 +125,11 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # GitHub's default is 360 minutes. A deploy that has not finished in 15 is
+    # not slow, it is stuck - a build waiting on a prompt, a prerender fetching
+    # a URL that never answers - and six hours of billed minutes is a bad way
+    # to find that out. Raise it if a genuine build needs longer.
+    timeout-minutes: 15
     permissions:
       contents: read
       # Mints the identity token the console verifies. Without it the deploy
