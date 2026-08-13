@@ -491,9 +491,18 @@ serving is only verifiable where the wildcard exists.
 ### GitHub App checklist (per deployment; optional everywhere)
 
 Independent of the list above - hosting works without it, and an install
-that skips it keeps the manual deploy-token flow. Do it once per
-environment, because the callback and webhook URLs are origin-specific
-(production and preview need SEPARATE Apps).
+that skips it keeps the manual deploy-token flow.
+
+**ONE App for cloudflarebase.com, not one per environment.** The web
+`env.production` and `env.preview` are the SAME Worker
+(`cloudflarebase-com`; preview ships as versions of it) and Cloudflare
+secrets are per SCRIPT, so both share one secret store - a second App
+could never be reached by preview versions. Point the App at the
+production origin; preview versions inherit the same credentials, so a
+connect started from a preview URL redirects back to production, which is
+the honest behaviour for an ephemeral version. A genuinely separate App
+only makes sense for a genuinely separate deployment (another
+self-hosted install).
 
 1. **Register the App** at
    `https://github.com/settings/apps/new` (or under an org):
