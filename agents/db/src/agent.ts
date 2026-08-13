@@ -42,6 +42,7 @@ import {
 	type TableConfig,
 } from './schemas';
 import { drainUnusedBody } from './access';
+import { primaryLocation, type PrimaryLocation } from './colo';
 import { planDdl, uniqueViolationColumn } from './table-schema';
 import type { DbCollection } from './collection';
 import type { DbGateway } from './gateway';
@@ -178,6 +179,16 @@ export interface DbOverview {
 	projectId: string;
 	collections: DbCollectionSummary[];
 	tables: DbTableSummary[];
+	/**
+	 * Where the COORDINATOR runs. Shards self-report their colo in `repStatus`,
+	 * which is what normally places the dashboard's replication hub - but a
+	 * project with no shards yet has nobody to ask, and the map fell back to a
+	 * fixed mid-continent point that is a guess dressed as a fact. The parent
+	 * is a Durable Object with a real location of its own, and it is where the
+	 * first shard will be created, so it is the honest answer until one exists.
+	 * Nulls in local dev, like every other colo probe.
+	 */
+	location: PrimaryLocation;
 	state: DbAgentState;
 }
 
@@ -593,6 +604,9 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			projectId: this.name,
 			collections: this.state.collections,
 			tables: this.state.tables ?? [],
+			// Cached per isolate behind a 1.5s cap, so this costs one probe per
+			// wake at most and never delays the overview twice.
+			location: await primaryLocation(),
 			state: this.state,
 		};
 	}
