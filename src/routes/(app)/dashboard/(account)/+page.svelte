@@ -8,7 +8,8 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { projectIdSchema } from '$lib/schemas/auth';
-	import { ChevronRight, Database, GitBranch, Mail, Plus } from '@lucide/svelte';
+	import { ChevronRight, Database, GitBranch, Mail, Plus, Trash2 } from '@lucide/svelte';
+	import type { RegistryProject } from '$lib/agents';
 
 	let { data } = $props();
 
@@ -65,6 +66,39 @@
 				branches.some((branch) => branch.id.toLowerCase().includes(needle))
 		);
 	});
+
+	// Deleting a branch from the row that lists it. The branch's own settings
+	// page has carried this since branches shipped, but it is two navigations
+	// away (switch into the branch, then open settings) - which reads as "you
+	// cannot delete a branch". Same registry DELETE, same typed-id confirm as
+	// every other destructive panel in the console.
+	let deleteTarget = $state<RegistryProject | null>(null);
+	let deleteConfirm = $state('');
+	let deleteError = $state<string | null>(null);
+	let deleteBusy = $state(false);
+
+	async function deleteBranch() {
+		if (!deleteTarget || deleteConfirm !== deleteTarget.id) return;
+		deleteBusy = true;
+		deleteError = null;
+		try {
+			const response = await fetch(`/api/registry/projects/${deleteTarget.id}`, {
+				method: 'DELETE'
+			});
+			// 207: the registration is gone but an agent kept data - deleted from
+			// the console's point of view either way.
+			if (!response.ok && response.status !== 207) {
+				const body = (await response.json().catch(() => null)) as { error?: string } | null;
+				throw new Error(body?.error ?? `request failed (HTTP ${response.status})`);
+			}
+			deleteTarget = null;
+			await invalidateAll();
+		} catch (cause) {
+			deleteError = cause instanceof Error ? cause.message : String(cause);
+		} finally {
+			deleteBusy = false;
+		}
+	}
 
 	let name = $state('');
 	let id = $state('');
@@ -229,25 +263,63 @@
 									<p class="font-mono text-[10px] tracking-[0.1em] text-muted-foreground uppercase">
 										Branches
 									</p>
-									<p class="mt-0.5 text-[13px] font-medium tabular-nums">{branches.length}</p>
+									<!-- +1 for the root itself: `main` IS the bare project id,
+									     which is why createBranch refuses that name and why the
+									     switcher lists it. A project with no derived rows still
+									     has one branch, so 0 would never be a true answer. -->
+									<p class="mt-0.5 text-[13px] font-medium tabular-nums">
+										{branches.length + 1}
+									</p>
 								</div>
 							</div>
 						</a>
-						{#if branches.length}
-							<div class="space-y-0.5 border-t bg-muted/30 px-2 py-2">
-								{#each branches as branch (branch.id)}
+						<!-- The strip lists every branch, `main` included: the root row
+						     IS main (createBranch refuses the name because it would alias
+						     the bare id), so omitting it described the project as having
+						     no branches at all. It has no delete - deleting main means
+						     deleting the project, which lives in the project's own
+						     settings behind the same typed-id confirmation. -->
+						<div class="space-y-0.5 border-t bg-muted/30 px-2 py-2">
+							<a
+								href={resolve('/(app)/dashboard/[projectId]', { projectId: project.id })}
+								class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent"
+								data-testid="branch-row-main"
+							>
+								<GitBranch class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+								<span class="shrink-0 font-mono font-medium">main</span>
+								<span class="truncate font-mono text-muted-foreground">{project.id}</span>
+							</a>
+							{#each branches as branch (branch.id)}
+								<div
+									class="group/branch flex items-center rounded-md transition-colors hover:bg-accent"
+								>
 									<a
 										href={resolve('/(app)/dashboard/[projectId]', { projectId: branch.id })}
-										class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-accent"
+										class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-xs"
 										data-testid="branch-row"
 									>
 										<GitBranch class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 										<span class="shrink-0 font-mono font-medium">{branch.branchName}</span>
 										<span class="truncate font-mono text-muted-foreground">{branch.id}</span>
 									</a>
-								{/each}
-							</div>
-						{/if}
+									<!-- Hover-revealed, but never hover-ONLY: focus-visible
+									     brings it back for keyboard operators. -->
+									<button
+										type="button"
+										class="mr-1 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity group-hover/branch:opacity-100 hover:text-destructive focus-visible:opacity-100"
+										aria-label="Delete branch {branch.branchName}"
+										data-testid="delete-branch"
+										onclick={() => {
+											deleteTarget = branch;
+											deleteConfirm = '';
+											deleteError = null;
+										}}
+									>
+										<Trash2 class="h-3.5 w-3.5" />
+									</button>
+								</div>
+							{/each}
+						</div>
 					</div>
 				{/each}
 			</div>
@@ -278,6 +350,42 @@
 		</Card.Root>
 	{/if}
 </div>
+
+<Dialog.Root
+	open={!!deleteTarget}
+	onOpenChange={(open) => {
+		if (!open) deleteTarget = null;
+	}}
+>
+	<Dialog.Content data-testid="delete-branch-panel">
+		<Dialog.Header>
+			<Dialog.Title>Delete "{deleteTarget?.id}"?</Dialog.Title>
+			<Dialog.Description>
+				Deleting this branch erases its users, data, and deploys. The root project is untouched.
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="space-y-1.5">
+			<Label for="delete-branch-confirm">
+				Type <span class="font-mono font-medium">{deleteTarget?.id}</span> to confirm
+			</Label>
+			<Input id="delete-branch-confirm" bind:value={deleteConfirm} autocomplete="off" />
+		</div>
+		{#if deleteError}
+			<p class="text-sm text-destructive" data-testid="delete-branch-error">{deleteError}</p>
+		{/if}
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (deleteTarget = null)}>Cancel</Button>
+			<Button
+				variant="destructive"
+				disabled={deleteBusy || deleteConfirm !== deleteTarget?.id}
+				onclick={deleteBranch}
+				data-testid="confirm-delete-branch"
+			>
+				{deleteBusy ? 'Deleting…' : 'Delete branch'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <Dialog.Root bind:open={createOpen}>
 	<Dialog.Content data-testid="create-project">
