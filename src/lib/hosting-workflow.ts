@@ -46,6 +46,12 @@ const buildSteps = `      - uses: actions/setup-node@v4
       # Adjust to your stack; skipped when package.json has no build script.
       - name: Build
         if: hashFiles('package.json') != ''
+        # Bounded separately from the job so a hang is ATTRIBUTED. A job-level
+        # timeout alone reports "the job was cancelled", which does not say
+        # which step stopped - and a build that never exits is the likeliest
+        # thing to stop here, since the runner cannot start the deploy until
+        # this process exits.
+        timeout-minutes: 10
         run: npm run build --if-present`;
 
 export function deployWorkflowYaml(): string {
