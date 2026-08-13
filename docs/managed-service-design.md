@@ -2,8 +2,10 @@
 
 Status: Phase A IMPLEMENTED (2026-08-11; drafted the same day). Phase B
 (hosting) IMPLEMENTED (2026-08-12; amended the same day - subdomain
-scheme, collision auto-numbering, GitHub deploys + deploy tokens; the
-Phase B launch checklist lives at the end of the Phase B section). Phase
+scheme, collision auto-numbering, GitHub deploys + deploy tokens; amended
+again 2026-08-13 with the GitHub App - one install, no YAML the operator
+writes, and still no build farm; the Phase B launch checklist and the
+App's own checklist live at the end of the Phase B section). Phase
 C (billing/metering) and Phase D (custom domains, orgs billing,
 BYO-account enterprise) are deferred and
 only sketched here. Phase A launch checklist for cloudflarebase.com, in
@@ -330,13 +332,92 @@ hosted build service (webhook-driven builds on our infra stay Phase D):
   pastes into their repo secrets. The card deep-links GitHub's new-file
   editor with the workflow PRE-FILLED plus the repo's secrets page, so
   setup is two clicks on GitHub - after which every push deploys
-  automatically. (Asked at build time: could this be a
-  Workers-Builds-style bot with no setup at all? A true bot means running
-  the user's `npm run build` on OUR infrastructure - webhook → clone →
-  build - which is arbitrary code execution at build time, i.e. the build
-  farm this section explicitly defers. The workflow gets the same
-  push-to-deploy behaviour with GitHub's runners doing the building; the
-  GitHub App + build farm upgrade is Phase D.)
+  automatically. This manual path is now the FALLBACK, kept for consoles
+  with no GitHub App configured (the self-hosted default); the App path
+  below supersedes it wherever one exists.
+
+### The GitHub App - one install, no YAML, still no build farm
+
+Amended 2026-08-13. The question the section above deferred ("could this
+be a Workers-Builds-style bot with no setup at all?") splits in two once
+you ask what the repository actually needs, and only ONE half requires a
+build farm:
+
+- **`build` mode** - the repository has a build step, so it has to be
+  built somewhere, and that somewhere stays GitHub's runners. The App
+  writes `.github/workflows/cloudflarebase.yml` on the operator's behalf
+  (`contents: write`), so the operator never sees YAML even though a file
+  exists. **No secret is stored anywhere**: the workflow declares
+  `id-token: write` and the CLI mints a GitHub OIDC token, which the
+  console verifies against GitHub's JWKS - the same mechanism this repo
+  already uses to publish to npm. Nothing to rotate, nothing to leak.
+- **`direct` mode** - the repository needs no build (committed HTML, or a
+  committed output directory), so it needs no runner AND no file in the
+  repository at all. The push webhook fetches the commit tarball and hands
+  it to the hosting agent. Zero Actions minutes, zero repo footprint.
+  This covers plain static sites, which is a large share of "just deploy
+  my site".
+
+Which mode a repository gets is INSPECTED at connect time (a `build`
+script in `package.json` → build; committed `dist`/`build`/`public`/... or
+a root `index.html` → direct; unreadable → build, which degrades to "the
+runner reports the problem" rather than publishing the wrong tree). The
+operator can override in the connect dialog.
+
+Mechanism:
+
+- **Credentials are four optional secrets on the WEB worker**
+  (`GITHUB_APP_ID`, `_SLUG`, `_PRIVATE_KEY`, `_WEBHOOK_SECRET`), all or
+  nothing. Unconfigured is the self-hosted default and the whole feature
+  reads as absent: the Hosting page offers the manual token flow, the
+  connect routes 503 honestly, and the webhook 404s. Pinned by
+  `e2e/github-connect.api.spec.ts` - adding push-to-deploy must not open a
+  single new surface on an install that never asked for it.
+- **GitHub hands out PKCS#1 private keys and WebCrypto imports only
+  PKCS#8**, so `server/github.ts` wraps PKCS#1 in a `PrivateKeyInfo`
+  rather than making every operator run `openssl pkcs8` before pasting the
+  key (verified byte-identical to node's own PKCS#8 encoding).
+- **The install callback is the ONE moment an `installation_id` is
+  trustworthy** - it arrives on a redirect anyone can craft, so it is only
+  believed while accompanied by state we signed, for the operator holding
+  the session. The callback records the installation → org binding once;
+  every later connect checks that binding instead of the id.
+- **Two independent checks authorize a deploy**: GitHub's signature proves
+  which REPOSITORY is calling, and the `github_connection` table says
+  which PROJECT that repository may deploy to. A verified token for an
+  unconnected repo grants nothing, which keeps the trust anchored in the
+  console. `direct` connections are excluded from OIDC deliberately - they
+  deploy from the webhook and never present a token, so accepting one
+  would be a second, unaudited path into the same app.
+- **The webhook is the only unauthenticated route under `/api`**, and has
+  to be: GitHub carries no session. Its HMAC signature is checked over the
+  RAW body before the payload is parsed. It acts only on `direct`
+  connections - `build` repositories are deployed by Actions, which
+  triggers on the same push.
+- **Connections live on the ROOT project** and cover its branches, exactly
+  like a deploy token: a push to the default branch deploys the root, any
+  other branch creates and deploys `<root>--<branch>`.
+- **The console resolves the tarball URL from GitHub's 302**, so the
+  installation token never leaves the control plane - the agent receives a
+  signed, short-lived URL it fetches anonymously, and only from GitHub
+  hosts. The agent's `gitDeploy` unpacks it (`agents/hosting/src/tar.ts`,
+  a bounded tar+gzip reader: the byte ceiling is enforced WHILE
+  decompressing, because a decompression bomb is a handful of bytes on the
+  wire) and calls the same `publish()` the multipart route calls, so caps
+  and bookkeeping cannot diverge between the two paths.
+
+What is still Phase D: running the user's `npm run build` on OUR
+infrastructure. That is the only remaining reason to want a build farm,
+and it buys exactly one thing the above does not - a repository that
+builds AND has no file in it.
+
+**Setting the App up** (once per deployment; see the launch checklist):
+register a GitHub App with `contents: write` (writes the workflow) and
+`metadata: read`, subscribe it to the `push` and `installation` events
+pointed at `<origin>/api/github/webhook`, set the callback URL to
+`<origin>/api/github/callback`, then `wrangler secret put` the four
+values. Public repos and private repos behave identically; the
+installation token only ever reaches repositories the operator selected.
 
 ### Guardrails from day one
 
@@ -406,6 +487,41 @@ serving is only verifiable where the wildcard exists.
 5. Add the wildcard route: `*.cfbase.dev/*` → `hosting-agent` on the
    `cfbase.dev` zone (declared in the agent's `env.production` routes;
    the deploy claims it once the zone exists).
+
+### GitHub App checklist (per deployment; optional everywhere)
+
+Independent of the list above - hosting works without it, and an install
+that skips it keeps the manual deploy-token flow. Do it once per
+environment, because the callback and webhook URLs are origin-specific
+(production and preview need SEPARATE Apps).
+
+1. **Register the App** at
+   `https://github.com/settings/apps/new` (or under an org):
+   - Homepage URL: `<origin>`
+   - Callback URL: `<origin>/api/github/callback`, "Request user
+     authorization (OAuth) during installation" OFF - the console binds
+     the installation through its own signed state, not a user token.
+   - Setup URL: leave blank (the callback handles the redirect).
+   - Webhook URL `<origin>/api/github/webhook`, Active ON, and a secret
+     you generate (`openssl rand -hex 32`).
+   - Repository permissions: **Contents: Read and write** (writes the
+     workflow, reads the tarball) and **Workflows: Read and write**
+     (GitHub refuses to create a file under `.github/workflows/` without
+     it). Metadata: Read-only is implied.
+   - Subscribe to events: **Push** and **Installation**.
+   - Where can this be installed: "Any account" for a public service.
+2. **Generate a private key** on the App's page. It downloads as PKCS#1
+   (`BEGIN RSA PRIVATE KEY`) - paste it VERBATIM, no `openssl pkcs8`
+   conversion; `server/github.ts` wraps it.
+3. **Set the four secrets** on the WEB worker (`wrangler secret put`, in
+   the right environment): `GITHUB_APP_ID` (the numeric App ID),
+   `GITHUB_APP_SLUG` (the URL slug from
+   `https://github.com/apps/<slug>`), `GITHUB_APP_PRIVATE_KEY`,
+   `GITHUB_APP_WEBHOOK_SECRET`. All four or the App reads as
+   unconfigured - there is no half-configured state.
+4. **Verify**: the Hosting page's GitHub card should offer "Connect
+   repository" instead of the manual token steps, and GitHub's App
+   settings → Advanced should show a green `ping` delivery.
 
 ## Deferred: Phase C and D sketches
 

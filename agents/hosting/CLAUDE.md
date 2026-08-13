@@ -51,6 +51,24 @@ deploy:production` / `deploy:preview` deploy it first. v1 is pass-through;
   to `preview`, so a shared instance would put preview-branch outbound code
   on production apps' egress - and Phase C's metering must be rehearsable
   on preview without touching production.
+- **Two deploy entry points, one publisher.** `deployApp` (multipart, the
+  CLI's path) and `gitDeploy` (a repository tarball, from a push webhook the
+  console verified) both parse into modules+assets and then call `publish()`,
+  which owns every cap, the WfP upload, and the deploy record - so the two
+  paths cannot drift apart. `gateDeploy` runs the demo refusal, the claim
+  check, and the daily ceiling before either reads a body.
+- **`gitDeploy` never holds a GitHub credential.** The console resolves
+  GitHub's tarball 302 into a signed, short-lived codeload URL and passes
+  that; `/internal/projects/:id/apps/:app/git-deploy` additionally refuses
+  any URL that is not on a GitHub download host, because the agent fetches
+  it server side. `src/tar.ts` is the reader: bounded WHILE decompressing
+  (a decompression bomb is a handful of bytes on the wire), regular files
+  only (a symlink would be a path-traversal primitive), dotfiles and
+  `node_modules` dropped, and a missing assets directory selects NOTHING
+  rather than falling back to the repo root - a typo must not publish the
+  whole source tree. Pinned by `src/tar.unit.test.ts` against a real bsdtar
+  archive, including a path too long for tar's 100-byte name field (it
+  travels as a PAX extended header; getting it wrong truncates silently).
 - **No demo hosting.** `DEMO_PROJECT_PATTERN` ids are refused at deploy
   (403) in both the console and the agent - demos are throwaway and never
   run code.
@@ -70,6 +88,7 @@ deploy:production` / `deploy:preview` deploy it first. v1 is pass-through;
 | Command                     | Purpose                                                              |
 | --------------------------- | -------------------------------------------------------------------- |
 | `npx tsc --noEmit`          | Typecheck (also runs the `bindings.test-d.ts` contract negatives)    |
+| `npm run test:unit`         | Tar/gzip reader tests against a real archive (direct git deploys)    |
 | `npm run migrations`        | Generate migrations after `src/db/schema.ts` edits, then inline them |
 | `npx wrangler types`        | Regenerate Worker types after binding changes                        |
 | `npm run dev`               | env.local on :8790 (stub mode)                                       |

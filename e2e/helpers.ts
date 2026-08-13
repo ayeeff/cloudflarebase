@@ -198,6 +198,31 @@ export function hostingTokenPath(projectId: string, tokenId: string): string {
 	return `/api/projects/${projectId}/hosting/tokens/${encodeURIComponent(tokenId)}`;
 }
 
+// --- GitHub push-to-deploy (docs/managed-service-design.md, Phase B) ---
+
+export function githubStatePath(projectId: string): string {
+	return `/api/projects/${projectId}/hosting/github`;
+}
+
+export function githubInstallPath(projectId: string): string {
+	return `/api/projects/${projectId}/hosting/github/install`;
+}
+
+export function githubReposPath(projectId: string, installation = 1): string {
+	return `/api/projects/${projectId}/hosting/github/repos?installation=${installation}`;
+}
+
+export function githubConnectionsPath(projectId: string): string {
+	return `/api/projects/${projectId}/hosting/github/connections`;
+}
+
+export function githubConnectionPath(projectId: string, app: string): string {
+	return `/api/projects/${projectId}/hosting/github/connections/${encodeURIComponent(app)}`;
+}
+
+/** The webhook is public by exception - its HMAC signature is the credential. */
+export const GITHUB_WEBHOOK_PATH = '/api/github/webhook';
+
 export function projectBranchesPath(projectId: string): string {
 	return `/api/projects/${projectId}/branches`;
 }
