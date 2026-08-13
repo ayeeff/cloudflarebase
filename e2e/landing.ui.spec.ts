@@ -55,6 +55,10 @@ test.describe('landing page (frontend)', () => {
 		expect(projectId).toMatch(/^demo-[a-f0-9]{12}$/);
 		await expect(page.getByTestId('project-copilot')).toBeVisible();
 
+		// Demos are throwaway: the header funnel offers a REAL project through
+		// sign-up/sign-in, never a claim of this one.
+		await expect(page.getByTestId('demo-signup-cta')).toHaveAttribute('href', /\/login\?signup=1$/);
+
 		// The Firebase-style sidebar navigates into Authentication.
 		await page.getByTestId('nav-auth').click();
 		await expect(page).toHaveURL(new RegExp(`/dashboard/${projectId}/auth$`));
@@ -67,5 +71,28 @@ test.describe('landing page (frontend)', () => {
 		await page.goto('/');
 		await page.goto('/dashboard');
 		expect(page.url()).toBe(first);
+	});
+});
+
+test.describe('landing page (signed in)', () => {
+	// Default storage state: the console owner's session. An operator is past
+	// the demo - every CTA routes to their console instead of pitching it.
+	test('the hero and nav route an operator to the console, not the demo', async ({ page }) => {
+		await page.goto('/');
+
+		await expect(page.getByTestId('nav-dashboard')).toBeVisible();
+		await expect(page.getByRole('link', { name: 'Open your dashboard' }).first()).toBeVisible();
+		await expect(page.getByRole('link', { name: 'Open the live demo' })).toHaveCount(0);
+	});
+
+	test('/login bounces a signed-in operator to their destination', async ({ page }) => {
+		// /login is an open route the guard never resolves a session for; the
+		// loader must do it itself, or the demo funnel's ?signup=1 link would
+		// offer a sign-in form to someone who already has a session.
+		await page.goto('/login?signup=1');
+		await expect(page).toHaveURL(/\/dashboard$/);
+
+		await page.goto('/login?next=%2Fdashboard%2Forganization');
+		await expect(page).toHaveURL(/\/dashboard\/organization$/);
 	});
 });

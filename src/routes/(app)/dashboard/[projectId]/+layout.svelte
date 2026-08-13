@@ -7,7 +7,6 @@
 	import type { AgentChatMessage, AgentChatReply } from '$lib/agents';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import * as Collapsible from '$lib/components/ui/collapsible';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { Input } from '$lib/components/ui/input';
@@ -16,7 +15,9 @@
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 	import { createBranchSchema, projectIdSchema } from '$lib/schemas/auth';
+	import AccountMenu from '$lib/components/account-menu.svelte';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
+	import SignOutButton from '$lib/components/sign-out-button.svelte';
 	import { onMount, tick } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
@@ -28,6 +29,7 @@
 		ChevronsUpDown,
 		Clock,
 		Database,
+		Ellipsis,
 		FlaskConical,
 		FolderTree,
 		GitBranch,
@@ -41,6 +43,7 @@
 		Plug,
 		Plus,
 		Radio,
+		Rocket,
 		SendHorizontal,
 		Settings,
 		ShieldCheck,
@@ -48,8 +51,7 @@
 		Table2,
 		TerminalSquare,
 		UsersRound,
-		X,
-		Zap
+		X
 	} from '@lucide/svelte';
 
 	let { children, data } = $props();
@@ -77,6 +79,7 @@
 	let copilotHistoryLoading = $state(true);
 
 	const overviewHref = $derived(resolve('/(app)/dashboard/[projectId]', { projectId }));
+	const settingsHref = $derived(resolve('/(app)/dashboard/[projectId]/settings', { projectId }));
 	const apiHref = $derived(resolve('/(app)/dashboard/[projectId]/api', { projectId }));
 	const isApi = $derived(page.url.pathname.startsWith(apiHref));
 
@@ -94,6 +97,7 @@
 		globe: Globe,
 		history: History,
 		plug: Plug,
+		rocket: Rocket,
 		settings: Settings,
 		'shield-check': ShieldCheck,
 		table: Table2,
@@ -104,9 +108,36 @@
 	// /db/tables); the API reference keeps its own prefix check via isApi.
 	const navActive = (href: string) => page.url.pathname === href;
 
+	// --- Contextual accordion with a peek (the compact sidebar). Every section
+	// folds by default - including on hub pages - and only the section owning
+	// the current page expands, so the sidebar is a short list of destinations
+	// rather than a wall of every tool page. A folded section is never empty:
+	// it keeps its manifest `peek` of lead pages plus a "<n> more" row, which
+	// is how the console still says what the platform holds without listing
+	// it. Manual folds are per pageview and reset when the ACTIVE section
+	// changes. Derived from the URL on both server and client, so SSR never
+	// flashes. ---
+	const activeSection = $derived(
+		agentNav.find((section) => section.items.some((item) => navActive(item.href)))?.section ?? null
+	);
+	let sectionOverrides = $state<Record<string, boolean>>({});
+	$effect(() => {
+		void activeSection;
+		sectionOverrides = {};
+	});
+	const sectionOpen = (section: string) => sectionOverrides[section] ?? section === activeSection;
+	function setSection(section: string, open: boolean) {
+		sectionOverrides = { ...sectionOverrides, [section]: open };
+	}
+	// Not-yet-shipped primitives peek like the agent sections - one name, then
+	// a count. Advertising IS the job here: a header alone says nothing about
+	// what is coming, and the peek is what makes the roadmap visible.
+	let comingSoonOpen = $state(true);
+
+	// Functions left this list when the hosting agent shipped - apps and
+	// functions are the same artifact there (Phase B).
 	const comingSoon = [
 		{ label: 'Storage', icon: HardDrive },
-		{ label: 'Functions', icon: Zap },
 		{ label: 'Realtime', icon: Radio },
 		{ label: 'Cron & Queues', icon: Clock }
 	];
@@ -196,6 +227,13 @@
 	onMount(() => {
 		hydrated = true;
 	});
+
+	// The demo-to-real funnel destination: /login offers sign-up and sign-in,
+	// and bounces an already-signed-in operator straight to the overview.
+	const demoSignupHref = `${resolve('/(app)/login')}?signup=1`;
+	// Dismissing the demo disclaimer lasts until the next full page load -
+	// forgetting the project is throwaway is the failure mode it exists for.
+	let demoNoticeDismissed = $state(false);
 
 	// Below lg the sidebar becomes a hamburger drawer: the SAME aside slides
 	// in as a fixed overlay, so mobile and desktop can never drift. Closes on
@@ -430,6 +468,24 @@
 	</DropdownMenu.Item>
 {/snippet}
 
+{#snippet moreRow(hidden: number, section: string, testId: string, expand: () => void)}
+	<!-- The folded section's tail: how many pages are behind the header, so an
+	     operator knows whether opening is worth it. Shares the item grid (16px
+	     icon column, same indent) so it reads as the list continuing - an
+	     ellipsis rather than a chevron, because the row continues a list; the
+	     chevron belongs to the section header, which is the thing that folds. -->
+	<button
+		type="button"
+		data-testid={testId}
+		aria-label={`Show ${hidden} more in ${section}`}
+		class="flex w-full items-center gap-3 rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground/70 transition-colors hover:bg-accent hover:text-accent-foreground"
+		onclick={expand}
+	>
+		<Ellipsis class="h-4 w-4 shrink-0" />
+		{hidden} more
+	</button>
+{/snippet}
+
 {#snippet copilotPanel(desktop: boolean)}
 	<section
 		class="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
@@ -581,21 +637,26 @@
 			Cloudflarebase
 		</a>
 
-		<nav class="flex-1 space-y-6 overflow-y-auto px-3 py-4">
+		<nav class="flex-1 space-y-5 overflow-y-auto px-3 py-4">
 			<div>
 				<p
 					class="px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase"
 				>
 					Project
 				</p>
-				<a
-					href={resolve('/(app)/dashboard')}
-					data-testid="nav-all-projects"
-					class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-				>
-					<LayoutGrid class="h-4 w-4" />
-					All projects
-				</a>
+				{#if data.projects}
+					<!-- Operators only: for anonymous demo visitors the registry list
+					     never reaches the page data, and /dashboard would just mint
+					     another demo - the link is a dead end, so it isn't rendered. -->
+					<a
+						href={resolve('/(app)/dashboard/(account)')}
+						data-testid="nav-all-projects"
+						class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+					>
+						<LayoutGrid class="h-4 w-4" />
+						All projects
+					</a>
+				{/if}
 				<a
 					href={overviewHref}
 					data-testid="nav-overview"
@@ -645,23 +706,34 @@
 			</div>
 
 			<!-- One FOLDABLE group per agent (Authentication ▾, Database ▾, ...),
-			     each listing its tool pages as nested items - Neon/Supabase
-			     style, driven entirely by the manifest registry's console.pages.
-			     Open by default; folding is per pageview, deliberately unsaved. -->
+			     each listing its tool pages as nested items, driven entirely by
+			     the manifest registry's console.pages. Contextual accordion with
+			     a peek: the section owning the current page is expanded, every
+			     other section folds to its header plus its manifest `peek` of
+			     lead pages and a "<n> more" row. Hand-rolled instead of the
+			     Collapsible component because the open state is URL-derived and
+			     must follow navigation - a controlled prop fighting the
+			     component's own state is where that breaks. -->
 			{#each agentNav as navSection (navSection.section)}
-				<Collapsible.Root open>
-					<Collapsible.Trigger
+				{@const open = sectionOpen(navSection.section)}
+				{@const shown = open
+					? navSection.items.length
+					: Math.min(navSection.peek, navSection.items.length)}
+				<div>
+					<button
+						type="button"
 						class="group flex w-full items-center justify-between rounded-md px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase transition-colors hover:text-foreground"
 						data-testid={`nav-section-${navSection.section.toLowerCase()}`}
+						data-state={open ? 'open' : 'closed'}
+						aria-expanded={open}
+						onclick={() => setSection(navSection.section, !open)}
 					>
 						{navSection.section}
-						<ChevronDown
-							class="h-3.5 w-3.5 transition-transform group-data-[state=closed]:-rotate-90"
-						/>
-					</Collapsible.Trigger>
-					<Collapsible.Content class="space-y-0.5 pl-2">
+						<ChevronDown class={['h-3.5 w-3.5 transition-transform', !open && '-rotate-90']} />
+					</button>
+					<div class="space-y-0.5 pl-2">
 						<!-- eslint-disable svelte/no-navigation-without-resolve -- manifest-driven hrefs are prebuilt project-relative paths -->
-						{#each navSection.items as item (item.testId)}
+						{#each navSection.items.slice(0, shown) as item (item.testId)}
 							{@const NavIcon = navIcons[item.icon] ?? KeyRound}
 							<a
 								href={item.href}
@@ -678,27 +750,53 @@
 							</a>
 						{/each}
 						<!-- eslint-enable svelte/no-navigation-without-resolve -->
-					</Collapsible.Content>
-				</Collapsible.Root>
+						{#if navSection.items.length > shown}
+							{@render moreRow(
+								navSection.items.length - shown,
+								navSection.section,
+								`nav-more-${navSection.section.toLowerCase()}`,
+								() => setSection(navSection.section, true)
+							)}
+						{/if}
+					</div>
+				</div>
 			{/each}
 
 			<div>
-				<p
-					class="px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase"
+				<button
+					type="button"
+					class="group flex w-full items-center justify-between rounded-md px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase transition-colors hover:text-foreground"
+					data-testid="nav-section-coming-soon"
+					data-state={comingSoonOpen ? 'open' : 'closed'}
+					aria-expanded={comingSoonOpen}
+					onclick={() => (comingSoonOpen = !comingSoonOpen)}
 				>
 					Coming soon
-				</p>
-				{#each comingSoon as item (item.label)}
-					<span
-						class="flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
-					>
-						<item.icon class="h-4 w-4" />
-						{item.label}
-						<Badge variant="outline" class="ml-auto text-[10px] text-muted-foreground/60"
-							>soon</Badge
+					<ChevronDown
+						class={['h-3.5 w-3.5 transition-transform', !comingSoonOpen && '-rotate-90']}
+					/>
+				</button>
+				<div class="space-y-0.5 pl-2">
+					{#each comingSoonOpen ? comingSoon : comingSoon.slice(0, 1) as item (item.label)}
+						<span
+							class="flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
 						>
-					</span>
-				{/each}
+							<item.icon class="h-4 w-4" />
+							{item.label}
+							<Badge variant="outline" class="ml-auto text-[10px] text-muted-foreground/60"
+								>soon</Badge
+							>
+						</span>
+					{/each}
+					{#if !comingSoonOpen}
+						{@render moreRow(
+							comingSoon.length - 1,
+							'Coming soon',
+							'nav-more-coming-soon',
+							() => (comingSoonOpen = true)
+						)}
+					{/if}
+				</div>
 			</div>
 
 			<div>
@@ -723,6 +821,34 @@
 			</div>
 		</nav>
 
+		{#if (branchCtx && !branchCtx.demo) || data.accountUser}
+			<!-- ONE pinned footer group below the scroll, Supabase-style. Settings
+			     renders for registered projects only (demos and unregistered ids
+			     have no registry row to rename or delete); sign-out rides here
+			     below lg, where the header hides it. -->
+			<div class="shrink-0 space-y-0.5 border-t border-border px-3 py-2">
+				{#if branchCtx && !branchCtx.demo}
+					<a
+						href={settingsHref}
+						data-testid="nav-settings"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive(settingsHref)
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<Settings class="h-4 w-4" />
+						Project settings
+					</a>
+				{/if}
+				{#if data.accountUser}
+					<SignOutButton
+						class="h-auto w-full justify-start gap-3 rounded-md px-3 py-2 text-sm font-medium lg:hidden"
+					/>
+				{/if}
+			</div>
+		{/if}
 		<div class="border-t border-border px-5 py-3 text-[11px] text-muted-foreground/60">
 			Running on Cloudflare's network
 		</div>
@@ -739,7 +865,7 @@
 			minSize={45}
 			order={1}
 			class={[
-				'flex min-w-0 flex-col',
+				'relative flex min-w-0 flex-col',
 				!paneDragging && 'transition-[flex-grow] duration-300 ease-out'
 			]}
 		>
@@ -808,7 +934,7 @@
 								{#if rootProjects.length}<DropdownMenu.Separator />{/if}
 								<DropdownMenu.Item data-testid="project-item-all">
 									{#snippet child({ props })}
-										<a {...props} href={resolve('/(app)/dashboard')}>
+										<a {...props} href={resolve('/(app)/dashboard/(account)')}>
 											<LayoutGrid class="h-4 w-4" />
 											All projects
 										</a>
@@ -851,6 +977,31 @@
 				</div>
 
 				<div class="ml-auto flex items-center gap-1.5 sm:gap-2">
+					{#if data.accountUser}
+						<!-- Operators only: anonymous demo visitors have no session
+						     (accountUser is null for them). Same controls, same spot
+						     as the account shell; below lg sign-out lives at the
+						     sidebar drawer's bottom instead. -->
+						<AccountMenu user={data.accountUser} />
+						<SignOutButton class="hidden h-8 lg:inline-flex" />
+					{/if}
+					{#if branchCtx?.demo}
+						<!-- The demo-to-real funnel: demos are throwaway, so the pitch is
+						     a REAL project, not keeping this one. /login offers sign-up
+						     and sign-in, and bounces an already-signed-in operator
+						     straight through to the projects overview. -->
+						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- resolve()-built login href with a signup param -->
+						<Button
+							size="sm"
+							class="h-8 gap-1.5 max-sm:w-8 max-sm:px-0"
+							href={demoSignupHref}
+							aria-label="Create your project"
+							data-testid="demo-signup-cta"
+						>
+							<Plus class="h-3.5 w-3.5" />
+							<span class="hidden sm:inline">Create your project</span>
+						</Button>
+					{/if}
 					<ModeToggle class="h-8 w-8" testId="theme-toggle" />
 				</div>
 			</header>
@@ -928,6 +1079,47 @@
 					<Sparkles class="h-4 w-4" /> Agent
 				</button>
 			</nav>
+
+			{#if branchCtx?.demo && !demoNoticeDismissed}
+				<!-- The standing reminder that nothing here survives: demos erase
+				     themselves after the TTL. Anchored to the CONTENT pane so it
+				     never covers the agent pane's chat input. Dismiss lasts until
+				     the next full page load - forgetting is the failure mode. -->
+				<div
+					class="pointer-events-none absolute inset-x-0 bottom-0 z-20 hidden justify-end p-4 sm:flex"
+				>
+					<div
+						class="pointer-events-auto flex max-w-sm items-start gap-2.5 rounded-lg border border-primary/30 bg-card/95 p-3 shadow-lg backdrop-blur"
+						role="status"
+						data-testid="demo-disclaimer"
+					>
+						<Sparkles class="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+						<div class="min-w-0 text-xs">
+							<p class="font-medium">This is a throwaway demo project</p>
+							<p class="mt-0.5 text-muted-foreground">
+								Everything here expires automatically and cannot be kept.
+								<!-- eslint-disable svelte/no-navigation-without-resolve -- resolve()-built login href with a signup param -->
+								<a
+									href={demoSignupHref}
+									class="font-medium text-primary underline-offset-2 hover:underline"
+								>
+									Create your project
+								</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
+								to build for real.
+							</p>
+						</div>
+						<button
+							type="button"
+							class="shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+							aria-label="Dismiss"
+							onclick={() => (demoNoticeDismissed = true)}
+						>
+							<X class="h-3.5 w-3.5" />
+						</button>
+					</div>
+				</div>
+			{/if}
 		</Resizable.Pane>
 
 		{#if !isMobile.current}

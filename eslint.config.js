@@ -33,7 +33,13 @@ export default defineConfig(
 	// would otherwise be linted as source. Both are tsc output for published
 	// packages.
 	{
-		ignores: ['**/worker-configuration.d.ts', 'agents/auth/dist/', 'agents/db/dist/', 'cli/dist/']
+		ignores: [
+			'**/worker-configuration.d.ts',
+			'agents/auth/dist/',
+			'agents/db/dist/',
+			'agents/hosting/dist/',
+			'cli/dist/'
+		]
 	},
 	js.configs.recommended,
 	ts.configs.recommended,

@@ -1,6 +1,21 @@
 import { assertProjectId } from '$lib/server/auth-agent';
-import { deleteProject } from '$lib/server/registry';
+import { deleteProject, renameProject } from '$lib/server/registry';
 import type { RequestHandler } from './$types';
+
+/**
+ * Renames a project's display name. The id is immutable (it is the Durable
+ * Object name in every agent); the name is presentation only.
+ * Operator-only, via the console guard.
+ */
+export const PATCH: RequestHandler = async ({ params, platform, request }) => {
+	const projectId = assertProjectId(params.projectId);
+	const result = await renameProject(platform, projectId, await request.json().catch(() => null));
+
+	if (!result.ok) {
+		return Response.json({ error: result.error }, { status: result.status });
+	}
+	return Response.json({ project: result.project });
+};
 
 /**
  * Deletes a project's registration and erases its data in every agent.

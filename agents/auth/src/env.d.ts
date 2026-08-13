@@ -4,8 +4,16 @@
 interface Env {
 	GOOGLE_CLIENT_ID?: string;
 	GOOGLE_CLIENT_SECRET?: string;
+	GITHUB_CLIENT_ID?: string;
+	GITHUB_CLIENT_SECRET?: string;
 	DISABLE_RATE_LIMIT?: 'true';
+	/** Orgs one user may create (memberships count). Unset = 5. */
+	MAX_ORGS_PER_USER?: string;
 	/** Enable Analytics Engine SQL API querying (writes need no credentials). */
 	CF_ACCOUNT_ID?: string;
 	CF_ANALYTICS_API_TOKEN?: string;
 }
+// CONSOLE_SIGNUPS is not augmented here: env.local declares it, so it lives
+// in the generated worker-configuration.d.ts (docs/managed-service-design.md
+// - unset/claimed = invitation-only, open = public sign-ups, and open only
+// takes effect while the EMAIL binding + EMAIL_FROM are configured).

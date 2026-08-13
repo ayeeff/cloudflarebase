@@ -1,9 +1,15 @@
 import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { anonymous, bearer, jwt } from 'better-auth/plugins';
+import { anonymous, bearer, jwt, organization } from 'better-auth/plugins';
+import { and, eq } from 'drizzle-orm';
 import type { DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
 import * as schema from './db/schema';
+
+/** Providers whose sign-in attests a verified email. Shared between the
+ * accountLinking trust list and the credential-supersession hook so the two
+ * halves of that policy can never disagree. */
+const TRUSTED_SOCIAL_PROVIDERS: string[] = ['google', 'github'];
 
 export type AuthDatabase = DrizzleSqliteDODatabase<typeof schema>;
 
@@ -12,6 +18,56 @@ export interface AuthHookUser {
 	email: string;
 	name: string;
 	isAnonymous?: boolean | null;
+}
+
+export interface AuthEmailMessage {
+	type: 'email-verification' | 'password-reset' | 'invitation' | 'email-change';
+	to: string;
+	url: string;
+	/** Extra copy for invitation mail: who invited, into which organization. */
+	invitation?: { organization: string; inviter: string };
+}
+
+/**
+ * Creates the user's personal organization if they belong to none - every
+ * account lands with one org it owns, so "personal project" is just an org
+ * with a single member and ownership never needs a user-or-org union type.
+ * Called from the user-creation hook when `autoPersonalOrg` is on, and again
+ * lazily from the console's /console/me so accounts that predate organizations
+ * (the first-run owner) heal on their next visit. Anonymous users never get
+ * one. Safe to call repeatedly: Durable Object input gates serialize the
+ * check-then-insert, so no duplicate personal org can be minted.
+ */
+export async function ensurePersonalOrg(
+	db: AuthDatabase,
+	user: Pick<AuthHookUser, 'id' | 'email' | 'name' | 'isAnonymous'>,
+): Promise<void> {
+	if (user.isAnonymous) return;
+	const [existing] = await db
+		.select({ id: schema.member.id })
+		.from(schema.member)
+		.where(eq(schema.member.userId, user.id))
+		.limit(1);
+	if (existing) return;
+
+	const now = new Date();
+	const orgId = crypto.randomUUID();
+	const owner = (user.name || user.email.split('@')[0] || 'Personal').trim();
+	await db.insert(schema.organization).values({
+		id: orgId,
+		name: `${owner}'s organization`.slice(0, 64),
+		// Random suffix, not derived from the name: slugs are unique and the
+		// personal org is addressed by id everywhere that matters.
+		slug: `personal-${crypto.randomUUID().replaceAll('-', '').slice(0, 8)}`,
+		createdAt: now,
+	});
+	await db.insert(schema.member).values({
+		id: crypto.randomUUID(),
+		organizationId: orgId,
+		userId: user.id,
+		role: 'owner',
+		createdAt: now,
+	});
 }
 
 export interface ProjectAuthConfig {
@@ -31,19 +87,40 @@ export interface ProjectAuthConfig {
 	/** Optional Google OAuth credentials (per-project social sign-in). */
 	google?: { clientId: string; clientSecret: string };
 	github?: { clientId: string; clientSecret: string };
-	sendEmail?: (message: {
-		type: 'email-verification' | 'password-reset';
-		to: string;
-		url: string;
-	}) => Promise<void>;
+	sendEmail?: (message: AuthEmailMessage) => Promise<void>;
 	/**
-	 * Veto over user creation, consulted at the database layer. Returning a
-	 * reason string rejects the creation with 403. Route-level checks cannot
-	 * cover every path that creates a user - social sign-in creates one
-	 * implicitly on the OAuth callback without touching any sign-up route - so
-	 * an instance that must not grow (the console) enforces it here.
+	 * Refuse sign-in until the email is verified (managed open sign-ups).
+	 * Only meaningful with a configured sendEmail transport.
 	 */
-	denyUserCreation?: () => Promise<string | null>;
+	requireEmailVerification?: boolean;
+	/**
+	 * Better Auth's signed cookie cache: session reads become local signature
+	 * checks for 60 seconds, so a polling dashboard does not hammer the
+	 * session table on every request. Enabled for the console instance.
+	 */
+	cookieCache?: boolean;
+	/**
+	 * Create a personal organization for every new registered user (see
+	 * ensurePersonalOrg). On for the console instance; consumers can enable
+	 * the same hook for their own products.
+	 */
+	autoPersonalOrg?: boolean;
+	/**
+	 * Ceiling on organizations one user can CREATE - Better Auth refuses the
+	 * create route once the user already belongs to this many, so memberships
+	 * (personal orgs included) count toward it. Undefined means unlimited.
+	 * ensurePersonalOrg is unaffected: it inserts through Drizzle directly.
+	 */
+	orgLimit?: number;
+	/**
+	 * Veto over user creation, consulted at the database layer with the user
+	 * being created. Returning a reason string rejects the creation with 403.
+	 * Route-level checks cannot cover every path that creates a user - social
+	 * sign-in creates one implicitly on the OAuth callback without touching
+	 * any sign-up route - so an instance that must not grow (the console)
+	 * enforces it here.
+	 */
+	denyUserCreation?: (user: Pick<AuthHookUser, 'email' | 'isAnonymous'>) => Promise<string | null>;
 	onUserCreated?: (user: AuthHookUser) => void | Promise<void>;
 	onSessionActivity?: (
 		session: { id: string; userId: string },
@@ -59,7 +136,13 @@ export interface ProjectAuthConfig {
 export function createProjectAuth(config: ProjectAuthConfig) {
 	return betterAuth({
 		appName: `cloudflarebase:${config.projectId}`,
-		basePath: '/api/auth',
+		// The PUBLIC path of this project's auth endpoints on a dashboard
+		// deployment, not the agent-internal /api/auth the DO dispatches on
+		// (agent.ts rewrites ingress to this base). Better Auth derives every
+		// absolute URL it hands out - email verification/reset links, OAuth
+		// redirect URIs - from request origin + basePath, so mounting it at the
+		// internal path sent visitors to a route the console guard 401s.
+		basePath: `/api/projects/${config.projectId}/auth`,
 		secret: config.secret,
 		// A deployment trusts its own origin automatically: a browser only sends
 		// an Origin equal to the URL it is actually on, so same-origin requests
@@ -81,6 +164,11 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 			minPasswordLength: 8,
 			maxPasswordLength: 128,
 			revokeSessionsOnPasswordReset: true,
+			// Open console sign-ups: nobody signs in until their address is
+			// proven. A failed unverified sign-in re-sends the verification mail,
+			// which is also how an owner from before verification existed gets
+			// their link when a deployment turns this on later.
+			requireEmailVerification: config.requireEmailVerification,
 			sendResetPassword: config.sendEmail
 				? async ({ user, url }) =>
 						config.sendEmail?.({ type: 'password-reset', to: user.email, url })
@@ -107,6 +195,31 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 		plugins: [
 			anonymous(),
 			bearer(),
+			// Teams for every project (and the console is the first user of its
+			// own feature: cloudflarebase orgs are rows in the console instance).
+			organization({
+				// Guests can hold sessions but never own teams.
+				allowUserToCreateOrganization: (user) =>
+					!(user as { isAnonymous?: boolean | null }).isAnonymous,
+				organizationLimit: config.orgLimit,
+				sendInvitationEmail: config.sendEmail
+					? async (data, request) => {
+							// The console surfaces pending invitations after sign-in, so
+							// the link only needs to land the invitee on the login page
+							// of the deployment the invite was minted from.
+							const origin = request ? new URL(request.url).origin : config.trustedOrigins[0];
+							await config.sendEmail?.({
+								type: 'invitation',
+								to: data.email,
+								url: origin ? `${origin}/login` : '',
+								invitation: {
+									organization: data.organization.name,
+									inviter: data.inviter.user.email,
+								},
+							});
+						}
+					: undefined,
+			}),
 			// GET /token issues a project-signed JWT (public keys on GET /jwks)
 			// carrying the user's role so external services can authorize offline.
 			jwt({
@@ -128,17 +241,48 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 			...(config.google ? { google: config.google } : {}),
 			...(config.github ? { github: config.github } : {}),
 		},
+		account: {
+			accountLinking: {
+				// Both providers attest verified emails, so "Continue with Google"
+				// must also work for an address that signed up with a password and
+				// never verified - Firebase's one-account-per-email behaviour. The
+				// provider just proved the visitor owns the email, which outranks a
+				// password whose holder never did: requireLocalEmailVerified is off,
+				// and the account-creation hook below closes the takeover window
+				// that gate existed for by dropping the never-verified credential
+				// the moment a trusted provider supersedes it. Trust additionally
+				// allows EXPLICIT /link-social from a live session.
+				trustedProviders: TRUSTED_SOCIAL_PROVIDERS,
+				requireLocalEmailVerified: false,
+			},
+		},
 		user: {
 			additionalFields: {
 				// Simple RBAC. input: false blocks self-assignment at sign-up; the
 				// dashboard's admin route is the only writer.
 				role: { type: 'string', required: false, defaultValue: 'user', input: false },
 			},
+			changeEmail: {
+				enabled: true,
+				// A VERIFIED account approves the change from its current address;
+				// unverified accounts (local dev with verification disabled) change
+				// immediately - Better Auth's own rule. Without a mail transport the
+				// verified path cannot complete, which is the honest failure.
+				sendChangeEmailVerification: config.sendEmail
+					? async ({ user, url }: { user: { email: string }; url: string }) =>
+							config.sendEmail?.({ type: 'email-change', to: user.email, url })
+					: undefined,
+			},
 		},
 		session: {
 			additionalFields: {
 				country: { type: 'string', required: false, input: false },
 			},
+			// Signed cookie cache: for its lifetime a get-session is a local
+			// signature check instead of a session-table read, so dashboard
+			// polling stops being bounded by the one console instance's SQLite.
+			// Revocations take up to maxAge to bite - keep it short.
+			cookieCache: config.cookieCache ? { enabled: true, maxAge: 60 } : undefined,
 		},
 		advanced: {
 			// Scope cookies per project so multiple project dashboards on the
@@ -156,13 +300,18 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 			user: {
 				create: {
 					before: async (user) => {
-						const denied = await config.denyUserCreation?.();
+						const denied = await config.denyUserCreation?.(
+							user as Pick<AuthHookUser, 'email' | 'isAnonymous'>,
+						);
 						if (denied) {
 							throw new APIError('FORBIDDEN', { message: denied });
 						}
 						return { data: user };
 					},
 					after: async (user) => {
+						if (config.autoPersonalOrg) {
+							await ensurePersonalOrg(config.db, user as AuthHookUser);
+						}
 						await config.onUserCreated?.(user as AuthHookUser);
 					},
 				},
@@ -181,6 +330,43 @@ export function createProjectAuth(config: ProjectAuthConfig) {
 				update: {
 					after: async (session) => {
 						await config.onSessionActivity?.(session, 'refreshed');
+					},
+				},
+			},
+			account: {
+				create: {
+					// The other half of requireLocalEmailVerified: false above. This
+					// hook runs before Better Auth flips emailVerified on the linked
+					// user, so "trusted provider linked onto a STILL-unverified user"
+					// means whoever set the local password never proved they own the
+					// address - the provider sign-in just did. Drop that credential
+					// and every pre-existing session so a pre-registered password
+					// cannot linger as a backdoor into the linked account; the
+					// provider becomes the way in, and the real owner re-adds a
+					// password via reset if they want one. The session for this very
+					// sign-in is created after the hook and survives.
+					after: async (account) => {
+						if (!TRUSTED_SOCIAL_PROVIDERS.includes(account.providerId)) return;
+						const [owner] = await config.db
+							.select({ emailVerified: schema.user.emailVerified })
+							.from(schema.user)
+							.where(eq(schema.user.id, account.userId))
+							.limit(1);
+						if (!owner || owner.emailVerified) return;
+						const dropped = await config.db
+							.delete(schema.account)
+							.where(
+								and(
+									eq(schema.account.userId, account.userId),
+									eq(schema.account.providerId, 'credential'),
+								),
+							)
+							.returning({ id: schema.account.id });
+						if (dropped.length > 0) {
+							await config.db
+								.delete(schema.session)
+								.where(eq(schema.session.userId, account.userId));
+						}
 					},
 				},
 			},

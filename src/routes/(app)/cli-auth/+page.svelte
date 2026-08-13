@@ -56,7 +56,7 @@
 	<title>CLI access · Cloudflarebase</title>
 </svelte:head>
 
-<ConsoleShell>
+<ConsoleShell signedIn>
 	<Card.Root class="mx-auto max-w-md" data-testid="cli-auth-card">
 		<Card.Header>
 			<div

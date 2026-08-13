@@ -37,6 +37,7 @@ on:
     tags:
       - 'auth-v*.*.*'
       - 'db-v*.*.*'
+      - 'hosting-v*.*.*'
       - 'cli-v*.*.*'
 
 permissions:
@@ -66,6 +67,7 @@ jobs:
           const packages = [
             { name: '@cloudflarebase/auth', dir: 'agents/auth', prefix: 'auth-v' },
             { name: '@cloudflarebase/db', dir: 'agents/db', prefix: 'db-v' },
+            { name: '@cloudflarebase/hosting', dir: 'agents/hosting', prefix: 'hosting-v' },
             { name: '@cloudflarebase/cli', dir: 'cli', prefix: 'cli-v' },
           ];
           const refType = process.env.GITHUB_REF_TYPE;

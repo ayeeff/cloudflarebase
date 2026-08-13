@@ -86,9 +86,15 @@ export interface AuthAgentBindings {
 	DEMO_MODE?: 'true';
 	DEMO_TTL_HOURS?: string;
 
-	/** Social sign-in, also configurable per project from the console. */
+	/**
+	 * Social sign-in for the CONSOLE instance (deployment-level secrets; the
+	 * OAuth redirect URI is per project, so they never spread to other
+	 * projects). Customer projects configure providers via PUT /admin/settings.
+	 */
 	GOOGLE_CLIENT_ID?: string;
 	GOOGLE_CLIENT_SECRET?: string;
+	GITHUB_CLIENT_ID?: string;
+	GITHUB_CLIENT_SECRET?: string;
 
 	/** Empty disables reporting, which is the default - no DSN is committed. */
 	SENTRY_DSN?: string;
@@ -96,6 +102,16 @@ export interface AuthAgentBindings {
 
 	/** Test-only. Exhausting persisted rate-limit buckets breaks reused stacks. */
 	DISABLE_RATE_LIMIT?: 'true';
+
+	/** Ceiling on organizations one user may create (default 5). */
+	MAX_ORGS_PER_USER?: string;
+
+	/**
+	 * Local-dev only. Open console sign-ups normally refuse sign-in until the
+	 * email is verified; local mail lands in wrangler's .eml files, so this
+	 * lets sign-up flow straight into a session instead.
+	 */
+	DISABLE_EMAIL_VERIFICATION?: 'true';
 }
 
 /**

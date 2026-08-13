@@ -8,6 +8,7 @@ import { initCommand } from './commands/init.js';
 import { loginCommand } from './commands/login.js';
 import { logoutCommand } from './commands/logout.js';
 import { schemaCommand } from './commands/schema.js';
+import { secretCommand } from './commands/secret.js';
 import { blank, bold, dim, error, info, UserError } from './lib/log.js';
 
 const usage = (): void => {
@@ -15,8 +16,16 @@ const usage = (): void => {
 	blank();
 	info('Usage:');
 	info(`  cloudflarebase init <name>    ${dim('scaffold a Worker with the auth agent installed')}`);
+	info(
+		`  cloudflarebase init           ${dim('connect this directory to a managed console project')}`
+	);
 	info(`  cloudflarebase add <agent>    ${dim('install an agent into an existing Worker')}`);
-	info(`  cloudflarebase deploy         ${dim('deploy, and set TRUSTED_ORIGINS on first run')}`);
+	info(
+		`  cloudflarebase deploy         ${dim('deploy - managed once initialized, wrangler otherwise')}`
+	);
+	info(
+		`  cloudflarebase secret put <N> ${dim('set a secret on the deployed app (kept across deploys)')}`
+	);
 	info(
 		`  cloudflarebase login <url>    ${dim('authenticate against a console (browser approval)')}`
 	);
@@ -46,7 +55,10 @@ async function main(): Promise<void> {
 			await addCommand(cwd, rest);
 			return;
 		case 'deploy':
-			await deployCommand(cwd);
+			await deployCommand(cwd, rest);
+			return;
+		case 'secret':
+			await secretCommand(cwd, rest);
 			return;
 		case 'login':
 			await loginCommand(rest);

@@ -1,8 +1,16 @@
 import { dev } from '$app/environment';
 import { agentByApiPrefix, agentByWorkerSegment, routeAccess } from '$lib/agent-registry';
+import { RESERVED_PROJECT_IDS } from '$lib/console';
 import { projectIdSchema } from '$lib/schemas/auth';
 import { agentFetcher, agentUrl } from '$lib/server/agents';
-import { getConsoleSession, isDemoMode, isDemoProjectId } from '$lib/server/console';
+import { getConsoleIdentity, isDemoMode, isDemoProjectId } from '$lib/server/console';
+import { verifyGithubDeployGrant } from '$lib/server/github-connect';
+import {
+	deployTokenCoversProject,
+	isDeployTokenSurface,
+	verifyDeployToken
+} from '$lib/server/hosting';
+import { getProjectOwnership, type ProjectOwnership } from '$lib/server/registry';
 import { handleErrorWithSentry, initCloudflareSentryHandle, sentryHandle } from '@sentry/sveltekit';
 import { redirect } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
@@ -153,6 +161,33 @@ function classifyAccess(pathname: string): Access {
 	// Everything under /api is operator surface unless published below, so a
 	// route added later is private until someone deliberately opens it.
 	if (segments[0] === 'api') {
+		// The two GitHub routes the guard cannot gate, both authenticated by an
+		// HMAC we control rather than by a session:
+		//
+		// - `webhook`: GitHub carries no session and never will. Its
+		//   X-Hub-Signature-256 is the credential, checked over the raw body.
+		// - `callback`: the return leg of an App install. It arrives as a
+		//   cross-site top-level navigation from github.com, where a session
+		//   cookie is not reliably present - requiring one stranded operators
+		//   mid-install. The signed install state IS the credential here: it is
+		//   minted only for a signed-in operator on a specific project, expires
+		//   in minutes, and cannot be forged without the webhook secret. The
+		//   route verifies it before writing anything, and still cross-checks a
+		//   session when the browser does send one.
+		if (
+			segments[1] === 'github' &&
+			segments.length === 3 &&
+			(segments[2] === 'webhook' || segments[2] === 'callback')
+		) {
+			return { scope: 'open' };
+		}
+		// Registry mutations name their project in the path; surfacing the id
+		// here is what routes them through the same ownership gate as the
+		// project-scoped proxies (deleting a project is as project-scoped as
+		// reading it).
+		if (segments[1] === 'registry' && segments[2] === 'projects' && segments[3]) {
+			return { scope: 'operator', projectId: segments[3], kind: 'api' };
+		}
 		if (segments[1] === 'projects') {
 			const rest = segments.slice(3);
 			// /api/projects/<id>/<apiPrefix>/... proxies onto an agent; translate
@@ -196,48 +231,134 @@ function classifyAccess(pathname: string): Access {
 }
 
 /**
- * Requires an operator session for every console surface. Fails closed: an
- * install that never sets DEMO_MODE is private the moment it is deployed.
+ * Requires an operator session for every console surface, and - since Phase A
+ * of the managed service - membership in the owning org for project-scoped
+ * ones. Fails closed: an install that never sets DEMO_MODE is private the
+ * moment it is deployed.
  */
 const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 	event.locals.demoMode = isDemoMode(event.platform);
 	event.locals.consoleUser = null;
+	event.locals.consoleIdentity = null;
+	event.locals.deployToken = null;
+	event.locals.githubDeploy = null;
 
 	const access = classifyAccess(event.url.pathname);
 	if (access.scope === 'open') return resolve(event);
 
+	// Deploy tokens (docs/managed-service-design.md, Phase B): a `cfbd_` bearer
+	// is CI's durable credential, accepted SOLELY on the deploy and
+	// branch-create endpoints for the token's root project and its branches.
+	// Any other use of one - wrong surface, wrong project, revoked - is a
+	// plain 401 here, never a fall-through to session resolution: a deploy
+	// token must never behave like a session.
+	const bearer = event.request.headers
+		.get('authorization')
+		?.match(/^Bearer\s+(cfbd_[0-9a-f]{64})$/i)?.[1];
+	if (bearer) {
+		if (
+			access.projectId &&
+			isDeployTokenSurface(event.url.pathname, event.request.method) &&
+			!isDemoProjectId(access.projectId)
+		) {
+			const grant = await verifyDeployToken(event.platform, bearer.toLowerCase());
+			if (
+				grant &&
+				(await deployTokenCoversProject(event.platform, grant.projectId, access.projectId))
+			) {
+				event.locals.deployToken = grant;
+				return resolve(event);
+			}
+		}
+		return Response.json({ error: 'invalid deploy token' }, { status: 401 });
+	}
+
+	// GitHub Actions OIDC (docs/managed-service-design.md, Phase B): a
+	// `build`-mode connection deploys with NO stored credential at all - the
+	// workflow presents a short-lived token GitHub signed, describing the
+	// repository it ran in, and the connection table says which project that
+	// repository may deploy to. Same surfaces and same all-or-nothing contract
+	// as a deploy token: never a fall-through to session resolution.
+	//
+	// Only attempted on the deploy surfaces, so a three-segment console session
+	// bearer on any other route still reaches the session path below.
+	const oidcBearer =
+		access.projectId && isDeployTokenSurface(event.url.pathname, event.request.method)
+			? event.request.headers
+					.get('authorization')
+					?.match(/^Bearer\s+([\w-]+\.[\w-]+\.[\w-]+)$/)?.[1]
+			: undefined;
+	if (oidcBearer) {
+		const grant = await verifyGithubDeployGrant(
+			event.platform,
+			oidcBearer,
+			event.url.origin,
+			access.projectId!
+		);
+		if (grant) {
+			event.locals.githubDeploy = grant;
+			return resolve(event);
+		}
+		return Response.json({ error: 'invalid GitHub deploy token' }, { status: 401 });
+	}
+
 	// Public demo: anonymous visitors may drive ephemeral demo projects, whose
-	// ids are unguessable and whose data self-destructs. Named projects always
-	// require an operator session, even on the demo deployment.
+	// ids are unguessable and whose data self-destructs after the TTL. Demos
+	// are throwaway - never registry rows, never owned - so the visit skips
+	// the ownership lookup and the session resolution entirely. Named projects
+	// always require an operator session, even on the demo deployment.
 	if (event.locals.demoMode && access.projectId && isDemoProjectId(access.projectId)) {
 		return resolve(event);
 	}
 
+	// Ownership of the target project, resolved once per request. Registered
+	// rows carry their org. Reserved ids (the console instance itself) are
+	// never registry rows.
+	const ownership: ProjectOwnership | null =
+		access.projectId && !RESERVED_PROJECT_IDS.has(access.projectId)
+			? await getProjectOwnership(event.platform, access.projectId)
+			: null;
+
 	// The bare /dashboard entry decides for itself: in demo mode it hands an
 	// anonymous visitor a throwaway project, while a signed-in operator gets
 	// the real project list. Its loader branches on consoleUser, so the
-	// session must be resolved here too (getConsoleSession no-ops without a
+	// session must be resolved here too (getConsoleIdentity no-ops without a
 	// cookie, keeping the first-time demo visit free of a session lookup).
 	// Scoped to that one entry: other project-less operator pages (/cli-auth)
 	// keep the hard bounce through /login even on the public demo.
 	if (event.locals.demoMode && access.demoEntry) {
-		event.locals.consoleUser = await getConsoleSession(
+		event.locals.consoleIdentity = await getConsoleIdentity(
 			event.platform,
 			event.url.origin,
 			event.request.headers.get('cookie')
 		);
+		event.locals.consoleUser = event.locals.consoleIdentity?.user ?? null;
 		return resolve(event);
 	}
 
-	const user = await getConsoleSession(
+	const identity = await getConsoleIdentity(
 		event.platform,
 		event.url.origin,
 		event.request.headers.get('cookie'),
 		event.request.headers.get('authorization')
 	);
 
-	if (user) {
-		event.locals.consoleUser = user;
+	if (identity) {
+		event.locals.consoleIdentity = identity;
+		event.locals.consoleUser = identity.user;
+
+		// Owned projects require membership in the owning org. Rows with a null
+		// org stay visible to any operator (the self-hosted contract), and
+		// unregistered ids keep their pre-ownership behaviour.
+		if (ownership?.registered && ownership.orgId) {
+			const isMember = identity.organizations.some((org) => org.id === ownership.orgId);
+			if (!isMember) {
+				if (access.kind === 'page') {
+					redirect(303, '/dashboard');
+				}
+				return Response.json({ error: 'you do not have access to this project' }, { status: 403 });
+			}
+		}
 		return resolve(event);
 	}
 

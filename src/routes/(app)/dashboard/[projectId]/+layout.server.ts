@@ -31,17 +31,31 @@ export const load: LayoutServerLoad = async ({ cookies, params, platform, locals
 					demoBranchContext(params.projectId, rememberDemoBranch(cookies, params.projectId))
 				)
 			: getBranchContext(platform, params.projectId),
-		// The breadcrumb project switcher's list - operators only. Demo mode
-		// serves this layout to anonymous visitors, and the installation's
-		// project registry must never appear in their page data.
-		locals.consoleUser ? listProjects(platform) : Promise.resolve(null)
+		// The breadcrumb project switcher's list - operators only, scoped to
+		// their org memberships. Demo mode serves this layout to anonymous
+		// visitors, and the installation's project registry must never appear
+		// in their page data.
+		locals.consoleUser
+			? listProjects(
+					platform,
+					locals.consoleIdentity?.organizations.map((org) => org.id)
+				)
+			: Promise.resolve(null)
 	]);
+
+	// The header's account controls (avatar + editor). Null for anonymous demo
+	// visitors - the guard never resolves a session on demo routes.
+	const identity = locals.consoleIdentity;
+
 	return {
 		copilot: {
 			open: state !== 'closed',
 			layout
 		},
 		branches,
-		projects
+		projects,
+		accountUser: identity
+			? { name: identity.user.name, email: identity.user.email, image: identity.user.image }
+			: null
 	};
 };

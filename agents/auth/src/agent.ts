@@ -1,10 +1,16 @@
 import { Agent, type AgentContext } from 'agents';
-import { and, count, desc, eq, gt, lt, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, lt, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/durable-sqlite';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import * as Sentry from '@sentry/cloudflare';
 import migrations from './migrations';
-import { createProjectAuth, type AuthDatabase, type ProjectAuth } from './auth';
+import {
+	createProjectAuth,
+	ensurePersonalOrg,
+	type AuthDatabase,
+	type AuthEmailMessage,
+	type ProjectAuth,
+} from './auth';
 import { coloCountry } from './colo-countries';
 import * as schema from './db/schema';
 import {
@@ -12,6 +18,7 @@ import {
 	chatRequestSchema,
 	DEMO_PROJECT_PATTERN,
 	demoTtlHoursSchema,
+	localResetPasswordSchema,
 	projectIdSchema,
 	resourceIdSchema,
 	roleRequestSchema,
@@ -83,6 +90,13 @@ const DEMO_MAX_CHAT_PER_DAY = 50;
 // Analytics Engine ingestion is asynchronous. Keep this short so a query that
 // races a new write is retried quickly instead of holding stale graph data.
 const ANALYTICS_CACHE_MS = 5_000;
+
+/** Env vars are strings; anything that is not a whole positive number means
+ * "not configured" rather than a hard error, so a typo falls back safely. */
+function parsePositiveInt(value: string | undefined): number | undefined {
+	const parsed = Number.parseInt(value ?? '', 10);
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
 function applySocialCredentials(
 	value: ProviderUpdates,
 	existing: SocialCredentials,
@@ -166,6 +180,43 @@ export interface AuthOverview {
 	/** Continuation for `GET /admin/sessions`; absent on the last page. */
 	sessionsNextCursor?: string;
 	state: AuthAgentState;
+}
+
+/** One org the console user belongs to, with their role in it. */
+export interface ConsoleOrgMembership {
+	id: string;
+	name: string;
+	slug: string;
+	role: string;
+}
+
+export interface ConsolePendingInvitation {
+	id: string;
+	organizationId: string;
+	organizationName: string;
+	role: string | null;
+	inviterEmail: string | null;
+	expiresAt: string;
+}
+
+/**
+ * GET /console/me - the console guard's one-round-trip identity: session plus
+ * org memberships, joined locally in the DO so the dashboard never pays two
+ * RPCs per request. Console instance only. Mirrored in the app's
+ * src/lib/console.ts; keep both in sync.
+ */
+export interface ConsoleMe {
+	user: {
+		id: string;
+		email: string;
+		name: string;
+		role: string;
+		emailVerified: boolean;
+		image: string | null;
+	};
+	session: { activeOrganizationId: string | null };
+	organizations: ConsoleOrgMembership[];
+	pendingInvitations: ConsolePendingInvitation[];
 }
 
 export interface UserPage {
@@ -308,27 +359,48 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			getRequestCountry: () => this.requestCountry,
 			getRolePermissions: (role) =>
 				(this.state.roles ?? DEFAULT_ROLES).find((entry) => entry.name === role)?.permissions ?? [],
-			google:
-				this.socialCredentials.google ??
-				(this.env.GOOGLE_CLIENT_ID && this.env.GOOGLE_CLIENT_SECRET
-					? { clientId: this.env.GOOGLE_CLIENT_ID, clientSecret: this.env.GOOGLE_CLIENT_SECRET }
-					: undefined),
-			github: this.socialCredentials.github,
+			google: this.socialCredentials.google ?? this.envSocialCredentials('GOOGLE'),
+			github: this.socialCredentials.github ?? this.envSocialCredentials('GITHUB'),
 			// Demo projects never send mail: the addresses are strangers' and the
 			// sending domain's reputation is not worth a throwaway signup flow.
 			sendEmail:
-				this.env.EMAIL && this.env.EMAIL_FROM && !this.isEphemeral
+				this.mailConfigured && !this.isEphemeral
 					? (message) => this.sendAuthEmail(message)
 					: undefined,
-			// The console has at most one user - the owner - and none at all under
-			// DEMO_MODE. denyConsoleAuthRoute covers the sign-up route, but social
-			// sign-in creates users implicitly on the OAuth callback, so the
-			// invariant is enforced where every path converges: user creation.
-			// Without this, configuring Google credentials would quietly reopen
-			// console registration to anyone with a Google account.
+			// Open console sign-ups are only real with a sender that can reach
+			// arbitrary addresses; the console gets the cookie cache and personal
+			// orgs so operator polling and ownership work out of the box.
+			// DISABLE_EMAIL_VERIFICATION is the env.local escape: wrangler dev
+			// writes mail to .eml files, so requiring verification would dead-end
+			// every local sign-up behind a file hunt.
+			requireEmailVerification:
+				this.name === CONSOLE_PROJECT_ID &&
+				this.consoleSignups === 'open' &&
+				this.env.DISABLE_EMAIL_VERIFICATION !== 'true',
+			cookieCache: this.name === CONSOLE_PROJECT_ID,
+			autoPersonalOrg: this.name === CONSOLE_PROJECT_ID,
+			// Org creation is capped per user (memberships count, personal org
+			// included) so one account cannot mint teams without bound - the
+			// console's per-org project ceiling would otherwise multiply freely.
+			orgLimit: parsePositiveInt(this.env.MAX_ORGS_PER_USER) ?? 5,
+			// Console registration policy, enforced where every path converges -
+			// user creation - because social sign-in creates users implicitly on
+			// the OAuth callback. Without this, configuring Google credentials
+			// would quietly reopen console registration to anyone with a Google
+			// account. CONSOLE_SIGNUPS=open lifts the veto entirely (managed
+			// mode); claimed mode admits the first-run owner and, since Phase A,
+			// anyone whose email holds a pending org invitation - teams without
+			// open registration.
 			denyUserCreation:
 				this.name === CONSOLE_PROJECT_ID
-					? async () => {
+					? async (user) => {
+							if (this.consoleSignups === 'open') return null;
+							if (this.env.CONSOLE_SIGNUPS === 'open') {
+								// Configured open but no usable sender: a loud config error
+								// beats silently registering users who can never verify.
+								return 'CONSOLE_SIGNUPS=open requires outbound mail - configure the EMAIL binding and EMAIL_FROM';
+							}
+							if (user.email && (await this.hasPendingInvitation(user.email))) return null;
 							if (this.env.DEMO_MODE === 'true') {
 								return 'this deployment does not have console operators';
 							}
@@ -358,6 +430,17 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 	}
 
 	/**
+	 * Where this project's Better Auth is mounted: the public proxy path,
+	 * mirrored in createProjectAuth's basePath. Ingress still dispatches on the
+	 * agent-internal /api/auth prefix and is rewritten to this base before the
+	 * handler runs, so the URLs Better Auth derives from it (email links, OAuth
+	 * redirect URIs) point at routes the dashboard serves unauthenticated.
+	 */
+	private get authBasePath(): string {
+		return `/api/projects/${this.name}/auth`;
+	}
+
+	/**
 	 * Whether this project is a throwaway demo instance. Both halves matter: a
 	 * self-hosted install must never expire a project just because someone
 	 * named it `demo-...`, and the public deployment must never expire a named
@@ -365,6 +448,40 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 	 */
 	private get isEphemeral(): boolean {
 		return this.env.DEMO_MODE === 'true' && DEMO_PROJECT_PATTERN.test(this.name);
+	}
+
+	/** Cloudflare Email Service: the EMAIL binding delivers transactional mail
+	 * to arbitrary recipients from the configured sender. */
+	private get mailConfigured(): boolean {
+		return !!(this.env.EMAIL && this.env.EMAIL_FROM);
+	}
+
+	/**
+	 * Console registration policy (docs/managed-service-design.md). `open` only
+	 * counts when the mail sender is configured - without one, verification
+	 * mail cannot leave, so the console stays effectively claimed and the
+	 * sign-up paths answer a loud config error instead of registering users
+	 * who could never verify.
+	 */
+	private get consoleSignups(): 'claimed' | 'open' {
+		return this.env.CONSOLE_SIGNUPS === 'open' && this.mailConfigured ? 'open' : 'claimed';
+	}
+
+	/** A pending, unexpired org invitation for this email - the authorization
+	 * that lets a sign-up through a claimed console. */
+	private async hasPendingInvitation(email: string): Promise<boolean> {
+		const [row] = await this.db
+			.select({ id: schema.invitation.id })
+			.from(schema.invitation)
+			.where(
+				and(
+					eq(sql`lower(${schema.invitation.email})`, email.toLowerCase()),
+					eq(schema.invitation.status, 'pending'),
+					gt(schema.invitation.expiresAt, new Date()),
+				),
+			)
+			.limit(1);
+		return !!row;
 	}
 
 	private get trustedOrigins(): string[] {
@@ -490,13 +607,28 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		await this.destroy();
 	}
 
+	/**
+	 * Environment OAuth credentials configure the CONSOLE's social sign-in and
+	 * nothing else. They are deployment-level secrets, and the redirect URI
+	 * Better Auth derives is per project - one registered OAuth app can only
+	 * ever answer one project's callback, so spreading the env credentials
+	 * across every project (demos included) would advertise sign-in buttons
+	 * whose callbacks the provider refuses. Customer projects configure their
+	 * own apps per project via PUT /admin/settings.
+	 */
+	private envSocialCredentials(
+		provider: 'GOOGLE' | 'GITHUB',
+	): { clientId: string; clientSecret: string } | undefined {
+		if (this.name !== CONSOLE_PROJECT_ID) return undefined;
+		const clientId = this.env[`${provider}_CLIENT_ID`];
+		const clientSecret = this.env[`${provider}_CLIENT_SECRET`];
+		return clientId && clientSecret ? { clientId, clientSecret } : undefined;
+	}
+
 	private get configuredSocialProviders(): string[] {
 		return [
-			...(this.socialCredentials.google ||
-			(this.env.GOOGLE_CLIENT_ID && this.env.GOOGLE_CLIENT_SECRET)
-				? ['google']
-				: []),
-			...(this.socialCredentials.github ? ['github'] : []),
+			...(this.socialCredentials.google || this.envSocialCredentials('GOOGLE') ? ['google'] : []),
+			...(this.socialCredentials.github || this.envSocialCredentials('GITHUB') ? ['github'] : []),
 		];
 	}
 
@@ -563,29 +695,62 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		return accountId && token && dataset ? { accountId, token, dataset } : null;
 	}
 
-	private async sendAuthEmail(message: {
-		type: 'email-verification' | 'password-reset';
-		to: string;
-		url: string;
-	}): Promise<void> {
+	private async sendAuthEmail(message: AuthEmailMessage): Promise<void> {
+		const action =
+			message.type === 'password-reset'
+				? 'Reset your password'
+				: message.type === 'email-change'
+					? 'Approve your new email'
+					: message.type === 'invitation'
+						? `Join ${message.invitation?.organization ?? 'an organization'}`
+						: 'Verify your email';
+		const intro =
+			message.type === 'invitation'
+				? `${message.invitation?.inviter ?? 'A team member'} invited you to "${message.invitation?.organization ?? 'their organization'}" on Cloudflarebase. Sign in - or create an account with this email address - to accept.`
+				: 'Continue securely with the button below.';
+		const safeUrl = message.url
+			.replaceAll('&', '&amp;')
+			.replaceAll('"', '&quot;')
+			.replaceAll('<', '&lt;');
+		const text = `${action}: ${message.url}\n\n${intro}\n\nIf you did not request this, you can ignore this email.`;
+		const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:auto"><h1 style="font-size:22px">${action}</h1><p>${intro}</p><p><a href="${safeUrl}" style="display:inline-block;background:#f6821f;color:white;padding:12px 18px;border-radius:8px;text-decoration:none">${action}</a></p><p style="color:#666;font-size:13px">If you did not request this, you can ignore this email.</p></div>`;
+
+		try {
+			await this.deliverEmail(message.to, `${action} · Cloudflarebase`, text, html);
+		} catch (error) {
+			// Verification mail is best-effort by design: the user row already
+			// exists when the send runs, so failing the sign-up here would tell
+			// the visitor "error" about an account that was in fact created. A
+			// failed unverified sign-in re-sends the link. Resets and invitations
+			// stay loud - their callers surface the failure to someone who can
+			// retry.
+			Sentry.captureException(error, {
+				level: 'error',
+				tags: { projectId: this.name, operation: 'send-auth-email', emailType: message.type },
+			});
+			if (message.type !== 'email-verification') throw error;
+		}
+	}
+
+	/** Outbound transport: Cloudflare Email Service via the EMAIL binding. */
+	private async deliverEmail(
+		to: string,
+		subject: string,
+		text: string,
+		html: string,
+	): Promise<void> {
 		if (this.env.EMAIL && this.env.EMAIL_FROM) {
-			const action =
-				message.type === 'password-reset' ? 'Reset your password' : 'Verify your email';
-			const safeUrl = message.url
-				.replaceAll('&', '&amp;')
-				.replaceAll('"', '&quot;')
-				.replaceAll('<', '&lt;');
 			await this.env.EMAIL.send({
-				to: message.to,
+				to,
 				from: { email: this.env.EMAIL_FROM, name: 'Cloudflarebase Auth' },
-				subject: `${action} · Cloudflarebase`,
-				text: `${action}: ${message.url}\n\nIf you did not request this, you can ignore this email.`,
-				html: `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:auto"><h1 style="font-size:22px">${action}</h1><p>Continue securely with the button below.</p><p><a href="${safeUrl}" style="display:inline-block;background:#f6821f;color:white;padding:12px 18px;border-radius:8px;text-decoration:none">${action}</a></p><p style="color:#666;font-size:13px">If you did not request this, you can ignore this email.</p></div>`,
+				subject,
+				text,
+				html,
 			});
 			this.writeAuthEvent('email.sent', { provider: 'cloudflare-email-service' });
 			return;
 		}
-		throw new Error('Cloudflare Email Service is not configured');
+		throw new Error('no outbound mail transport is configured');
 	}
 
 	private async trackSessionActivity(
@@ -663,14 +828,40 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 
 	/**
 	 * Extra rules that apply only to the console's own auth instance. Returns a
-	 * rejection response, or null when the route is permitted.
+	 * rejection response, or null when the route is permitted. The
+	 * denyUserCreation database hook enforces the same policy where every
+	 * user-creating path converges; this route check exists to answer the
+	 * login page with precise errors before Better Auth runs.
 	 */
-	private async denyConsoleAuthRoute(subPath: string): Promise<Response | null> {
+	private async denyConsoleAuthRoute(subPath: string, request: Request): Promise<Response | null> {
 		if (/\/sign-in\/anonymous$/.test(subPath)) {
 			return Response.json({ error: 'guest sign-in is disabled for the console' }, { status: 403 });
 		}
 
 		if (/\/sign-up\/email$/.test(subPath)) {
+			if (this.consoleSignups === 'open') return null;
+
+			if (this.env.CONSOLE_SIGNUPS === 'open') {
+				// Open was configured but no arbitrary-recipient sender exists.
+				// Refusing loudly here is what turns a silent failure into a
+				// config error at deploy time (the worker's 5xx net reports it).
+				return Response.json(
+					{
+						error:
+							'CONSOLE_SIGNUPS=open requires outbound mail - configure the EMAIL binding and EMAIL_FROM',
+					},
+					{ status: 503 },
+				);
+			}
+
+			// Claimed mode. A pending org invitation authorizes a sign-up even
+			// while the console is otherwise closed - teams without opening
+			// registration. Checked before the demo refusal on purpose: a
+			// claimed-but-DEMO_MODE deployment (cloudflarebase.com today) can
+			// invite teammates.
+			const email = await this.signUpEmail(request);
+			if (email && (await this.hasPendingInvitation(email))) return null;
+
 			// A demo deployment has no operators. Every visitor is anonymous with
 			// a throwaway project, and named projects - the only thing an operator
 			// session unlocks - are not part of it. Leaving the claim open would
@@ -691,6 +882,17 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		}
 
 		return null;
+	}
+
+	/** The email a sign-up request is registering, from a clone so Better Auth
+	 * still gets the body. Unparsable bodies fall through to Better Auth's own
+	 * validation. */
+	private async signUpEmail(request: Request): Promise<string | null> {
+		const body = (await request
+			.clone()
+			.json()
+			.catch(() => null)) as { email?: unknown } | null;
+		return typeof body?.email === 'string' && body.email ? body.email : null;
 	}
 
 	async onRequest(request: Request): Promise<Response> {
@@ -733,8 +935,21 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				providers: ['email-password', 'anonymous', ...this.configuredSocialProviders],
 				availableSocialProviders: ['google', 'github'],
 				bearerTokens: true,
-				emailDeliveryConfigured: !!(this.env.EMAIL && this.env.EMAIL_FROM),
+				emailDeliveryConfigured: this.mailConfigured,
+				// Local dev only (DISABLE_EMAIL_VERIFICATION): the login page offers
+				// the direct reset form instead of the emailed-token flow, because
+				// the reset mail only lands in wrangler's .eml files locally.
+				localPasswordReset: this.env.DISABLE_EMAIL_VERIFICATION === 'true',
+				// The console instance reports its registration policy so /login
+				// can render sign-up affordances honestly. Effective, not raw:
+				// a misconfigured `open` reports claimed rather than offering a
+				// doomed form.
+				...(this.name === CONSOLE_PROJECT_ID ? { consoleSignups: this.consoleSignups } : {}),
 			});
+		}
+
+		if (subPath === '/console/me' && request.method === 'GET' && this.name === CONSOLE_PROJECT_ID) {
+			return Response.json(await this.getConsoleMe(request));
 		}
 
 		if (subPath === '/chat' && request.method === 'GET') {
@@ -796,6 +1011,47 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			return this.updateSettings(request);
 		}
 
+		// Local-dev escape hatch: with DISABLE_EMAIL_VERIFICATION=true (env.local
+		// only) a password resets directly by email, no token round trip - the
+		// reset MAIL only lands in wrangler's .eml files locally, the same file
+		// hunt the flag exists to spare. Gated hard: everywhere else this route
+		// does not exist, because a token-less reset is account takeover.
+		if (subPath === '/api/auth/local-reset-password' && request.method === 'POST') {
+			if (this.env.DISABLE_EMAIL_VERIFICATION !== 'true') {
+				return Response.json({ error: 'not found' }, { status: 404 });
+			}
+			const body = localResetPasswordSchema.safeParse(await request.json().catch(() => null));
+			if (!body.success) {
+				return Response.json(
+					{ error: 'email and newPassword (8-128 characters) are required' },
+					{ status: 400 },
+				);
+			}
+			const ctx = await this.auth.$context;
+			const found = await ctx.internalAdapter.findUserByEmail(body.data.email.toLowerCase(), {
+				includeAccounts: true,
+			});
+			if (found) {
+				const hash = await ctx.password.hash(body.data.newPassword);
+				const credential = found.accounts.find((account) => account.providerId === 'credential');
+				if (credential) {
+					await ctx.internalAdapter.updatePassword(found.user.id, hash);
+				} else {
+					// Social-only accounts gain a credential, mirroring Better Auth's
+					// own reset-password behaviour.
+					await ctx.internalAdapter.linkAccount({
+						userId: found.user.id,
+						providerId: 'credential',
+						accountId: found.user.id,
+						password: hash,
+					});
+				}
+				await ctx.internalAdapter.deleteSessions([found.user.id]);
+			}
+			// Uniform answer - even local dev keeps account existence unguessable.
+			return Response.json({ status: true });
+		}
+
 		if (subPath === '/api/auth' || subPath.startsWith('/api/auth/')) {
 			if (!this.signingSecret) {
 				return Response.json({ error: 'auth agent failed to start' }, { status: 500 });
@@ -805,7 +1061,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			// owner claim. Enforced here because /api/auth/* is deliberately public,
 			// so the dashboard's console guard never sees these requests.
 			if (this.name === CONSOLE_PROJECT_ID) {
-				const denied = await this.denyConsoleAuthRoute(subPath);
+				const denied = await this.denyConsoleAuthRoute(subPath, request);
 				if (denied) return denied;
 			}
 
@@ -822,13 +1078,18 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			}
 			this.requestCountry =
 				(request.cf?.country as string | undefined) ?? request.headers.get('cf-ipcountry');
-			// Better Auth sees the request at its basePath, on the caller's origin,
-			// so cookies and redirect URLs resolve against the dashboard origin.
+			// Better Auth sees the request at its basePath - the project's PUBLIC
+			// proxy path - on the caller's origin, so cookies, redirect URLs, and
+			// every absolute URL it generates (verification links, OAuth redirect
+			// URIs) resolve to routes a browser can actually reach.
 			const signingOut = /\/sign-out$/.test(subPath);
 			const currentSession = signingOut
 				? await this.auth.api.getSession({ headers: request.headers }).catch(() => null)
 				: null;
-			const authRequest = new Request(`${url.origin}${subPath}${url.search}`, request);
+			const authRequest = new Request(
+				`${url.origin}${this.authBasePath}${subPath.slice('/api/auth'.length)}${url.search}`,
+				request,
+			);
 			const response = await this.auth.handler(authRequest);
 
 			// Sign-out deletes the session row without a database hook - refresh
@@ -983,6 +1244,112 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			allowedOrigins: body.data.allowedOrigins,
 			enabledSocialProviders,
 		});
+	}
+
+	/**
+	 * The console guard's identity lookup: session + org memberships +
+	 * pending invitations in ONE agent round trip (the guard runs per
+	 * dashboard request, so it must never pay two). Also the healing point
+	 * for accounts that predate organizations: a registered user with no
+	 * membership gets their personal org here, which is how the first-run
+	 * owner from before Phase A acquires one without a migration.
+	 */
+	private async getConsoleMe(request: Request): Promise<ConsoleMe | null> {
+		// Resolved through the real Better Auth HANDLER, not auth.api.getSession:
+		// only the handler runs the bearer plugin's header-to-cookie conversion.
+		// The pinned precedence is that an Authorization bearer is AUTHORITATIVE:
+		// an invalid bearer is refused even when a valid cookie rides along (the
+		// CLI contract). The bearer plugin used to guarantee that by overwriting
+		// the session cookie, but the cookieCache's session_data cookie is
+		// consulted before the token - so when a bearer is present, cookies are
+		// dropped from the lookup entirely and the token decides alone.
+		const origin = new URL(request.url).origin;
+		const sessionHeaders = new Headers(request.headers);
+		if (sessionHeaders.get('authorization')) sessionHeaders.delete('cookie');
+		const sessionResponse = await this.auth
+			.handler(
+				new Request(`${origin}${this.authBasePath}/get-session`, {
+					method: 'GET',
+					headers: sessionHeaders,
+				}),
+			)
+			.catch(() => null);
+		if (!sessionResponse || !sessionResponse.ok) return null;
+		const resolved = (await sessionResponse.json().catch(() => null)) as {
+			user?: {
+				id?: string;
+				email?: string;
+				name?: string;
+				emailVerified?: boolean;
+				isAnonymous?: boolean | null;
+				role?: string;
+				image?: string | null;
+			};
+			session?: { activeOrganizationId?: string | null };
+		} | null;
+		if (!resolved?.user?.id || !resolved.user.email) return null;
+		const user = {
+			id: resolved.user.id,
+			email: resolved.user.email,
+			name: resolved.user.name ?? '',
+			emailVerified: !!resolved.user.emailVerified,
+			isAnonymous: resolved.user.isAnonymous ?? null,
+			role: resolved.user.role,
+		};
+		const session: { activeOrganizationId?: string | null } = resolved.session ?? {};
+
+		if (!user.isAnonymous) {
+			await ensurePersonalOrg(this.db, user);
+		}
+
+		const memberships = await this.db
+			.select({
+				id: schema.organization.id,
+				name: schema.organization.name,
+				slug: schema.organization.slug,
+				role: schema.member.role,
+			})
+			.from(schema.member)
+			.innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
+			.where(eq(schema.member.userId, user.id))
+			.orderBy(asc(schema.member.createdAt));
+
+		const invitations = await this.db
+			.select({
+				id: schema.invitation.id,
+				organizationId: schema.invitation.organizationId,
+				organizationName: schema.organization.name,
+				role: schema.invitation.role,
+				inviterEmail: schema.user.email,
+				expiresAt: schema.invitation.expiresAt,
+			})
+			.from(schema.invitation)
+			.innerJoin(schema.organization, eq(schema.organization.id, schema.invitation.organizationId))
+			.leftJoin(schema.user, eq(schema.user.id, schema.invitation.inviterId))
+			.where(
+				and(
+					eq(sql`lower(${schema.invitation.email})`, user.email.toLowerCase()),
+					eq(schema.invitation.status, 'pending'),
+					gt(schema.invitation.expiresAt, new Date()),
+				),
+			);
+
+		return {
+			user: {
+				id: user.id,
+				email: user.email,
+				name: user.name || user.email,
+				role: user.role ?? 'user',
+				emailVerified: !!user.emailVerified,
+				image: resolved.user.image ?? null,
+			},
+			session: { activeOrganizationId: session.activeOrganizationId ?? null },
+			organizations: memberships,
+			pendingInvitations: invitations.map((row) => ({
+				...row,
+				expiresAt: row.expiresAt.toISOString(),
+			})),
+		};
 	}
 
 	/** Snapshot used by the dashboard's initial server-side load and polling.

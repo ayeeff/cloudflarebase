@@ -1,0 +1,50 @@
+import { assertProjectId } from '$lib/server/agents';
+import { githubAppConfig } from '$lib/server/github';
+import { installationCoversProject } from '$lib/server/github-connect';
+import { inspectRepo, listInstallationRepos } from '$lib/server/github-repo';
+import type { RequestHandler } from './$types';
+
+/**
+ * The repository picker's data. Scoped twice: the installation must belong to
+ * the org that owns this project, and the installation token itself only
+ * reaches repositories the operator selected on GitHub.
+ *
+ * With `?repo=<owner>/<name>` it also inspects that repository and reports
+ * whether it needs a runner - which is what preselects build or direct mode.
+ */
+export const GET: RequestHandler = async ({ params, url, platform }) => {
+	const projectId = assertProjectId(params.projectId);
+	const config = githubAppConfig(platform);
+	if (!config) {
+		return Response.json({ error: 'no GitHub App is configured on this console' }, { status: 503 });
+	}
+
+	const installationId = Number(url.searchParams.get('installation'));
+	if (!Number.isSafeInteger(installationId) || installationId <= 0) {
+		return Response.json({ error: 'installation is required' }, { status: 400 });
+	}
+	const covers = await installationCoversProject(platform, installationId, projectId);
+	if (!covers.ok) {
+		return Response.json({ error: covers.error }, { status: 403 });
+	}
+
+	const repos = await listInstallationRepos(config, installationId);
+	if (!repos) {
+		return Response.json(
+			{ error: 'the GitHub installation is no longer valid - reinstall the app' },
+			{ status: 409 }
+		);
+	}
+
+	const wanted = url.searchParams.get('repo');
+	if (!wanted) return Response.json({ repos });
+
+	const repo = repos.find((candidate) => candidate.fullName === wanted);
+	if (!repo) {
+		return Response.json({ error: 'that repository is not in this installation' }, { status: 404 });
+	}
+	return Response.json({
+		repos,
+		inspection: await inspectRepo(config, installationId, repo.fullName, repo.defaultBranch)
+	});
+};

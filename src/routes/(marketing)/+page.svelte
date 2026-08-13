@@ -33,6 +33,8 @@
 		Minus
 	} from '@lucide/svelte';
 
+	let { data } = $props();
+
 	// Deliberately short: the header is not a table of contents. Everything
 	// else stays reachable by scroll and the footer links.
 	type MenuItem = { name: string; href: string };
@@ -423,8 +425,11 @@
 								class="border bg-foreground/10 p-0.5"
 								style="border-radius: calc(0.5rem + 0.125rem + 4px);"
 							>
+								<!-- A signed-in operator is past the demo: the same click goes
+								     to their real console (the /dashboard entry branches on the
+								     session), so only the promise changes. -->
 								<Button href="/dashboard" size="lg" class="rounded-xl px-5 text-base"
-									>Open the live demo</Button
+									>{data.signedIn ? 'Open your dashboard' : 'Open the live demo'}</Button
 								>
 							</div>
 							<Button
@@ -1079,7 +1084,9 @@
 				the state sync live, ask the copilot about it.
 			</p>
 			<div class="mt-8 flex flex-wrap justify-center gap-3">
-				<Button href="/dashboard" size="lg">Open the live demo</Button>
+				<Button href="/dashboard" size="lg"
+					>{data.signedIn ? 'Open your dashboard' : 'Open the live demo'}</Button
+				>
 				<Button
 					size="lg"
 					variant="outline"
@@ -1260,15 +1267,25 @@
 								{/each}
 							</ul>
 						</div>
+						<!-- Account corner, Supabase-style: signed-in operators get their
+						     console; everyone else gets Log in / Sign up. The demo CTA
+						     lives in the hero - it is the pitch, not the account. -->
 						<div class="flex w-full flex-col space-y-3 sm:flex-row sm:gap-3 sm:space-y-0 md:w-fit">
-							<Button href="/dashboard" size="sm" class={cn(isScrolled && 'lg:hidden')}
-								>Open live demo</Button
-							>
-							<Button
-								href="/dashboard"
-								size="sm"
-								class={cn('hidden', isScrolled && 'lg:inline-flex')}>Live demo</Button
-							>
+							{#if data.signedIn}
+								<Button
+									href="/dashboard"
+									size="sm"
+									class="w-full rounded-lg shadow-sm"
+									data-testid="nav-dashboard">Dashboard</Button
+								>
+							{:else}
+								<Button href="/login" size="sm" variant="ghost" data-testid="nav-login"
+									>Log in</Button
+								>
+								<Button href="/login?signup=1" size="sm" data-testid="nav-signup" class="shadow-sm"
+									>Sign up</Button
+								>
+							{/if}
 						</div>
 					</div>
 				</div>

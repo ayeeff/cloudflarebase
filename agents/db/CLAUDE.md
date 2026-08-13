@@ -79,6 +79,8 @@ Row first, then push: `PUT /admin/collections/:name` upserts the parent row, the
 
 `demo-<20hex>` + `DEMO_MODE=true` (both halves): 5 collections, 200 docs/collection, 8 KB docs, 5 subscriptions/connection, TTL erase after `DEMO_TTL_HOURS` (idempotent schedule, re-checked before destroy). Always-on: 128 KB docs, 10 subscriptions/connection, query limit <= 200, 200 collections/project.
 
+Demos are throwaway, full stop - nothing lifts the caps or disarms the TTL. The demo-claim machinery (the `/internal/.../claim` route, the durable `demo-claimed` flag, the child config re-push, the gateway's `isEphemeralProject` parent consult) was removed 2026-08-12; every class now decides demo-ness locally from env + id shape.
+
 ## Publishing as `@cloudflarebase/db`
 
 Same regime as auth: `files` ships `dist`, `template`, `NOTICE`, `cloudflarebase.agent.json` only; never ship `worker-configuration.d.ts` (would clobber the consumer's global `Env`) or `src/env.d.ts`. `AssertDbAgentEnv` + `bindings.test-d.ts` lock the binding contract (`tsc --noEmit` is the whole test suite for it). The fragment is a FRESH v1 declaring BOTH classes. The `./client` subpath is the browser/Node SDK and must stay free of Workers imports.

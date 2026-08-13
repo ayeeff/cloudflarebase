@@ -29,7 +29,8 @@ export const RESERVED_PROJECT_IDS = new Set([
 	'setup',
 	'new',
 	'health',
-	'fleet'
+	'fleet',
+	'organization'
 ]);
 
 /**
@@ -51,4 +52,53 @@ export function isDemoProjectId(projectId: string): boolean {
 export function demoRootId(projectId: string): string {
 	const separator = projectId.indexOf('--');
 	return separator === -1 ? projectId : projectId.slice(0, separator);
+}
+
+/**
+ * The console operator's identity: session plus organization memberships,
+ * resolved in ONE round trip by the console AuthAgent's GET /console/me
+ * (mirrored in agents/auth/src/agent.ts; keep both in sync) and memoized per
+ * request as `locals.consoleIdentity`.
+ */
+export interface ConsoleOrgMembership {
+	id: string;
+	name: string;
+	slug: string;
+	/** The operator's role INSIDE the org (owner/admin/member). */
+	role: string;
+}
+
+export interface ConsolePendingInvitation {
+	id: string;
+	organizationId: string;
+	organizationName: string;
+	role: string | null;
+	inviterEmail: string | null;
+	expiresAt: string;
+}
+
+export interface ConsoleIdentity {
+	user: {
+		id: string;
+		email: string;
+		name: string;
+		role: string;
+		emailVerified: boolean;
+		image: string | null;
+	};
+	/** The org the operator is acting as - session state, set via the Better
+	 * Auth organization plugin's set-active endpoint. Falls back to the first
+	 * membership when null. */
+	activeOrganizationId: string | null;
+	organizations: ConsoleOrgMembership[];
+	pendingInvitations: ConsolePendingInvitation[];
+}
+
+/** The org an identity acts as: the active one, else the first membership. */
+export function activeOrg(identity: ConsoleIdentity): ConsoleOrgMembership | null {
+	return (
+		identity.organizations.find((org) => org.id === identity.activeOrganizationId) ??
+		identity.organizations[0] ??
+		null
+	);
 }

@@ -1,0 +1,132 @@
+import { expect, test } from '@playwright/test';
+import { configPath, consoleAuthPath, overviewPath, uniqueEmail } from './helpers';
+
+/**
+ * Phase A of the managed service (docs/managed-service-design.md): accounts,
+ * organizations, and ownership on the console instance.
+ *
+ * The e2e stack runs the CLAIMED mode (CONSOLE_SIGNUPS unset), so this file
+ * pins that mode's contract: strangers stay locked out, invited emails get
+ * in, and org membership is what scopes project access. Open mode needs a
+ * differently-configured agent worker and is not exercised here.
+ */
+
+test.describe('organizations and ownership', () => {
+	test('the console reports its registration policy', async ({ request }) => {
+		const config = await request.get(configPath('console'));
+		expect(config.ok()).toBeTruthy();
+		expect((await config.json()).consoleSignups).toBe('claimed');
+	});
+
+	test('the operator identity carries a personal organization', async ({ request }) => {
+		const me = await request.get('/api/console/me');
+		expect(me.ok(), await me.text()).toBeTruthy();
+		const identity = await me.json();
+		expect(identity.user.email).toBeTruthy();
+		// Lazy heal: the owner predates organizations, and the first identity
+		// lookup mints their personal org - so by now it must exist.
+		expect(identity.organizations.length).toBeGreaterThanOrEqual(1);
+		expect(identity.organizations[0].role).toBe('owner');
+	});
+
+	test('a stranger cannot register through the claimed console', async ({ request }) => {
+		const signUp = await request.post(consoleAuthPath('sign-up/email'), {
+			data: { name: 'Stranger', email: uniqueEmail('stranger'), password: 'stranger-pass-1' }
+		});
+		expect(signUp.status(), await signUp.text()).toBe(403);
+	});
+
+	test('an invited email registers, owns its org, and is scoped by it', async ({
+		baseURL,
+		playwright,
+		request
+	}) => {
+		const me = await (await request.get('/api/console/me')).json();
+		const operatorOrgId: string = me.organizations[0].id;
+
+		// The invitation is the authorization that lets a sign-up through the
+		// otherwise-closed console.
+		const email = uniqueEmail('invitee');
+		const invite = await request.post(consoleAuthPath('organization/invite-member'), {
+			data: { email, role: 'member', organizationId: operatorOrgId }
+		});
+		expect(invite.ok(), await invite.text()).toBeTruthy();
+		const invitation = await invite.json();
+		expect(invitation.id).toBeTruthy();
+
+		// A separate, cookie-less context: the invitee authenticates by bearer
+		// token only, so the operator session can never leak into their calls.
+		// The empty storageState is LOAD-BEARING: inside the test runner every
+		// new context inherits the project's `use` options, operator session
+		// included, unless overridden.
+		const anon = await playwright.request.newContext({
+			baseURL,
+			extraHTTPHeaders: { origin: baseURL! },
+			storageState: { cookies: [], origins: [] }
+		});
+		try {
+			const signUp = await anon.post(consoleAuthPath('sign-up/email'), {
+				data: { name: 'Invitee', email, password: 'invitee-pass-12' }
+			});
+			expect(signUp.ok(), await signUp.text()).toBeTruthy();
+			const token = signUp.headers()['set-auth-token'];
+			expect(token, 'the console issues bearer tokens like any project').toBeTruthy();
+			const asInvitee = { authorization: `Bearer ${token}` };
+
+			// The invitee's identity: their own personal org plus the pending
+			// invitation, in one round trip.
+			const inviteeMe = await anon.get('/api/console/me', { headers: asInvitee });
+			expect(inviteeMe.ok(), await inviteeMe.text()).toBeTruthy();
+			const inviteeIdentity = await inviteeMe.json();
+			expect(inviteeIdentity.organizations.length).toBeGreaterThanOrEqual(1);
+			expect(inviteeIdentity.pendingInvitations.map((entry: { id: string }) => entry.id)).toContain(
+				invitation.id
+			);
+			const inviteeOrgId: string = inviteeIdentity.organizations[0].id;
+			expect(inviteeOrgId).not.toBe(operatorOrgId);
+
+			// A project created by the invitee lands under THEIR org...
+			const projectId = `org-scope-${Date.now().toString(36)}`;
+			const created = await anon.post('/api/registry/projects', {
+				headers: asInvitee,
+				data: { id: projectId, name: 'Invitee project' }
+			});
+			expect(created.status(), await created.text()).toBe(201);
+			expect((await created.json()).project.orgId).toBe(inviteeOrgId);
+
+			try {
+				// ...so the operator - not a member of it - is refused, and never
+				// sees it listed.
+				const denied = await request.get(overviewPath(projectId));
+				expect(denied.status(), await denied.text()).toBe(403);
+				const operatorList = await (await request.get('/api/registry/projects')).json();
+				expect(operatorList.projects.map((entry: { id: string }) => entry.id)).not.toContain(
+					projectId
+				);
+
+				// The owner reads it fine through the same surface.
+				const allowed = await anon.get(overviewPath(projectId), { headers: asInvitee });
+				expect(allowed.ok(), await allowed.text()).toBeTruthy();
+
+				// Accepting the invitation joins the operator's org.
+				const accept = await anon.post(consoleAuthPath('organization/accept-invitation'), {
+					headers: asInvitee,
+					data: { invitationId: invitation.id }
+				});
+				expect(accept.ok(), await accept.text()).toBeTruthy();
+				const after = await (await anon.get('/api/console/me', { headers: asInvitee })).json();
+				expect(after.organizations.map((entry: { id: string }) => entry.id)).toContain(
+					operatorOrgId
+				);
+			} finally {
+				// Reused local stacks cap at MAX_PROJECTS - leave nothing behind.
+				const del = await anon.delete(`/api/registry/projects/${projectId}`, {
+					headers: asInvitee
+				});
+				expect(del.ok(), await del.text()).toBeTruthy();
+			}
+		} finally {
+			await anon.dispose();
+		}
+	});
+});

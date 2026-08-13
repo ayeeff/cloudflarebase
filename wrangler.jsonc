@@ -63,7 +63,8 @@
 
 	"services": [
 		{ "binding": "AUTH_AGENT", "service": "auth-agent" },
-		{ "binding": "DB_AGENT", "service": "db-agent" }
+		{ "binding": "DB_AGENT", "service": "db-agent" },
+		{ "binding": "HOSTING_AGENT", "service": "hosting-agent" }
 	],
 
 	// Control plane: the project registry. `database_id` is deliberately
@@ -150,7 +151,8 @@
 
 			"services": [
 				{ "binding": "AUTH_AGENT", "service": "auth-agent-local" },
-				{ "binding": "DB_AGENT", "service": "db-agent-local" }
+				{ "binding": "DB_AGENT", "service": "db-agent-local" },
+				{ "binding": "HOSTING_AGENT", "service": "hosting-agent-local" }
 			],
 			"ratelimits": [
 				{
@@ -192,7 +194,8 @@
 
 			"services": [
 				{ "binding": "AUTH_AGENT", "service": "auth-agent-test" },
-				{ "binding": "DB_AGENT", "service": "db-agent-test" }
+				{ "binding": "DB_AGENT", "service": "db-agent-test" },
+				{ "binding": "HOSTING_AGENT", "service": "hosting-agent-test" }
 			],
 			"ratelimits": [
 				{
@@ -235,7 +238,8 @@
 			],
 			"services": [
 				{ "binding": "AUTH_AGENT", "service": "auth-agent" },
-				{ "binding": "DB_AGENT", "service": "db-agent" }
+				{ "binding": "DB_AGENT", "service": "db-agent" },
+				{ "binding": "HOSTING_AGENT", "service": "hosting-agent" }
 			],
 			"ratelimits": [
 				{
@@ -288,7 +292,8 @@
 			],
 			"services": [
 				{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" },
-				{ "binding": "DB_AGENT", "service": "db-agent-preview" }
+				{ "binding": "DB_AGENT", "service": "db-agent-preview" },
+				{ "binding": "HOSTING_AGENT", "service": "hosting-agent-preview" }
 			],
 			"secrets": {
 				"required": ["ADMIN_SECRET"]

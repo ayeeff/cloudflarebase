@@ -98,9 +98,15 @@ that ships one.
 	"permissions": ["users:read", "users:write", "sessions:revoke", "roles:write"],
 
 	// Where the agent appears in the console, and which routes it mounts.
+	// `peek` (default 1) is how many leading pages stay visible while the
+	// sidebar section is folded - sections fold by default, so this is what
+	// the console shows of the agent before anyone opens it. The agent picks,
+	// because only it knows which pages represent it (db needs two:
+	// documents AND tables).
 	"console": {
 		"section": "Build",
 		"icon": "key-round",
+		"peek": 1,
 		"pages": [
 			{ "path": "/auth", "title": "Authentication" },
 			{ "path": "/api", "title": "API Reference" }

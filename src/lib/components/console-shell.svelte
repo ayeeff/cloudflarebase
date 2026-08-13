@@ -2,23 +2,34 @@
 	import { resolve } from '$app/paths';
 	import GithubLogo from '$lib/components/github-logo.svelte';
 	import ModeToggle from '$lib/components/mode-toggle.svelte';
-	import { ShieldCheck } from '@lucide/svelte';
+	import SignOutButton from '$lib/components/sign-out-button.svelte';
 	import type { Snippet } from 'svelte';
 
 	/**
-	 * Shell for the pre-project console surfaces - sign-in, first-run claim, and
-	 * the project list. The brand panel is the only place a self-hosted install
-	 * says what it is, so it carries the positioning rather than decoration.
+	 * Shell for the AUTH surfaces only - sign-in/sign-up (first-run claim
+	 * included) and the CLI hand-off. Signed-in account pages (projects,
+	 * organization) live in the (account) sidebar shell instead; the brand
+	 * panel is the only place a self-hosted install says what it is, so it
+	 * carries the positioning rather than decoration.
+	 *
+	 * The panel follows the theme; only the terminal card inside it is
+	 * theme-stable espresso, via a scoped `dark` class that makes the shadcn
+	 * tokens inside the card resolve dark in both themes (a terminal is
+	 * naturally dark). Never touches the root theme state.
 	 *
 	 * It collapses below `lg`, where the content column takes the full width.
 	 */
 	let {
 		children,
-		wide = false
+		wide = false,
+		signedIn = false
 	}: {
 		children: Snippet;
 		/** Widen the content column for lists; forms stay narrow. */
 		wide?: boolean;
+		/** Renders the sign-out control. cli-auth always has a session; the
+		 * login page never does. */
+		signedIn?: boolean;
 	} = $props();
 </script>
 
@@ -32,12 +43,21 @@
 			class="pointer-events-none absolute -top-32 -left-24 h-96 w-96 rounded-full bg-primary/10 blur-3xl"
 		></div>
 
-		<div class="relative flex items-center gap-2.5">
+		<!-- Faint engineering dot grid, fading toward the lower panel. -->
+		<div
+			aria-hidden="true"
+			class="pointer-events-none absolute inset-0 bg-[radial-gradient(var(--color-border)_1px,transparent_1px)] mask-[linear-gradient(200deg,black_15%,transparent_70%)] bg-size-[22px_22px]"
+		></div>
+
+		<a
+			href={resolve('/')}
+			class="relative flex w-fit items-center gap-2.5 transition-opacity hover:opacity-80"
+		>
 			<img src="/brand/mark.svg" alt="" class="h-7 w-7" />
 			<span class="text-lg font-semibold tracking-tight">Cloudflarebase</span>
-		</div>
+		</a>
 
-		<div class="relative max-w-md space-y-6">
+		<div class="relative mx-auto w-full max-w-md space-y-6">
 			<h2 class="text-3xl leading-tight font-semibold tracking-tight text-balance">
 				The open-source backend built on Cloudflare.
 			</h2>
@@ -46,11 +66,26 @@
 				database, at the edge, in your account.
 			</p>
 
-			<div class="flex items-start gap-3 rounded-lg border bg-background/60 p-4">
-				<ShieldCheck class="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-				<p class="text-sm text-muted-foreground">
-					This console runs on its own auth agent - the same stack your projects use.
+			<!-- A terminal is naturally dark: the scoped `dark` class keeps this
+			     card espresso in both themes while the panel follows the theme. -->
+			<div
+				class="dark space-y-1.5 rounded-lg border bg-card p-4 font-mono text-xs leading-relaxed text-foreground shadow-[0_10px_26px_-14px_oklch(0.1_0.01_60/60%)]"
+			>
+				<p><span class="text-primary">$</span> npx cloudflarebase init my-app</p>
+				<p><span class="text-primary">$</span> cloudflarebase deploy</p>
+				<p>
+					<span class="text-[oklch(0.72_0.15_150)]">✓</span> Deployed
+					<span class="text-muted-foreground">- my-app.cfbase.dev</span>
 				</p>
+			</div>
+
+			<div
+				class="flex items-center gap-2.5 font-mono text-[11px] tracking-wide text-muted-foreground"
+			>
+				<span
+					class="size-1.5 shrink-0 rounded-full bg-[oklch(0.72_0.15_150)] shadow-[0_0_7px_oklch(0.72_0.15_150/80%)]"
+				></span>
+				console · auth-agent · SQLite at the edge
 			</div>
 		</div>
 
@@ -69,13 +104,18 @@
 	</aside>
 
 	<main class="relative flex flex-col items-center justify-center px-4 py-10">
-		<ModeToggle class="absolute top-4 right-4" variant="ghost" />
+		<div class="absolute top-4 right-4 flex items-center gap-1">
+			{#if signedIn}
+				<SignOutButton />
+			{/if}
+			<ModeToggle variant="ghost" />
+		</div>
 
 		<!-- The mark repeats here only where the brand panel is hidden. -->
-		<div class="mb-8 flex items-center gap-2.5 lg:hidden">
+		<a href={resolve('/')} class="mb-8 flex items-center gap-2.5 lg:hidden">
 			<img src="/brand/mark.svg" alt="" class="h-6 w-6" />
 			<span class="font-semibold tracking-tight">Cloudflarebase</span>
-		</div>
+		</a>
 
 		<div class="w-full {wide ? 'max-w-xl' : 'max-w-sm'}">
 			{@render children()}

@@ -31,10 +31,66 @@ export const session = sqliteTable('session', {
 	userAgent: text('user_agent'),
 	// Captured from request.cf.country when the session is created (analytics).
 	country: text('country'),
+	// Added by the Better Auth organization plugin (set-active).
+	activeOrganizationId: text('active_organization_id'),
 	userId: text('user_id')
 		.notNull()
 		.references(() => user.id, { onDelete: 'cascade' }),
 });
+
+/**
+ * Better Auth organization plugin (teams). Shapes mirror the plugin's
+ * getAuthTables() output for better-auth 1.6 - compare against it on upgrade.
+ */
+export const organization = sqliteTable('organization', {
+	id: text('id').primaryKey(),
+	name: text('name').notNull(),
+	slug: text('slug').notNull().unique(),
+	logo: text('logo'),
+	metadata: text('metadata'),
+	createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
+export const member = sqliteTable(
+	'member',
+	{
+		id: text('id').primaryKey(),
+		organizationId: text('organization_id')
+			.notNull()
+			.references(() => organization.id, { onDelete: 'cascade' }),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		role: text('role').notNull().default('member'),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+	},
+	(table) => [
+		index('member_organization_idx').on(table.organizationId),
+		index('member_user_idx').on(table.userId),
+	],
+);
+
+export const invitation = sqliteTable(
+	'invitation',
+	{
+		id: text('id').primaryKey(),
+		organizationId: text('organization_id')
+			.notNull()
+			.references(() => organization.id, { onDelete: 'cascade' }),
+		email: text('email').notNull(),
+		role: text('role'),
+		status: text('status').notNull().default('pending'),
+		expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+		inviterId: text('inviter_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+	},
+	(table) => [
+		index('invitation_organization_idx').on(table.organizationId),
+		index('invitation_email_idx').on(table.email),
+	],
+);
 
 export const account = sqliteTable('account', {
 	id: text('id').primaryKey(),

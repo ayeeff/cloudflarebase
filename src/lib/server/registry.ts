@@ -4,10 +4,12 @@ import { AGENT_REGISTRY } from '$lib/agent-registry';
 import type { RegistryProject } from '$lib/agents';
 import { getDb } from '$lib/server/db';
 import { project, projectAgent } from '$lib/server/db/schema';
+import { releaseGithubRows } from '$lib/server/github-connect';
+import { releaseHostingRows } from '$lib/server/hosting';
 import { requireAgent } from '$lib/server/agents';
 import { projectIdSchema } from '$lib/schemas/auth';
 import type { Cookies } from '@sveltejs/kit';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
@@ -42,14 +44,36 @@ export const branchNameSchema = z
 
 export const createBranchSchema = z.object({ branch: branchNameSchema });
 
-/** Ceiling on one installation, to keep an accidental loop from filling D1. */
-const MAX_PROJECTS = 100;
+/** Ceiling on one installation, to keep an accidental loop from filling D1.
+ * A backstop, not a product limit - per-tenant fairness is the org ceiling. */
+const MAX_PROJECTS = 1000;
+
+/**
+ * Per-tenant ceilings: root projects per owning org and branches per root.
+ * Env-overridable (`MAX_PROJECTS_PER_ORG` / `MAX_BRANCHES_PER_ROOT`) so the
+ * e2e stack and generous self-hosted installs can raise them. Unowned rows
+ * (org_id NULL - legacy/pre-org installs) answer only to MAX_PROJECTS: with
+ * no org to attribute them to, a per-tenant count would lump every legacy
+ * operator into one bucket.
+ */
+const DEFAULT_MAX_PROJECTS_PER_ORG = 5;
+const DEFAULT_MAX_BRANCHES_PER_ROOT = 5;
+
+function envLimit(
+	platform: App.Platform | undefined,
+	name: 'MAX_PROJECTS_PER_ORG' | 'MAX_BRANCHES_PER_ROOT',
+	fallback: number
+): number {
+	const parsed = Number.parseInt(platform?.env?.[name] ?? '', 10);
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 function toDto(row: {
 	id: string;
 	name: string;
 	parentId: string | null;
 	branchName: string | null;
+	orgId: string | null;
 	createdAt: Date;
 }): RegistryProject {
 	return {
@@ -57,6 +81,7 @@ function toDto(row: {
 		name: row.name,
 		parentId: row.parentId,
 		branchName: row.branchName,
+		orgId: row.orgId,
 		createdAt: row.createdAt.toISOString()
 	};
 }
@@ -65,11 +90,25 @@ function toDto(row: {
  * Lists the installation's projects, oldest first. Returns an empty list
  * rather than throwing when the database cannot be reached, so a first-run
  * console renders its empty state instead of an error page.
+ *
+ * `orgIds` scopes the list to rows those organizations own PLUS unowned
+ * (org_id NULL) legacy/self-hosted rows, which every operator may see.
+ * Omitting it returns everything - for callers that predate ownership or
+ * genuinely need the whole registry (the erase fan-out, tests).
  */
-export async function listProjects(platform: App.Platform | undefined): Promise<RegistryProject[]> {
+export async function listProjects(
+	platform: App.Platform | undefined,
+	orgIds?: string[]
+): Promise<RegistryProject[]> {
 	try {
 		const db = await getDb(platform);
-		const rows = await db.select().from(project).orderBy(asc(project.createdAt));
+		const scope =
+			orgIds === undefined
+				? undefined
+				: orgIds.length
+					? or(isNull(project.orgId), inArray(project.orgId, orgIds))
+					: isNull(project.orgId);
+		const rows = await db.select().from(project).where(scope).orderBy(asc(project.createdAt));
 		return rows.map(toDto);
 	} catch (cause) {
 		// Degrading to "no projects" is right for a first run but wrong to do
@@ -84,16 +123,114 @@ export async function listProjects(platform: App.Platform | undefined): Promise<
 	}
 }
 
+export interface ProjectOwnership {
+	/** Whether a registry row governs this id. */
+	registered: boolean;
+	/** The owning org; null on unowned rows (visible to any operator). */
+	orgId: string | null;
+}
+
+/**
+ * The guard's per-request ownership lookup. Unregistered ids answer
+ * `registered: false` - they keep today's any-operator behaviour. Returns
+ * that same answer when the control plane is unreachable: failing open
+ * preserves the pre-ownership behaviour during an outage instead of locking
+ * every operator out, and the capture keeps it visible.
+ */
+export async function getProjectOwnership(
+	platform: App.Platform | undefined,
+	projectId: string
+): Promise<ProjectOwnership> {
+	if (!projectIdSchema.safeParse(projectId).success) {
+		return { registered: false, orgId: null };
+	}
+	try {
+		const db = await getDb(platform);
+		const [row] = await db
+			.select({ orgId: project.orgId })
+			.from(project)
+			.where(eq(project.id, projectId))
+			.limit(1);
+		if (row) return { registered: true, orgId: row.orgId };
+		return { registered: false, orgId: null };
+	} catch (cause) {
+		console.error('project ownership lookup failed', cause);
+		Sentry.captureException(cause, {
+			level: 'error',
+			tags: { operation: 'project-ownership', projectId }
+		});
+		return { registered: false, orgId: null };
+	}
+}
+
+/** One registry row, or null for unregistered ids and an unreachable control
+ * plane - callers degrade (the settings page explains) instead of erroring. */
+export async function getProject(
+	platform: App.Platform | undefined,
+	projectId: string
+): Promise<RegistryProject | null> {
+	if (!projectIdSchema.safeParse(projectId).success) return null;
+	try {
+		const db = await getDb(platform);
+		const [row] = await db.select().from(project).where(eq(project.id, projectId)).limit(1);
+		return row ? toDto(row) : null;
+	} catch (cause) {
+		console.error('loading project failed', cause);
+		Sentry.captureException(cause, {
+			level: 'error',
+			tags: { operation: 'get-project', projectId }
+		});
+		return null;
+	}
+}
+
+export type RenameProjectResult =
+	{ ok: true; project: RegistryProject } | { ok: false; status: number; error: string };
+
+/** Renames a project's display NAME. The id is the Durable Object name in
+ * every agent and is immutable by construction - names are the only
+ * user-editable identity, and they stay non-unique on purpose. */
+export async function renameProject(
+	platform: App.Platform | undefined,
+	projectId: string,
+	input: unknown
+): Promise<RenameProjectResult> {
+	if (!projectIdSchema.safeParse(projectId).success) {
+		return { ok: false, status: 400, error: 'invalid project id' };
+	}
+	const parsed = createProjectSchema.pick({ name: true }).safeParse(input);
+	if (!parsed.success) {
+		return { ok: false, status: 400, error: parsed.error.issues[0]?.message ?? 'invalid name' };
+	}
+
+	const db = await getDb(platform);
+	const [updated] = await db
+		.update(project)
+		.set({ name: parsed.data.name })
+		.where(eq(project.id, projectId))
+		.returning();
+	if (!updated) return { ok: false, status: 404, error: 'no such project' };
+	return { ok: true, project: toDto(updated) };
+}
+
 export type CreateProjectResult =
 	{ ok: true; project: RegistryProject } | { ok: false; status: number; error: string };
 
 export async function createProject(
 	platform: App.Platform | undefined,
-	input: unknown
+	input: unknown,
+	orgId: string | null = null
 ): Promise<CreateProjectResult> {
 	const parsed = createProjectSchema.safeParse(input);
 	if (!parsed.success) {
 		return { ok: false, status: 400, error: parsed.error.issues[0]?.message ?? 'invalid project' };
+	}
+	if (isDemoProjectId(parsed.data.id)) {
+		// Demo-shaped ids are never registry rows: demos are throwaway 30-day
+		// instances whose agents cap and self-erase them by id shape, and the
+		// guard grants them anonymous access on the same shape. A registered
+		// row would contradict both.
+		return { ok: false, status: 400, error: 'demo ids are reserved for throwaway demos' };
 	}
 
 	const db = await getDb(platform);
@@ -112,9 +249,26 @@ export async function createProject(
 		};
 	}
 
+	if (orgId) {
+		// Roots only: branches have their own per-root ceiling, so one tenant
+		// tops out at maxRoots × (1 + maxBranches) registry rows.
+		const limit = envLimit(platform, 'MAX_PROJECTS_PER_ORG', DEFAULT_MAX_PROJECTS_PER_ORG);
+		const owned = await db
+			.select({ id: project.id })
+			.from(project)
+			.where(and(eq(project.orgId, orgId), isNull(project.parentId)));
+		if (owned.length >= limit) {
+			return {
+				ok: false,
+				status: 409,
+				error: `your organization is limited to ${limit} projects for now - delete one to make room`
+			};
+		}
+	}
+
 	const [created] = await db
 		.insert(project)
-		.values({ id: parsed.data.id, name: parsed.data.name, createdAt: new Date() })
+		.values({ id: parsed.data.id, name: parsed.data.name, orgId, createdAt: new Date() })
 		.returning();
 
 	await enableRegistryAgents(db, created.id);
@@ -198,6 +352,20 @@ export async function createBranch(
 			error: `this installation is limited to ${MAX_PROJECTS} projects`
 		};
 	}
+	// Deploy tokens can mint branches too (CI on a new git branch), so this
+	// also caps a runaway workflow, not just the dashboard dialog.
+	const limit = envLimit(platform, 'MAX_BRANCHES_PER_ROOT', DEFAULT_MAX_BRANCHES_PER_ROOT);
+	const siblings = await db
+		.select({ id: project.id })
+		.from(project)
+		.where(eq(project.parentId, rootId));
+	if (siblings.length >= limit) {
+		return {
+			ok: false,
+			status: 409,
+			error: `each project is limited to ${limit} branches for now - delete one to make room`
+		};
+	}
 
 	const [created] = await db
 		.insert(project)
@@ -206,6 +374,9 @@ export async function createBranch(
 			name: `${root.name} (${parsed.data.branch})`,
 			parentId: rootId,
 			branchName: parsed.data.branch,
+			// A branch belongs to whoever owns its root - ownership follows the
+			// family, never the individual row.
+			orgId: root.orgId,
 			createdAt: new Date()
 		})
 		.returning();
@@ -289,6 +460,7 @@ export function demoBranchContext(
 			name: `Demo (${branchName})`,
 			parentId: rootId,
 			branchName,
+			orgId: null,
 			createdAt: new Date(0).toISOString()
 		}))
 		.filter((branch) => projectIdSchema.safeParse(branch.id).success);
@@ -306,7 +478,9 @@ export async function getBranchContext(
 	platform: App.Platform | undefined,
 	projectId: string
 ): Promise<BranchContext | null> {
-	if (!projectIdSchema.safeParse(projectId).success || isDemoProjectId(projectId)) return null;
+	// Demo-shaped ids are never registry rows; they miss the row lookup and
+	// return null like any other unregistered id.
+	if (!projectIdSchema.safeParse(projectId).success) return null;
 	try {
 		const db = await getDb(platform);
 		const [row] = await db.select().from(project).where(eq(project.id, projectId)).limit(1);
@@ -383,6 +557,13 @@ export async function deleteProject(
 	if (!deleted.length) {
 		return { ok: false, status: 404, error: 'no such project' };
 	}
+
+	// Release hosting claims, deploy tokens, and GitHub connections for the
+	// whole family - the subdomains return to the pool the moment the rows are
+	// gone, and a deleted project stops accepting pushes.
+	const family = [projectId, ...branches.map((branch) => branch.id)];
+	await releaseHostingRows(db, family);
+	await releaseGithubRows(db, family);
 
 	failures.push(...(await eraseProjectData(platform, projectId)));
 	if (failures.length) {

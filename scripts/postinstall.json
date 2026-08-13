@@ -10,6 +10,10 @@
 		{
 			"name": "db-agent",
 			"command": "cd ./agents/db && npm install"
+		},
+		{
+			"name": "hosting-agent",
+			"command": "cd ./agents/hosting && npm install"
 		}
 	]
 }

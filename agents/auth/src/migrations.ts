@@ -43,6 +43,13 @@ const journal = {
 			tag: '0004_thin_hercules',
 			breakpoints: true,
 		},
+		{
+			idx: 5,
+			version: '6',
+			when: 1786501645504,
+			tag: '0005_busy_cobalt_man',
+			breakpoints: true,
+		},
 	],
 };
 
@@ -128,6 +135,45 @@ const m0004 = `CREATE TABLE \`jwks\` (
 --> statement-breakpoint
 ALTER TABLE \`user\` ADD \`role\` text DEFAULT 'user' NOT NULL;`;
 
+const m0005 = `CREATE TABLE \`invitation\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`organization_id\` text NOT NULL,
+	\`email\` text NOT NULL,
+	\`role\` text,
+	\`status\` text DEFAULT 'pending' NOT NULL,
+	\`expires_at\` integer NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`inviter_id\` text NOT NULL,
+	FOREIGN KEY (\`organization_id\`) REFERENCES \`organization\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (\`inviter_id\`) REFERENCES \`user\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX \`invitation_organization_idx\` ON \`invitation\` (\`organization_id\`);--> statement-breakpoint
+CREATE INDEX \`invitation_email_idx\` ON \`invitation\` (\`email\`);--> statement-breakpoint
+CREATE TABLE \`member\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`organization_id\` text NOT NULL,
+	\`user_id\` text NOT NULL,
+	\`role\` text DEFAULT 'member' NOT NULL,
+	\`created_at\` integer NOT NULL,
+	FOREIGN KEY (\`organization_id\`) REFERENCES \`organization\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (\`user_id\`) REFERENCES \`user\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX \`member_organization_idx\` ON \`member\` (\`organization_id\`);--> statement-breakpoint
+CREATE INDEX \`member_user_idx\` ON \`member\` (\`user_id\`);--> statement-breakpoint
+CREATE TABLE \`organization\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`name\` text NOT NULL,
+	\`slug\` text NOT NULL,
+	\`logo\` text,
+	\`metadata\` text,
+	\`created_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`organization_slug_unique\` ON \`organization\` (\`slug\`);--> statement-breakpoint
+ALTER TABLE \`session\` ADD \`active_organization_id\` text;`;
+
 export default {
 	journal,
 	migrations: {
@@ -136,5 +182,6 @@ export default {
 		m0002,
 		m0003,
 		m0004,
+		m0005,
 	},
 };

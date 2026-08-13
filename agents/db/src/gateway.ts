@@ -147,10 +147,9 @@ export class DbGateway extends DurableObject<Env> {
 		query: unknown,
 		token: string | undefined,
 	): Promise<void> {
-		const cap =
-			this.env.DEMO_MODE === 'true' && DEMO_PROJECT_PATTERN.test(this.projectId)
-				? DEMO_GATEWAY_MAX_SUBSCRIPTIONS_PER_CONNECTION
-				: GATEWAY_MAX_SUBSCRIPTIONS_PER_CONNECTION;
+		const cap = (await this.isDemoProject())
+			? DEMO_GATEWAY_MAX_SUBSCRIPTIONS_PER_CONNECTION
+			: GATEWAY_MAX_SUBSCRIPTIONS_PER_CONNECTION;
 		const [held] = await this.db
 			.select({ value: count() })
 			.from(gatewaySubs)
@@ -418,6 +417,15 @@ export class DbGateway extends DurableObject<Env> {
 		}
 		this.routing.set(name, entry);
 		return entry;
+	}
+
+	/**
+	 * Whether demo caps apply to this project - env + id shape, the same
+	 * decision every shard makes. Demos are throwaway; nothing lifts their
+	 * caps, so no parent consult is needed.
+	 */
+	private async isDemoProject(): Promise<boolean> {
+		return this.env.DEMO_MODE === 'true' && DEMO_PROJECT_PATTERN.test(this.projectId);
 	}
 
 	private async allowedOrigins(): Promise<string[]> {
