@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import type { DeployTokenInfo, HostingDeploy, HostingOverview } from '$lib/agents';
+	import type {
+		DeployTokenInfo,
+		GithubConnectionInfo,
+		HostingDeploy,
+		HostingOverview
+	} from '$lib/agents';
+	import ConnectGithubDialog from './connect-github-dialog.svelte';
 	import {
 		DEPLOY_TOKEN_SECRET_NAME,
 		deployWorkflowYaml,
@@ -145,7 +151,30 @@
 		}
 	}
 
-	// --- Connect GitHub: mint a token, prefill the workflow file on GitHub.
+	// --- GitHub App path: one connection per app, made on the ROOT project.
+	// A connection covers the root and all its branches, like a deploy token.
+	let connectOpen = $state(false);
+	let disconnectTarget = $state<GithubConnectionInfo | null>(null);
+	let disconnectBusy = $state(false);
+	const connection = $derived(data.github.connections[0] ?? null);
+
+	async function disconnect() {
+		if (!disconnectTarget || disconnectBusy) return;
+		disconnectBusy = true;
+		try {
+			await fetch(
+				`/api/projects/${data.projectId}/hosting/github/connections/${encodeURIComponent(disconnectTarget.appName)}`,
+				{ method: 'DELETE' }
+			);
+			disconnectTarget = null;
+			await invalidateAll();
+		} finally {
+			disconnectBusy = false;
+		}
+	}
+
+	// --- Manual path, only when no GitHub App is configured (the self-hosted
+	// default): mint a token and prefill the workflow file on GitHub.
 	let repo = $state('');
 	let githubBusy = $state(false);
 	let githubError = $state<string | null>(null);
@@ -418,13 +447,72 @@
 						<GitBranch class="h-4 w-4 text-muted-foreground" /> Connect GitHub
 					</Card.Title>
 					<Card.Description>
-						Push-to-deploy without a build farm: a workflow builds on GitHub's runners and deploys
-						with a token. The default branch ships production; every other branch gets its own
-						isolated preview at <code class="font-mono text-xs">&lt;app&gt;-&lt;branch&gt;</code>.
+						Push-to-deploy without a build farm. The default branch ships production; every other
+						branch gets its own isolated preview at
+						<code class="font-mono text-xs">&lt;app&gt;-&lt;branch&gt;</code>.
 					</Card.Description>
 				</Card.Header>
 				<Card.Content class="space-y-4">
-					{#if !githubToken}
+					{#if data.github.configured}
+						{#if connection}
+							<!-- Connected: what a push does, and how to stop it. -->
+							<div class="space-y-3" data-testid="github-connection">
+								<div class="flex flex-wrap items-center gap-2">
+									<a
+										class="font-mono text-sm underline-offset-4 hover:underline"
+										href={`https://github.com/${connection.repoFullName}`}
+										target="_blank"
+										rel="noreferrer">{connection.repoFullName}</a
+									>
+									<Badge variant="secondary">
+										{connection.mode === 'direct' ? 'No build step' : 'Builds on Actions'}
+									</Badge>
+									{#if connection.lastEventAt}
+										<span class="text-xs text-muted-foreground">
+											last push {timeAgo(connection.lastEventAt)}
+										</span>
+									{/if}
+								</div>
+								<p class="text-sm text-muted-foreground">
+									{#if connection.mode === 'direct'}
+										Every push to <code class="font-mono text-xs">{connection.defaultBranch}</code>
+										publishes
+										<code class="font-mono text-xs">{connection.assetsDir || 'the repo root'}</code>
+										to <code class="font-mono text-xs">{connection.appName}</code> directly - no workflow
+										file, no Actions minutes.
+									{:else}
+										Every push to <code class="font-mono text-xs">{connection.defaultBranch}</code>
+										builds on GitHub's runners and deploys
+										<code class="font-mono text-xs">{connection.appName}</code>. The repository
+										holds no secret - deploys authenticate with GitHub's identity token.
+									{/if}
+								</p>
+								<Button
+									size="sm"
+									variant="outline"
+									onclick={() => (disconnectTarget = connection)}
+									data-testid="disconnect-github"
+								>
+									Disconnect
+								</Button>
+							</div>
+						{:else}
+							<div class="space-y-3">
+								<p class="text-sm text-muted-foreground">
+									Connect a repository and every push deploys itself. A site with no build step
+									needs no workflow file at all; one that builds gets a workflow that authenticates
+									with GitHub's identity token instead of a stored secret.
+								</p>
+								<Button
+									class="gap-2"
+									onclick={() => (connectOpen = true)}
+									data-testid="connect-github"
+								>
+									<GitBranch class="h-4 w-4" /> Connect repository
+								</Button>
+							</div>
+						{/if}
+					{:else if !githubToken}
 						<form class="flex flex-wrap items-end gap-3" onsubmit={connectGithub}>
 							<div class="min-w-56 flex-1 space-y-1.5">
 								<Label for="github-repo">Repository</Label>
@@ -524,6 +612,44 @@
 		{/if}
 	{/if}
 </div>
+
+<ConnectGithubDialog
+	bind:open={connectOpen}
+	projectId={data.projectId}
+	installations={data.github.installations}
+	takenApps={(data.claims ?? []).map((claim) => claim.appName)}
+/>
+
+<!-- Disconnecting stops deploys immediately; the workflow file goes with it. -->
+<AlertDialog.Root
+	open={disconnectTarget !== null}
+	onOpenChange={(open) => {
+		if (!open) disconnectTarget = null;
+	}}
+>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Disconnect {disconnectTarget?.repoFullName}?</AlertDialog.Title>
+			<AlertDialog.Description>
+				Pushes stop deploying immediately.
+				{#if disconnectTarget?.mode === 'build'}
+					The workflow file this connection added is removed from the repository too.
+				{/if}
+				Everything already deployed keeps serving.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action
+				disabled={disconnectBusy}
+				onclick={disconnect}
+				data-testid="confirm-disconnect-github"
+			>
+				{disconnectBusy ? 'Disconnecting…' : 'Disconnect'}
+			</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
 
 <!-- Mint dialog: the secret appears exactly once. -->
 <Dialog.Root bind:open={mintOpen}>

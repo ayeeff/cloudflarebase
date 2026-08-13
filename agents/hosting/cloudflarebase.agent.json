@@ -33,6 +33,6 @@
 	"console": {
 		"section": "Hosting",
 		"icon": "rocket",
-		"pages": [{ "path": "/hosting", "title": "Hosting", "testId": "nav-hosting", "icon": "rocket" }]
+		"pages": [{ "path": "/hosting", "title": "Apps", "testId": "nav-hosting", "icon": "rocket" }]
 	}
 }

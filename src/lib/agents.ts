@@ -721,6 +721,33 @@ export const mintDeployTokenSchema = z
 	.object({ name: z.string().describe('A label, e.g. the repository this token deploys from.') })
 	.meta({ id: 'MintDeployTokenRequest' });
 
+export const githubConnectionSchema = z
+	.object({
+		id: z.string(),
+		projectId: z.string().describe('The ROOT project; branches ride the same connection.'),
+		appName: z.string(),
+		installationId: z.number().int(),
+		repoId: z.number().int(),
+		repoFullName: z.string(),
+		defaultBranch: z.string(),
+		mode: z
+			.enum(['build', 'direct'])
+			.describe(
+				'`build` adds a workflow and trusts the Actions OIDC token; `direct` deploys the pushed tree from the webhook, with no runner and no file in the repository.'
+			),
+		assetsDir: z
+			.string()
+			.nullable()
+			.describe('Direct mode only: repo-relative directory published as assets.'),
+		createdAt: z.iso.datetime(),
+		lastEventAt: z.iso.datetime().nullable()
+	})
+	.meta({
+		id: 'GithubConnection',
+		description:
+			'A repository connected to one project+app. Made on a ROOT project; a push to the default branch deploys the root and any other branch deploys `<root>--<branch>`.'
+	});
+
 export const mintedDeployTokenSchema = z
 	.object({
 		id: z.string(),
@@ -776,4 +803,5 @@ export type HostingOverview = z.infer<typeof hostingOverviewSchema>;
 export type HostingDeployPage = z.infer<typeof hostingDeployPageSchema>;
 export type HostingClaim = z.infer<typeof hostingClaimSchema>;
 export type DeployTokenInfo = z.infer<typeof deployTokenSchema>;
+export type GithubConnectionInfo = z.infer<typeof githubConnectionSchema>;
 export type MintedDeployToken = z.infer<typeof mintedDeployTokenSchema>;
