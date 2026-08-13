@@ -14,6 +14,40 @@
 export const DEPLOY_TOKEN_SECRET_NAME = 'CLOUDFLAREBASE_DEPLOY_TOKEN';
 export const WORKFLOW_FILENAME = '.github/workflows/cloudflarebase.yml';
 
+/**
+ * Everything between checkout and deploy, shared by both workflows below so
+ * the two can never drift.
+ *
+ * This runs on every push, so the install is worth tuning: restoring `~/.npm`
+ * and using `npm ci` turns a cold ~60s install into ~15s. Both are
+ * CONDITIONAL, because a connected repository is not guaranteed to have a
+ * lockfile - and `cache: npm` with no lockfile FAILS the job outright rather
+ * than quietly skipping the cache, which would break the deploy we are
+ * supposed to be speeding up.
+ */
+const buildSteps = `      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # Restores ~/.npm. That also holds npx's cache, so the deploy step
+          # reuses it - npx still checks the registry for a newer CLI, since a
+          # name-only spec is re-resolved on every run.
+          cache: \${{ hashFiles('package-lock.json', 'npm-shrinkwrap.json') != '' && 'npm' || '' }}
+      - name: Install dependencies
+        if: hashFiles('package.json') != ''
+        # ci skips dependency resolution entirely; the fallback covers a
+        # lockfile that has drifted, which ci refuses and install repairs.
+        # --no-audit/--no-fund drop two registry round trips nothing reads here.
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci --prefer-offline --no-audit --no-fund || npm install --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+      # Adjust to your stack; skipped when package.json has no build script.
+      - name: Build
+        if: hashFiles('package.json') != ''
+        run: npm run build --if-present`;
+
 export function deployWorkflowYaml(): string {
 	return `# Deploys this repository to Cloudflarebase on every push.
 # The default branch deploys production; any other branch deploys an
@@ -34,12 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install
-      # Adjust to your stack; skipped when package.json has no build script.
-      - run: npm run build --if-present
+${buildSteps}
       - name: Deploy
         run: npx --yes @cloudflarebase/cli deploy
         env:
@@ -98,12 +127,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm install
-      # Adjust to your stack; skipped when package.json has no build script.
-      - run: npm run build --if-present
+${buildSteps}
       - name: Deploy
         run: npx --yes @cloudflarebase/cli deploy
         env:
