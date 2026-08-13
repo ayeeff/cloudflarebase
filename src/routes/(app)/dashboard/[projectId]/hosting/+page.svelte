@@ -8,6 +8,7 @@
 		HostingDeploy,
 		HostingOverview
 	} from '$lib/agents';
+	import GithubMark from '$lib/components/github-mark.svelte';
 	import ConnectGithubDialog from './connect-github-dialog.svelte';
 	import {
 		DEPLOY_TOKEN_SECRET_NAME,
@@ -23,22 +24,40 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import {
-		Check,
-		Copy,
-		ExternalLink,
-		GitBranch,
-		KeyRound,
-		Rocket,
-		Sparkles,
-		Terminal
-	} from '@lucide/svelte';
+	import { Check, Copy, ExternalLink, KeyRound, Rocket, Sparkles, Terminal } from '@lucide/svelte';
 
 	let { data } = $props();
 
 	// Writable derived: the SSR payload wins on navigation, the poll overwrites
 	// between loads.
 	let overview: HostingOverview | null = $derived(data.overview);
+
+	/**
+	 * Apps the AGENT knows about, plus control-plane claims it has not been
+	 * told about yet.
+	 *
+	 * The agent only learns an app exists when the console pushes the claim,
+	 * and that happens at DEPLOY time - but claiming happens earlier, when a
+	 * repository is connected or `init` runs. Without the merge the operator
+	 * connects a repo, sees "No apps yet", and reasonably concludes it failed.
+	 */
+	const apps = $derived.by(() => {
+		const deployed = overview?.apps ?? [];
+		const known = new Set(deployed.map((app) => app.name));
+		const pending = (data.claims ?? [])
+			.filter((claim) => !known.has(claim.appName))
+			.map((claim) => ({
+				name: claim.appName,
+				subdomain: claim.subdomain,
+				// The console does not know the serving domain - the agent composes
+				// URLs from HOSTING_DOMAIN - so show the claimed label, not a guess.
+				url: null,
+				deployCount: 0,
+				lastDeployAt: null,
+				createdAt: claim.createdAt
+			}));
+		return [...deployed, ...pending];
+	});
 
 	// The 5s poll every tool page rides; rev moves on any deploy from any client.
 	$effect(() => {
@@ -312,7 +331,7 @@
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="space-y-3">
-				{#if overview.apps.length === 0}
+				{#if apps.length === 0}
 					<div class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
 						<p class="mb-2 flex items-center gap-2 font-medium text-foreground">
 							<Terminal class="h-4 w-4" /> No apps yet
@@ -330,10 +349,18 @@
 					</div>
 				{:else}
 					<div class="grid gap-2">
-						{#each overview.apps as app (app.name)}
+						{#each apps as app (app.name)}
 							<div class="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3">
 								<div class="min-w-0 flex-1">
-									<p class="truncate text-sm font-medium">{app.name}</p>
+									<p class="flex items-center gap-2 truncate text-sm font-medium">
+										{app.name}
+										{#if app.deployCount === 0}
+											<!-- Claimed but never deployed: connecting a repository
+											     reserves the subdomain immediately, and the operator
+											     should see it rather than an empty card. -->
+											<Badge variant="outline" class="font-normal">Awaiting first deploy</Badge>
+										{/if}
+									</p>
 									{#if app.url}
 										<!-- eslint-disable svelte/no-navigation-without-resolve -- external app URL, not an in-app route -->
 										<a
@@ -351,9 +378,13 @@
 									{/if}
 								</div>
 								<div class="shrink-0 text-right text-xs text-muted-foreground">
-									<p>{app.deployCount} deploy{app.deployCount === 1 ? '' : 's'}</p>
-									{#if app.lastDeployAt}
-										<p>last {timeAgo(app.lastDeployAt)}</p>
+									{#if app.deployCount === 0}
+										<p>Deploys on the next push</p>
+									{:else}
+										<p>{app.deployCount} deploy{app.deployCount === 1 ? '' : 's'}</p>
+										{#if app.lastDeployAt}
+											<p>last {timeAgo(app.lastDeployAt)}</p>
+										{/if}
 									{/if}
 								</div>
 							</div>
@@ -465,7 +496,7 @@
 			<Card.Root data-testid="hosting-github">
 				<Card.Header>
 					<Card.Title class="flex items-center gap-2 text-base">
-						<GitBranch class="h-4 w-4 text-muted-foreground" /> Connect GitHub
+						<GithubMark class="h-4 w-4 text-muted-foreground" /> Connect GitHub
 					</Card.Title>
 					<Card.Description>
 						Push-to-deploy without a build farm. The default branch ships production; every other
@@ -479,12 +510,18 @@
 							<!-- Connected: what a push does, and how to stop it. -->
 							<div class="space-y-3" data-testid="github-connection">
 								<div class="flex flex-wrap items-center gap-2">
+									<!-- Dark in BOTH themes on purpose: the repository is a fixed
+									 identity, and the chip reads as one token rather than a
+									 link that happens to be sitting there. -->
 									<a
-										class="font-mono text-sm underline-offset-4 hover:underline"
+										class="inline-flex items-center gap-2 rounded-lg bg-neutral-900 px-2.5 py-1.5 font-mono text-xs text-neutral-50 transition-colors hover:bg-neutral-800 dark:bg-neutral-800 dark:hover:bg-neutral-700"
 										href={`https://github.com/${connection.repoFullName}`}
 										target="_blank"
-										rel="noreferrer">{connection.repoFullName}</a
+										rel="noreferrer"
 									>
+										<GithubMark class="h-3.5 w-3.5 shrink-0" />
+										{connection.repoFullName}
+									</a>
 									<Badge variant="secondary">
 										{connection.mode === 'direct' ? 'No build step' : 'Builds on Actions'}
 									</Badge>
@@ -529,7 +566,7 @@
 									onclick={() => (connectOpen = true)}
 									data-testid="connect-github"
 								>
-									<GitBranch class="h-4 w-4" /> Connect repository
+									<GithubMark class="h-4 w-4" /> Connect repository
 								</Button>
 							</div>
 						{/if}

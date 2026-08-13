@@ -6,7 +6,8 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as RadioGroup from '$lib/components/ui/radio-group';
 	import * as Select from '$lib/components/ui/select';
-	import { Check, GitBranch, Loader2, Lock, Search } from '@lucide/svelte';
+	import GithubMark from '$lib/components/github-mark.svelte';
+	import { Check, Loader2, Lock, Search } from '@lucide/svelte';
 
 	/**
 	 * Connect a GitHub repository to this project (Phase B).
@@ -201,7 +202,7 @@
 	<Dialog.Content class="sm:max-w-lg" data-testid="connect-github-dialog">
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
-				<GitBranch class="h-4 w-4" /> Connect a repository
+				<GithubMark class="h-4 w-4" /> Connect a repository
 			</Dialog.Title>
 			<Dialog.Description>
 				Push to deploy. The default branch ships production; every other branch gets its own
@@ -216,7 +217,7 @@
 					reach. You can change that selection on GitHub at any time.
 				</p>
 				<Button class="gap-2" onclick={manageOnGithub} data-testid="install-github-app">
-					<GitBranch class="h-4 w-4" /> Install on GitHub
+					<GithubMark class="h-4 w-4" /> Install on GitHub
 				</Button>
 			</div>
 		{:else}
