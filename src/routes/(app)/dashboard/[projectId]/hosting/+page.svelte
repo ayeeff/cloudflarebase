@@ -24,6 +24,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Tabs from '$lib/components/ui/tabs';
 	import { Check, Copy, ExternalLink, KeyRound, Rocket, Sparkles, Terminal } from '@lucide/svelte';
 
 	let { data } = $props();
@@ -448,223 +449,245 @@
 		</Card.Root>
 
 		{#if data.isRoot}
-			<!-- Deploy tokens -->
-			<Card.Root data-testid="hosting-tokens">
+			<!-- Two answers to one question - how a deploy proves it may write to
+			     this project - so they are tabs, not two stacked cards. Side by
+			     side they read as two setup steps, and a lone "Mint token" button
+			     under a card of its own made a credential look mandatory when
+			     connecting GitHub means never handling one. GitHub leads because
+			     it is the path that stores no secret. -->
+			<Card.Root data-testid="hosting-deploy-access">
 				<Card.Header>
 					<Card.Title class="flex items-center gap-2 text-base">
-						<KeyRound class="h-4 w-4 text-muted-foreground" /> Deploy tokens
+						<KeyRound class="h-4 w-4 text-muted-foreground" /> Deploy access
 					</Card.Title>
 					<Card.Description>
-						CI's durable credential: valid only for deploys and branch creation on this project and
-						its branches. Secrets are shown once and stored hashed - revoking deletes the hash.
+						How a deploy authenticates. Pick one - you do not need both.
 					</Card.Description>
 				</Card.Header>
-				<Card.Content class="space-y-3">
-					{#if data.tokens.length}
-						<div class="grid gap-2" data-testid="hosting-token-list">
-							{#each data.tokens as token (token.id)}
-								<div class="flex items-center gap-3 rounded-lg border bg-card p-3">
-									<div class="min-w-0 flex-1">
-										<p class="truncate text-sm font-medium">{token.name}</p>
-										<p class="text-xs text-muted-foreground">
-											minted {timeAgo(token.createdAt)}{token.lastUsedAt
-												? ` · last used ${timeAgo(token.lastUsedAt)}`
-												: ' · never used'}
-										</p>
-									</div>
-									<Button
-										size="sm"
-										variant="outline"
-										onclick={() => (revokeTarget = token)}
-										data-testid={`revoke-token-${token.name}`}
-									>
-										Revoke
-									</Button>
-								</div>
-							{/each}
-						</div>
-					{:else}
-						<p class="text-sm text-muted-foreground">No tokens minted.</p>
-					{/if}
-					<Button size="sm" onclick={() => (mintOpen = true)} data-testid="mint-token">
-						Mint token
-					</Button>
-				</Card.Content>
-			</Card.Root>
+				<Card.Content>
+					<Tabs.Root value="github">
+						<Tabs.List class="mb-4">
+							<Tabs.Trigger value="github" data-testid="tab-github">GitHub</Tabs.Trigger>
+							<Tabs.Trigger value="token" data-testid="tab-token">Deploy token</Tabs.Trigger>
+						</Tabs.List>
 
-			<!-- Connect GitHub -->
-			<Card.Root data-testid="hosting-github">
-				<Card.Header>
-					<Card.Title class="flex items-center gap-2 text-base">
-						<GithubMark class="h-4 w-4 text-muted-foreground" /> Connect GitHub
-					</Card.Title>
-					<Card.Description>
-						Push-to-deploy without a build farm. The default branch ships production; every other
-						branch gets its own isolated preview at
-						<code class="font-mono text-xs">&lt;app&gt;-&lt;branch&gt;</code>.
-					</Card.Description>
-				</Card.Header>
-				<Card.Content class="space-y-4">
-					{#if data.github.configured}
-						{#if connection}
-							<!-- Connected: what a push does, and how to stop it. -->
-							<div class="space-y-3" data-testid="github-connection">
-								<div class="flex flex-wrap items-center gap-2">
-									<!-- Dark in BOTH themes on purpose: the repository is a fixed
+						<Tabs.Content value="token" class="space-y-3" data-testid="hosting-tokens">
+							<p class="text-sm text-muted-foreground">
+								Optional. CI's durable credential, for pipelines GitHub does not run: valid only for
+								deploys and branch creation on this project and its branches. Secrets are shown once
+								and stored hashed - revoking deletes the hash.
+							</p>
+							{#if data.tokens.length}
+								<div class="grid gap-2" data-testid="hosting-token-list">
+									{#each data.tokens as token (token.id)}
+										<div class="flex items-center gap-3 rounded-lg border bg-card p-3">
+											<div class="min-w-0 flex-1">
+												<p class="truncate text-sm font-medium">{token.name}</p>
+												<p class="text-xs text-muted-foreground">
+													minted {timeAgo(token.createdAt)}{token.lastUsedAt
+														? ` · last used ${timeAgo(token.lastUsedAt)}`
+														: ' · never used'}
+												</p>
+											</div>
+											<Button
+												size="sm"
+												variant="outline"
+												onclick={() => (revokeTarget = token)}
+												data-testid={`revoke-token-${token.name}`}
+											>
+												Revoke
+											</Button>
+										</div>
+									{/each}
+								</div>
+							{:else}
+								<p class="text-sm text-muted-foreground">No tokens minted.</p>
+							{/if}
+							<Button
+								size="sm"
+								variant="outline"
+								onclick={() => (mintOpen = true)}
+								data-testid="mint-token"
+							>
+								Mint token
+							</Button>
+						</Tabs.Content>
+
+						<Tabs.Content value="github" class="space-y-4" data-testid="hosting-github">
+							<p class="text-sm text-muted-foreground">
+								Push-to-deploy without a build farm, and without a credential you have to store. The
+								default branch ships production; every other branch gets its own isolated preview at <code
+									class="font-mono text-xs">&lt;app&gt;-&lt;branch&gt;</code
+								>.
+							</p>
+							{#if data.github.configured}
+								{#if connection}
+									<!-- Connected: what a push does, and how to stop it. -->
+									<div class="space-y-3" data-testid="github-connection">
+										<div class="flex flex-wrap items-center gap-2">
+											<!-- Dark in BOTH themes on purpose: the repository is a fixed
 									 identity, and the chip reads as one token rather than a
 									 link that happens to be sitting there. -->
-									<a
-										class="inline-flex items-center gap-2 rounded-lg bg-neutral-900 px-2.5 py-1.5 font-mono text-xs text-neutral-50 transition-colors hover:bg-neutral-800 dark:bg-neutral-800 dark:hover:bg-neutral-700"
-										href={`https://github.com/${connection.repoFullName}`}
-										target="_blank"
-										rel="noreferrer"
-									>
-										<GithubMark class="h-3.5 w-3.5 shrink-0" />
-										{connection.repoFullName}
-									</a>
-									<Badge variant="secondary">
-										{connection.mode === 'direct' ? 'No build step' : 'Builds on Actions'}
-									</Badge>
-									{#if connection.lastEventAt}
-										<span class="text-xs text-muted-foreground">
-											last push {timeAgo(connection.lastEventAt)}
-										</span>
-									{/if}
-								</div>
-								<p class="text-sm text-muted-foreground">
-									{#if connection.mode === 'direct'}
-										Every push to <code class="font-mono text-xs">{connection.defaultBranch}</code>
-										publishes
-										<code class="font-mono text-xs">{connection.assetsDir || 'the repo root'}</code>
-										to <code class="font-mono text-xs">{connection.appName}</code> directly - no workflow
-										file, no Actions minutes.
-									{:else}
-										Every push to <code class="font-mono text-xs">{connection.defaultBranch}</code>
-										builds on GitHub's runners and deploys
-										<code class="font-mono text-xs">{connection.appName}</code>. The repository
-										holds no secret - deploys authenticate with GitHub's identity token.
-									{/if}
-								</p>
-								<Button
-									size="sm"
-									variant="outline"
-									onclick={() => (disconnectTarget = connection)}
-									data-testid="disconnect-github"
-								>
-									Disconnect
-								</Button>
-							</div>
-						{:else}
-							<div class="space-y-3">
-								<p class="text-sm text-muted-foreground">
-									Connect a repository and every push deploys itself. A site with no build step
-									needs no workflow file at all; one that builds gets a workflow that authenticates
-									with GitHub's identity token instead of a stored secret.
-								</p>
-								<Button
-									class="gap-2"
-									onclick={() => (connectOpen = true)}
-									data-testid="connect-github"
-								>
-									<GithubMark class="h-4 w-4" /> Connect repository
-								</Button>
-							</div>
-						{/if}
-					{:else if !githubToken}
-						<form class="flex flex-wrap items-end gap-3" onsubmit={connectGithub}>
-							<div class="min-w-56 flex-1 space-y-1.5">
-								<Label for="github-repo">Repository</Label>
-								<Input id="github-repo" bind:value={repo} placeholder="you/your-app" required />
-							</div>
-							<Button
-								type="submit"
-								disabled={!repoValid || githubBusy}
-								data-testid="connect-github"
-							>
-								{githubBusy ? 'Minting…' : 'Generate setup'}
-							</Button>
-						</form>
-						{#if githubError}
-							<p class="text-sm text-destructive">{githubError}</p>
-						{/if}
-					{:else}
-						<ol class="space-y-4 text-sm">
-							<li class="space-y-2">
-								<p class="font-medium">
-									1. Add the deploy token as a repository secret named
-									<code class="font-mono text-xs">{DEPLOY_TOKEN_SECRET_NAME}</code>
-								</p>
-								<div class="flex flex-wrap items-center gap-2">
-									<code
-										class="max-w-full truncate rounded bg-muted px-2 py-1 font-mono text-xs"
-										data-testid="github-token-value">{githubToken}</code
-									>
+											<a
+												class="inline-flex items-center gap-2 rounded-lg bg-neutral-900 px-2.5 py-1.5 font-mono text-xs text-neutral-50 transition-colors hover:bg-neutral-800 dark:bg-neutral-800 dark:hover:bg-neutral-700"
+												href={`https://github.com/${connection.repoFullName}`}
+												target="_blank"
+												rel="noreferrer"
+											>
+												<GithubMark class="h-3.5 w-3.5 shrink-0" />
+												{connection.repoFullName}
+											</a>
+											<Badge variant="secondary">
+												{connection.mode === 'direct' ? 'No build step' : 'Builds on Actions'}
+											</Badge>
+											{#if connection.lastEventAt}
+												<span class="text-xs text-muted-foreground">
+													last push {timeAgo(connection.lastEventAt)}
+												</span>
+											{/if}
+										</div>
+										<p class="text-sm text-muted-foreground">
+											{#if connection.mode === 'direct'}
+												Every push to <code class="font-mono text-xs"
+													>{connection.defaultBranch}</code
+												>
+												publishes
+												<code class="font-mono text-xs"
+													>{connection.assetsDir || 'the repo root'}</code
+												>
+												to <code class="font-mono text-xs">{connection.appName}</code> directly - no workflow
+												file, no Actions minutes.
+											{:else}
+												Every push to <code class="font-mono text-xs"
+													>{connection.defaultBranch}</code
+												>
+												builds on GitHub's runners and deploys
+												<code class="font-mono text-xs">{connection.appName}</code>. The repository
+												holds no secret - deploys authenticate with GitHub's identity token.
+											{/if}
+										</p>
+										<Button
+											size="sm"
+											variant="outline"
+											onclick={() => (disconnectTarget = connection)}
+											data-testid="disconnect-github"
+										>
+											Disconnect
+										</Button>
+									</div>
+								{:else}
+									<div class="space-y-3">
+										<p class="text-sm text-muted-foreground">
+											Connect a repository and every push deploys itself. A site with no build step
+											needs no workflow file at all; one that builds gets a workflow that
+											authenticates with GitHub's identity token instead of a stored secret.
+										</p>
+										<Button
+											class="gap-2"
+											onclick={() => (connectOpen = true)}
+											data-testid="connect-github"
+										>
+											<GithubMark class="h-4 w-4" /> Connect repository
+										</Button>
+									</div>
+								{/if}
+							{:else if !githubToken}
+								<form class="flex flex-wrap items-end gap-3" onsubmit={connectGithub}>
+									<div class="min-w-56 flex-1 space-y-1.5">
+										<Label for="github-repo">Repository</Label>
+										<Input id="github-repo" bind:value={repo} placeholder="you/your-app" required />
+									</div>
 									<Button
-										size="sm"
-										variant="outline"
-										class="gap-1.5"
-										onclick={() => copy('token', githubToken!)}
+										type="submit"
+										disabled={!repoValid || githubBusy}
+										data-testid="connect-github"
 									>
-										{#if copied === 'token'}<Check class="h-3.5 w-3.5" />{:else}<Copy
-												class="h-3.5 w-3.5"
-											/>{/if} Copy
+										{githubBusy ? 'Minting…' : 'Generate setup'}
 									</Button>
-									<Button
-										size="sm"
-										variant="outline"
-										class="gap-1.5"
-										href={secretsUrl(repo.trim())}
-										target="_blank"
-										rel="noreferrer"
-									>
-										Open repo secrets <ExternalLink class="h-3.5 w-3.5" />
-									</Button>
-								</div>
-								<p class="text-xs text-muted-foreground">
-									Shown once - it is stored hashed. Revoke it any time above.
-								</p>
-							</li>
-							<li class="space-y-2">
-								<p class="font-medium">
-									2. Commit the workflow as
-									<code class="font-mono text-xs">{WORKFLOW_FILENAME}</code>
-								</p>
-								<div class="flex flex-wrap items-center gap-2">
-									<Button
-										size="sm"
-										class="gap-1.5"
-										href={workflowCreateUrl(repo.trim())}
-										target="_blank"
-										rel="noreferrer"
-										data-testid="create-workflow-file"
-									>
-										Create the file on GitHub (pre-filled) <ExternalLink class="h-3.5 w-3.5" />
-									</Button>
-									<Button
-										size="sm"
-										variant="outline"
-										class="gap-1.5"
-										onclick={() => copy('yaml', deployWorkflowYaml())}
-									>
-										{#if copied === 'yaml'}<Check class="h-3.5 w-3.5" />{:else}<Copy
-												class="h-3.5 w-3.5"
-											/>{/if} Copy YAML
-									</Button>
-								</div>
-								<pre
-									class="max-h-64 overflow-auto rounded-lg border bg-muted/50 p-3 font-mono text-xs">{deployWorkflowYaml()}</pre>
-							</li>
-							<li>
-								<p class="font-medium">3. Push</p>
-								<p class="text-xs text-muted-foreground">
-									Every commit deploys automatically from then on - Workers-Builds-style, with
-									GitHub running the build. Make sure the repo carries the
-									<code class="font-mono">cloudflarebase.json</code> written by
-									<code class="font-mono">cloudflarebase init</code>.
-								</p>
-							</li>
-						</ol>
-					{/if}
+								</form>
+								{#if githubError}
+									<p class="text-sm text-destructive">{githubError}</p>
+								{/if}
+							{:else}
+								<ol class="space-y-4 text-sm">
+									<li class="space-y-2">
+										<p class="font-medium">
+											1. Add the deploy token as a repository secret named
+											<code class="font-mono text-xs">{DEPLOY_TOKEN_SECRET_NAME}</code>
+										</p>
+										<div class="flex flex-wrap items-center gap-2">
+											<code
+												class="max-w-full truncate rounded bg-muted px-2 py-1 font-mono text-xs"
+												data-testid="github-token-value">{githubToken}</code
+											>
+											<Button
+												size="sm"
+												variant="outline"
+												class="gap-1.5"
+												onclick={() => copy('token', githubToken!)}
+											>
+												{#if copied === 'token'}<Check class="h-3.5 w-3.5" />{:else}<Copy
+														class="h-3.5 w-3.5"
+													/>{/if} Copy
+											</Button>
+											<Button
+												size="sm"
+												variant="outline"
+												class="gap-1.5"
+												href={secretsUrl(repo.trim())}
+												target="_blank"
+												rel="noreferrer"
+											>
+												Open repo secrets <ExternalLink class="h-3.5 w-3.5" />
+											</Button>
+										</div>
+										<p class="text-xs text-muted-foreground">
+											Shown once - it is stored hashed. Revoke it any time above.
+										</p>
+									</li>
+									<li class="space-y-2">
+										<p class="font-medium">
+											2. Commit the workflow as
+											<code class="font-mono text-xs">{WORKFLOW_FILENAME}</code>
+										</p>
+										<div class="flex flex-wrap items-center gap-2">
+											<Button
+												size="sm"
+												class="gap-1.5"
+												href={workflowCreateUrl(repo.trim())}
+												target="_blank"
+												rel="noreferrer"
+												data-testid="create-workflow-file"
+											>
+												Create the file on GitHub (pre-filled) <ExternalLink class="h-3.5 w-3.5" />
+											</Button>
+											<Button
+												size="sm"
+												variant="outline"
+												class="gap-1.5"
+												onclick={() => copy('yaml', deployWorkflowYaml())}
+											>
+												{#if copied === 'yaml'}<Check class="h-3.5 w-3.5" />{:else}<Copy
+														class="h-3.5 w-3.5"
+													/>{/if} Copy YAML
+											</Button>
+										</div>
+										<pre
+											class="max-h-64 overflow-auto rounded-lg border bg-muted/50 p-3 font-mono text-xs">{deployWorkflowYaml()}</pre>
+									</li>
+									<li>
+										<p class="font-medium">3. Push</p>
+										<p class="text-xs text-muted-foreground">
+											Every commit deploys automatically from then on - Workers-Builds-style, with
+											GitHub running the build. Make sure the repo carries the
+											<code class="font-mono">cloudflarebase.json</code> written by
+											<code class="font-mono">cloudflarebase init</code>.
+										</p>
+									</li>
+								</ol>
+							{/if}
+						</Tabs.Content>
+					</Tabs.Root>
 				</Card.Content>
 			</Card.Root>
 		{/if}
