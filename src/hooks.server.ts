@@ -2,8 +2,8 @@ import { dev } from '$app/environment';
 import { agentByApiPrefix, agentByWorkerSegment, routeAccess } from '$lib/agent-registry';
 import { RESERVED_PROJECT_IDS } from '$lib/console';
 import { projectIdSchema } from '$lib/schemas/auth';
-import { agentFetcher, agentUrl } from '$lib/server/agents';
-import { getConsoleIdentity, isDemoMode, isDemoProjectId } from '$lib/server/console';
+import { agentFetcher, agentUrl, serverError } from '$lib/server/agents';
+import { isDemoMode, isDemoProjectId, resolveConsoleIdentity } from '$lib/server/console';
 import { verifyGithubDeployGrant } from '$lib/server/github-connect';
 import {
 	deployTokenCoversProject,
@@ -231,6 +231,23 @@ function classifyAccess(pathname: string): Access {
 }
 
 /**
+ * The guard's answer when the auth agent could not verify the session at all.
+ * A 503, never a bounce to /login: the operator's credentials are not the
+ * problem, and re-entering them cannot help.
+ */
+function cannotVerifySession(kind: 'page' | 'api'): Response {
+	if (kind === 'page') {
+		// serverError, not error(): a 503 the operator sees is one Sentry must
+		// see too, and a bare `error()` never reaches handleError.
+		serverError(503, 'Cannot verify your session right now. Please retry in a moment.');
+	}
+	return Response.json(
+		{ error: 'cannot verify your session right now' },
+		{ status: 503, headers: { 'Retry-After': '5' } }
+	);
+}
+
+/**
  * Requires an operator session for every console surface, and - since Phase A
  * of the managed service - membership in the owning org for project-scoped
  * ones. Fails closed: an install that never sets DEMO_MODE is private the
@@ -319,29 +336,49 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 			? await getProjectOwnership(event.platform, access.projectId)
 			: null;
 
+	// Cloudflare resolves the client address at the edge; a service-binding
+	// fetch keeps none of it, so the guard has to carry it to the agent by
+	// hand or the agent's per-IP rate limiter degrades to one shared bucket
+	// for the whole console (see sessionLookupHeaders).
+	const clientIp = event.request.headers.get('cf-connecting-ip');
+
 	// The bare /dashboard entry decides for itself: in demo mode it hands an
 	// anonymous visitor a throwaway project, while a signed-in operator gets
 	// the real project list. Its loader branches on consoleUser, so the
-	// session must be resolved here too (getConsoleIdentity no-ops without a
-	// cookie, keeping the first-time demo visit free of a session lookup).
+	// session must be resolved here too (the lookup no-ops without a cookie,
+	// keeping the first-time demo visit free of a session round trip).
 	// Scoped to that one entry: other project-less operator pages (/cli-auth)
 	// keep the hard bounce through /login even on the public demo.
 	if (event.locals.demoMode && access.demoEntry) {
-		event.locals.consoleIdentity = await getConsoleIdentity(
+		const resolved = await resolveConsoleIdentity(
 			event.platform,
 			event.url.origin,
-			event.request.headers.get('cookie')
+			event.request.headers.get('cookie'),
+			null,
+			clientIp
 		);
+		if (resolved.status === 'unavailable') return cannotVerifySession(access.kind);
+		event.locals.consoleIdentity = resolved.status === 'ok' ? resolved.identity : null;
 		event.locals.consoleUser = event.locals.consoleIdentity?.user ?? null;
 		return resolve(event);
 	}
 
-	const identity = await getConsoleIdentity(
+	const resolved = await resolveConsoleIdentity(
 		event.platform,
 		event.url.origin,
 		event.request.headers.get('cookie'),
-		event.request.headers.get('authorization')
+		event.request.headers.get('authorization'),
+		clientIp
 	);
+
+	// Could not CHECK is not the same answer as not signed in, and the
+	// difference is the whole user experience: bouncing to /login here loops
+	// (that page resolves the session the same way and fails the same way) and
+	// asks an operator to retype credentials against an outage they cannot
+	// fix. Say so instead, and let the request be retried.
+	if (resolved.status === 'unavailable') return cannotVerifySession(access.kind);
+
+	const identity = resolved.status === 'ok' ? resolved.identity : null;
 
 	if (identity) {
 		event.locals.consoleIdentity = identity;

@@ -21,7 +21,9 @@ export const load: PageServerLoad = async ({ locals, platform, request, url }) =
 	const identity = await getConsoleIdentity(
 		platform,
 		url.origin,
-		request.headers.get('cookie')
+		request.headers.get('cookie'),
+		null,
+		request.headers.get('cf-connecting-ip')
 	).catch(() => null);
 
 	return { signedIn: !!identity };

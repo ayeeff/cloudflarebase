@@ -59,7 +59,8 @@ export const GET: RequestHandler = async ({ url, platform, request, cookies }) =
 		platform,
 		url.origin,
 		request.headers.get('cookie'),
-		null
+		null,
+		request.headers.get('cf-connecting-ip')
 	);
 	if (operator && operator.id !== state.userId) {
 		redirect(303, '/dashboard?github=invalid');

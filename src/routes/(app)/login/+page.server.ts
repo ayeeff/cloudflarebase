@@ -25,9 +25,13 @@ export const load: PageServerLoad = async ({ locals, platform, request, url }) =
 	// of the agent round trip.
 	const identity =
 		locals.consoleIdentity ??
-		(await getConsoleIdentity(platform, url.origin, request.headers.get('cookie')).catch(
-			() => null
-		));
+		(await getConsoleIdentity(
+			platform,
+			url.origin,
+			request.headers.get('cookie'),
+			null,
+			request.headers.get('cf-connecting-ip')
+		).catch(() => null));
 	if (identity) redirect(303, next);
 
 	const [ownerExists, authConfig] = await Promise.all([
