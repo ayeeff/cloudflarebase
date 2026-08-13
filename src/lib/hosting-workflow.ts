@@ -52,7 +52,21 @@ const buildSteps = `      - uses: actions/setup-node@v4
         # thing to stop here, since the runner cannot start the deploy until
         # this process exits.
         timeout-minutes: 10
-        run: npm run build --if-present`;
+        run: |
+          # Node picks its own heap limit from the machine, which is fine
+          # until a large SSR build reaches it - and reaching it does not
+          # crash cleanly, it degrades into GC thrashing that looks exactly
+          # like a hang, for hours. Set it explicitly to two thirds of this
+          # runner's RAM: enough that a bigger runner is actually used,
+          # conservative enough that the heap plus everything else stays
+          # inside the box (overshooting trades a clean heap error for the
+          # OOM killer, which is the worse failure).
+          # Guarded on \`free\` so a non-Linux runs-on still builds, and
+          # appended so a NODE_OPTIONS you set yourself still wins.
+          if command -v free >/dev/null 2>&1; then
+            export NODE_OPTIONS="--max-old-space-size=$(free -m | awk '/^Mem:/ {print int($2 * 2 / 3)}') $NODE_OPTIONS"
+          fi
+          npm run build --if-present`;
 
 export function deployWorkflowYaml(): string {
 	return `# Deploys this repository to Cloudflarebase on every push.
