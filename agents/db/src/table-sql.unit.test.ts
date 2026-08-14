@@ -83,6 +83,57 @@ test('sql gate: DML must target this table; RETURNING is ours to add', () => {
 	assert.equal(cte.kind, 'select');
 });
 
+test('sql gate: a comment cannot swallow the appended RETURNING', () => {
+	// Appending ` RETURNING ...` to a statement ending in a line comment put
+	// the clause INSIDE the comment. The write still ran, but with no returned
+	// row there is no live-query delta and no changelog entry - and the
+	// changelog IS the replication feed, so every replica would silently
+	// diverge from the primary, permanently.
+	const commented = ok('UPDATE todos SET votes = votes + 1 WHERE id = ? -- bump');
+	assert.match(commented.sql, /\nRETURNING "id"/);
+	// The clause is on its own line, so the comment can no longer reach it.
+	assert.ok(!/--[^\n]*RETURNING/.test(commented.sql));
+
+	// A block comment left open runs to end of INPUT in SQLite, which nothing
+	// appended can escape - so it is refused rather than trusted.
+	refused('UPDATE todos SET votes = 1 /* trailing', 'unterminated block comment');
+	refused("DELETE FROM todos WHERE id = ? /* trace: '*/ /* still open", 'unterminated');
+	// A closed one is ordinary ORM output (query tags) and still passes.
+	// Trailing, not leading: the statement kind is read from the first token,
+	// so a comment in front of it is refused - unrelated to this, and a
+	// compatibility gap rather than a safety one.
+	const tagged = ok('UPDATE todos SET votes = 1 WHERE id = ? /* traceparent=abc */');
+	assert.match(tagged.sql, /RETURNING/);
+	// `/*` inside a string literal is not a comment at all.
+	const literal = ok(`UPDATE todos SET title = '/*' WHERE id = ?`);
+	assert.match(literal.sql, /RETURNING/);
+});
+
+test('sql gate: every internal table stays unreachable, shadowing included', () => {
+	// The shard applies the whole schema, so a table missing from the gate's
+	// list is a table raw SQL can read.
+	for (const name of [
+		'collections',
+		'documents',
+		'subscriptions',
+		'restore_points',
+		'collection_meta',
+		'changelog',
+		'replicas',
+		'replica_meta',
+		'gateways',
+		'gateway_subs',
+	]) {
+		refused(`SELECT * FROM ${name}`, 'internal storage');
+	}
+
+	// And a table that SHADOWS internal storage - only possible for a row
+	// grandfathered in before the name was reserved - is exactly the case that
+	// must stay refused: the physical table it reaches IS the internal one.
+	const shadow = prepareTableSql('SELECT * FROM subscriptions', 'subscriptions', TODO);
+	assert.equal(shadow.ok, false, 'a shadowing table does not unlock internal storage');
+});
+
 test('table aggregates: typed columns sum directly, json paths stay gated', () => {
 	const typed = compileTableAggregate(
 		'todos',

@@ -16,6 +16,7 @@ import { coloCountry } from './colo-countries';
 import * as schema from './db/schema';
 import {
 	analyticsApiResponseSchema,
+	authPolicySchema,
 	chatRequestSchema,
 	DEMO_PROJECT_PATTERN,
 	demoTtlHoursSchema,
@@ -29,6 +30,7 @@ import {
 	socialCredentialsSchema,
 	timeZoneSchema,
 	workersAiResponseSchema,
+	type AuthPolicy,
 	type ProviderUpdates,
 	type SocialCredentials,
 } from './schemas';
@@ -143,6 +145,9 @@ export interface AuthAgentState {
 	roles: RoleDefinition[];
 	allowedOrigins: string[];
 	enabledSocialProviders: string[];
+	/** EFFECTIVE per-project auth policy - what the agent will actually do,
+	 * not what was stored (verification needs a configured sender). */
+	authPolicy: AuthPolicy;
 	users: number;
 	activeSessions: number;
 	totalEvents: number;
@@ -321,6 +326,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		roles: DEFAULT_ROLES,
 		allowedOrigins: [],
 		enabledSocialProviders: [],
+		authPolicy: { allowAnonymous: true, requireEmailVerification: false },
 		users: 0,
 		activeSessions: 0,
 		totalEvents: 0,
@@ -340,6 +346,8 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 	/** Resolved in onStart: the env secret, or one generated for this project. */
 	private signingSecret: string | null = null;
 	private socialCredentials: SocialCredentials = {};
+	/** Per-project auth policy; defaults preserve pre-policy behaviour. */
+	private authPolicy: AuthPolicy = authPolicySchema.parse({});
 
 	constructor(ctx: AgentContext, env: Env) {
 		super(ctx, env);
@@ -374,10 +382,16 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			// DISABLE_EMAIL_VERIFICATION is the env.local escape: wrangler dev
 			// writes mail to .eml files, so requiring verification would dead-end
 			// every local sign-up behind a file hunt.
+			// A project's own policy decides for every other instance (Firebase
+			// and Supabase both let a developer require a verified address; this
+			// agent had no switch at all, so a stranger's address was always good
+			// enough for an authenticated token). Effective, not raw: without a
+			// sender that can reach arbitrary addresses, requiring verification
+			// would lock every new user out of an app that cannot mail them.
 			requireEmailVerification:
-				this.name === CONSOLE_PROJECT_ID &&
-				this.consoleSignups === 'open' &&
-				this.env.DISABLE_EMAIL_VERIFICATION !== 'true',
+				this.name === CONSOLE_PROJECT_ID
+					? this.consoleSignups === 'open' && this.env.DISABLE_EMAIL_VERIFICATION !== 'true'
+					: this.emailVerificationRequired,
 			cookieCache: this.name === CONSOLE_PROJECT_ID,
 			// Operators live in this console for weeks at a time; a 7-day idle
 			// expiry made them re-authenticate constantly for no security gain.
@@ -471,6 +485,36 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		return this.env.CONSOLE_SIGNUPS === 'open' && this.mailConfigured ? 'open' : 'claimed';
 	}
 
+	/**
+	 * EFFECTIVE email-verification requirement for a project instance. Asking
+	 * for it without a sender that can reach arbitrary addresses would lock
+	 * every new user out of an app that cannot mail them, so the stored
+	 * preference only counts while mail is configured - the same
+	 * effective-not-raw rule `consoleSignups` follows, and `/config` reports
+	 * this value rather than the stored one.
+	 */
+	private get emailVerificationRequired(): boolean {
+		return this.authPolicy.requireEmailVerification && this.mailConfigured;
+	}
+
+	/**
+	 * Whether this project issues guest sessions. Demo projects always do -
+	 * the public demo IS anonymous - and the console never does.
+	 */
+	private get anonymousAllowed(): boolean {
+		if (this.name === CONSOLE_PROJECT_ID) return false;
+		if (this.isEphemeral) return true;
+		return this.authPolicy.allowAnonymous;
+	}
+
+	/** The policy as it will actually behave - what state and /config report. */
+	private get effectiveAuthPolicy(): AuthPolicy {
+		return {
+			allowAnonymous: this.anonymousAllowed,
+			requireEmailVerification: this.emailVerificationRequired,
+		};
+	}
+
 	/** A pending, unexpired org invitation for this email - the authorization
 	 * that lets a sign-up through a claimed console. */
 	private async hasPendingInvitation(email: string): Promise<boolean> {
@@ -558,6 +602,12 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		this.socialCredentials = socialCredentialsSchema.parse(
 			await this.ctx.storage.get('social-provider-credentials'),
 		);
+		// A stored policy that no longer parses degrades to the defaults rather
+		// than failing the wake - the defaults are what the project had before
+		// the policy existed, so a bad row is never a lockout.
+		this.authPolicy = authPolicySchema
+			.catch(authPolicySchema.parse({}))
+			.parse((await this.ctx.storage.get('auth-policy')) ?? {});
 
 		const rolesValid =
 			Array.isArray(this.state.roles) &&
@@ -572,12 +622,14 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				roles: DEFAULT_ROLES,
 				allowedOrigins: [],
 				enabledSocialProviders: this.configuredSocialProviders,
+				authPolicy: this.effectiveAuthPolicy,
 			});
 			this.writeAuthEvent('project.provisioned');
 			await this.recordEvent('project.provisioned', `auth provisioned for project "${this.name}"`);
 		} else if (
 			!Array.isArray(this.state.allowedOrigins) ||
 			!Array.isArray(this.state.enabledSocialProviders) ||
+			!this.state.authPolicy ||
 			!rolesValid
 		) {
 			// State schema upgrade for agents provisioned before origin/role settings.
@@ -586,6 +638,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				roles: rolesValid ? this.state.roles : DEFAULT_ROLES,
 				allowedOrigins: this.state.allowedOrigins ?? [],
 				enabledSocialProviders: this.configuredSocialProviders,
+				authPolicy: this.effectiveAuthPolicy,
 			});
 		}
 
@@ -936,7 +989,14 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		if (subPath === '/config' && request.method === 'GET') {
 			return Response.json({
 				projectId: this.name,
-				providers: ['email-password', 'anonymous', ...this.configuredSocialProviders],
+				providers: [
+					'email-password',
+					...(this.anonymousAllowed ? (['anonymous'] as const) : []),
+					...this.configuredSocialProviders,
+				],
+				// EFFECTIVE policy, so a client is never told a project requires
+				// verification it cannot actually send (see the getters).
+				authPolicy: this.effectiveAuthPolicy,
 				availableSocialProviders: ['google', 'github'],
 				bearerTokens: true,
 				emailDeliveryConfigured: this.mailConfigured,
@@ -1072,6 +1132,20 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			if (this.isEphemeral) {
 				const denied = await this.denyDemoAuthRoute(subPath);
 				if (denied) return denied;
+			}
+
+			// Guest sign-in is a PUBLIC route and a guest token satisfies the
+			// `auth` access mode - the default for every new collection and
+			// table. A project that never wanted guests therefore had its
+			// signed-in-users-only data readable by anyone willing to ask for a
+			// token first. Refused at the route rather than by dropping the
+			// plugin, so the switch is reversible and `user.isAnonymous` keeps
+			// its meaning for guests created while it was on.
+			if (!this.anonymousAllowed && /\/sign-in\/anonymous$/.test(subPath)) {
+				return Response.json(
+					{ error: 'guest sign-in is disabled for this project' },
+					{ status: 403 },
+				);
 			}
 
 			const cors = this.corsHeaders(request);
@@ -1237,16 +1311,25 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			);
 			await this.ctx.storage.put('social-provider-credentials', this.socialCredentials);
 		}
+		if (body.data.authPolicy !== undefined) {
+			// Merge, never replace: a settings save that carries only origins
+			// must not silently reset a policy configured earlier.
+			this.authPolicy = authPolicySchema.parse({ ...this.authPolicy, ...body.data.authPolicy });
+			await this.ctx.storage.put('auth-policy', this.authPolicy);
+		}
 		const enabledSocialProviders = this.configuredSocialProviders;
 		this.setState({
 			...this.state,
 			allowedOrigins: body.data.allowedOrigins,
 			enabledSocialProviders,
+			authPolicy: this.effectiveAuthPolicy,
 		});
+		// Drop the memoized instance: requireEmailVerification is baked into it.
 		this._auth = null;
 		return Response.json({
 			allowedOrigins: body.data.allowedOrigins,
 			enabledSocialProviders,
+			authPolicy: this.effectiveAuthPolicy,
 		});
 	}
 

@@ -1199,7 +1199,7 @@
 					class="font-mono"
 					bind:value={newBranchName}
 					oninput={() => (newBranchError = '')}
-					placeholder="staging"
+					placeholder="preview"
 					maxlength={maxBranchChars}
 					autocomplete="off"
 					spellcheck="false"

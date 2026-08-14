@@ -109,6 +109,25 @@ export interface ConsoleIdentity {
 	pendingInvitations: ConsolePendingInvitation[];
 }
 
+/**
+ * Whether an org role may administer the org and the projects it owns:
+ * rename or delete a project, rename the org, invite and remove people.
+ *
+ * `owner` and `admin` may; a plain `member` may not. This mirrors what Better
+ * Auth's organization plugin already enforces server-side for its own
+ * endpoints (its default `memberAc` grants nothing but `ac: read`), and it is
+ * defined here so the console's own destructive surfaces - project deletion
+ * above all - cannot drift from that. Membership is permission to USE a
+ * project, never permission to erase it.
+ *
+ * A null role means the project has no owning org (a legacy or self-hosted
+ * row), where there is nobody to outrank and every operator is the same
+ * person.
+ */
+export function canAdministerOrg(role: string | null | undefined): boolean {
+	return role === 'owner' || role === 'admin';
+}
+
 /** The org an identity acts as: the active one, else the first membership. */
 export function activeOrg(identity: ConsoleIdentity): ConsoleOrgMembership | null {
 	return (

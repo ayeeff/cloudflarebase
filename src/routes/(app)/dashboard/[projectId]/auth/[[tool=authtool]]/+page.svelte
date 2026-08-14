@@ -322,6 +322,14 @@
 	let googleClientSecret = $state('');
 	let githubClientId = $state('');
 	let githubClientSecret = $state('');
+	// Per-project auth policy - the two switches Firebase and Supabase both
+	// have. Seeded from the EFFECTIVE policy the agent reports.
+	// svelte-ignore state_referenced_locally
+	let allowAnonymous = $state(data.overview.state.authPolicy?.allowAnonymous ?? true);
+	// svelte-ignore state_referenced_locally
+	let requireEmailVerification = $state(
+		data.overview.state.authPolicy?.requireEmailVerification ?? false
+	);
 
 	const authBase = $derived(`/api/projects/${data.projectId}/auth`);
 
@@ -350,6 +358,8 @@
 		allowedOriginsInput = (data.overview.state.allowedOrigins ?? []).join('\n');
 		googleEnabled = (data.overview.state.enabledSocialProviders ?? []).includes('google');
 		githubEnabled = (data.overview.state.enabledSocialProviders ?? []).includes('github');
+		allowAnonymous = data.overview.state.authPolicy?.allowAnonymous ?? true;
+		requireEmailVerification = data.overview.state.authPolicy?.requireEmailVerification ?? false;
 	});
 
 	// Realtime: connect to this project's AuthAgent. In dev the agent worker
@@ -558,6 +568,7 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
 					allowedOrigins,
+					authPolicy: { allowAnonymous, requireEmailVerification },
 					socialProviders: {
 						...(googleEnabled
 							? {
@@ -581,12 +592,19 @@
 			const result = (await response.json()) as {
 				allowedOrigins?: string[];
 				enabledSocialProviders?: string[];
+				authPolicy?: { allowAnonymous: boolean; requireEmailVerification: boolean };
 				error?: string;
 			};
 			if (!response.ok) throw new Error(result.error ?? `request failed (HTTP ${response.status})`);
 			allowedOriginsInput = (result.allowedOrigins ?? []).join('\n');
 			googleEnabled = (result.enabledSocialProviders ?? []).includes('google');
 			githubEnabled = (result.enabledSocialProviders ?? []).includes('github');
+			// The EFFECTIVE policy comes back: asking for verification without a
+			// configured sender reads back as off, rather than lying to the operator.
+			if (result.authPolicy) {
+				allowAnonymous = result.authPolicy.allowAnonymous;
+				requireEmailVerification = result.authPolicy.requireEmailVerification;
+			}
 			googleClientSecret = '';
 			githubClientSecret = '';
 			settingsSaved = true;
@@ -1633,6 +1651,51 @@
 							<Card.Content class="space-y-6 pt-6">
 								<div class="space-y-3">
 									<div>
+										<Label>Policy</Label>
+										<p class="mt-1 text-xs text-muted-foreground">
+											Guest sessions satisfy the <code>auth</code> access mode, which is the default for
+											new collections and tables - turn them off if this project's data is for registered
+											users only.
+										</p>
+									</div>
+									<div class="divide-y rounded-xl border bg-card">
+										<label
+											class="flex items-center justify-between gap-3 p-4 font-medium sm:p-5"
+											data-testid="policy-anonymous"
+										>
+											<span class="flex items-center gap-2"
+												><span
+													class="flex h-8 w-8 items-center justify-center rounded-lg border bg-background"
+													><UserRound class="h-4 w-4" /></span
+												>Guest sign-in</span
+											>
+											<input
+												type="checkbox"
+												bind:checked={allowAnonymous}
+												class="rounded border-input"
+											/>
+										</label>
+										<label
+											class="flex items-center justify-between gap-3 p-4 font-medium sm:p-5"
+											data-testid="policy-verify-email"
+										>
+											<span class="flex items-center gap-2"
+												><span
+													class="flex h-8 w-8 items-center justify-center rounded-lg border bg-background"
+													><KeyRound class="h-4 w-4" /></span
+												>Require a verified email to sign in</span
+											>
+											<input
+												type="checkbox"
+												bind:checked={requireEmailVerification}
+												class="rounded border-input"
+											/>
+										</label>
+									</div>
+								</div>
+
+								<div class="space-y-3">
+									<div>
 										<Label>Social sign-in providers</Label>
 										<p class="mt-1 text-xs text-muted-foreground">
 											Credentials stay in private project storage and are never returned to the
@@ -1840,7 +1903,12 @@
 								</div>
 								<div class="flex items-center gap-2 rounded-lg border p-2.5">
 									<UserRound class="h-4 w-4 text-primary" /> Guest
-									<span class="ml-auto h-2 w-2 rounded-full bg-emerald-500"></span>
+									<span
+										class="ml-auto h-2 w-2 rounded-full {agentState.authPolicy?.allowAnonymous ===
+										false
+											? 'bg-muted-foreground/40'
+											: 'bg-emerald-500'}"
+									></span>
 								</div>
 								<div class="flex items-center gap-2 rounded-lg border p-2.5">
 									<GoogleLogo class="h-4 w-4" />

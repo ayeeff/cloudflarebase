@@ -169,6 +169,52 @@ export async function getProjectOwnership(
 	}
 }
 
+/**
+ * Isolate-local memo of project ids known to EXIST. Positives only: a project
+ * is created once and then exists forever, so a stale `true` is impossible
+ * (deletion is rare and costs at most one TTL of a 404 the agent answers
+ * anyway), while caching `false` would give a project created seconds ago a
+ * window where its own API denies it.
+ */
+const existsCache = new Map<string, number>();
+const EXISTS_TTL_MS = 60_000;
+const EXISTS_CACHE_MAX = 5_000;
+
+/**
+ * Whether a project id is one this installation actually knows.
+ *
+ * The PUBLIC product API needs this as much as the operator surfaces do, and
+ * for a different reason: the agents provision a Durable Object on first
+ * touch, so `POST /api/projects/<anything>/auth/sign-up/email` - a route that
+ * is public by design, because a customer's app calls it without an operator -
+ * created a fresh Durable Object with its own SQLite database for any id an
+ * anonymous caller invented. Unbounded, unowned, unerasable by anyone, and
+ * billable. Existence is the cheapest fact that stops it.
+ *
+ * Answers `null` when the control plane cannot be reached, so the caller can
+ * decide: the operator paths fail closed, the product API fails OPEN (a D1
+ * blip must not take every customer's app down with it).
+ */
+export async function projectExists(
+	platform: App.Platform | undefined,
+	projectId: string
+): Promise<boolean | null> {
+	if (!projectIdSchema.safeParse(projectId).success) return false;
+
+	const cached = existsCache.get(projectId);
+	if (cached !== undefined && Date.now() - cached < EXISTS_TTL_MS) return true;
+
+	const ownership = await getProjectOwnership(platform, projectId);
+	if (ownership.unavailable) return null;
+	if (!ownership.registered) return false;
+
+	// Cheap bound rather than an LRU: the working set is one entry per live
+	// project per isolate, and a full clear costs one D1 read per project.
+	if (existsCache.size >= EXISTS_CACHE_MAX) existsCache.clear();
+	existsCache.set(projectId, Date.now());
+	return true;
+}
+
 /** One registry row, or null for unregistered ids and an unreachable control
  * plane - callers degrade (the settings page explains) instead of erroring. */
 export async function getProject(

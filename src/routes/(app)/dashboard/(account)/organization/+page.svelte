@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { CONSOLE_AUTH_BASE } from '$lib/console';
+	import { canAdministerOrg, CONSOLE_AUTH_BASE } from '$lib/console';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -10,6 +10,11 @@
 	import { onMount } from 'svelte';
 
 	let { data } = $props();
+
+	// Better Auth refuses invite/cancel/rename for a plain member on its own
+	// endpoints, so this is not the security boundary - it is honesty. A form
+	// that only ever answers "you cannot do that" should not be a form.
+	const canAdminister = $derived(canAdministerOrg(data.org.role));
 
 	interface MemberRow {
 		id: string;
@@ -205,21 +210,27 @@
 				</div>
 			{/if}
 
-			<form class="flex flex-wrap items-end gap-3" onsubmit={invite}>
-				<div class="min-w-56 flex-1 space-y-1.5">
-					<Label for="invite-email">Invite by email</Label>
-					<Input
-						id="invite-email"
-						type="email"
-						bind:value={inviteEmail}
-						placeholder="teammate@example.com"
-						required
-					/>
-				</div>
-				<Button type="submit" disabled={inviteBusy} data-testid="invite-member">
-					{inviteBusy ? 'Inviting…' : 'Send invitation'}
-				</Button>
-			</form>
+			{#if canAdminister}
+				<form class="flex flex-wrap items-end gap-3" onsubmit={invite}>
+					<div class="min-w-56 flex-1 space-y-1.5">
+						<Label for="invite-email">Invite by email</Label>
+						<Input
+							id="invite-email"
+							type="email"
+							bind:value={inviteEmail}
+							placeholder="teammate@example.com"
+							required
+						/>
+					</div>
+					<Button type="submit" disabled={inviteBusy} data-testid="invite-member">
+						{inviteBusy ? 'Inviting…' : 'Send invitation'}
+					</Button>
+				</form>
+			{:else}
+				<p class="text-sm text-muted-foreground" data-testid="org-member-notice">
+					Only owners and admins can invite people or rename this organization.
+				</p>
+			{/if}
 			{#if inviteError}
 				<p class="text-sm text-destructive" data-testid="invite-error">{inviteError}</p>
 			{:else if inviteSent}
@@ -238,14 +249,16 @@
 								<p class="truncate text-sm">{invitation.email}</p>
 								<p class="text-xs text-muted-foreground">Pending invitation</p>
 							</div>
-							<Button
-								size="sm"
-								variant="outline"
-								disabled={cancelBusy === invitation.id}
-								onclick={() => cancelInvitation(invitation.id)}
-							>
-								Cancel
-							</Button>
+							{#if canAdminister}
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={cancelBusy === invitation.id}
+									onclick={() => cancelInvitation(invitation.id)}
+								>
+									Cancel
+								</Button>
+							{/if}
 						</div>
 					{/each}
 				</div>
@@ -253,26 +266,28 @@
 		</Card.Content>
 	</Card.Root>
 
-	<Card.Root>
-		<Card.Header>
-			<Card.Title class="text-base">Rename organization</Card.Title>
-			<Card.Description>
-				The name is display-only; project ids and data are untouched.
-			</Card.Description>
-		</Card.Header>
-		<Card.Content>
-			<form class="flex flex-wrap items-end gap-3" onsubmit={rename}>
-				<div class="min-w-56 flex-1 space-y-1.5">
-					<Label for="org-name">Name</Label>
-					<Input id="org-name" bind:value={orgName} required maxlength={64} />
-				</div>
-				<Button type="submit" variant="outline" disabled={renameBusy} data-testid="rename-org">
-					{renameBusy ? 'Saving…' : 'Save'}
-				</Button>
-			</form>
-			{#if renameError}
-				<p class="mt-2 text-sm text-destructive">{renameError}</p>
-			{/if}
-		</Card.Content>
-	</Card.Root>
+	{#if canAdminister}
+		<Card.Root>
+			<Card.Header>
+				<Card.Title class="text-base">Rename organization</Card.Title>
+				<Card.Description>
+					The name is display-only; project ids and data are untouched.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content>
+				<form class="flex flex-wrap items-end gap-3" onsubmit={rename}>
+					<div class="min-w-56 flex-1 space-y-1.5">
+						<Label for="org-name">Name</Label>
+						<Input id="org-name" bind:value={orgName} required maxlength={64} />
+					</div>
+					<Button type="submit" variant="outline" disabled={renameBusy} data-testid="rename-org">
+						{renameBusy ? 'Saving…' : 'Save'}
+					</Button>
+				</form>
+				{#if renameError}
+					<p class="mt-2 text-sm text-destructive">{renameError}</p>
+				{/if}
+			</Card.Content>
+		</Card.Root>
+	{/if}
 </div>

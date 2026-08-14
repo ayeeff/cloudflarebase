@@ -86,6 +86,15 @@ export const settingsPayloadSchema = z
 				github: providerCredentialsSchema.optional()
 			})
 			.strict()
+			.optional(),
+		// Per-project auth policy (mirrors authPolicySchema in the agent).
+		// Optional for the same reason: an omitted policy is unchanged.
+		authPolicy: z
+			.object({
+				allowAnonymous: z.boolean().optional(),
+				requireEmailVerification: z.boolean().optional()
+			})
+			.strict()
 			.optional()
 	})
 	.meta({ id: 'SettingsRequest' });

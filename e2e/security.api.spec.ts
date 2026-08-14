@@ -1,12 +1,19 @@
 import { expect, test } from '@playwright/test';
 import {
 	adminUsersPath,
+	authPath,
+	configPath,
 	CONSOLE_OWNER,
+	CONSOLE_STORAGE_STATE,
 	consoleAuthPath,
 	dbAdminQueryPath,
+	dbDocumentsPath,
+	ensureProject,
 	overviewPath,
 	SCRATCH_PROJECT,
-	SEED_PROJECT
+	SEED_PROJECT,
+	settingsPath,
+	uniqueEmail
 } from './helpers';
 
 /**
@@ -141,6 +148,107 @@ test.describe('security boundaries', () => {
 		]) {
 			const response = await request.get(overviewPath(id));
 			expect(response.status(), `${id} is not a demo id`).not.toBe(200);
+		}
+	});
+
+	test('the public product API cannot mint a backend for an invented id', async ({ request }) => {
+		// The agents provision a Durable Object on first touch, and the product
+		// API is public by design - a customer's app calls it with no operator.
+		// Together that let an anonymous caller create a fresh database, with
+		// its own SQLite storage, for any id they could type: unowned, billable,
+		// invisible to the registry, and erasable by nobody. Public has to mean
+		// "the public surface of a project that exists".
+		const invented = `e2e-never-minted-${Date.now().toString(36)}`;
+
+		const signUp = await request.post(authPath(invented, 'sign-up/email'), {
+			data: { name: 'Squatter', email: uniqueEmail('squatter'), password: 'squatter-pass-1' }
+		});
+		expect(signUp.status(), 'sign-up must not provision a project').toBe(404);
+
+		const guest = await request.post(authPath(invented, 'sign-in/anonymous'), { data: {} });
+		expect(guest.status(), 'nor may a guest session').toBe(404);
+
+		const config = await request.get(configPath(invented));
+		expect(config.status(), 'nor may /config').toBe(404);
+
+		const document = await request.post(dbDocumentsPath(invented, 'squat'), {
+			data: { data: { hello: 'world' } }
+		});
+		expect(document.status(), 'nor may a document write').toBe(404);
+
+		const passthrough = await request.post(
+			`/agents/auth-agent/${invented}/api/auth/sign-in/anonymous`,
+			{ data: {} }
+		);
+		expect(passthrough.status(), 'nor may the passthrough').toBe(404);
+
+		// The console's own public surface is exempt - it is what /login is
+		// built on, and it is never a registry row.
+		const consoleConfig = await request.get(configPath('console'));
+		expect(consoleConfig.ok(), 'the console keeps its public config').toBeTruthy();
+	});
+
+	test('a registered project keeps its public API', async ({ request }) => {
+		// The other half of the rule: the gate must not cost a real customer
+		// their sign-up path.
+		const signUp = await request.post(authPath(SCRATCH_PROJECT, 'sign-up/email'), {
+			data: { name: 'Real User', email: uniqueEmail('real-user'), password: 'real-user-pass-1' }
+		});
+		expect(signUp.ok(), await signUp.text()).toBeTruthy();
+
+		const config = await request.get(configPath(SCRATCH_PROJECT));
+		expect(config.ok()).toBeTruthy();
+	});
+
+	test('a project can refuse guest sign-in', async ({ playwright, baseURL, request }) => {
+		// Guest sign-in is public on every project AND a guest token satisfies
+		// the `auth` access mode - the default for new collections and tables.
+		// A project that never wanted guests therefore had its
+		// signed-in-users-only data readable by anyone willing to ask for a
+		// token first. Firebase and Supabase both ship anonymous OFF; this is
+		// the switch that was missing entirely.
+		const project = `e2e-noguest-${Date.now().toString(36)}`;
+		const operator = await playwright.request.newContext({
+			baseURL,
+			extraHTTPHeaders: { origin: baseURL! },
+			storageState: CONSOLE_STORAGE_STATE
+		});
+		try {
+			await ensureProject(operator, project);
+
+			// On by default - no deployed project changes behaviour.
+			const before = await request.post(authPath(project, 'sign-in/anonymous'), { data: {} });
+			expect(before.ok(), await before.text()).toBeTruthy();
+
+			const saved = await operator.put(settingsPath(project), {
+				data: { allowedOrigins: [], authPolicy: { allowAnonymous: false } }
+			});
+			expect(saved.ok(), await saved.text()).toBeTruthy();
+			expect((await saved.json()).authPolicy.allowAnonymous).toBe(false);
+
+			const after = await request.post(authPath(project, 'sign-in/anonymous'), { data: {} });
+			expect(after.status(), 'guest sign-in is refused once turned off').toBe(403);
+
+			// ...and the public config says so, so a client is not left guessing.
+			const config = await (await request.get(configPath(project))).json();
+			expect(config.providers).not.toContain('anonymous');
+			expect(config.authPolicy.allowAnonymous).toBe(false);
+
+			// Registration still works: this is a policy, not a lockout.
+			const signUp = await request.post(authPath(project, 'sign-up/email'), {
+				data: { name: 'Real', email: uniqueEmail('noguest'), password: 'noguest-pass-1' }
+			});
+			expect(signUp.ok(), await signUp.text()).toBeTruthy();
+
+			// A settings save that carries no policy leaves it alone.
+			const originsOnly = await operator.put(settingsPath(project), {
+				data: { allowedOrigins: ['https://example.com'] }
+			});
+			expect(originsOnly.ok(), await originsOnly.text()).toBeTruthy();
+			expect((await originsOnly.json()).authPolicy.allowAnonymous).toBe(false);
+		} finally {
+			await operator.delete(`/api/registry/projects/${project}`);
+			await operator.dispose();
 		}
 	});
 

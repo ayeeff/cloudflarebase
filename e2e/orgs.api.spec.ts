@@ -140,6 +140,55 @@ test.describe('organizations and ownership', () => {
 				expect(after.organizations.map((entry: { id: string }) => entry.id)).toContain(
 					operatorOrgId
 				);
+				expect(
+					after.organizations.find((entry: { id: string }) => entry.id === operatorOrgId).role
+				).toBe('member');
+
+				// ...as a MEMBER, which is permission to USE the org's projects and
+				// nothing more. Membership is not consent to destroy: an erase fans
+				// out across every agent and has no undo, so a teammate invited to
+				// work on a project must not be able to take it, and everything the
+				// rest of the org built on it, away.
+				const orgProject = `org-member-${Date.now().toString(36)}`;
+				const madeByOwner = await request.post('/api/registry/projects', {
+					data: { id: orgProject, name: 'Owner project' }
+				});
+				expect(madeByOwner.status(), await madeByOwner.text()).toBe(201);
+				try {
+					const denied = await anon.delete(`/api/registry/projects/${orgProject}`, {
+						headers: asInvitee
+					});
+					expect(denied.status(), 'a member may not delete the org’s project').toBe(403);
+
+					// The member still reaches it - this is authorization, not
+					// visibility. Taking the project away from them would be a
+					// different (and wrong) answer.
+					const readable = await anon.get(overviewPath(orgProject), { headers: asInvitee });
+					expect(readable.ok(), 'a member still uses the project').toBeTruthy();
+
+					// Nor may they rename the organization or invite into it. Better
+					// Auth's own default roles enforce this; pinned here because the
+					// console's UI and its project-delete rule are built on it.
+					const renamed = await anon.post(consoleAuthPath('organization/update'), {
+						headers: asInvitee,
+						data: { organizationId: operatorOrgId, data: { name: 'Taken Over' } }
+					});
+					expect(renamed.ok(), 'a member may not rename the org').toBeFalsy();
+
+					const reinvite = await anon.post(consoleAuthPath('organization/invite-member'), {
+						headers: asInvitee,
+						data: {
+							email: uniqueEmail('member-invited'),
+							role: 'member',
+							organizationId: operatorOrgId
+						}
+					});
+					expect(reinvite.ok(), 'a member may not invite into the org').toBeFalsy();
+				} finally {
+					// The OWNER can, which is the other half of the rule.
+					const byOwner = await request.delete(`/api/registry/projects/${orgProject}`);
+					expect(byOwner.ok(), await byOwner.text()).toBeTruthy();
+				}
 			} finally {
 				// Reused local stacks cap at MAX_PROJECTS - leave nothing behind.
 				const del = await anon.delete(`/api/registry/projects/${projectId}`, {
