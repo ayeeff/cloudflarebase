@@ -46,6 +46,14 @@ export const authAgentStateSchema = z
 			.describe('Role registry; always contains the built-in `user` and `admin`.'),
 		allowedOrigins: z.array(z.string()),
 		enabledSocialProviders: z.array(z.string()),
+		// Tolerant: state persisted before the policy existed still parses, and
+		// the defaults are exactly what those projects were already doing.
+		authPolicy: z
+			.object({
+				allowAnonymous: z.boolean(),
+				requireEmailVerification: z.boolean()
+			})
+			.catch({ allowAnonymous: true, requireEmailVerification: false }),
 		users: z.number().int(),
 		activeSessions: z.number().int(),
 		totalEvents: z.number().int(),

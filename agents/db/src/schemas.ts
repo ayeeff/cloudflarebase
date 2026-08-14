@@ -371,7 +371,39 @@ export const settingsRequestSchema = z.strictObject({
 
 /** Table names are DO name suffixes exactly like collection names; the
  * physical SQLite table inside the instance is always `rows`. */
-export const tableNameSchema = collectionNameSchema;
+/**
+ * Names the shard's OWN migrations already occupy.
+ *
+ * A declared table becomes a real SQLite table of that name, created with
+ * `CREATE TABLE IF NOT EXISTS` - so a declaration colliding with one of these
+ * creates nothing and silently adopts internal storage instead. The DDL
+ * planner then ALTERs the internal table to add the declared columns, writes
+ * land in it, and reads serve its rows: `subscriptions` carries subscriber
+ * token metadata, `changelog` carries every row image the replication feed
+ * ships. It also disables the raw-SQL gate's internal-name refusal for
+ * exactly that name, since a table may legitimately reference itself.
+ *
+ * Both kinds are refused, not just tables: registry names are unique across
+ * kinds, so letting a COLLECTION take one of these names would only reserve
+ * it for a table that can never be declared.
+ */
+export const RESERVED_SHARD_TABLES = new Set([
+	'collections',
+	'documents',
+	'subscriptions',
+	'restore_points',
+	'collection_meta',
+	'changelog',
+	'replicas',
+	'replica_meta',
+	'gateways',
+	'gateway_subs',
+]);
+
+export const tableNameSchema = collectionNameSchema.refine(
+	(name) => !RESERVED_SHARD_TABLES.has(name),
+	'that name belongs to internal storage',
+);
 
 /**
  * No leading underscore (reserved for future system use) and no hyphens

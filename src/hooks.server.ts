@@ -10,7 +10,7 @@ import {
 	isDeployTokenSurface,
 	verifyDeployToken
 } from '$lib/server/hosting';
-import { getProjectOwnership, type ProjectOwnership } from '$lib/server/registry';
+import { getProjectOwnership, projectExists, type ProjectOwnership } from '$lib/server/registry';
 import { handleErrorWithSentry, initCloudflareSentryHandle, sentryHandle } from '@sentry/sveltekit';
 import { redirect } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
@@ -133,7 +133,16 @@ const apiRateLimitHandle: Handle = async ({ event, resolve }) => {
 };
 
 type Access =
-	| { scope: 'open' }
+	| {
+			scope: 'open';
+			/**
+			 * The project a PUBLIC route addresses, when it addresses one. Open
+			 * does not mean unaddressed: the product API is public on purpose and
+			 * still names a project, whose Durable Objects it provisions on first
+			 * touch - so the id still has to be one this installation knows.
+			 */
+			projectId?: string | null;
+	  }
 	| {
 			scope: 'operator';
 			projectId: string | null;
@@ -163,7 +172,7 @@ function classifyAccess(pathname: string): Access {
 		const entry = agentByWorkerSegment(segments[1] ?? '');
 		const subPath = `/${segments.slice(3).join('/')}`;
 		if (entry && routeAccess(entry.manifest, subPath) === 'public') {
-			return { scope: 'open' };
+			return { scope: 'open', projectId: segments[2] ?? null };
 		}
 		return { scope: 'operator', projectId: segments[2] ?? null, kind: 'api' };
 	}
@@ -208,14 +217,14 @@ function classifyAccess(pathname: string): Access {
 				const agentPath =
 					`${entry.manifest.proxy.agentBasePath}${restPath ? `/${restPath}` : ''}` || '/';
 				if (routeAccess(entry.manifest, agentPath) === 'public') {
-					return { scope: 'open' };
+					return { scope: 'open', projectId: segments[2] ?? null };
 				}
 				return { scope: 'operator', projectId: segments[2] ?? null, kind: 'api' };
 			}
 			// /config and /openapi.json both describe the public product API and
 			// carry no secrets; being fetchable is the point for API tooling.
 			if (rest.length === 1 && (rest[0] === 'config' || rest[0] === 'openapi.json')) {
-				return { scope: 'open' };
+				return { scope: 'open', projectId: segments[2] ?? null };
 			}
 			return { scope: 'operator', projectId: segments[2] ?? null, kind: 'api' };
 		}
@@ -264,6 +273,30 @@ function cannotVerifySession(kind: 'page' | 'api'): Response {
 }
 
 /**
+ * Whether a PUBLIC project route may reach its project.
+ *
+ * Three ids qualify without a registry row: demo projects (throwaway by
+ * construction, never rows, and only while demo mode is on), and `console`,
+ * whose public auth surface is what the login page is built on. Everything
+ * else must be a project this installation actually minted.
+ *
+ * Fails OPEN when the control plane cannot answer - deliberately the opposite
+ * of the operator paths. What this gate prevents is unbounded Durable Object
+ * creation, a cost problem; failing closed would turn a D1 blip into every
+ * customer's app losing authentication, which is a worse outage than the
+ * abuse it defends against, and it is the behaviour the platform had all
+ * along.
+ */
+async function publicProjectReachable(
+	event: Parameters<Handle>[0]['event'],
+	projectId: string
+): Promise<boolean> {
+	if (projectId === CONSOLE_PROJECT_ID) return true;
+	if (event.locals.demoMode && isDemoProjectId(projectId)) return true;
+	return (await projectExists(event.platform, projectId)) !== false;
+}
+
+/**
  * "This project is not yours to reach" - deliberately the SAME answer for a
  * project that does not exist, one someone else owns, and one whose id is
  * reserved. Distinguishing them would turn the guard into an oracle for
@@ -288,7 +321,16 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 	event.locals.githubDeploy = null;
 
 	const access = classifyAccess(event.url.pathname);
-	if (access.scope === 'open') return resolve(event);
+	if (access.scope === 'open') {
+		// Public still has to mean "public surface of a project that exists".
+		// The agents provision a Durable Object on first touch, so a sign-up
+		// against an invented id minted a fresh database - anonymously,
+		// unboundedly, for an id nobody owns and no console can ever erase.
+		if (access.projectId && !(await publicProjectReachable(event, access.projectId))) {
+			return noSuchProject('api');
+		}
+		return resolve(event);
+	}
 
 	// Reserved ids are not projects. Everything except `console` names a
 	// dashboard route or a system endpoint and has no instance behind it worth

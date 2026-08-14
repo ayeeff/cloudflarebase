@@ -29,14 +29,23 @@ export type SqlKind = 'select' | 'insert' | 'update' | 'delete';
 
 export type PreparedSql = { ok: true; kind: SqlKind; sql: string } | { ok: false; error: string };
 
-/** Internal storage no raw statement may name, whatever the casing. */
+/**
+ * Internal storage no raw statement may name, whatever the casing. Every
+ * table the shard's migrations create, plus drizzle's own - the shard applies
+ * the whole schema even where it uses only part of it, so a name absent from
+ * this list is a name raw SQL can read.
+ */
 const INTERNAL_NAMES = [
+	'collections',
 	'documents',
 	'subscriptions',
+	'restore_points',
 	'collection_meta',
 	'changelog',
 	'replicas',
 	'replica_meta',
+	'gateways',
+	'gateway_subs',
 	'__drizzle_migrations',
 ];
 
@@ -78,7 +87,11 @@ export function prepareTableSql(
 
 	const lowered = sql.toLowerCase();
 	for (const name of INTERNAL_NAMES) {
-		if (name === table) continue; // a user table may legitimately shadow none of these, but stay safe
+		// No `name === table` escape. A table CANNOT be declared with one of
+		// these names any more (RESERVED_SHARD_TABLES), and for a row
+		// grandfathered in before that rule, "the user's table shadows internal
+		// storage" is precisely the case where raw SQL must stay refused - the
+		// physical table it would reach IS the internal one.
 		if (new RegExp(`\\b${name}\\b`).test(lowered)) {
 			return {
 				ok: false,
@@ -124,8 +137,18 @@ export function prepareTableSql(
 
 	// DML answers with the full row: the change log and the live engine are
 	// fed from exactly what the statement touched.
+	//
+	// The appended clause has to survive comments, or a statement ending in
+	// one swallows it - and a DML write with no RETURNING notifies nobody:
+	// no live-query delta, and no changelog entry, which is the replication
+	// feed. Replicas would then diverge from the primary permanently, silently.
+	// `--` runs to end of line, so RETURNING goes on its own line; `/*` with no
+	// `*/` runs to end of INPUT, which nothing can outrun, so it is refused.
 	if (kind !== 'select') {
-		sql = `${sql} RETURNING ${selectList(columns)}`;
+		if (unterminatedBlockComment(sql)) {
+			return { ok: false, error: 'unterminated block comment' };
+		}
+		sql = `${sql}\nRETURNING ${selectList(columns)}`;
 	}
 
 	return { ok: true, kind, sql };
@@ -133,4 +156,43 @@ export function prepareTableSql(
 
 function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Whether a `/*` is left open at the end of the statement. SQLite accepts an
+ * unterminated block comment and runs it to the end of the input, so anything
+ * appended after one is silently discarded. Scanned outside string literals,
+ * where `/*` is just two characters.
+ */
+function unterminatedBlockComment(sql: string): boolean {
+	let quote: string | null = null;
+	for (let index = 0; index < sql.length; index += 1) {
+		const char = sql[index];
+		if (quote) {
+			// Doubled quotes are SQL's escape; closing and reopening here has
+			// the same effect, so they need no special case.
+			if (char === quote) quote = null;
+			continue;
+		}
+		if (char === "'" || char === '"' || char === '`') {
+			quote = char;
+			continue;
+		}
+		// A line comment hides everything to the newline - `/*` included, so it
+		// must be skipped rather than scanned.
+		if (char === '-' && sql[index + 1] === '-') {
+			const newline = sql.indexOf('\n', index + 2);
+			if (newline === -1) return false;
+			index = newline;
+			continue;
+		}
+		if (char === '/' && sql[index + 1] === '*') {
+			const close = sql.indexOf('*/', index + 2);
+			// Keep scanning PAST a closed comment: the open one may be the
+			// second, and a quote inside a comment is not a string.
+			if (close === -1) return true;
+			index = close + 1;
+		}
+	}
+	return false;
 }

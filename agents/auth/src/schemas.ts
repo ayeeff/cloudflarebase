@@ -150,6 +150,29 @@ const providerUpdateSchema = z.union([
 	}),
 ]);
 
+/**
+ * Per-project authentication policy - the two switches Firebase and Supabase
+ * both give a developer and this agent did not.
+ *
+ * Both default to today's behaviour, so no deployed project changes when this
+ * ships. They are stored, not derived, because they are product decisions:
+ *
+ * - `allowAnonymous`: guest sign-in is a public route on every project, and
+ *   a guest token satisfies the `auth` access mode - which is the DEFAULT for
+ *   new collections and tables. So a project that never wanted guests had its
+ *   "signed-in users only" data readable by anyone willing to ask for a guest
+ *   token first. Firebase and Supabase both ship anonymous OFF.
+ * - `requireEmailVerification`: without it, anyone can register a stranger's
+ *   address and hold an authenticated token for it. Only meaningful with a
+ *   configured sender, so the agent reports the EFFECTIVE value.
+ */
+export const authPolicySchema = z.strictObject({
+	allowAnonymous: z.boolean().default(true),
+	requireEmailVerification: z.boolean().default(false),
+});
+
+export type AuthPolicy = z.infer<typeof authPolicySchema>;
+
 export const settingsRequestSchema = z
 	.strictObject({
 		allowedOrigins: z.array(allowedOriginSchema).max(10),
@@ -159,6 +182,8 @@ export const settingsRequestSchema = z
 				github: providerUpdateSchema.optional(),
 			})
 			.optional(),
+		/** Omitted leaves the stored policy untouched, like socialProviders. */
+		authPolicy: authPolicySchema.partial().optional(),
 	})
 	.transform((value) => ({
 		...value,

@@ -12,6 +12,7 @@ import {
 	checkpointRequestSchema,
 	collectionModesSchema,
 	collectionNameSchema,
+	RESERVED_SHARD_TABLES,
 	demoTtlHoursSchema,
 	importLineSchema,
 	projectIdSchema,
@@ -1360,6 +1361,15 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		if (!collectionNameSchema.safeParse(name).success) {
 			return Response.json(
 				{ error: 'table names are lowercase letters, digits, _ and - (max 64 chars)' },
+				{ status: 400 },
+			);
+		}
+		// A declared table is a REAL SQLite table of that name, so it must not
+		// name one the shard's own migrations already created - it would adopt
+		// internal storage rather than create anything (RESERVED_SHARD_TABLES).
+		if (RESERVED_SHARD_TABLES.has(name)) {
+			return Response.json(
+				{ error: `"${name}" is reserved for internal storage - pick another name` },
 				{ status: 400 },
 			);
 		}

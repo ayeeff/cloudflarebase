@@ -173,14 +173,23 @@
 							<TriangleAlert class="h-4 w-4" /> Danger zone
 						</p>
 						<p class="mt-1 text-xs text-muted-foreground">
-							{isBranch
-								? 'Deleting this branch erases its users, data, and deploys. The root project is untouched.'
-								: 'Deleting this project erases its users, data, and deploys in every agent - branches included.'}
+							{#if !data.canDelete}
+								Only organization owners and admins can delete {isBranch
+									? 'a branch'
+									: 'a project'}.
+							{:else if isBranch}
+								Deleting this branch erases its users, data, and deploys. The root project is
+								untouched.
+							{:else}
+								Deleting this project erases its users, data, and deploys in every agent - branches
+								included.
+							{/if}
 						</p>
 					</div>
 					<Button
 						variant="destructive"
 						class="shrink-0"
+						disabled={!data.canDelete}
 						onclick={() => {
 							deleteConfirm = '';
 							deleteError = null;
