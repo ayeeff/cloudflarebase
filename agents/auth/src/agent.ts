@@ -323,9 +323,12 @@ const DEFAULT_CHAT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
  *
  * Addressed as /agents/auth-agent/<projectId>/...
  */
+/** The role the console's own surfaces are gated on (src/hooks.server.ts). */
+const ADMIN_ROLE = 'admin';
+
 const DEFAULT_ROLES: RoleDefinition[] = [
 	{ name: 'user', permissions: [] },
-	{ name: 'admin', permissions: ['*'] },
+	{ name: ADMIN_ROLE, permissions: ['*'] },
 ];
 
 export class AuthAgent extends Agent<Env, AuthAgentState> {
@@ -436,6 +439,12 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 						}
 					: undefined,
 			onUserCreated: async (user) => {
+				// The account that claims a deployment IS its administrator, and it
+				// becomes one HERE rather than on its first console request: the
+				// role gates the console's own surfaces, so leaving it to a later
+				// heal means a first operator who is briefly not an admin of the
+				// install they just claimed. Still a no-op once one exists.
+				if (this.name === CONSOLE_PROJECT_ID) await ensureConsoleAdmin(this.db);
 				this.writeAuthEvent('user.created', {
 					provider: user.isAnonymous ? 'anonymous' : 'credential',
 					subjectId: user.id,
@@ -1231,11 +1240,29 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			return Response.json({ error: 'invalid user id' }, { status: 400 });
 		}
 		const [existing] = await this.db
-			.select({ id: schema.user.id })
+			.select({ id: schema.user.id, role: schema.user.role })
 			.from(schema.user)
 			.where(eq(schema.user.id, userId))
 			.limit(1);
 		if (!existing) return Response.json({ error: 'user not found' }, { status: 404 });
+
+		// The other door to the same lockout: deleting the account that holds
+		// the only admin role. `ensureConsoleAdmin` would hand the role to the
+		// oldest surviving operator, which is a repair, not a policy - on a
+		// console with no other account it repairs nothing at all.
+		if (this.name === CONSOLE_PROJECT_ID && existing.role === ADMIN_ROLE) {
+			const [{ admins }] = await this.db
+				.select({ admins: count() })
+				.from(schema.user)
+				.where(eq(schema.user.role, ADMIN_ROLE));
+			if (admins <= 1) {
+				return Response.json(
+					{ error: 'the console must keep at least one admin - promote another operator first' },
+					{ status: 409 },
+				);
+			}
+		}
+
 		await this.db.delete(schema.user).where(eq(schema.user.id, userId));
 		this.writeAuthEvent('user.deleted', { subjectId: userId });
 		await this.recordEvent('user.deleted', 'user deleted by project administrator');
@@ -1279,6 +1306,41 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			.where(eq(schema.user.id, userId))
 			.limit(1);
 		if (!existing) return Response.json({ error: 'user not found' }, { status: 404 });
+
+		// The console can never be allowed to lock itself out. Its own surfaces
+		// - this route included - are gated on the admin role, and `role` is
+		// input:false everywhere else, so the key to the box lives inside the
+		// box: a console with no admin can never gain one back through the
+		// product. Two refusals, both console-only (a customer project's roles
+		// are application RBAC, administered from here, and cannot strand
+		// anyone).
+		if (
+			this.name === CONSOLE_PROJECT_ID &&
+			existing.role === ADMIN_ROLE &&
+			body.data.role !== ADMIN_ROLE
+		) {
+			// Demoting YOURSELF is the door that was actually walked through: it
+			// reads as an ordinary edit in a list of operators, and the operator
+			// who makes the change is the one who loses the page they made it on.
+			const caller = await this.sessionUserId(request);
+			if (caller === userId) {
+				return Response.json(
+					{ error: 'you cannot remove your own admin role - ask another admin to do it' },
+					{ status: 409 },
+				);
+			}
+			const [{ admins }] = await this.db
+				.select({ admins: count() })
+				.from(schema.user)
+				.where(eq(schema.user.role, ADMIN_ROLE));
+			if (admins <= 1) {
+				return Response.json(
+					{ error: 'the console must keep at least one admin - promote another operator first' },
+					{ status: 409 },
+				);
+			}
+		}
+
 		if (existing.role !== body.data.role) {
 			await this.db
 				.update(schema.user)
@@ -1343,6 +1405,34 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			enabledSocialProviders,
 			authPolicy: this.effectiveAuthPolicy,
 		});
+	}
+
+	/**
+	 * Who is making this request, from the cookies/bearer the console proxy
+	 * forwards. Null when there is no session OR the lookup failed - callers
+	 * using it for the self-demotion refusal are backstopped by the
+	 * last-admin count, which never depends on identity.
+	 */
+	private async sessionUserId(request: Request): Promise<string | null> {
+		// The same handler-not-api resolution as getConsoleMe below, for the
+		// same reason: only the handler runs the bearer plugin, and a present
+		// Authorization header must decide alone.
+		const origin = new URL(request.url).origin;
+		const sessionHeaders = new Headers(request.headers);
+		if (sessionHeaders.get('authorization')) sessionHeaders.delete('cookie');
+		const sessionResponse = await this.auth
+			.handler(
+				new Request(`${origin}${this.authBasePath}/get-session`, {
+					method: 'GET',
+					headers: sessionHeaders,
+				}),
+			)
+			.catch(() => null);
+		if (!sessionResponse?.ok) return null;
+		const resolved = (await sessionResponse.json().catch(() => null)) as {
+			user?: { id?: string };
+		} | null;
+		return resolved?.user?.id ?? null;
 	}
 
 	/**

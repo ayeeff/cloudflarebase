@@ -188,6 +188,44 @@ test.describe('console guard', () => {
 		expect(session.ok(), 'the console auth proxy still serves sessions').toBeTruthy();
 	});
 
+	test('the console can never lock itself out of its own admin role', async ({ request }) => {
+		const signIn = await request.post(consoleAuthPath('sign-in/email'), {
+			data: { email: CONSOLE_OWNER.email, password: CONSOLE_OWNER.password }
+		});
+		expect(signIn.ok(), await signIn.text()).toBeTruthy();
+
+		const session = (await (await request.get(consoleAuthPath('get-session'))).json()) as {
+			user: { id: string };
+		};
+		const ownId = session.user.id;
+		const rolePath = `/api/projects/console/admin/users/${encodeURIComponent(ownId)}/role`;
+
+		// Self-demotion is refused OUTRIGHT, whatever the admin count: the
+		// operator making the change is the one who loses the page they are
+		// making it on - the exact door that was walked through before this
+		// guard existed.
+		const demote = await request.put(rolePath, { data: { role: 'user' } });
+		expect(demote.status(), 'an admin cannot remove their own admin role').toBe(409);
+
+		// limit=200 (the max): the list is newest-first and the owner is the
+		// OLDEST account, so a reused stack's accumulated invitees must not
+		// push them off the page.
+		const me = (await (
+			await request.get('/agents/auth-agent/console/admin/users?limit=200')
+		).json()) as { users: { id: string; role?: string }[] };
+		const self = me.users.find((user) => user.id === ownId);
+		expect(self?.role, 'the refused demotion changed nothing').toBe('admin');
+
+		// Deleting the last admin is the other door to the same lockout. Only
+		// deterministic when this stack has exactly one admin (a reused local
+		// stack may have accumulated more from other suites).
+		const admins = me.users.filter((user) => user.role === 'admin');
+		if (admins.length === 1) {
+			const erase = await request.delete(`/api/projects/console/admin/users/${ownId}`);
+			expect(erase.status(), 'the last admin cannot be deleted').toBe(409);
+		}
+	});
+
 	test('reserved ids other than console are not projects at all', async ({ request }) => {
 		const signIn = await request.post(consoleAuthPath('sign-in/email'), {
 			data: { email: CONSOLE_OWNER.email, password: CONSOLE_OWNER.password }
