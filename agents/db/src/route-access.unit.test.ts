@@ -16,7 +16,10 @@ const manifest = JSON.parse(
 	// .href, then fileURLToPath: the ambient URL here is workerd's, which is
 	// not assignable to node:fs's PathOrFileDescriptor, and a bare pathname
 	// would lose the drive letter on Windows.
-	readFileSync(fileURLToPath(new URL('../cloudflarebase.agent.json', import.meta.url).href), 'utf8').replace(/^\uFEFF/, ''),
+	readFileSync(
+		fileURLToPath(new URL('../cloudflarebase.agent.json', import.meta.url).href),
+		'utf8',
+	).replace(/^\uFEFF/, ''),
 ) as { routes: { path: string; access: string }[] };
 
 test('the route table mirrors the manifest', () => {

@@ -73,12 +73,12 @@ enough for token verification. No secret is required for a working deploy.
 Mounting the default export publishes the data plane to the internet, which
 is the point - your app calls it:
 
-| Route                                                | Who calls it                |
-| ---------------------------------------------------- | --------------------------- |
-| `/agents/db-agent/<projectId>/collections/*`         | Documents, queries, sockets |
-| `/agents/db-agent/<projectId>/tables/*`              | Rows, SQL, sockets          |
-| `/agents/db-agent/<projectId>/realtime`              | The one-socket gateway      |
-| `/agents/db-agent/<projectId>/config`                | Public client config        |
+| Route                                        | Who calls it                |
+| -------------------------------------------- | --------------------------- |
+| `/agents/db-agent/<projectId>/collections/*` | Documents, queries, sockets |
+| `/agents/db-agent/<projectId>/tables/*`      | Rows, SQL, sockets          |
+| `/agents/db-agent/<projectId>/realtime`      | The one-socket gateway      |
+| `/agents/db-agent/<projectId>/config`        | Public client config        |
 
 Each of those enforces the collection's or table's access mode, its
 permission keys, and its validators on every request.
@@ -98,7 +98,7 @@ import { getAgentByName } from 'agents';
 const agent = await getAgentByName(env.DbAgent, projectId);
 const result = await agent.fetch(`https://agent/agents/db-agent/${projectId}/admin/query`, {
 	method: 'POST',
-	body: JSON.stringify({ collection: 'orders', query: { limit: 10 } })
+	body: JSON.stringify({ collection: 'orders', query: { limit: 10 } }),
 });
 ```
 

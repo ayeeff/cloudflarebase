@@ -16,7 +16,10 @@ const manifest = JSON.parse(
 	// .href, then fileURLToPath: the ambient URL here is workerd's, which is
 	// not assignable to node:fs's PathOrFileDescriptor, and a bare pathname
 	// would lose the drive letter on Windows.
-	readFileSync(fileURLToPath(new URL('../cloudflarebase.agent.json', import.meta.url).href), 'utf8').replace(/^\uFEFF/, ''),
+	readFileSync(
+		fileURLToPath(new URL('../cloudflarebase.agent.json', import.meta.url).href),
+		'utf8',
+	).replace(/^\uFEFF/, ''),
 ) as { routes: { path: string; access: string }[] };
 
 test('the route table mirrors the manifest', () => {
@@ -58,5 +61,8 @@ test('the flag opens the surface for a control-plane-only Worker', () => {
 		null,
 	);
 	assert.equal(gate('/internal/projects/p1/apps/site', { EXPOSE_OPERATOR_API: 'true' }), null);
-	assert.equal(gate('/agents/hosting-agent/p1/overview', { EXPOSE_OPERATOR_API: '1' })?.status, 404);
+	assert.equal(
+		gate('/agents/hosting-agent/p1/overview', { EXPOSE_OPERATOR_API: '1' })?.status,
+		404,
+	);
 });
