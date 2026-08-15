@@ -50,7 +50,12 @@ bearing — they are why the design looks the way it does.
 | R2 requires a dashboard checkout to add the subscription; no API, no flag | The R2 binding is **optional and absent from the self-hosted top level**. `configured: false`, uploads 503 with setup steps. The hosting `DISPATCH` precedent, verbatim. |
 | `wrangler` auto-provisions R2 buckets when `bucket_name` is omitted       | Once R2 is enabled, self-host setup is two lines in `wrangler.jsonc` — never a manual bucket-creation step in the docs                                                   |
 | Worker request body caps at 100 MB (Free/Pro), 200 MB (Business)          | Large files need **chunked multipart**; the cap applies per part, so 4.995 TiB is reachable with no credentials at all                                                   |
-| Presigned URLs need account-level S3 access keys                          | Direct-to-R2 upload is a Phase-3 opt-in, never the default path                                                                                                          |
+| Presigned URLs need account-level S3 access keys                          | Direct-to-R2 is a **transport**, not a tier: available when credentials are configured, and the client protocol is identical without them                                |
+| SigV4 presigning works in a Worker (`aws4fetch`, Workers-native)          | The mint endpoint is ours; no AWS SDK, no Node shims                                                                                                                     |
+| `signQuery` signs only `host` — an unsigned `Content-Type` is rejected    | The browser adds one automatically for a `Blob` body, so presigned parts upload as raw bytes and the content type lives in the index instead                             |
+| Browser → R2 direct needs bucket CORS, including `ExposeHeaders: [ETag]`  | Bucket-level config on a shared bucket, so `*` origins with the signature as the capability; without the exposed `ETag` the client cannot complete a multipart upload    |
+| Multipart: 5 MiB min part, 10,000 parts, all but the last uniform         | The server dictates `partSize`; the client never picks it                                                                                                                |
+| Binding ↔ S3 uploadId interop is undocumented                             | An upload stays inside ONE API for its whole life — never create with the binding and finish over S3                                                                     |
 | A Durable Object is 128 MB of memory and one thread at ~1k req/s          | **Bytes never touch a Durable Object.** The stateless worker streams to R2 and sends the DO a small metadata RPC                                                         |
 | `get()` returns `customMetadata` alongside the body                       | `owner` lives in R2 custom metadata, so owner-mode reads authorize with **zero DO hops and one R2 op**                                                                   |
 | R2 `list()` is prefix-ordered, 1000/page, no sort or filter, Class A      | The DO index is not duplication — it is the only way to sort, filter, count, or page a bucket                                                                            |
@@ -121,17 +126,6 @@ them entering a Durable Object with a body attached.
 - **`GET objects?prefix=&delimiter=/&cursor=&sort=`** — served by the index, not
   by R2: keyset paging with a `range of total` readout, the convention every
   other operator list in the console follows.
-- **Multipart**, for anything over the request-body cap:
-  - `POST uploads` `{ key, contentType, size }` → `createMultipartUpload`, the
-    DO records the upload, response carries a **server-dictated `partSizeBytes`**
-    (R2 requires every part but the last to be the same size, so the client may
-    not choose it) sized so 10,000 parts always cover the declared size.
-  - `PUT uploads/<id>/parts/<n>` → `resumeMultipartUpload(key, id).uploadPart()`,
-    part etag and size recorded on the DO.
-  - `POST uploads/<id>/complete` → the DO returns the ordered parts, the worker
-    calls `.complete()`, the index row commits.
-  - `DELETE uploads/<id>` aborts. An alarm aborts uploads idle over 24 h,
-    because R2 bills incomplete parts.
 - **`POST objects/<key...>/signed-url`** `{ method, ttl }` → a URL carrying
   `?exp=&sig=`, HMAC over `pid \0 bucket \0 key \0 method \0 exp`. Verified in
   the worker with **zero DO hops**, which is what makes a private image work in
@@ -142,6 +136,83 @@ them entering a Durable Object with a body attached.
 
 Public objects are cached in `caches.default` keyed by URL. Signed URLs are
 `Cache-Control: private` and never enter the shared cache.
+
+## Upload: one client algorithm, three transports
+
+A single `PUT` cannot carry a large file — the Workers request body cap is
+100 MB on Free/Pro. So uploads escalate, and the escalation is chosen **by the
+server from the declared size and the agent's configured capabilities**. The
+developer never picks a mode and the SDK's loop never branches on one.
+
+| Size / capability                   | Transport                                                                                                    | Cost                                                    |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| ≤ 100 MB                            | one `PUT` through the worker → `BUCKET.put()`                                                                | **1 Class A op**, one round trip, no credentials        |
+| > 100 MB, no S3 credentials         | **proxied multipart**: parts `PUT` through the worker, `resumeMultipartUpload().uploadPart()` on the binding | N+2 Class A ops, bytes transit the worker               |
+| > 100 MB, S3 credentials configured | **presigned multipart**: parts `PUT` straight to R2 from the client                                          | N+2 Class A ops, worker out of the byte path, resumable |
+
+**Multipart is not the default for everything, deliberately.** A multipart
+upload costs `CreateMultipartUpload` + N × `UploadPart` + `CompleteMultipartUpload`
+Class A operations; a `PutObject` costs one. Making the 40 KB avatar — which is
+what the overwhelming majority of real uploads are — pay three operations and
+three round trips to share a code path with the 4 GB video is paying for
+symmetry with the common case's latency and the customer's bill.
+
+The control plane is the same for both multipart transports:
+
+- `POST uploads` `{ key, contentType, size }` → `{ uploadId, partSize, mode }`
+  where `mode` is `proxy` or `presigned`. `partSize` is **server-dictated** (R2
+  requires every part but the last to be identical) and sized so 10,000 parts
+  always cover the declared size. Quota is reserved here, from `size`.
+- `POST uploads/<id>/parts` `{ from, count }` → for `presigned`, a batch of
+  short-TTL presigned `PUT` URLs, minted in windows rather than 10,000 at once.
+  Not called at all in `proxy` mode.
+- Part upload: `PUT uploads/<id>/parts/<n>` at us, or the presigned URL at R2.
+  Either way the client keeps `{ partNumber, etag }`.
+- `POST uploads/<id>/complete` `{ parts }` → completion runs **inside whichever
+  API created the upload** (binding or S3), because uploadId interop between
+  the two is undocumented and an upload that starts on one must not finish on
+  the other. The worker then `head()`s the object to verify the real size
+  against the reservation, deletes and 413s if it overran, and commits the
+  index row.
+- `DELETE uploads/<id>` aborts and refunds the reservation. An alarm sweeps
+  uploads idle over 24 h — R2 aborts them itself after 7 days, but the
+  reservation is ours to release and incomplete parts bill as storage until
+  then.
+
+So presigning is a **transport swap under an unchanged protocol**, not a
+separate feature with its own client path. Without credentials every size still
+works; the bytes just take the slower road through us.
+
+### The four presigned traps
+
+Recorded now because each one fails at runtime with a message that names the
+wrong cause:
+
+1. **`Content-Type` breaks the signature.** `signQuery: true` signs only the
+   `host` header, and `fetch(url, { method: 'PUT', body: file })` makes the
+   browser add `Content-Type` from `blob.type` — which R2 then rejects as an
+   unsigned header. The SDK uploads parts as raw bytes and the content type
+   lives in the **index** instead. This costs nothing precisely because we never
+   serve straight from R2: the worker sets the response content type from the
+   index on the way out.
+2. **CORS is required and lives on the bucket.** A browser PUT to
+   `<account>.r2.cloudflarestorage.com` is cross-origin. On a shared bucket the
+   allowed-origin list cannot be per tenant, so it is `*` for `PUT` — defensible
+   because the presigned URL _is_ the credential, and a signature bound to one
+   key for fifteen minutes grants nothing else.
+3. **`ExposeHeaders: ["ETag"]`, or multipart cannot complete.** The client must
+   read each part's `ETag` off the response to send it back at completion; a
+   browser cannot see a response header that CORS has not exposed. Missing it
+   fails at the last step of a long upload, which is the worst place to fail.
+4. **Presigned writes bypass every server-side check.** Authorization happens
+   at mint time (we only sign for a caller who may write that key), size is
+   verified after the fact against the reservation, and the content-type
+   allowlist becomes a serve-time concern rather than a write-time one.
+
+Credentials are `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ACCOUNT_ID`,
+all in `secrets.optional` — genuine secrets, unlike `SENTRY_DSN`, and scopable
+to the single bucket. `aws4fetch` is a deliberate runtime dependency of the
+agent, the `uuid` precedent.
 
 ## Index consistency
 
@@ -210,7 +281,7 @@ Phase C alongside hosting's:
 | Buckets per project   | 5                                 |
 | Objects per bucket    | 10,000                            |
 | Bytes per project     | 1 GB                              |
-| Single object         | 100 MB direct, 5 GB via multipart |
+| Single object         | 100 MB single PUT, 5 GB multipart |
 | Concurrent multiparts | 10 per project                    |
 
 The project ceiling is set against R2's 10 GB free tier: the managed service
@@ -264,8 +335,16 @@ single-shot `PUT`/`GET`/`HEAD`/`DELETE`/list, the erase drain, the
 `configured: false` degradation, `storage.api.spec.ts`.
 
 **S2 — Product.** Access modes, JWT verification, rules (size, content type,
-permission keys), signed URLs, multipart, quotas and counters, reconcile, the
-three console pages, the synthetic demo bucket, `storage.ui.spec.ts`.
+permission keys), signed download URLs, **proxied multipart** (the
+credential-free transport, which is what pins the upload protocol), quotas and
+counters, reconcile, the three console pages, the synthetic demo bucket,
+`storage.ui.spec.ts`.
+
+**S2.5 — Presigned transport.** `aws4fetch`, the optional S3 credentials, the
+batch part-URL mint, bucket CORS on the managed service, and the size
+verification at completion. Deliberately after S2 and not folded into it: it
+swaps a transport under a protocol S2 already froze, so it cannot be what
+shapes that protocol. If it slips, large uploads still work.
 
 **S3 — Package.** `dist`/`template`/fragment/`NOTICE`, `AssertStorageAgentEnv`
 plus `bindings.test-d.ts`, the `./client` SDK subpath
@@ -275,11 +354,15 @@ events), `agents/storage/CLAUDE.md`, root `CLAUDE.md` entries, publish.
 
 ## Non-goals for v1
 
-Image transformations (the Images binding is Phase 3), presigned direct-to-R2
-upload, per-bucket custom domains, live/realtime file events (the `LiveShard`
-engine would have to be copied out of the db agent first), resumable TUS
-uploads, bucket-level CORS configuration, lifecycle and expiry rules, object
-versioning, R2 event notifications, and cross-project copy.
+Image transformations (the Images binding is Phase 3); uploads that resume
+across a page reload (the server-side upload record already outlives the
+session — it is the client's part bookkeeping that does not, so this is SDK
+persistence work, not protocol work); TUS; **tenant-configurable** CORS (the
+shared bucket gets one account-level policy in S2.5, and per-bucket policy is
+one of the things a shared bucket cannot have); per-bucket custom domains;
+live/realtime file events (the `LiveShard` engine would have to be copied out
+of the db agent first); lifecycle and expiry rules; object versioning; R2 event
+notifications; and cross-project copy.
 
 ## Open questions
 
