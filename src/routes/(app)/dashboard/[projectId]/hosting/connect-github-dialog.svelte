@@ -36,6 +36,10 @@
 		hasBuildScript: boolean;
 		staticDirs: string[];
 		hasIndexHtml: boolean;
+		framework: { id: string; label: string; note: string | null } | null;
+		buildCommand: string | null;
+		outputDir: string;
+		packageManager: 'npm' | 'pnpm' | 'yarn' | 'bun';
 	}
 
 	let {
@@ -62,6 +66,9 @@
 
 	let mode = $state<'build' | 'direct'>('build');
 	let assetsDir = $state('');
+	let buildCommand = $state('');
+	let packageManager = $state<'npm' | 'pnpm' | 'yarn' | 'bun'>('npm');
+	let framework = $state<Inspection['framework']>(null);
 	let appName = $state('');
 	let showSettings = $state(false);
 
@@ -146,7 +153,12 @@
 			// default, and the operator can still change it.
 			const inspection = body?.inspection;
 			mode = inspection?.suggestedMode ?? 'build';
-			assetsDir = inspection?.assetsDir ?? '';
+			framework = inspection?.framework ?? null;
+			packageManager = inspection?.packageManager ?? 'npm';
+			// One field, two meanings: what direct mode publishes, or where a
+			// build lands ('' = the CLI autodetects).
+			assetsDir = mode === 'direct' ? (inspection?.assetsDir ?? '') : (inspection?.outputDir ?? '');
+			buildCommand = inspection?.buildCommand ?? '';
 		} finally {
 			inspecting = false;
 		}
@@ -172,7 +184,11 @@
 					repoFullName: selected.fullName,
 					appName: appName.trim(),
 					mode,
-					assetsDir: mode === 'direct' ? assetsDir.trim() : undefined
+					// Direct: '' means the repository root. Build: '' means the CLI
+					// autodetects, so it travels as "not set".
+					assetsDir: mode === 'direct' ? assetsDir.trim() : assetsDir.trim() || undefined,
+					buildCommand: mode === 'build' ? buildCommand.trim() || undefined : undefined,
+					packageManager: mode === 'build' ? packageManager : undefined
 				})
 			});
 			const body = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -194,7 +210,8 @@
 		if (mode === 'direct') {
 			return `Every push to ${selected.defaultBranch} publishes ${assetsDir || 'the repository root'} directly. No Actions minutes are used, and nothing is written to your repository.`;
 		}
-		return `A workflow is added to your repository. Every push to ${selected.defaultBranch} builds on GitHub's runners and deploys the output. No secret is stored - deploys authenticate with GitHub's identity token.`;
+		const output = assetsDir ? ` and deploys ${assetsDir}` : ' and deploys the output';
+		return `A workflow is added to your repository. Every push to ${selected.defaultBranch} builds on GitHub's runners${output}. No secret is stored - deploys authenticate with GitHub's identity token.`;
 	});
 </script>
 
@@ -307,6 +324,41 @@
 									</p>
 								{/if}
 							</div>
+
+							{#if framework}
+								<p class="text-xs text-muted-foreground" data-testid="github-framework">
+									Detected <span class="font-medium text-foreground">{framework.label}</span>
+								</p>
+							{/if}
+							{#if mode === 'build'}
+								<div class="grid gap-3 sm:grid-cols-2">
+									<div class="space-y-1.5">
+										<Label for="gh-build">Build command</Label>
+										<Input
+											id="gh-build"
+											bind:value={buildCommand}
+											placeholder="npm run build"
+											class="font-mono text-xs"
+											data-testid="github-build-command"
+										/>
+									</div>
+									<div class="space-y-1.5">
+										<Label for="gh-output">Output directory</Label>
+										<Input
+											id="gh-output"
+											bind:value={assetsDir}
+											placeholder="autodetected"
+											class="font-mono text-xs"
+											data-testid="github-output-dir"
+										/>
+									</div>
+								</div>
+							{/if}
+							{#if framework?.note}
+								<p class="text-xs text-amber-600 dark:text-amber-500" data-testid="github-note">
+									{framework.note}
+								</p>
+							{/if}
 
 							<p class="text-sm" data-testid="github-summary">{summary}</p>
 

@@ -1,6 +1,13 @@
 import { githubFetch, installationToken, type GithubAppConfig } from '$lib/server/github';
 import { WORKFLOW_FILENAME } from '$lib/hosting-workflow';
 import type { ConnectionMode } from '$lib/server/github-connect';
+import {
+	detectFramework,
+	detectPackageManager,
+	hasWranglerConfig,
+	type FrameworkPreset,
+	type PackageManager
+} from '$lib/server/frameworks';
 
 /**
  * Repository-facing GitHub operations: what the connect flow reads, what it
@@ -77,12 +84,21 @@ export interface RepoInspection {
 	/** Directories that look like committed static output. */
 	staticDirs: string[];
 	hasIndexHtml: boolean;
+	/** Framework preset (src/lib/server/frameworks.ts); null = unrecognized. */
+	framework: Pick<FrameworkPreset, 'id' | 'label' | 'note'> | null;
+	/** Build-mode prefill: the preset's command, else `<pm> run build`. */
+	buildCommand: string | null;
+	/** Build-mode prefill: where the build lands; '' = autodetect. */
+	outputDir: string;
+	packageManager: PackageManager;
 }
 
 /**
- * Decides whether a repository needs a runner.
+ * Decides whether a repository needs a runner, and which framework preset
+ * populates the connect dialog (CF-Pages-style: build command and output
+ * directory prefilled, operator can override).
  *
- * This is the whole Tier-1-vs-Tier-1.5 split: a repo with a `build` script
+ * The mode split is the whole Tier-1-vs-Tier-1.5 line: a repo with a build
  * has to be built somewhere, and that somewhere is GitHub's runners. A repo
  * that is already deployable as it stands - committed HTML, or a committed
  * output directory - needs no runner and no file in the repo at all, so the
@@ -103,7 +119,11 @@ export async function inspectRepo(
 		assetsDir: '',
 		hasBuildScript: false,
 		staticDirs: [],
-		hasIndexHtml: false
+		hasIndexHtml: false,
+		framework: null,
+		buildCommand: null,
+		outputDir: '',
+		packageManager: 'npm'
 	};
 	const token = await installationToken(config, installationId);
 	if (!token) return fallback;
@@ -115,12 +135,27 @@ export async function inspectRepo(
 	]);
 
 	let hasBuildScript = false;
+	let dependencies: Record<string, string> = {};
+	let scripts: Record<string, string> = {};
+	let packageManagerField: string | null = null;
 	if (packageResponse.ok) {
 		const raw = decodeContent(packageResponse.body);
 		if (raw) {
 			try {
-				const parsed = JSON.parse(raw) as { scripts?: Record<string, unknown> };
+				const parsed = JSON.parse(raw) as {
+					scripts?: Record<string, unknown>;
+					dependencies?: Record<string, unknown>;
+					devDependencies?: Record<string, unknown>;
+					packageManager?: unknown;
+				};
 				hasBuildScript = typeof parsed.scripts?.build === 'string';
+				scripts = onlyStrings(parsed.scripts);
+				dependencies = {
+					...onlyStrings(parsed.dependencies),
+					...onlyStrings(parsed.devDependencies)
+				};
+				packageManagerField =
+					typeof parsed.packageManager === 'string' ? parsed.packageManager : null;
 			} catch {
 				// An unparseable package.json is a build-mode repo with a problem;
 				// the runner will say so far more clearly than we can here.
@@ -132,13 +167,82 @@ export async function inspectRepo(
 	const entries = (rootResponse.ok ? rootResponse.body : null) as
 		{ name?: string; type?: string }[] | null;
 	const names = Array.isArray(entries) ? entries : [];
+	const rootEntries = names
+		.map((entry) => entry.name)
+		.filter((name): name is string => typeof name === 'string');
 	const hasIndexHtml = names.some((entry) => entry.name === 'index.html' && entry.type === 'file');
 	const staticDirs = STATIC_DIRS.filter((dir) =>
 		names.some((entry) => entry.name === dir && entry.type === 'dir')
 	);
 
+	const packageManager = detectPackageManager(rootEntries, packageManagerField);
+	// next.config decides static-export vs server rendering, and only Next
+	// repos pay the extra read. OpenNext repos skip it: the adapter wins.
+	let nextConfigSource: string | null = null;
+	if (dependencies.next && !dependencies['@opennextjs/cloudflare']) {
+		const configName = rootEntries.find((name) => /^next\.config\.(?:js|mjs|ts)$/.test(name));
+		if (configName) {
+			const configResponse = await githubFetch(
+				token,
+				'GET',
+				`/repos/${repoFullName}/contents/${configName}${query}`
+			);
+			if (configResponse.ok) nextConfigSource = decodeContent(configResponse.body);
+		}
+	}
+
+	const preset = detectFramework({
+		dependencies,
+		scripts,
+		packageManager,
+		rootEntries,
+		hasWranglerConfig: hasWranglerConfig(rootEntries),
+		nextConfigSource
+	});
+	const framework = preset ? { id: preset.id, label: preset.label, note: preset.note } : null;
+
+	if (preset && preset.mode === 'build' && preset.buildCommand) {
+		return {
+			suggestedMode: 'build',
+			assetsDir: '',
+			hasBuildScript,
+			staticDirs,
+			hasIndexHtml,
+			framework,
+			buildCommand: preset.buildCommand,
+			outputDir: preset.outputDir ?? '',
+			packageManager
+		};
+	}
+	if (preset && preset.mode === 'direct') {
+		const dir = preset.outputDir && staticDirs.includes(preset.outputDir) ? preset.outputDir : '';
+		return {
+			suggestedMode: 'direct',
+			assetsDir: dir || staticDirs[0] || '',
+			hasBuildScript,
+			staticDirs,
+			hasIndexHtml,
+			framework,
+			buildCommand: null,
+			outputDir: '',
+			packageManager
+		};
+	}
+
+	// No runnable preset: the legacy heuristics, now framework-labelled when
+	// we at least recognized what it is (a preset whose script is missing).
 	if (hasBuildScript) {
-		return { suggestedMode: 'build', assetsDir: '', hasBuildScript, staticDirs, hasIndexHtml };
+		return {
+			suggestedMode: 'build',
+			assetsDir: '',
+			hasBuildScript,
+			staticDirs,
+			hasIndexHtml,
+			framework,
+			buildCommand: `${packageManager} run build`,
+			outputDir: '',
+			packageManager
+		};
 	}
 	if (staticDirs.length) {
 		return {
@@ -146,13 +250,35 @@ export async function inspectRepo(
 			assetsDir: staticDirs[0],
 			hasBuildScript,
 			staticDirs,
-			hasIndexHtml
+			hasIndexHtml,
+			framework,
+			buildCommand: null,
+			outputDir: '',
+			packageManager
 		};
 	}
 	if (hasIndexHtml) {
-		return { suggestedMode: 'direct', assetsDir: '', hasBuildScript, staticDirs, hasIndexHtml };
+		return {
+			suggestedMode: 'direct',
+			assetsDir: '',
+			hasBuildScript,
+			staticDirs,
+			hasIndexHtml,
+			framework,
+			buildCommand: null,
+			outputDir: '',
+			packageManager
+		};
 	}
-	return { ...fallback, staticDirs, hasIndexHtml };
+	return { ...fallback, staticDirs, hasIndexHtml, framework, packageManager };
+}
+
+function onlyStrings(record: Record<string, unknown> | undefined): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [key, value] of Object.entries(record ?? {})) {
+		if (typeof value === 'string') out[key] = value;
+	}
+	return out;
 }
 
 /**
