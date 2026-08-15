@@ -79,7 +79,8 @@
 		"SENTRY_DSN": "",
 		"SENTRY_ENV": "production",
 		"TRUSTED_ORIGINS": "",
-		"WAE_DATASET": "cloudflarebase_auth_events",
+		// WAE_DATASET is absent with the analytics_engine_datasets block below
+		// it names - see the comment there before adding either back.
 		/**
 		 * Serves the operator plane (/overview, /analytics, /chat, /admin/*,
 		 * the state-sync socket, /internal/*) over HTTP. Those routes carry no
@@ -101,15 +102,30 @@
 		"required": [],
 	},
 
-	// Metrics pipeline: every auth event writes a data point (event type,
-	// country, provider) indexed by project id. Dataset auto-creates on first
-	// write; local dev/test writes are no-ops.
-	"analytics_engine_datasets": [
-		{
-			"binding": "AUTH_EVENTS",
-			"dataset": "cloudflarebase_auth_events",
-		},
-	],
+	/**
+	 * NO analytics_engine_datasets at the top level, deliberately - this is the
+	 * self-hosted default and it has to deploy on a fresh account.
+	 *
+	 * Analytics Engine is an account-level opt-in that only the Cloudflare
+	 * dashboard can grant: no API, no Wrangler flag. Declaring the binding here
+	 * made `npm run deploy:all` fail on this very first Worker with
+	 * `no_access_to_analytics_engine` (code 10089) for anyone who had never
+	 * enabled it - the script upload is refused, so no code ever runs. It also
+	 * bought that install nothing, because READING the events needs
+	 * CF_ACCOUNT_ID + CF_ANALYTICS_API_TOKEN, which are optional.
+	 *
+	 * To turn auth analytics on: enable Analytics Engine in the dashboard, then
+	 * add both of these back (the dataset auto-creates on first write, and
+	 * writes need no credentials):
+	 *
+	 *   "analytics_engine_datasets": [
+	 *     { "binding": "AUTH_EVENTS", "dataset": "cloudflarebase_auth_events" }
+	 *   ],
+	 *   "vars": { "WAE_DATASET": "cloudflarebase_auth_events" }
+	 *
+	 * Every environment below is cloudflarebase.com's own and declares it: those
+	 * accounts have it enabled.
+	 */
 
 	"env": {
 		/**

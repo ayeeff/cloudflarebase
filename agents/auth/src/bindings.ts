@@ -40,12 +40,22 @@ export interface AuthAgentBindings {
 	AuthAgent: AnyDurableObjectNamespace;
 
 	/**
-	 * Workers Analytics Engine dataset for auth events. Writes need no API
-	 * credentials and the dataset auto-creates on first write, so there is no
-	 * reason for a deployment to lack it - every environment in the shipped
-	 * wrangler configuration declares it.
+	 * Workers Analytics Engine dataset for auth events. OPTIONAL, and the reason
+	 * is a deploy-time one rather than a runtime one: Analytics Engine is an
+	 * account-level opt-in with no API and no Wrangler flag, so declaring this
+	 * binding makes `wrangler deploy` fail outright with
+	 * `no_access_to_analytics_engine` (code 10089) on any account that has never
+	 * enabled it in the dashboard. Requiring it meant a first deploy could not
+	 * succeed at all.
+	 *
+	 * It buys nothing on its own either: reading these events needs
+	 * CF_ACCOUNT_ID + CF_ANALYTICS_API_TOKEN, both optional, so an install
+	 * without them was writing datapoints nobody could ever read.
+	 *
+	 * Unset, every write is skipped (`this.env.AUTH_EVENTS?.writeDataPoint`) and
+	 * the agent is otherwise unaffected - analytics simply report nothing.
 	 */
-	AUTH_EVENTS: AnalyticsEngineDataset;
+	AUTH_EVENTS?: AnalyticsEngineDataset;
 
 	/** Workers AI. Required only for `POST /chat`, which 502s without it. */
 	AI?: Ai;

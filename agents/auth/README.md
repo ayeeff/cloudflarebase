@@ -7,7 +7,7 @@ primitive behind [Cloudflarebase](https://github.com/cloudflarebase/cloudflareba
 What each project's agent gives you: email/password, guest, and social sign-in;
 cookie sessions and bearer tokens; project-signed JWTs (`GET /token`, keys on
 `GET /jwks`) carrying role and permission claims; live state sync to connected
-dashboards; auth events into Workers Analytics Engine.
+dashboards; and opt-in auth events into Workers Analytics Engine.
 
 ## Install
 
@@ -47,11 +47,18 @@ import type { AssertAuthAgentEnv } from '@cloudflarebase/auth';
 export type _AuthAgentBindings = AssertAuthAgentEnv<Env>;
 ```
 
-Only two bindings are required: `AuthAgent` (the Durable Object namespace) and
-`AUTH_EVENTS` (an Analytics Engine dataset; auto-creates on first write).
+Only one binding is required: `AuthAgent`, the Durable Object namespace.
 Everything else degrades gracefully when absent: `AI` only powers `/chat`,
 `EMAIL`/`EMAIL_FROM` only affect verification mail, and `BETTER_AUTH_SECRET`
 is optional because each project generates its own signing key.
+
+Auth-event analytics are opt-in for a deploy-time reason. Analytics Engine is
+an account-level toggle only the Cloudflare dashboard can grant - no API, no
+Wrangler flag - so declaring an `AUTH_EVENTS` dataset fails `wrangler deploy`
+with `no_access_to_analytics_engine` (code 10089) until you enable it. Turn it
+on there, then add the `analytics_engine_datasets` block and `WAE_DATASET`
+shown in `template/wrangler-fragment.jsonc`. Without them every write is
+skipped and nothing else changes.
 
 A deployment trusts its own origin automatically, so sign-in works right after
 deploy. `TRUSTED_ORIGINS` (the CSRF allowlist) is only for extra origins:
@@ -61,10 +68,10 @@ other domains serving your UI, or apps calling the API from elsewhere.
 
 Mounting the default export publishes two routes to the internet:
 
-| Route                                             | Who calls it            |
-| ------------------------------------------------- | ----------------------- |
-| `/agents/auth-agent/<projectId>/api/auth/*`       | Better Auth - your app  |
-| `/agents/auth-agent/<projectId>/config`           | Public client config    |
+| Route                                       | Who calls it           |
+| ------------------------------------------- | ---------------------- |
+| `/agents/auth-agent/<projectId>/api/auth/*` | Better Auth - your app |
+| `/agents/auth-agent/<projectId>/config`     | Public client config   |
 
 Everything else - `/overview`, `/analytics`, `/chat`, `/admin/*` (users,
 sessions, roles, sign-in settings), the state-sync socket, `/internal/*` -
@@ -79,9 +86,7 @@ binding, which no HTTP caller can:
 import { getAgentByName } from 'agents';
 
 const agent = await getAgentByName(env.AuthAgent, projectId);
-const users = await agent.fetch(
-	`https://agent/agents/auth-agent/${projectId}/admin/users`
-);
+const users = await agent.fetch(`https://agent/agents/auth-agent/${projectId}/admin/users`);
 ```
 
 If you would rather serve the operator routes over HTTP, put your own

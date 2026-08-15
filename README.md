@@ -55,12 +55,13 @@ That's three Workers on your account (`auth-agent`, `db-agent`,
 to configure. The order matters - the db worker binds the auth worker, the
 dashboard binds both - and `deploy:all` encodes it so you don't have to.
 
-One account-level toggle can stop that first step. The auth agent writes auth
-events to Workers Analytics Engine, and Cloudflare gates that per account, so
-`deploy:all` fails on `auth-agent` with `no_access_to_analytics_engine` (code 10089) until you enable it. There is no API or Wrangler flag for it - follow
-the link in the error, enable Analytics Engine (free, one click), and re-run.
-Only the deploy needs it: event writes are wrapped, so an agent running
-without the binding simply records nothing.
+Auth-event analytics are off until you ask for them. Analytics Engine is an
+account-level toggle only the Cloudflare dashboard can grant - no API, no
+Wrangler flag - and a Worker that declares the binding will not deploy at all
+until it is on (`no_access_to_analytics_engine`, code 10089). Rather than make
+every install click through that first, the shipped config omits it: enable
+Analytics Engine when you want the charts, then add the two lines
+`agents/auth/wrangler.jsonc` shows you.
 
 Then claim the console. Set a setup token from the same terminal - it needs
 your Cloudflare credentials, which is the point:

@@ -37,15 +37,26 @@
 		],
 	},
 
-	// Required. Auth events are written here; the dataset auto-creates on first
-	// write and writes need no API credentials. Reads (the analytics dashboard)
-	// additionally need CF_ACCOUNT_ID and CF_ANALYTICS_API_TOKEN.
-	"analytics_engine_datasets": [
-		{
-			"binding": "AUTH_EVENTS",
-			"dataset": "cloudflarebase_auth_events",
-		},
-	],
+	/**
+	 * Optional, and deliberately NOT included: auth-event analytics.
+	 *
+	 * Analytics Engine is an account-level opt-in that only the Cloudflare
+	 * dashboard can grant - no API, no Wrangler flag - and declaring the binding
+	 * makes `wrangler deploy` fail with `no_access_to_analytics_engine` (code
+	 * 10089) until it is enabled. Shipping it here would break the first deploy
+	 * of every install that has not turned it on.
+	 *
+	 * Enable it in the dashboard, then add:
+	 *
+	 *   "analytics_engine_datasets": [
+	 *     { "binding": "AUTH_EVENTS", "dataset": "cloudflarebase_auth_events" }
+	 *   ],
+	 *
+	 * plus "WAE_DATASET" in vars below, matching that dataset name. The dataset
+	 * auto-creates on first write and writes need no API credentials; reading
+	 * the events additionally needs CF_ACCOUNT_ID and CF_ANALYTICS_API_TOKEN.
+	 * Without any of it the agent runs unchanged and records nothing.
+	 */
 
 	// Optional. Powers `POST /chat`, which is the only route that calls it.
 	// Without it the rest of the agent is unaffected and /chat returns 502.
@@ -65,9 +76,6 @@
 		 * your UI or calls the API with cookies.
 		 */
 		"TRUSTED_ORIGINS": "",
-
-		// Must match the dataset name above.
-		"WAE_DATASET": "cloudflarebase_auth_events",
 
 		"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 
