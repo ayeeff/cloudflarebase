@@ -40,6 +40,7 @@
 		buildCommand: string | null;
 		outputDir: string;
 		packageManager: 'npm' | 'pnpm' | 'yarn' | 'bun';
+		rootDirExists: boolean;
 	}
 
 	let {
@@ -67,6 +68,8 @@
 	let mode = $state<'build' | 'direct'>('build');
 	let assetsDir = $state('');
 	let buildCommand = $state('');
+	let rootDir = $state('');
+	let rootDirMissing = $state(false);
 	let packageManager = $state<'npm' | 'pnpm' | 'yarn' | 'bun'>('npm');
 	let framework = $state<Inspection['framework']>(null);
 	let appName = $state('');
@@ -140,11 +143,21 @@
 	async function select(repo: Repo) {
 		selected = repo;
 		showSettings = false;
+		rootDir = '';
 		appName = suggestAppName(repo.fullName);
+		await inspect(repo, '');
+	}
+
+	/** Inspects `repo` at `dir` and refreshes every prefill. Runs on select
+	 * and again whenever the Root directory field changes - a monorepo's
+	 * framework lives in the subdirectory, not the workspace shell. */
+	async function inspect(repo: Repo, dir: string) {
 		inspecting = true;
+		rootDirMissing = false;
 		try {
+			const dirParam = dir ? `&dir=${encodeURIComponent(dir)}` : '';
 			const response = await fetch(
-				`${base}/repos?installation=${installationId}&repo=${encodeURIComponent(repo.fullName)}`
+				`${base}/repos?installation=${installationId}&repo=${encodeURIComponent(repo.fullName)}${dirParam}`
 			);
 			const body = (await response.json().catch(() => null)) as {
 				inspection?: Inspection;
@@ -152,12 +165,19 @@
 			// A failed inspection is not a failed connect: build mode is the safe
 			// default, and the operator can still change it.
 			const inspection = body?.inspection;
+			rootDirMissing = inspection ? !inspection.rootDirExists : false;
 			mode = inspection?.suggestedMode ?? 'build';
 			framework = inspection?.framework ?? null;
 			packageManager = inspection?.packageManager ?? 'npm';
-			// One field, two meanings: what direct mode publishes, or where a
-			// build lands ('' = the CLI autodetects).
-			assetsDir = mode === 'direct' ? (inspection?.assetsDir ?? '') : (inspection?.outputDir ?? '');
+			// One field, two meanings: what direct mode publishes (repo-relative,
+			// so a subdirectory suggestion gets the root dir prefixed back on),
+			// or where a build lands relative to the root dir ('' = autodetect).
+			if (mode === 'direct') {
+				const suggested = inspection?.assetsDir ?? '';
+				assetsDir = dir ? (suggested ? `${dir}/${suggested}` : dir) : suggested;
+			} else {
+				assetsDir = inspection?.outputDir ?? '';
+			}
 			buildCommand = inspection?.buildCommand ?? '';
 		} finally {
 			inspecting = false;
@@ -188,6 +208,7 @@
 					// autodetects, so it travels as "not set".
 					assetsDir: mode === 'direct' ? assetsDir.trim() : assetsDir.trim() || undefined,
 					buildCommand: mode === 'build' ? buildCommand.trim() || undefined : undefined,
+					rootDir: mode === 'build' ? rootDir.trim() || undefined : undefined,
 					packageManager: mode === 'build' ? packageManager : undefined
 				})
 			});
@@ -328,9 +349,27 @@
 							{#if framework}
 								<p class="text-xs text-muted-foreground" data-testid="github-framework">
 									Detected <span class="font-medium text-foreground">{framework.label}</span>
+									{#if rootDir}in <code class="font-mono">{rootDir}</code>{/if}
 								</p>
 							{/if}
 							{#if mode === 'build'}
+								<div class="space-y-1.5">
+									<Label for="gh-root">Root directory</Label>
+									<Input
+										id="gh-root"
+										bind:value={rootDir}
+										placeholder="/ (repository root)"
+										class="font-mono text-xs"
+										data-testid="github-root-dir"
+										onchange={() => selected && inspect(selected, rootDir.trim())}
+									/>
+									{#if rootDirMissing}
+										<p class="text-xs text-destructive" data-testid="github-root-dir-missing">
+											<code class="font-mono">{rootDir.trim()}</code> does not exist on
+											{selected.defaultBranch}.
+										</p>
+									{/if}
+								</div>
 								<div class="grid gap-3 sm:grid-cols-2">
 									<div class="space-y-1.5">
 										<Label for="gh-build">Build command</Label>
@@ -415,7 +454,11 @@
 			<Dialog.Footer>
 				<Button variant="outline" onclick={() => (open = false)}>Cancel</Button>
 				<Button
-					disabled={!selected || inspecting || busy || appName.trim().length < 3}
+					disabled={!selected ||
+						inspecting ||
+						busy ||
+						appName.trim().length < 3 ||
+						(mode === 'build' && rootDirMissing)}
 					onclick={connect}
 					data-testid="github-connect-submit"
 				>

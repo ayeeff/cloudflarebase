@@ -470,6 +470,21 @@ config names `main` and `assets.directory`, and the CLI already follows
 it. Their server bundles are what the `.assetsignore` /
 `RESERVED_ROOT_ASSETS` filtering exists for (see Guardrails).
 
+**Root directory** (build mode, for monorepos - `sites/blabla` instead of
+the repo root): editing the field re-inspects THAT directory, so the
+preset describes the app rather than the workspace shell (lockfile
+detection unions the repository root's listing, because workspaces keep
+one lockfile at the top; a directory that does not exist on the default
+branch warns and blocks Connect). The workflow runs install, build, and
+deploy under `working-directory` - and prefixes every `hashFiles` guard
+plus setup-node's `cache-dependency-path`, because `hashFiles` always
+resolves from the workspace root no matter what working-directory says.
+The CLI needs nothing: its cwd IS the root directory, so the wrangler
+config, `CLOUDFLAREBASE_ASSETS`, and bundling all resolve there. Direct
+mode has no root directory on purpose - its "directory to publish" is
+already repo-relative, and a subdirectory suggestion gets the prefix
+folded back in by the dialog.
+
 **Setting the App up** (once per deployment; see the launch checklist):
 register a GitHub App with `contents: write` (writes the workflow) and
 `metadata: read`, subscribe it to the `push` and `installation` events

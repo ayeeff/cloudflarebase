@@ -91,6 +91,9 @@ export interface RepoInspection {
 	/** Build-mode prefill: where the build lands; '' = autodetect. */
 	outputDir: string;
 	packageManager: PackageManager;
+	/** False when a requested root directory does not exist on the ref -
+	 * the dialog warns instead of connecting a repo that can never build. */
+	rootDirExists: boolean;
 }
 
 /**
@@ -112,8 +115,10 @@ export async function inspectRepo(
 	config: GithubAppConfig,
 	installationId: number,
 	repoFullName: string,
-	ref: string
+	ref: string,
+	rootDir: string | null = null
 ): Promise<RepoInspection> {
+	const dir = rootDir?.replace(/^\/+|\/+$/g, '') || null;
 	const fallback: RepoInspection = {
 		suggestedMode: 'build',
 		assetsDir: '',
@@ -123,16 +128,26 @@ export async function inspectRepo(
 		framework: null,
 		buildCommand: null,
 		outputDir: '',
-		packageManager: 'npm'
+		packageManager: 'npm',
+		rootDirExists: true
 	};
 	const token = await installationToken(config, installationId);
 	if (!token) return fallback;
 
 	const query = `?ref=${encodeURIComponent(ref)}`;
-	const [packageResponse, rootResponse] = await Promise.all([
-		githubFetch(token, 'GET', `/repos/${repoFullName}/contents/package.json${query}`),
-		githubFetch(token, 'GET', `/repos/${repoFullName}/contents${query}`)
+	const base = dir ? `/repos/${repoFullName}/contents/${dir}` : `/repos/${repoFullName}/contents`;
+	const [packageResponse, rootResponse, repoRootResponse] = await Promise.all([
+		githubFetch(token, 'GET', `${base}/package.json${query}`),
+		githubFetch(token, 'GET', `${base}${query}`),
+		// Monorepo lockfiles live at the REPOSITORY root, not beside the
+		// package - the union below is what makes pnpm detection work there.
+		dir
+			? githubFetch(token, 'GET', `/repos/${repoFullName}/contents${query}`)
+			: Promise.resolve(null)
 	]);
+	if (dir && !rootResponse.ok) {
+		return { ...fallback, rootDirExists: false };
+	}
 
 	let hasBuildScript = false;
 	let dependencies: Record<string, string> = {};
@@ -171,22 +186,28 @@ export async function inspectRepo(
 		.map((entry) => entry.name)
 		.filter((name): name is string => typeof name === 'string');
 	const hasIndexHtml = names.some((entry) => entry.name === 'index.html' && entry.type === 'file');
-	const staticDirs = STATIC_DIRS.filter((dir) =>
-		names.some((entry) => entry.name === dir && entry.type === 'dir')
+	const staticDirs = STATIC_DIRS.filter((name) =>
+		names.some((entry) => entry.name === name && entry.type === 'dir')
 	);
 
-	const packageManager = detectPackageManager(rootEntries, packageManagerField);
+	// Lockfiles: the root directory's own, unioned with the repository
+	// root's - a workspace keeps ONE lockfile at the top.
+	const repoRootNames = Array.isArray(repoRootResponse?.body)
+		? (repoRootResponse.body as { name?: string }[])
+				.map((entry) => entry.name)
+				.filter((name): name is string => typeof name === 'string')
+		: [];
+	const packageManager = detectPackageManager(
+		[...rootEntries, ...repoRootNames],
+		packageManagerField
+	);
 	// next.config decides static-export vs server rendering, and only Next
 	// repos pay the extra read. OpenNext repos skip it: the adapter wins.
 	let nextConfigSource: string | null = null;
 	if (dependencies.next && !dependencies['@opennextjs/cloudflare']) {
 		const configName = rootEntries.find((name) => /^next\.config\.(?:js|mjs|ts)$/.test(name));
 		if (configName) {
-			const configResponse = await githubFetch(
-				token,
-				'GET',
-				`/repos/${repoFullName}/contents/${configName}${query}`
-			);
+			const configResponse = await githubFetch(token, 'GET', `${base}/${configName}${query}`);
 			if (configResponse.ok) nextConfigSource = decodeContent(configResponse.body);
 		}
 	}
@@ -200,32 +221,33 @@ export async function inspectRepo(
 		nextConfigSource
 	});
 	const framework = preset ? { id: preset.id, label: preset.label, note: preset.note } : null;
+	const common = {
+		hasBuildScript,
+		staticDirs,
+		hasIndexHtml,
+		framework,
+		packageManager,
+		rootDirExists: true as const
+	};
 
 	if (preset && preset.mode === 'build' && preset.buildCommand) {
 		return {
+			...common,
 			suggestedMode: 'build',
 			assetsDir: '',
-			hasBuildScript,
-			staticDirs,
-			hasIndexHtml,
-			framework,
 			buildCommand: preset.buildCommand,
-			outputDir: preset.outputDir ?? '',
-			packageManager
+			outputDir: preset.outputDir ?? ''
 		};
 	}
 	if (preset && preset.mode === 'direct') {
-		const dir = preset.outputDir && staticDirs.includes(preset.outputDir) ? preset.outputDir : '';
+		const suggested =
+			preset.outputDir && staticDirs.includes(preset.outputDir) ? preset.outputDir : '';
 		return {
+			...common,
 			suggestedMode: 'direct',
-			assetsDir: dir || staticDirs[0] || '',
-			hasBuildScript,
-			staticDirs,
-			hasIndexHtml,
-			framework,
+			assetsDir: suggested || staticDirs[0] || '',
 			buildCommand: null,
-			outputDir: '',
-			packageManager
+			outputDir: ''
 		};
 	}
 
@@ -233,44 +255,32 @@ export async function inspectRepo(
 	// we at least recognized what it is (a preset whose script is missing).
 	if (hasBuildScript) {
 		return {
+			...common,
 			suggestedMode: 'build',
 			assetsDir: '',
-			hasBuildScript,
-			staticDirs,
-			hasIndexHtml,
-			framework,
 			buildCommand: `${packageManager} run build`,
-			outputDir: '',
-			packageManager
+			outputDir: ''
 		};
 	}
 	if (staticDirs.length) {
 		return {
+			...common,
 			suggestedMode: 'direct',
 			assetsDir: staticDirs[0],
-			hasBuildScript,
-			staticDirs,
-			hasIndexHtml,
-			framework,
 			buildCommand: null,
-			outputDir: '',
-			packageManager
+			outputDir: ''
 		};
 	}
 	if (hasIndexHtml) {
 		return {
+			...common,
 			suggestedMode: 'direct',
 			assetsDir: '',
-			hasBuildScript,
-			staticDirs,
-			hasIndexHtml,
-			framework,
 			buildCommand: null,
-			outputDir: '',
-			packageManager
+			outputDir: ''
 		};
 	}
-	return { ...fallback, staticDirs, hasIndexHtml, framework, packageManager };
+	return { ...fallback, ...common, buildCommand: null, outputDir: '' };
 }
 
 function onlyStrings(record: Record<string, unknown> | undefined): Record<string, string> {

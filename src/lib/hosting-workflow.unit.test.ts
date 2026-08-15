@@ -54,12 +54,35 @@ test('every step that can hang carries its own timeout', () => {
 	}
 });
 
+test('a root directory scopes every step and re-points the hashFiles guards', () => {
+	const yaml = connectedWorkflowYaml({ ...base, rootDir: 'sites/blabla' });
+	// hashFiles resolves from the workspace root regardless of
+	// working-directory, so every guard must carry the prefix.
+	assert.match(yaml, /hashFiles\('sites\/blabla\/package\.json'\)/);
+	assert.doesNotMatch(yaml, /hashFiles\('package\.json'\)/);
+	assert.match(
+		yaml,
+		/hashFiles\('sites\/blabla\/package-lock\.json', 'sites\/blabla\/npm-shrinkwrap\.json'\)/
+	);
+	assert.match(yaml, /cache-dependency-path: sites\/blabla\/package-lock\.json/);
+	// Install, build, and deploy all run in the subdirectory.
+	const wd = yaml.match(/working-directory: sites\/blabla/g) ?? [];
+	assert.equal(wd.length, 3);
+});
+
+test('no root directory means no working-directory lines at all', () => {
+	const yaml = connectedWorkflowYaml(base);
+	assert.doesNotMatch(yaml, /working-directory/);
+	assert.doesNotMatch(yaml, /cache-dependency-path/);
+});
+
 test('YAML stays tab-free and the run blocks stay indented', () => {
 	const yaml = connectedWorkflowYaml({
 		...base,
 		packageManager: 'bun',
 		buildCommand: 'bun run build && bun run postbuild',
-		outputDir: 'dist'
+		outputDir: 'dist',
+		rootDir: 'apps/web'
 	});
 	assert.doesNotMatch(yaml, /\t/);
 	// Every non-empty line inside the file is indented or a top-level key.

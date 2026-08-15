@@ -214,6 +214,9 @@ export const githubConnection = sqliteTable(
 		/** Build mode: the workflow's build command (framework preset or
 		 * operator-edited); null = the generic `npm run build --if-present`. */
 		buildCommand: text('build_command'),
+		/** Build mode: monorepo root - install/build/deploy run here.
+		 * Null = repository root. */
+		rootDir: text('root_dir'),
 		createdAt: integer('created_at', { mode: 'timestamp_ms' })
 			.notNull()
 			.default(sql`(unixepoch() * 1000)`),

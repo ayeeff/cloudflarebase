@@ -37,6 +37,7 @@ export interface Connection {
 	mode: ConnectionMode;
 	assetsDir: string | null;
 	buildCommand: string | null;
+	rootDir: string | null;
 	createdAt: string;
 	lastEventAt: string | null;
 }
@@ -53,6 +54,7 @@ function toConnection(row: typeof githubConnection.$inferSelect): Connection {
 		mode: row.mode,
 		assetsDir: row.assetsDir,
 		buildCommand: row.buildCommand,
+		rootDir: row.rootDir,
 		createdAt: row.createdAt.toISOString(),
 		lastEventAt: row.lastEventAt?.toISOString() ?? null
 	};
@@ -110,6 +112,7 @@ export interface SaveConnectionInput {
 	mode: ConnectionMode;
 	assetsDir: string | null;
 	buildCommand: string | null;
+	rootDir: string | null;
 }
 
 /** Upserts the connection for a project+app - reconnecting replaces. */
@@ -284,9 +287,12 @@ export const connectSchema = z.object({
 	repoFullName: z.string().regex(REPO_FULL_NAME, 'expected owner/repository'),
 	appName: appNameSchema,
 	mode: z.enum(['build', 'direct']),
-	/** Direct: the directory published as-is. Build: where the build lands. */
+	/** Direct: the directory published as-is. Build: where the build lands,
+	 * relative to rootDir. */
 	assetsDir: assetsDirSchema.optional(),
 	buildCommand: buildCommandSchema.optional(),
+	/** Monorepo root - install, build, and deploy run here (build mode). */
+	rootDir: assetsDirSchema.optional(),
 	/** From the inspection; decides the workflow's install steps. */
 	packageManager: z.enum(['npm', 'pnpm', 'yarn', 'bun']).optional()
 });
@@ -360,6 +366,8 @@ export async function connectRepository(
 	// settings is a rewrite, never a migration.
 	const buildCommand = mode === 'build' ? (parsed.data.buildCommand ?? null) : null;
 	const outputDir = mode === 'build' ? parsed.data.assetsDir?.trim() || null : null;
+	const rootDir =
+		mode === 'build' ? parsed.data.rootDir?.trim().replace(/^\/+|\/+$/g, '') || null : null;
 
 	let workflowWritten = false;
 	if (mode === 'build') {
@@ -374,7 +382,8 @@ export async function connectRepository(
 				appName: claim.appName,
 				packageManager: parsed.data.packageManager,
 				buildCommand,
-				outputDir
+				outputDir,
+				rootDir
 			})
 		);
 		if (!written.ok) return { ok: false, status: written.status, error: written.error };
@@ -392,7 +401,8 @@ export async function connectRepository(
 		// Direct publishes this directory from every push; build records where
 		// the build lands (null = the CLI autodetects at deploy time).
 		assetsDir: mode === 'direct' ? (parsed.data.assetsDir ?? '') : outputDir,
-		buildCommand
+		buildCommand,
+		rootDir
 	});
 	return { ok: true, connection, subdomain: claim.subdomain, workflowWritten };
 }

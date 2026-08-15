@@ -25,6 +25,10 @@ export interface WorkflowBuildOptions {
 	packageManager?: WorkflowPackageManager;
 	/** Preset or operator-edited command; null keeps `npm run build --if-present`. */
 	buildCommand?: string | null;
+	/** Monorepo root: install, build, and deploy all run HERE. Null = repo
+	 * root. hashFiles guards are prefixed because they always resolve from
+	 * the workspace root, working-directory or not. */
+	rootDir?: string | null;
 }
 
 /**
@@ -34,10 +38,13 @@ export interface WorkflowBuildOptions {
  * pinning a version via the `packageManager` field gets exactly that version,
  * with a global install as the fallback for repositories that pin nothing.
  */
-function installSteps(pm: WorkflowPackageManager): string {
+function installSteps(pm: WorkflowPackageManager, dir: string | null): string {
+	const inDir = (file: string): string => (dir ? `${dir}/${file}` : file);
+	const wd = dir ? `\n        working-directory: ${dir}` : '';
+	const guard = `        if: hashFiles('${inDir('package.json')}') != ''${wd}`;
 	if (pm === 'pnpm') {
 		return `      - name: Install dependencies
-        if: hashFiles('package.json') != ''
+${guard}
         run: |
           corepack enable 2>/dev/null || true
           command -v pnpm >/dev/null 2>&1 || npm install -g pnpm
@@ -45,14 +52,14 @@ function installSteps(pm: WorkflowPackageManager): string {
 	}
 	if (pm === 'bun') {
 		return `      - name: Install dependencies
-        if: hashFiles('package.json') != ''
+${guard}
         run: |
           command -v bun >/dev/null 2>&1 || npm install -g bun
           bun install --frozen-lockfile || bun install`;
 	}
 	if (pm === 'yarn') {
 		return `      - name: Install dependencies
-        if: hashFiles('package.json') != ''
+${guard}
         # --immutable is Yarn Berry, --frozen-lockfile is classic; the plain
         # install covers a lockfile that has drifted, which both refuse.
         run: |
@@ -60,7 +67,7 @@ function installSteps(pm: WorkflowPackageManager): string {
           yarn install --immutable || yarn install --frozen-lockfile || yarn install`;
 	}
 	return `      - name: Install dependencies
-        if: hashFiles('package.json') != ''
+${guard}
         # ci skips dependency resolution entirely; the fallback covers a
         # lockfile that has drifted, which ci refuses and install repairs.
         # --no-audit/--no-fund drop two registry round trips nothing reads here.
@@ -84,15 +91,26 @@ function installSteps(pm: WorkflowPackageManager): string {
  */
 function buildSteps(options: WorkflowBuildOptions = {}): string {
 	const pm = options.packageManager ?? 'npm';
+	const dir = options.rootDir ?? null;
+	const inDir = (file: string): string => (dir ? `${dir}/${file}` : file);
 	const cache =
 		pm === 'npm'
-			? `\${{ hashFiles('package-lock.json', 'npm-shrinkwrap.json') != '' && 'npm' || '' }}`
+			? `\${{ hashFiles('${inDir('package-lock.json')}', '${inDir('npm-shrinkwrap.json')}') != '' && 'npm' || '' }}`
 			: pm === 'yarn'
-				? `\${{ hashFiles('yarn.lock') != '' && 'yarn' || '' }}`
+				? `\${{ hashFiles('${inDir('yarn.lock')}') != '' && 'yarn' || '' }}`
 				: `''`;
+	// setup-node's cache hashes the ROOT lockfile by default; a monorepo's
+	// lives beside (or above) the root directory, so point it explicitly.
+	const cachePath =
+		dir && (pm === 'npm' || pm === 'yarn')
+			? `\n          cache-dependency-path: ${pm === 'yarn' ? inDir('yarn.lock') : inDir('package-lock.json')}`
+			: '';
+	const wd = dir ? `\n        working-directory: ${dir}` : '';
 	// A custom command runs unconditionally (Hugo has no package.json at all);
 	// the default is guarded because `npm run` without one is a hard error.
-	const buildIf = options.buildCommand ? '' : `\n        if: hashFiles('package.json') != ''`;
+	const buildIf = options.buildCommand
+		? wd
+		: `\n        if: hashFiles('${inDir('package.json')}') != ''${wd}`;
 	const command = options.buildCommand ?? 'npm run build --if-present';
 	return `      - uses: actions/setup-node@v4
         with:
@@ -100,8 +118,8 @@ function buildSteps(options: WorkflowBuildOptions = {}): string {
           # Restores the package cache. That also holds npx's cache, so the
           # deploy step reuses it - npx still checks the registry for a newer
           # CLI, since a name-only spec is re-resolved on every run.
-          cache: ${cache}
-${installSteps(pm)}
+          cache: ${cache}${cachePath}
+${installSteps(pm, dir)}
       # Adjust to your stack; the command was chosen when the repository was
       # connected and reconnecting rewrites it.
       - name: Build${buildIf}
@@ -175,8 +193,11 @@ export interface ConnectedWorkflowInput {
 	 * could not inspect gets the same generic workflow as before. */
 	packageManager?: WorkflowPackageManager;
 	buildCommand?: string | null;
-	/** Published as CLOUDFLAREBASE_ASSETS; null lets the CLI autodetect. */
+	/** Published as CLOUDFLAREBASE_ASSETS, relative to rootDir; null lets the
+	 * CLI autodetect. */
 	outputDir?: string | null;
+	/** Monorepo root directory - every step runs here. Null = repo root. */
+	rootDir?: string | null;
 }
 
 /**
@@ -226,8 +247,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
-${buildSteps({ packageManager: input.packageManager, buildCommand: input.buildCommand })}
-      - name: Deploy
+${buildSteps({ packageManager: input.packageManager, buildCommand: input.buildCommand, rootDir: input.rootDir })}
+      - name: Deploy${input.rootDir ? `\n        working-directory: ${input.rootDir}` : ''}
         # Bounded so a stalled upload is attributed here, not to a job cancel.
         timeout-minutes: 5
         run: npx --yes @cloudflarebase/cli deploy

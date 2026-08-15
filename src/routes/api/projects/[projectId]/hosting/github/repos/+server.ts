@@ -43,8 +43,23 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	if (!repo) {
 		return Response.json({ error: 'that repository is not in this installation' }, { status: 404 });
 	}
+	// Optional monorepo root: inspection reads THAT directory's package.json
+	// and listing, so the presets describe the app, not the workspace shell.
+	const dir = url.searchParams.get('dir')?.trim() ?? '';
+	if (dir && !/^[A-Za-z0-9._/-]{1,200}$/.test(dir)) {
+		return Response.json({ error: 'invalid root directory' }, { status: 400 });
+	}
+	if (dir.startsWith('/') || dir.split('/').includes('..')) {
+		return Response.json({ error: 'invalid root directory' }, { status: 400 });
+	}
 	return Response.json({
 		repos,
-		inspection: await inspectRepo(config, installationId, repo.fullName, repo.defaultBranch)
+		inspection: await inspectRepo(
+			config,
+			installationId,
+			repo.fullName,
+			repo.defaultBranch,
+			dir || null
+		)
 	});
 };
