@@ -94,6 +94,9 @@ export interface RepoInspection {
 	/** False when a requested root directory does not exist on the ref -
 	 * the dialog warns instead of connecting a repo that can never build. */
 	rootDirExists: boolean;
+	/** True when connect will commit a wrangler.jsonc alongside the workflow
+	 * (the preset needs one, the repo has none). */
+	writesWrangler: boolean;
 }
 
 /**
@@ -129,7 +132,8 @@ export async function inspectRepo(
 		buildCommand: null,
 		outputDir: '',
 		packageManager: 'npm',
-		rootDirExists: true
+		rootDirExists: true,
+		writesWrangler: false
 	};
 	const token = await installationToken(config, installationId);
 	if (!token) return fallback;
@@ -227,7 +231,8 @@ export async function inspectRepo(
 		hasIndexHtml,
 		framework,
 		packageManager,
-		rootDirExists: true as const
+		rootDirExists: true as const,
+		writesWrangler: preset?.wrangler != null
 	};
 
 	if (preset && preset.mode === 'build' && preset.buildCommand) {
@@ -292,25 +297,27 @@ function onlyStrings(record: Record<string, unknown> | undefined): Record<string
 }
 
 /**
- * Creates or updates the deploy workflow on the default branch.
+ * Creates or updates a file on a branch.
  *
  * `PUT contents` needs the blob sha to replace an existing file, so this
  * reads first. Reconnecting therefore rewrites rather than conflicting,
  * which is what makes "connect again with different settings" work.
  */
-export async function writeWorkflowFile(
+export async function writeRepoFile(
 	config: GithubAppConfig,
 	installationId: number,
 	repoFullName: string,
 	branch: string,
-	yaml: string
+	filePath: string,
+	content: string,
+	message: string
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
 	const token = await installationToken(config, installationId);
 	if (!token) {
 		return { ok: false, status: 409, error: 'the GitHub installation is no longer valid' };
 	}
 
-	const path = `/repos/${repoFullName}/contents/${WORKFLOW_FILENAME}`;
+	const path = `/repos/${repoFullName}/contents/${filePath}`;
 	const existing = await githubFetch(token, 'GET', `${path}?ref=${encodeURIComponent(branch)}`);
 	const sha =
 		existing.ok && typeof (existing.body as { sha?: string })?.sha === 'string'
@@ -318,8 +325,8 @@ export async function writeWorkflowFile(
 			: undefined;
 
 	const response = await githubFetch(token, 'PUT', path, {
-		message: 'Add Cloudflarebase deploy workflow',
-		content: btoa(yaml),
+		message,
+		content: btoa(content),
 		branch,
 		...(sha ? { sha } : {})
 	});
@@ -331,10 +338,55 @@ export async function writeWorkflowFile(
 			ok: false,
 			status: 403,
 			// The overwhelmingly common cause, and not guessable from GitHub's text.
-			error: `GitHub refused to write ${WORKFLOW_FILENAME}: ${error ?? 'permission denied'}. Grant the app Contents and Workflows write access on this repository.`
+			error: `GitHub refused to write ${filePath}: ${error ?? 'permission denied'}. Grant the app Contents and Workflows write access on this repository.`
 		};
 	}
-	return { ok: false, status: 502, error: error ?? 'GitHub refused to write the workflow' };
+	return { ok: false, status: 502, error: error ?? `GitHub refused to write ${filePath}` };
+}
+
+/** The deploy workflow, on the default branch. */
+export async function writeWorkflowFile(
+	config: GithubAppConfig,
+	installationId: number,
+	repoFullName: string,
+	branch: string,
+	yaml: string
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+	return writeRepoFile(
+		config,
+		installationId,
+		repoFullName,
+		branch,
+		WORKFLOW_FILENAME,
+		yaml,
+		'Add Cloudflarebase deploy workflow'
+	);
+}
+
+/**
+ * Whether any wrangler config exists under `dir` on the ref. Checked
+ * server-side immediately before connect commits one: the inspection's
+ * answer is a client round trip old, and overwriting a config the user
+ * pushed in between would be destructive. Null = could not check (treated
+ * as "exists" by the caller, for the same reason).
+ */
+export async function repoHasWranglerConfig(
+	config: GithubAppConfig,
+	installationId: number,
+	repoFullName: string,
+	ref: string,
+	dir: string | null
+): Promise<boolean | null> {
+	const token = await installationToken(config, installationId);
+	if (!token) return null;
+	const prefix = dir ? `${dir}/` : '';
+	const query = `?ref=${encodeURIComponent(ref)}`;
+	const checks = await Promise.all(
+		['wrangler.jsonc', 'wrangler.json', 'wrangler.toml'].map((name) =>
+			githubFetch(token, 'GET', `/repos/${repoFullName}/contents/${prefix}${name}${query}`)
+		)
+	);
+	return checks.some((response) => response.ok);
 }
 
 /** Removes the managed workflow on disconnect. Best effort: the connection

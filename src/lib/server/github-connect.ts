@@ -8,8 +8,11 @@ import { verifyOidcToken } from '$lib/server/github-oidc';
 import {
 	deleteWorkflowFile,
 	listInstallationRepos,
+	repoHasWranglerConfig,
+	writeRepoFile,
 	writeWorkflowFile
 } from '$lib/server/github-repo';
+import { wranglerConfigJsonc, WRANGLER_TEMPLATES } from '$lib/server/frameworks';
 import { appNameSchema, deployTokenCoversProject, resolveAppClaim } from '$lib/server/hosting';
 import { projectIdSchema } from '$lib/schemas/auth';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
@@ -294,11 +297,22 @@ export const connectSchema = z.object({
 	/** Monorepo root - install, build, and deploy run here (build mode). */
 	rootDir: assetsDirSchema.optional(),
 	/** From the inspection; decides the workflow's install steps. */
-	packageManager: z.enum(['npm', 'pnpm', 'yarn', 'bun']).optional()
+	packageManager: z.enum(['npm', 'pnpm', 'yarn', 'bun']).optional(),
+	/** Which known wrangler.jsonc to commit for a repo that has none. An id
+	 * into WRANGLER_TEMPLATES - the server owns the file content. */
+	wranglerTemplate: z
+		.enum(Object.keys(WRANGLER_TEMPLATES) as [keyof typeof WRANGLER_TEMPLATES])
+		.optional()
 });
 
 export type ConnectResult =
-	| { ok: true; connection: Connection; subdomain: string; workflowWritten: boolean }
+	| {
+			ok: true;
+			connection: Connection;
+			subdomain: string;
+			workflowWritten: boolean;
+			wranglerWritten: boolean;
+	  }
 	| { ok: false; status: number; error: string };
 
 /**
@@ -369,6 +383,35 @@ export async function connectRepository(
 	const rootDir =
 		mode === 'build' ? parsed.data.rootDir?.trim().replace(/^\/+|\/+$/g, '') || null : null;
 
+	// The wrangler config lands FIRST: committing the workflow triggers a
+	// push event on itself, and that very first run must already find the
+	// config it builds against. Never overwrites - the repo is re-checked
+	// here because the inspection's answer is a client round trip old, and
+	// an unanswerable check counts as "exists" for the same reason.
+	let wranglerWritten = false;
+	if (mode === 'build' && parsed.data.wranglerTemplate) {
+		const exists = await repoHasWranglerConfig(
+			config,
+			installationId,
+			repo.fullName,
+			repo.defaultBranch,
+			rootDir
+		);
+		if (exists === false) {
+			const written = await writeRepoFile(
+				config,
+				installationId,
+				repo.fullName,
+				repo.defaultBranch,
+				`${rootDir ? `${rootDir}/` : ''}wrangler.jsonc`,
+				wranglerConfigJsonc(parsed.data.wranglerTemplate, claim.appName),
+				'Add wrangler.jsonc for the Cloudflare build'
+			);
+			if (!written.ok) return { ok: false, status: written.status, error: written.error };
+			wranglerWritten = true;
+		}
+	}
+
 	let workflowWritten = false;
 	if (mode === 'build') {
 		const written = await writeWorkflowFile(
@@ -404,7 +447,7 @@ export async function connectRepository(
 		buildCommand,
 		rootDir
 	});
-	return { ok: true, connection, subdomain: claim.subdomain, workflowWritten };
+	return { ok: true, connection, subdomain: claim.subdomain, workflowWritten, wranglerWritten };
 }
 
 /**

@@ -470,6 +470,21 @@ config names `main` and `assets.directory`, and the CLI already follows
 it. Their server bundles are what the `.assetsignore` /
 `RESERVED_ROOT_ASSETS` filtering exists for (see Guardrails).
 
+**And when such a repo has no wrangler config, connect commits one**
+(2026-08-15): the note that used to read "add a wrangler.jsonc with
+main ... and assets.directory ..." was homework, and the App already
+holds `contents: write`. `WRANGLER_TEMPLATES` in
+`src/lib/server/frameworks.ts` fixes the three adapter output contracts;
+the connect POST names a template ID and the SERVER generates the file
+(client content never lands in the repo). Ordering and safety: the
+config is committed BEFORE the workflow, because committing the workflow
+triggers a push event on itself and that first run must already find the
+config; existence is re-checked server-side at connect time (all three
+spellings, under the root directory) so a config pushed after inspection
+is never overwritten, and an unanswerable check counts as "exists".
+Disconnect removes the workflow but leaves the wrangler config - by then
+it is the user's build setup, possibly driving their local dev.
+
 **Root directory** (build mode, for monorepos - `sites/blabla` instead of
 the repo root): editing the field re-inspects THAT directory, so the
 preset describes the app rather than the workspace shell (lockfile
