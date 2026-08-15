@@ -1,5 +1,6 @@
 import { request as playwrightRequest, expect, test } from '@playwright/test';
 import {
+	hostingAppPath,
 	hostingDeployPath,
 	hostingOverviewPath,
 	hostingTokenPath,
@@ -101,6 +102,11 @@ test.describe('deploy tokens', () => {
 			// Not transferable: another project's deploys refuse it.
 			const foreign = await bearer.post(hostingDeployPath(SEED_PROJECT, appName), deployBody);
 			expect(foreign.status(), 'a deploy token is scoped to its family').toBe(401);
+
+			// Not destructive: a credential that ships code must never erase an
+			// app - deletion is a session-only surface.
+			const erase = await bearer.delete(hostingAppPath(rootId, appName));
+			expect(erase.status(), 'a deploy token must not delete apps').toBe(401);
 		} finally {
 			await bearer.dispose();
 		}

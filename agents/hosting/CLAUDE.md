@@ -54,6 +54,12 @@ deploy:production` / `deploy:preview` deploy it first. v1 is pass-through;
   to `preview`, so a shared instance would put preview-branch outbound code
   on production apps' egress - and Phase C's metering must be rehearsable
   on preview without touching production.
+- **Per-app erase**: `eraseApp(appName)` (RPC behind
+  `DELETE /internal/projects/:id/apps/:app`) deletes the namespace script,
+  the deploy history, and the app row. Idempotent - a claim the console
+  never pushed has no row here and still answers ok. The console releases
+  the subdomain claim only AFTER this succeeds, so a name is never freed
+  while its script still serves.
 - **Two deploy entry points, one publisher.** `deployApp` (multipart, the
   CLI's path) and `gitDeploy` (a repository tarball, from a push webhook the
   console verified) both parse into modules+assets and then call `publish()`,

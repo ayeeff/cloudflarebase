@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import {
+	hostingAppPath,
 	hostingClaimsPath,
 	hostingDeployPath,
 	hostingDeploysPath,
@@ -163,6 +164,58 @@ test.describe('hosting deploys (stubbed)', () => {
 		expect(deploy.status(), await deploy.text()).toBe(403);
 	});
 
+	test('deleting an app erases it and frees the subdomain', async ({ request }) => {
+		// Self-contained app so the shared appName claims stay untouched for
+		// the release test below.
+		const delApp = `del-${runId}`;
+		const deployed = await request.post(hostingDeployPath(rootId, delApp), deployBody());
+		expect(deployed.status(), await deployed.text()).toBe(201);
+
+		const before = await request.get(hostingOverviewPath(rootId));
+		expect(
+			((await before.json()) as { apps: { name: string }[] }).apps.map((a) => a.name)
+		).toContain(delApp);
+
+		const deleted = await request.delete(hostingAppPath(rootId, delApp));
+		expect(deleted.status(), await deleted.text()).toBe(200);
+		const body = (await deleted.json()) as { deleted: boolean; subdomain: string };
+		expect(body.deleted).toBe(true);
+		expect(body.subdomain).toBe(delApp);
+
+		// Gone from the agent - deploy history included.
+		const after = await request.get(hostingOverviewPath(rootId));
+		expect(
+			((await after.json()) as { apps: { name: string }[] }).apps.map((a) => a.name)
+		).not.toContain(delApp);
+
+		// The subdomain is free again: a neighbor's dry claim gets the base name.
+		const freed = await request.post(hostingClaimsPath(neighborId), {
+			data: { app: delApp, dry: true }
+		});
+		expect(((await freed.json()) as { subdomain: string }).subdomain).toBe(delApp);
+
+		// Deleting it again is a 404, not a 500 - the claim row is the gate.
+		const again = await request.delete(hostingAppPath(rootId, delApp));
+		expect(again.status(), await again.text()).toBe(404);
+	});
+
+	test('a claim that never deployed can still be deleted', async ({ request }) => {
+		// Connecting a repository claims immediately; the agent only learns at
+		// first deploy. Deleting must work on that claim-only state - the exact
+		// shape that used to be stuck forever on the Hosting page.
+		const ghost = `ghost-${runId}`;
+		const claimed = await request.post(hostingClaimsPath(neighborId), { data: { app: ghost } });
+		expect(claimed.status(), await claimed.text()).toBe(201);
+
+		const deleted = await request.delete(hostingAppPath(neighborId, ghost));
+		expect(deleted.status(), await deleted.text()).toBe(200);
+
+		const freed = await request.post(hostingClaimsPath(neighborId), {
+			data: { app: ghost, dry: true }
+		});
+		expect(((await freed.json()) as { subdomain: string }).subdomain).toBe(ghost);
+	});
+
 	test('deleting the project releases its claims', async ({ request }) => {
 		const releaseProbe = `e2e-hostc-${runId}`;
 		const created = await request.post('/api/registry/projects', {
@@ -220,11 +273,19 @@ test.describe('hosting guard', () => {
 			['POST', hostingClaimsPath(rootId)],
 			['GET', hostingTokensPath(rootId)],
 			['POST', hostingTokensPath(rootId)],
-			['POST', hostingDeployPath(rootId, appName)]
+			['POST', hostingDeployPath(rootId, appName)],
+			// App deletion is session-only by design: a deploy token that can
+			// ship code must never be able to erase an app, and the guard's
+			// token surface admits POST deploys/branches alone.
+			['DELETE', hostingAppPath(rootId, appName)]
 		] as const;
 		for (const [method, path] of closed) {
 			const response =
-				method === 'GET' ? await request.get(path) : await request.post(path, { data: {} });
+				method === 'GET'
+					? await request.get(path)
+					: method === 'DELETE'
+						? await request.delete(path)
+						: await request.post(path, { data: {} });
 			expect(response.status(), `${method} ${path} must be closed`).toBe(401);
 		}
 	});

@@ -4,6 +4,7 @@ import { and, count, desc, eq, gt, lt, or, sql } from 'drizzle-orm';
 import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import {
+	deleteScript,
 	deleteScriptsByTag,
 	patchScriptSecret,
 	putScript,
@@ -256,6 +257,37 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			createdAt: new Date(),
 			deployCount: 0,
 		});
+		await this.syncState();
+		return { ok: true };
+	}
+
+	/**
+	 * RPC from the worker's service-binding-only route: deletes ONE app - its
+	 * namespace script, its deploy history, and its row. The console releases
+	 * the subdomain claim only after this succeeds, so a failure here never
+	 * frees a name whose script is still serving. Idempotent: an app the DO
+	 * does not know (claimed but never deployed - the DO row is only pushed
+	 * with the first deploy) still answers ok, because there is nothing here
+	 * to remove.
+	 */
+	async eraseApp(appName: string): Promise<{ ok: true } | { error: string }> {
+		if (!appNameSchema.safeParse(appName).success) return { error: 'invalid app name' };
+
+		const [app] = await this.db.select().from(apps).where(eq(apps.name, appName)).limit(1);
+		if (!app) return { ok: true };
+
+		if (!this.stub) {
+			const api = this.cfApi();
+			// Configured installs must actually remove the script - answering ok
+			// while user code keeps serving would be a lie with a subdomain
+			// attached. deleteScript itself tolerates 404 (never deployed).
+			if (this.env.DISPATCH && api) {
+				await deleteScript(api, app.subdomain);
+			}
+		}
+
+		await this.db.delete(deploys).where(eq(deploys.appName, appName));
+		await this.db.delete(apps).where(eq(apps.name, appName));
 		await this.syncState();
 		return { ok: true };
 	}

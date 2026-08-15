@@ -190,6 +190,24 @@ export async function listAppClaims(
 }
 
 /**
+ * Releases ONE app's subdomain claim. Called only after the agent confirmed
+ * the erase - freeing a name whose script still serves would hand the
+ * subdomain to the next claimant while the old tenant's code answers on it.
+ */
+export async function releaseAppClaim(
+	platform: App.Platform | undefined,
+	projectId: string,
+	appName: string
+): Promise<boolean> {
+	const db = await getDb(platform);
+	const deleted = await db
+		.delete(app)
+		.where(and(eq(app.projectId, projectId), eq(app.appName, appName)))
+		.returning();
+	return deleted.length > 0;
+}
+
+/**
  * Releases a project's hosting rows - its subdomain claims and any deploy
  * tokens minted on it. Part of project deletion; takes the caller's handle
  * because it runs inside the registry's delete flow.
