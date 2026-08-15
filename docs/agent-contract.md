@@ -70,6 +70,13 @@ that ships one.
 	// `generated` secrets are created by the agent on first start and kept in
 	// its own storage, so an install needs nothing set by hand to work. An
 	// operator may still supply the env var to take ownership of the value.
+	//
+	// Only list a value here if it must not be readable - `secrets` is what
+	// tells an operator to reach for `wrangler secret put`. A value that is
+	// public by design (a Sentry DSN) belongs in `vars` with an empty default,
+	// because the wrangler fragment declares it as a var and that var is
+	// uploaded as a plain_text binding, which would override a same-named
+	// secret on the next deploy.
 	"secrets": {
 		"generated": ["BETTER_AUTH_SECRET"],
 		"optional": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "CF_ANALYTICS_API_TOKEN"]

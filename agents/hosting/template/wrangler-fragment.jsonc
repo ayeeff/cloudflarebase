@@ -54,8 +54,15 @@
 		 * (workers_dev false, no route beyond the app wildcard) and is fronted
 		 * by something that authenticates operators.
 		 */
-		// Set your own with `wrangler secret put SENTRY_DSN` to turn on error
-		// reporting; empty disables it.
+		/**
+		 * OPTIONAL. Empty disables error reporting, which is the default and a
+		 * perfectly good place to stay - nothing else about the agent changes.
+		 *
+		 * To turn it on, put your DSN on the line below. It belongs here as a
+		 * var and not in `wrangler secret put`: a Sentry DSN is public by
+		 * design, and this line is uploaded as a plain_text binding of the same
+		 * name, so it would override a secret you set under it.
+		 */
 		"SENTRY_DSN": "",
 	},
 	"secrets": {

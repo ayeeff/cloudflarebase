@@ -99,7 +99,11 @@
 		 */
 		"EXPOSE_OPERATOR_API": "true",
 		// Empty on purpose: a committed DSN would collect every fork's errors.
-		// Set your own with `wrangler secret put SENTRY_DSN` to turn it on.
+		// Optional - error reporting is off until you set one, and nothing else
+		// changes. Put your own DSN HERE: a DSN is public by design (the web
+		// app ships one to the browser), so it is a var, and a
+		// `wrangler secret put SENTRY_DSN` would lose to this line on the next
+		// deploy - the var is uploaded as a plain_text binding of that name.
 		"SENTRY_DSN": "",
 		"SENTRY_ENV": "production",
 		"TRUSTED_ORIGINS": "",
