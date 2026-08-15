@@ -1836,11 +1836,15 @@
 									</li>
 								{/each}
 							</ul>
-						{:else}
+						{:else if analytics.engine.status === 'write-only'}
 							<p class="text-xs text-muted-foreground">
 								Every auth event streams a data point (event, country, provider) indexed by project.
 								Set CF_ACCOUNT_ID + CF_ANALYTICS_API_TOKEN on the agent to query it from here.
 							</p>
+						{:else if analytics.engine.status !== 'error'}
+							<!-- Configured and readable: an empty list is a quiet day, not a
+							     missing credential. The error case is already stated above. -->
+							<p class="text-xs text-muted-foreground">No auth events in the last 24 hours.</p>
 						{/if}
 					</Card.Content>
 				</Card.Root>
