@@ -139,18 +139,27 @@ class HostingService extends WorkerEntrypoint<Env> {
 		// a subdomain this project does not own. Service-binding-only by
 		// topology, like the erase route.
 		const link = url.pathname.match(/^\/internal\/projects\/([^/]+)\/apps\/([^/]+)$/);
-		if (link && request.method === 'PUT') {
+		if (link && (request.method === 'PUT' || request.method === 'DELETE')) {
 			const projectId = decodeURIComponent(link[1]);
 			const appName = decodeURIComponent(link[2]);
-			const body = (await request.json().catch(() => null)) as { subdomain?: string } | null;
 			if (
 				!projectIdSchema.safeParse(projectId).success ||
-				!appNameSchema.safeParse(appName).success ||
-				!subdomainSchema.safeParse(body?.subdomain).success
+				!appNameSchema.safeParse(appName).success
 			) {
 				return Response.json({ error: 'invalid claim push' }, { status: 400 });
 			}
 			const agent = await getAgentByName<Env, HostingAgentBase>(this.env.HostingAgent, projectId);
+			// DELETE is the app erase: script, deploy history, and row - the
+			// console releases the subdomain claim only after this answers ok.
+			if (request.method === 'DELETE') {
+				const result = await agent.eraseApp(appName);
+				if ('error' in result) return Response.json(result, { status: 400 });
+				return Response.json(result);
+			}
+			const body = (await request.json().catch(() => null)) as { subdomain?: string } | null;
+			if (!subdomainSchema.safeParse(body?.subdomain).success) {
+				return Response.json({ error: 'invalid claim push' }, { status: 400 });
+			}
 			const result = await agent.registerApp(appName, body!.subdomain!);
 			if ('error' in result) return Response.json(result, { status: 409 });
 			return Response.json(result);

@@ -213,6 +213,21 @@ export async function putScript(
 	});
 }
 
+/** Deletes one script from the namespace. 404-tolerant: an app whose only
+ * deploys were stubbed (or that never deployed) has no script to remove. */
+export async function deleteScript(api: CfApi, scriptName: string): Promise<void> {
+	const response = await fetch(
+		`${API_BASE}/accounts/${api.accountId}/workers/dispatch/namespaces/${api.namespace}/scripts/${scriptName}`,
+		{
+			method: 'DELETE',
+			headers: { authorization: `Bearer ${api.apiToken}` },
+		},
+	);
+	if (!response.ok && response.status !== 404) {
+		throw new Error(`deleting script ${scriptName} failed - HTTP ${response.status}`);
+	}
+}
+
 /** Bulk-delete every script carrying the project tag (the erase fan-in). */
 export async function deleteScriptsByTag(api: CfApi, tag: string): Promise<void> {
 	const response = await fetch(

@@ -223,6 +223,10 @@ export function hostingDeployPath(projectId: string, app: string): string {
 	return `/api/projects/${projectId}/hosting/apps/${encodeURIComponent(app)}/deploys`;
 }
 
+export function hostingAppPath(projectId: string, app: string): string {
+	return `/api/projects/${projectId}/hosting/apps/${encodeURIComponent(app)}`;
+}
+
 export function hostingTokensPath(projectId: string): string {
 	return `/api/projects/${projectId}/hosting/tokens`;
 }

@@ -25,7 +25,16 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import { Check, Copy, ExternalLink, KeyRound, Rocket, Sparkles, Terminal } from '@lucide/svelte';
+	import {
+		Check,
+		Copy,
+		ExternalLink,
+		KeyRound,
+		Rocket,
+		Sparkles,
+		Terminal,
+		Trash2
+	} from '@lucide/svelte';
 
 	let { data } = $props();
 
@@ -247,6 +256,35 @@
 		}
 	}
 
+	// App deletion: typed-name confirm (the project-settings convention) -
+	// this erases a deployed script, its history, and frees the subdomain.
+	let deleteAppTarget = $state<{ name: string; subdomain: string } | null>(null);
+	let deleteAppConfirm = $state('');
+	let deleteAppBusy = $state(false);
+	let deleteAppError = $state<string | null>(null);
+
+	async function deleteApp() {
+		if (!deleteAppTarget) return;
+		deleteAppBusy = true;
+		deleteAppError = null;
+		try {
+			const response = await fetch(
+				`/api/projects/${data.projectId}/hosting/apps/${encodeURIComponent(deleteAppTarget.name)}`,
+				{ method: 'DELETE' }
+			);
+			const body = (await response.json().catch(() => null)) as { error?: string } | null;
+			if (!response.ok) {
+				deleteAppError = body?.error ?? 'Could not delete the app.';
+				return;
+			}
+			deleteAppTarget = null;
+			deleteAppConfirm = '';
+			await invalidateAll();
+		} finally {
+			deleteAppBusy = false;
+		}
+	}
+
 	let copied = $state<string | null>(null);
 	async function copy(label: string, value: string) {
 		try {
@@ -388,6 +426,20 @@
 										{/if}
 									{/if}
 								</div>
+								<Button
+									variant="ghost"
+									size="icon"
+									class="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+									aria-label={`Delete ${app.name}`}
+									data-testid={`delete-app-${app.name}`}
+									onclick={() => {
+										deleteAppTarget = { name: app.name, subdomain: app.subdomain };
+										deleteAppConfirm = '';
+										deleteAppError = null;
+									}}
+								>
+									<Trash2 class="h-4 w-4" />
+								</Button>
 							</div>
 						{/each}
 					</div>
@@ -732,6 +784,52 @@
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
+
+<!-- App deletion: typed-name confirm (the settings-page convention - a plain
+     Dialog so a failure stays visible instead of closing with the click). -->
+<Dialog.Root
+	open={deleteAppTarget !== null}
+	onOpenChange={(open) => {
+		if (!open) deleteAppTarget = null;
+	}}
+>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Delete {deleteAppTarget?.name}?</Dialog.Title>
+			<Dialog.Description>
+				The deployed site at <code class="font-mono text-xs">{deleteAppTarget?.subdomain}</code> stops
+				serving, its deploy history is erased, and the subdomain is released for anyone to claim. A connected
+				repository is disconnected too. This cannot be undone.
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="space-y-1.5">
+			<Label for="delete-app-confirm">
+				Type <span class="font-mono">{deleteAppTarget?.name}</span> to confirm
+			</Label>
+			<Input
+				id="delete-app-confirm"
+				bind:value={deleteAppConfirm}
+				class="font-mono text-xs"
+				autocomplete="off"
+				data-testid="delete-app-confirm"
+			/>
+			{#if deleteAppError}
+				<p class="text-sm text-destructive" data-testid="delete-app-error">{deleteAppError}</p>
+			{/if}
+		</div>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (deleteAppTarget = null)}>Cancel</Button>
+			<Button
+				variant="destructive"
+				disabled={deleteAppBusy || deleteAppConfirm.trim() !== deleteAppTarget?.name}
+				onclick={deleteApp}
+				data-testid="confirm-delete-app"
+			>
+				{deleteAppBusy ? 'Deleting…' : 'Delete app'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <!-- Mint dialog: the secret appears exactly once. -->
 <Dialog.Root bind:open={mintOpen}>
