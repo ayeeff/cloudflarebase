@@ -41,8 +41,15 @@ export const load: PageServerLoad = async ({ cookies, locals, platform, request,
 		// Only meaningful on the first run, but resolved unconditionally: it
 		// reads env plus one HMAC, and branching here would just make the page
 		// depend on the order two independent facts arrive in.
-		consoleSetupState(platform, cookies.get(CONSOLE_SETUP_COOKIE))
+		consoleSetupState(platform, cookies.get(CONSOLE_SETUP_COOKIE), url.hostname)
 	]);
+
+	// An unlock is spent by the registration it was for. Once an owner exists
+	// the claim is finished, so a grant still sitting in the browser is only a
+	// leftover key to the reset - dropped here rather than left to expire.
+	if (ownerExists && cookies.get(CONSOLE_SETUP_COOKIE)) {
+		cookies.delete(CONSOLE_SETUP_COOKIE, { path: '/' });
+	}
 
 	return {
 		next,

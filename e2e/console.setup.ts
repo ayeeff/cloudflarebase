@@ -26,6 +26,20 @@ setup('claim the console owner', async ({ request }) => {
 	const unproven = await request.post(consoleAuthPath('sign-up/email'), { data: CONSOLE_OWNER });
 	expect(unproven.status(), 'an unproven claim must never be accepted').toBe(403);
 
+	// ...and not through a spelling the guard reads differently from the proxy.
+	// The REST proxy rebuilds its target from a DECODED route parameter, so
+	// `sign-up%2Femail` is one segment to the guard and two to the agent - the
+	// gap that made an encoded traversal reach the operator user list once
+	// already. Same claim, same refusal, whatever the encoding.
+	for (const spelling of [
+		'/api/projects/console/auth/sign-up%2Femail',
+		'/agents/auth-agent/console/api/auth/sign-up%2Femail'
+	]) {
+		const encoded = await request.post(spelling, { data: CONSOLE_OWNER });
+		expect(encoded.status(), `${spelling} must not slip past the claim gate`).not.toBe(200);
+		expect(await encoded.text(), `${spelling} must not create an account`).not.toContain('token');
+	}
+
 	const unlock = await request.post('/api/console/setup', {
 		data: { token: CONSOLE_SETUP_TOKEN }
 	});

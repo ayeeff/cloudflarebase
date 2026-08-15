@@ -322,24 +322,18 @@
 				<h1 class="text-2xl font-semibold tracking-tight">Setup is locked</h1>
 				<p class="text-sm text-muted-foreground">
 					Nobody owns this console yet, and claiming it needs proof you deployed it - knowing the
-					URL is not enough. Either of these opens setup:
+					URL is not enough. Set a setup token from a terminal with access to this Cloudflare
+					account:
 				</p>
 			</div>
 
-			<ol class="space-y-3 text-sm text-muted-foreground">
-				<li class="space-y-1">
-					<span class="font-medium text-foreground">Redeploy, then claim within 30 minutes</span>
-					<code class="block rounded-md border bg-muted/50 p-2 font-mono text-xs"
-						>npx wrangler deploy</code
-					>
-				</li>
-				<li class="space-y-1">
-					<span class="font-medium text-foreground">Or set a setup token and paste it below</span>
-					<code class="block rounded-md border bg-muted/50 p-2 font-mono text-xs"
-						>npx wrangler secret put CONSOLE_SETUP_TOKEN</code
-					>
-				</li>
-			</ol>
+			<code class="block rounded-md border bg-muted/50 p-2 font-mono text-xs"
+				>npx wrangler secret put CONSOLE_SETUP_TOKEN</code
+			>
+			<p class="text-xs text-muted-foreground">
+				At least 24 characters. It applies immediately - no redeploy - and you enter it once, here,
+				to create the owner account.
+			</p>
 
 			<form class="space-y-4" onsubmit={submitUnlock} data-testid="console-setup-form">
 				<div class="space-y-1.5">

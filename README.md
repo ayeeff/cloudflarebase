@@ -51,9 +51,18 @@ npm run deploy:all
 ```
 
 That's three Workers on your account (`auth-agent`, `db-agent`,
-`cloudflarebase`), a D1 control plane provisioned automatically, and no
-secrets to set. The order matters - the db worker binds the auth worker, the
+`cloudflarebase`), a D1 control plane provisioned automatically, and nothing
+to configure. The order matters - the db worker binds the auth worker, the
 dashboard binds both - and `deploy:all` encodes it so you don't have to.
+
+Then claim the console. Set a setup token from the same terminal - it needs
+your Cloudflare credentials, which is the point:
+
+```bash
+npx wrangler secret put CONSOLE_SETUP_TOKEN   # 24+ characters
+```
+
+Open the dashboard, enter that token, and create the owner account.
 
 Prefer not to clone? The Deploy to Cloudflare buttons do one Worker per
 click, in the same order:
@@ -62,8 +71,14 @@ click, in the same order:
 2. DB agent: [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflarebase/cloudflarebase/tree/main/agents/db)
 3. Dashboard: [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflarebase/cloudflarebase)
 
-Then open the dashboard and create the first account. That account owns the
-console and sign-up closes behind it. Your install is private by default.
+Then claim the console the same way: `wrangler secret put CONSOLE_SETUP_TOKEN`
+on the dashboard Worker, enter it, create the owner account. Sign-up closes
+behind that account and your install is private by default.
+
+The token exists because your URL is not a secret. Without it, ownership of a
+fresh install goes to whoever loads `/login` first - and a workers.dev name is
+guessable. An unclaimed console stays inert until someone proves they deployed
+it. The same token later reclaims a console whose owner you are not.
 
 A deployment trusts its own origin automatically, so sign-in works right
 after deploy with nothing to configure. If you serve the console from another

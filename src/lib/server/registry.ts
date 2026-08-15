@@ -1,6 +1,11 @@
 import * as Sentry from '@sentry/sveltekit';
-import { demoRootId, isDemoProjectId, RESERVED_PROJECT_IDS } from '$lib/console';
-import { AGENT_REGISTRY } from '$lib/agent-registry';
+import {
+	CONSOLE_PROJECT_ID,
+	demoRootId,
+	isDemoProjectId,
+	RESERVED_PROJECT_IDS
+} from '$lib/console';
+import { AGENT_REGISTRY, type AppAgentEntry } from '$lib/agent-registry';
 import type { RegistryProject } from '$lib/agents';
 import { getDb } from '$lib/server/db';
 import { project, projectAgent } from '$lib/server/db/schema';
@@ -9,7 +14,7 @@ import { releaseHostingRows } from '$lib/server/hosting';
 import { requireAgent } from '$lib/server/agents';
 import { projectIdSchema } from '$lib/schemas/auth';
 import type { Cookies } from '@sveltejs/kit';
-import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
@@ -624,6 +629,72 @@ export async function deleteProject(
 	return { ok: true };
 }
 
+/**
+ * Erases every operator account on the deployment, to reclaim a console whose
+ * owner is not you (src/lib/server/console-setup.ts). Only ever reached with a
+ * setup token, which needs Cloudflare account credentials to set.
+ *
+ * The AUTH agent only, not the usual fan-out. The console is not a project: it
+ * holds operator accounts and nothing else, so the db and hosting agents have
+ * no instance under that id - and asking them anyway made a reset that had
+ * ALREADY destroyed the accounts answer 502 because an unrelated agent was
+ * unreachable. A destructive call must not report failure for work it did.
+ *
+ * The org release is the other half of the recovery, not a side effect: every
+ * account in the console dies with the instance, so registry rows stamped with
+ * one of their orgs would be owned by an org that no longer exists and the
+ * guard would refuse them to everyone, forever. A null org is the legacy
+ * self-hosted contract - visible to any operator - which is exactly what a
+ * reclaimed single-operator install wants. It runs only after the erase
+ * succeeds, so a failed reset changes nothing at all.
+ */
+export async function resetConsoleOperators(
+	platform: App.Platform | undefined
+): Promise<{ erased: boolean; projectsReleased: number }> {
+	if (!(await eraseAgentProject(platform, AGENT_REGISTRY.auth, CONSOLE_PROJECT_ID))) {
+		return { erased: false, projectsReleased: 0 };
+	}
+
+	const released = await (
+		await getDb(platform)
+	)
+		.update(project)
+		.set({ orgId: null })
+		.where(isNotNull(project.orgId))
+		.returning({ id: project.id });
+	return { erased: true, projectsReleased: released.length };
+}
+
+/** One agent's erase. False means it could not be reached or refused. */
+async function eraseAgentProject(
+	platform: App.Platform | undefined,
+	entry: AppAgentEntry,
+	projectId: string
+): Promise<boolean> {
+	const { manifest } = entry;
+	try {
+		const agent = requireAgent(platform, entry);
+		// Synthetic host: the erase route sits outside /agents/* on purpose,
+		// reachable only over the service binding.
+		const path = manifest.erase.path.replace(':projectId', encodeURIComponent(projectId));
+		const response = await agent.fetch(`https://${manifest.worker}${path}`, {
+			method: manifest.erase.method
+		});
+		if (!response.ok) throw new Error(`${manifest.name} agent responded ${response.status}`);
+		return true;
+	} catch (cause) {
+		// A failed erase leaves a project's data behind after the operator
+		// deleted it - a retention problem, not a cosmetic one. Callers only
+		// surface a warning string, so capture it or nobody finds out.
+		console.error(`failed to erase project "${projectId}" in the ${manifest.name} agent`, cause);
+		Sentry.captureException(cause, {
+			level: 'error',
+			tags: { projectId, agent: manifest.name, operation: 'erase-project' }
+		});
+		return false;
+	}
+}
+
 /** Fan-out erase. Returns the names of agents that could not be reached. */
 async function eraseProjectData(
 	platform: App.Platform | undefined,
@@ -632,26 +703,8 @@ async function eraseProjectData(
 	const failures: string[] = [];
 
 	for (const entry of Object.values(AGENT_REGISTRY)) {
-		const { manifest } = entry;
-		try {
-			const agent = requireAgent(platform, entry);
-			// Synthetic host: the erase route sits outside /agents/* on purpose,
-			// reachable only over the service binding.
-			const path = manifest.erase.path.replace(':projectId', encodeURIComponent(projectId));
-			const response = await agent.fetch(`https://${manifest.worker}${path}`, {
-				method: manifest.erase.method
-			});
-			if (!response.ok) throw new Error(`${manifest.name} agent responded ${response.status}`);
-		} catch (cause) {
-			// A failed erase leaves a project's data behind after the operator
-			// deleted it - a retention problem, not a cosmetic one. The caller
-			// only surfaces a warning string, so capture it or nobody finds out.
-			console.error(`failed to erase project "${projectId}" in the ${manifest.name} agent`, cause);
-			Sentry.captureException(cause, {
-				level: 'error',
-				tags: { projectId, agent: manifest.name, operation: 'erase-project' }
-			});
-			failures.push(manifest.name);
+		if (!(await eraseAgentProject(platform, entry, projectId))) {
+			failures.push(entry.manifest.name);
 		}
 	}
 

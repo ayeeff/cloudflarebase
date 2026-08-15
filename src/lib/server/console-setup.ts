@@ -1,5 +1,5 @@
 import { CONSOLE_PROJECT_ID } from '$lib/console';
-import { consoleOwnerExists } from '$lib/server/console';
+import { consoleOwnerState } from '$lib/server/console';
 import { redirect } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 
@@ -14,25 +14,24 @@ import type { RequestEvent } from '@sveltejs/kit';
  * then promoted them to admin over every operator surface on it.
  *
  * The person who deployed the Worker is the owner, so the claim asks for
- * something only they can produce. Two proofs, in order of how a real install
- * actually goes:
+ * something only they can produce: CONSOLE_SETUP_TOKEN, set with
+ * `wrangler secret put` - which needs Cloudflare account credentials, applies
+ * without a redeploy, and is a value nothing on the network ever sees.
  *
- * 1. A FRESH DEPLOY. `CF_VERSION_METADATA.timestamp` is when the running
- *    version was created, which no visitor can influence - only someone who
- *    can push a version to this account can move it. The claim is open for 30
- *    minutes after it, which is exactly the honest deployer's path (deploy,
- *    open the URL, claim) and costs them no extra step. Miss it and
- *    `wrangler deploy` reopens the window; a stranger who finds the install
- *    later gets a locked page with nothing to submit.
+ * A single proof on purpose. A time-boxed "claimable for N minutes after a
+ * deploy" window was considered and dropped: it is still a race, just a
+ * shorter one, and it makes the security of an install depend on how quickly
+ * its operator got to the browser. A token has no window and no race - an
+ * unclaimed console is inert until someone proves they hold it.
  *
- * 2. A SETUP TOKEN. `wrangler secret put CONSOLE_SETUP_TOKEN` - writable only
- *    with account credentials, applied without a redeploy. It overrides the
- *    window entirely, which makes it both the answer for anyone who cannot
- *    redeploy on demand and the break-glass recovery for an install a squatter
- *    already claimed.
+ * The console is claimed only when BOTH halves are done: the token unlocks
+ * setup, and registration finishes the claim. An unlock alone grants nothing,
+ * which is why the guard keeps refusing until an owner actually exists.
  *
- * Neither is required configuration: a fresh clone still deploys with nothing
- * set and is claimable by whoever just deployed it.
+ * The cost is one deliberate step on a fresh install (deploying still needs no
+ * configuration at all - it is claiming the console that asks for the token),
+ * and the same token is the recovery path for a console someone else already
+ * owns: see the reset in routes/api/console/setup.
  */
 
 /**
@@ -42,8 +41,12 @@ import type { RequestEvent } from '@sveltejs/kit';
  */
 export const CONSOLE_SETUP_COOKIE = 'cfbase-console-setup';
 
-/** How long a fresh deploy - or a token unlock - keeps the claim open. */
-export const CONSOLE_SETUP_WINDOW_MS = 30 * 60 * 1000;
+/**
+ * How long one unlock stays good - long enough to fill in a registration form
+ * (and to come back from an OAuth provider), short enough that a shared or
+ * forgotten browser is not a standing key to the deployment.
+ */
+export const CONSOLE_SETUP_GRANT_TTL_MS = 30 * 60 * 1000;
 
 /**
  * Below this a setup token is a guess, not a credential. Refusing short ones
@@ -56,13 +59,11 @@ export type ConsoleSetupState = {
 	/** Whether a claim may proceed right now. */
 	unlocked: boolean;
 	/** What unlocked it - or why nothing did. Drives the login page's copy. */
-	reason: 'window' | 'token' | 'dev' | 'locked';
+	reason: 'token' | 'dev' | 'locked';
 	/** Whether CONSOLE_SETUP_TOKEN is set AND long enough to count. */
 	tokenConfigured: boolean;
 	/** Set but too short: the operator needs telling, not silently ignoring. */
 	tokenTooShort: boolean;
-	/** When the fresh-deploy window closes, if it is open. */
-	windowEndsAt: number | null;
 };
 
 const encoder = new TextEncoder();
@@ -98,23 +99,20 @@ async function equals(a: string, b: string): Promise<boolean> {
 	return diff === 0;
 }
 
+/** Only a machine-local address can be the dev loop. */
+function isLoopback(hostname: string | undefined): boolean {
+	if (!hostname) return false;
+	const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+	return (
+		host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost')
+	);
+}
+
 /** The configured token, or null when it is absent or too short to count. */
 function setupToken(platform: App.Platform | undefined): string | null {
 	const token = platform?.env?.CONSOLE_SETUP_TOKEN;
 	if (!token || token.length < CONSOLE_SETUP_TOKEN_MIN_LENGTH) return null;
 	return token;
-}
-
-/**
- * When the running Worker version was created. Only someone who can deploy to
- * this Cloudflare account can move it, which is the entire point - a visitor
- * cannot open the window by arriving, only by deploying.
- */
-function deployedAt(platform: App.Platform | undefined): number | null {
-	const timestamp = platform?.env?.CF_VERSION_METADATA?.timestamp;
-	if (!timestamp) return null;
-	const parsed = typeof timestamp === 'number' ? timestamp : Date.parse(String(timestamp));
-	return Number.isFinite(parsed) ? parsed : null;
 }
 
 /** A `<expiry>.<hmac>` cookie value, unforgeable without the setup token. */
@@ -127,11 +125,26 @@ async function grantValid(token: string, value: string | undefined): Promise<boo
 
 /** Mints the cookie value a successful token unlock carries. */
 export async function mintSetupGrant(token: string): Promise<{ value: string; maxAge: number }> {
-	const expiresAt = Date.now() + CONSOLE_SETUP_WINDOW_MS;
+	const expiresAt = Date.now() + CONSOLE_SETUP_GRANT_TTL_MS;
 	return {
 		value: `${expiresAt}.${await sign(token, `console-setup.${expiresAt}`)}`,
-		maxAge: Math.floor(CONSOLE_SETUP_WINDOW_MS / 1000)
+		maxAge: Math.floor(CONSOLE_SETUP_GRANT_TTL_MS / 1000)
 	};
+}
+
+/**
+ * Whether the caller holds a TOKEN-proved unlock specifically - never the dev
+ * escape hatch. The reset (erasing every operator account to reclaim a console
+ * someone else owns) asks for this rather than for `unlocked`, so that running
+ * locally can claim an unowned console but never wipe an owned one.
+ */
+export async function hasSetupGrant(
+	platform: App.Platform | undefined,
+	grantCookie: string | undefined
+): Promise<boolean> {
+	const token = setupToken(platform);
+	if (!token) return false;
+	return grantValid(token, grantCookie);
 }
 
 /** Whether a submitted token matches the configured one. */
@@ -145,32 +158,28 @@ export async function verifySetupToken(
 }
 
 /**
- * Whether the first-run claim may proceed, and why. Cheap by design: the
- * window and the token both read env, and the grant costs one HMAC - so the
- * steady state (a claimed console, nothing to unlock) pays nothing.
+ * Whether the first-run claim may proceed, and why. Cheap by design: the token
+ * reads env and the grant costs one HMAC, so the steady state - a claimed
+ * console with nothing to unlock - pays nothing.
  */
 export async function consoleSetupState(
 	platform: App.Platform | undefined,
-	grantCookie?: string
+	grantCookie?: string,
+	hostname?: string
 ): Promise<ConsoleSetupState> {
 	const rawToken = platform?.env?.CONSOLE_SETUP_TOKEN;
 	const token = setupToken(platform);
 	const base = {
 		tokenConfigured: !!token,
-		tokenTooShort: !!rawToken && !token,
-		windowEndsAt: null as number | null
+		tokenTooShort: !!rawToken && !token
 	};
 
-	// Local dev and the e2e stack only. A deployed console must never set this:
-	// it is the gate itself, switched off.
-	if (platform?.env?.CONSOLE_SETUP_UNLOCKED === 'true') {
+	// The dev-loop escape hatch, and deliberately inert anywhere it could do
+	// harm: it is honoured ONLY for a loopback hostname, so copying env.local's
+	// vars into a real config cannot switch the gate off on a deployment that
+	// strangers can reach. `npm run dev` serves localhost; nothing else does.
+	if (platform?.env?.CONSOLE_SETUP_UNLOCKED === 'true' && isLoopback(hostname)) {
 		return { ...base, unlocked: true, reason: 'dev' };
-	}
-
-	const deployed = deployedAt(platform);
-	const endsAt = deployed === null ? null : deployed + CONSOLE_SETUP_WINDOW_MS;
-	if (endsAt !== null && Date.now() < endsAt) {
-		return { ...base, unlocked: true, reason: 'window', windowEndsAt: endsAt };
 	}
 
 	if (token && (await grantValid(token, grantCookie))) {
@@ -192,7 +201,7 @@ export async function consoleSetupState(
  * because social sign-in creates the user implicitly on the way back.
  */
 export function isConsoleClaimSurface(pathname: string): boolean {
-	const segments = pathname.split('/').filter(Boolean);
+	const segments = normalizeSegments(pathname);
 
 	let rest: string[] | null = null;
 	// /api/projects/console/auth/<...>
@@ -220,6 +229,39 @@ export function isConsoleClaimSurface(pathname: string): boolean {
 }
 
 /**
+ * The path segments the AGENT will see, not the ones the URL bar shows.
+ *
+ * The guard reads a raw pathname; the REST proxy rebuilds its target from a
+ * route parameter SvelteKit has already decoded, then lets `new URL` normalise
+ * it (agentProxyUrl). Those two disagree exactly where it matters:
+ * `/auth/sign-up%2Femail` is ONE segment here and two by the time the agent
+ * answers, and `/auth/./sign-up/email` loses its dot segment on the way. A
+ * matcher that reads the raw path is therefore trivially side-stepped - the
+ * same guard-versus-proxy gap that made an encoded traversal reach the
+ * operator user list.
+ *
+ * Decoding repeatedly is safe here: over-decoding can only make this MATCH
+ * more paths, and matching more claim-shaped paths is the safe direction.
+ */
+function normalizeSegments(pathname: string): string[] {
+	let decoded = pathname;
+	for (let pass = 0; pass < 3; pass += 1) {
+		let next: string;
+		try {
+			next = decodeURIComponent(decoded);
+		} catch {
+			break; // Malformed escapes: keep what we have rather than throwing.
+		}
+		if (next === decoded) break;
+		decoded = next;
+	}
+
+	// Resolves `.`, `..` and doubled slashes the way the proxy's URL parse will.
+	const normalized = new URL(decoded, 'https://console.invalid').pathname;
+	return normalized.split('/').filter(Boolean);
+}
+
+/**
  * Refuses an unproven first-run claim, or null to let the request through.
  *
  * Only ever refuses while the console has NO owner: once it is claimed these
@@ -233,14 +275,26 @@ export async function guardConsoleClaim(event: RequestEvent): Promise<Response |
 
 	const state = await consoleSetupState(
 		event.platform,
-		event.cookies.get(CONSOLE_SETUP_COOKIE) ?? undefined
+		event.cookies.get(CONSOLE_SETUP_COOKIE) ?? undefined,
+		event.url.hostname
 	);
 	if (state.unlocked) return null;
 
-	// Claimed already: nothing here is a claim, so nothing to gate. Fails
-	// CLOSED - an agent that cannot answer reads as unclaimed, and refusing a
-	// sign-in during an outage beats handing out an ownership window.
-	if (await consoleOwnerExists(event.platform, event.url.origin)) return null;
+	const owner = await consoleOwnerState(event.platform, event.url.origin);
+
+	// Claimed already: nothing here is a claim, so nothing to gate.
+	if (owner === 'claimed') return null;
+
+	// Could not ASK is not "nobody owns this". Answering 403 would blame the
+	// caller for an outage, and treating it as unclaimed would open an
+	// ownership window every time the agent hiccups - so say so and let the
+	// request be retried, exactly as the session guard does.
+	if (owner === 'unavailable') {
+		return Response.json(
+			{ error: 'cannot verify console setup right now' },
+			{ status: 503, headers: { 'Retry-After': '5' } }
+		);
+	}
 
 	// An OAuth callback is a browser navigation; JSON would strand it on a
 	// blank page. Bounce to the login page, which explains the lock.
@@ -251,7 +305,7 @@ export async function guardConsoleClaim(event: RequestEvent): Promise<Response |
 	return Response.json(
 		{
 			error:
-				'console setup is locked - redeploy this Worker to reopen it, or set CONSOLE_SETUP_TOKEN',
+				'console setup is locked - set CONSOLE_SETUP_TOKEN on this Worker, then unlock setup with it',
 			code: 'setupLocked'
 		},
 		{ status: 403 }

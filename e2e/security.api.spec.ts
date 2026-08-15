@@ -4,6 +4,7 @@ import {
 	authPath,
 	configPath,
 	CONSOLE_OWNER,
+	CONSOLE_SETUP_TOKEN,
 	CONSOLE_STORAGE_STATE,
 	consoleAuthPath,
 	dbAdminQueryPath,
@@ -273,6 +274,39 @@ test.describe('security boundaries', () => {
 		// A non-string token must not coerce into a match.
 		const wrongType = await request.post('/api/console/setup', { data: { token: true } });
 		expect(wrongType.status()).toBe(403);
+	});
+
+	/**
+	 * The reset reclaims a console whose owner is not you by erasing every
+	 * operator account, so the two things in front of it - a token-proved
+	 * unlock and an explicit confirmation - are the whole safety story.
+	 */
+	test('the console reset needs both an unlock and a confirmation', async ({
+		playwright,
+		baseURL
+	}) => {
+		const anonymous = await playwright.request.newContext({
+			baseURL,
+			extraHTTPHeaders: { origin: baseURL! }
+		});
+		try {
+			const unproven = await anonymous.delete('/api/console/setup', {
+				data: { confirm: 'erase-console-operators' }
+			});
+			expect(unproven.status(), 'no unlock, no reset').toBe(403);
+
+			const unlock = await anonymous.post('/api/console/setup', {
+				data: { token: CONSOLE_SETUP_TOKEN }
+			});
+			expect(unlock.ok()).toBeTruthy();
+
+			const unconfirmed = await anonymous.delete('/api/console/setup', {
+				data: { confirm: 'nope' }
+			});
+			expect(unconfirmed.status(), 'an unconfirmed reset must not erase anything').toBe(400);
+		} finally {
+			await anonymous.dispose();
+		}
 	});
 
 	/**
