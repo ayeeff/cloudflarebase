@@ -27,6 +27,14 @@ export const CONSOLE_OWNER = {
 /** Where console.setup.ts parks the operator session for the other projects. */
 export const CONSOLE_STORAGE_STATE = 'e2e/.auth/console.json';
 
+/**
+ * Unlocks the first-run claim. The console claim needs proof of deployment
+ * control - a fresh deploy or this token (src/lib/server/console-setup.ts) -
+ * so the suite takes the same path a self-hosted operator does. Value matches
+ * `CONSOLE_SETUP_TOKEN` in wrangler.e2e.jsonc and root env.test.
+ */
+export const CONSOLE_SETUP_TOKEN = 'e2e-console-setup-token-not-a-secret';
+
 export function consoleAuthPath(endpoint: string): string {
 	return authPath(CONSOLE_PROJECT, endpoint);
 }

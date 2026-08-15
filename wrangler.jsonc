@@ -56,10 +56,22 @@
 		"binding": "AI"
 	},
 
+	// When the running version was deployed - the proof behind the first-run
+	// console claim (src/lib/server/console-setup.ts). Only someone who can
+	// push a version to this account can move it, so a 30-minute window after
+	// it is something a stranger who merely found the URL cannot be inside.
+	// Every environment repeats it: Wrangler inherits no bindings into one.
+	"version_metadata": {
+		"binding": "CF_VERSION_METADATA"
+	},
+
 	// No required secrets: a fresh clone deploys with zero configuration.
 	// ADMIN_SECRET is optional - /admin (the fleet dashboard) reports itself
 	// unconfigured until you enable it with `wrangler secret put ADMIN_SECRET`.
-	// cloudflarebase.com's own environments below do require it.
+	// CONSOLE_SETUP_TOKEN is optional too: it overrides the deploy window above
+	// for the first-run claim, and is the recovery path for a console whose
+	// owner is not you. cloudflarebase.com's own environments below do require
+	// ADMIN_SECRET.
 
 	"services": [
 		{ "binding": "AUTH_AGENT", "service": "auth-agent" },
@@ -121,9 +133,15 @@
 			// ADMIN_SECRET gates the /admin fleet dashboard. Plain var only in
 			// local/test; set it with `wrangler secret put ADMIN_SECRET` (and
 			// `--env preview`) for deployed environments.
+			// CONSOLE_SETUP_UNLOCKED switches OFF the first-run claim gate, so the
+			// dev loop can claim the console at any time without a deploy window
+			// or a token. Local only - on a deployed console this var is the
+			// vulnerability the gate exists to close, so it appears in no other
+			// environment (the e2e stack proves the gate instead, with a token).
 			"vars": {
 				"ADMIN_SECRET": "local-admin-secret",
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+				"CONSOLE_SETUP_UNLOCKED": "true",
 				"DEMO_MODE": "true"
 			},
 
@@ -132,6 +150,10 @@
 			"ai": {
 				"binding": "AI",
 				"remote": true
+			},
+
+			"version_metadata": {
+				"binding": "CF_VERSION_METADATA"
 			},
 
 			"d1_databases": [
@@ -171,11 +193,21 @@
 			// Fixed test-only admin password; keep aligned with wrangler.e2e.jsonc.
 			// No `ai` binding on purpose: e2e chat requests take the 502 path
 			// deterministically, exactly like the test auth agent before it.
+			// CONSOLE_SETUP_TOKEN is a plain var here for the same reason
+			// ADMIN_SECRET is: the suite needs it. The claim gate stays ON in
+			// test - console.setup.ts unlocks with this token, which is what
+			// keeps the real first-run path covered end to end.
 			"vars": {
 				"ADMIN_SECRET": "e2e-admin-secret",
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+				"CONSOLE_SETUP_TOKEN": "e2e-console-setup-token-not-a-secret",
 				"DEMO_MODE": "true"
 			},
+
+			// No version_metadata binding, matching wrangler.e2e.jsonc: `wrangler
+			// dev` reports the worker's START time as the version timestamp, which
+			// would leave the claim's deploy window open through a suite run and
+			// test nothing. No binding, no window - the token is the only proof.
 
 			"d1_databases": [
 				{
@@ -230,6 +262,9 @@
 			"ai": {
 				"binding": "AI"
 			},
+			"version_metadata": {
+				"binding": "CF_VERSION_METADATA"
+			},
 			"d1_databases": [
 				{
 					"binding": "DB",
@@ -271,6 +306,9 @@
 			},
 			"ai": {
 				"binding": "AI"
+			},
+			"version_metadata": {
+				"binding": "CF_VERSION_METADATA"
 			},
 			"ratelimits": [
 				{

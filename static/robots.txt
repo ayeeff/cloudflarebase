@@ -1,6 +1,24 @@
+# The console is crawlable but never indexable.
+#
+# `Disallow: /dashboard/` used to live here and did not work: it covers the
+# subpaths but not `/dashboard` itself, which is the URL the landing page links
+# to - and on a demo deployment that URL hands an anonymous visitor (a crawler
+# is one) a throwaway project, so Google indexed a `demo-<hex>` overview under
+# it, naming an id the demo TTL erases days later.
+#
+# A Disallow is the wrong tool for fixing it: a disallowed URL is never
+# fetched, so the `X-Robots-Tag: noindex, nofollow` that hooks.server.ts now
+# serves on every console response would never be seen, and what is already
+# indexed would stay indexed. Crawlers are redirected away from /dashboard
+# before it mints anything, so a crawl also costs no Durable Object.
+#
+# What stays disallowed below is machine surface with nothing to index at all.
+
 User-agent: *
 Allow: /
-Disallow: /dashboard/
 Disallow: /api/
+Disallow: /agents/
+Disallow: /admin
+Disallow: /cli-auth
 
 Sitemap: https://cloudflarebase.com/sitemap.xml

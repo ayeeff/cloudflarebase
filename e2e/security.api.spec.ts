@@ -252,6 +252,57 @@ test.describe('security boundaries', () => {
 		}
 	});
 
+	/**
+	 * The first-run console claim (src/lib/server/console-setup.ts). The claim
+	 * hands over every operator surface on the deployment, and it used to be
+	 * gated on `count(user) === 0` - a fact about the world, not about the
+	 * claimer - so whoever guessed a self-hosted URL first became its owner.
+	 *
+	 * The claim path itself is covered by console.setup.ts, which unlocks with
+	 * the token before claiming. What is left to prove here is that the unlock
+	 * is not itself a way in.
+	 */
+	test('the setup unlock refuses everything but the configured token', async ({ request }) => {
+		const wrong = await request.post('/api/console/setup', { data: { token: 'wrong-token' } });
+		expect(wrong.status()).toBe(403);
+		expect(await wrong.text()).not.toContain('e2e-console-setup-token');
+
+		const missing = await request.post('/api/console/setup', { data: {} });
+		expect(missing.status()).toBe(403);
+
+		// A non-string token must not coerce into a match.
+		const wrongType = await request.post('/api/console/setup', { data: { token: true } });
+		expect(wrongType.status()).toBe(403);
+	});
+
+	/**
+	 * The console is crawlable so search engines can SEE the noindex - a
+	 * robots.txt Disallow would leave already-indexed demo pages stuck.
+	 */
+	test('console surfaces are marked noindex', async ({ request }) => {
+		for (const path of ['/login', '/dashboard']) {
+			const response = await request.get(path, { maxRedirects: 0 });
+			expect(response.headers()['x-robots-tag'], `${path} must not be indexable`).toContain(
+				'noindex'
+			);
+		}
+	});
+
+	/**
+	 * A crawler is an anonymous visitor, so /dashboard used to hand it a real
+	 * demo project - a Durable Object and an all-time counter row per crawl.
+	 */
+	test('a crawler is sent to the landing page instead of a demo project', async ({ request }) => {
+		const response = await request.get('/dashboard', {
+			maxRedirects: 0,
+			headers: {
+				'user-agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+			}
+		});
+		expect(response.status()).toBe(307);
+		expect(response.headers()['location']).toBe('/');
+	});
+
 	test('the db operator surface is closed on both hops', async ({ request }) => {
 		const query = await request.post(dbAdminQueryPath(SEED_PROJECT), {
 			data: { collection: 'anything', query: {} }
