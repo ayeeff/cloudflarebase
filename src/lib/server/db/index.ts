@@ -79,6 +79,8 @@ const SCHEMA_STATEMENTS = [
 		default_branch text NOT NULL,
 		mode text NOT NULL,
 		assets_dir text,
+		build_command text,
+		root_dir text,
 		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL,
 		last_event_at integer
 	)`,
@@ -98,6 +100,8 @@ const UPGRADE_STATEMENTS = [
 	`ALTER TABLE project ADD COLUMN parent_id text`,
 	`ALTER TABLE project ADD COLUMN branch_name text`,
 	`ALTER TABLE project ADD COLUMN org_id text`,
+	`ALTER TABLE github_connection ADD COLUMN build_command text`,
+	`ALTER TABLE github_connection ADD COLUMN root_dir text`,
 	`CREATE INDEX IF NOT EXISTS project_parent ON project (parent_id)`,
 	`CREATE INDEX IF NOT EXISTS project_org ON project (org_id)`
 ];

@@ -208,8 +208,15 @@ export const githubConnection = sqliteTable(
 		repoFullName: text('repo_full_name').notNull(),
 		defaultBranch: text('default_branch').notNull(),
 		mode: text('mode').$type<'build' | 'direct'>().notNull(),
-		/** Direct mode: repo-relative directory published as assets ('' = root). */
+		/** Direct mode: repo-relative directory published as assets ('' = root).
+		 * Build mode: where the build lands (null = CLI autodetects). */
 		assetsDir: text('assets_dir'),
+		/** Build mode: the workflow's build command (framework preset or
+		 * operator-edited); null = the generic `npm run build --if-present`. */
+		buildCommand: text('build_command'),
+		/** Build mode: monorepo root - install/build/deploy run here.
+		 * Null = repository root. */
+		rootDir: text('root_dir'),
 		createdAt: integer('created_at', { mode: 'timestamp_ms' })
 			.notNull()
 			.default(sql`(unixepoch() * 1000)`),

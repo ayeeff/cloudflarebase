@@ -36,6 +36,8 @@ export interface Connection {
 	defaultBranch: string;
 	mode: ConnectionMode;
 	assetsDir: string | null;
+	buildCommand: string | null;
+	rootDir: string | null;
 	createdAt: string;
 	lastEventAt: string | null;
 }
@@ -51,6 +53,8 @@ function toConnection(row: typeof githubConnection.$inferSelect): Connection {
 		defaultBranch: row.defaultBranch,
 		mode: row.mode,
 		assetsDir: row.assetsDir,
+		buildCommand: row.buildCommand,
+		rootDir: row.rootDir,
 		createdAt: row.createdAt.toISOString(),
 		lastEventAt: row.lastEventAt?.toISOString() ?? null
 	};
@@ -107,6 +111,8 @@ export interface SaveConnectionInput {
 	defaultBranch: string;
 	mode: ConnectionMode;
 	assetsDir: string | null;
+	buildCommand: string | null;
+	rootDir: string | null;
 }
 
 /** Upserts the connection for a project+app - reconnecting replaces. */
@@ -254,20 +260,41 @@ export async function listInstallationsForOrg(
 
 // --- Connecting ------------------------------------------------------------
 
-/** A repo-relative directory: no absolute paths, no traversal, no drive. */
+/** A repo-relative directory: no absolute paths, no traversal, no drive.
+ * Charset-limited because build-mode values are embedded into the workflow
+ * YAML (as CLOUDFLAREBASE_ASSETS) - quoting is a bug class, refusing is not. */
 const assetsDirSchema = z
 	.string()
 	.max(200)
+	.regex(/^[A-Za-z0-9._/-]*$/, 'assets directory has unsupported characters')
 	.refine((value) => !value.startsWith('/') && !value.split('/').includes('..'), {
 		message: 'assets directory must be a path inside the repository'
 	});
+
+/** One shell line for the workflow's build step. Single-line keeps the YAML
+ * block-scalar embedding trivially safe; chains use `&&` like anywhere else.
+ * The operator can only ever mangle their OWN repository's workflow - the
+ * file is committed there, where they could edit it directly anyway. */
+const buildCommandSchema = z
+	.string()
+	.trim()
+	.min(1)
+	.max(300)
+	.regex(/^[^\r\n]+$/, 'the build command must be a single line');
 
 export const connectSchema = z.object({
 	installationId: z.number().int().positive(),
 	repoFullName: z.string().regex(REPO_FULL_NAME, 'expected owner/repository'),
 	appName: appNameSchema,
 	mode: z.enum(['build', 'direct']),
-	assetsDir: assetsDirSchema.optional()
+	/** Direct: the directory published as-is. Build: where the build lands,
+	 * relative to rootDir. */
+	assetsDir: assetsDirSchema.optional(),
+	buildCommand: buildCommandSchema.optional(),
+	/** Monorepo root - install, build, and deploy run here (build mode). */
+	rootDir: assetsDirSchema.optional(),
+	/** From the inspection; decides the workflow's install steps. */
+	packageManager: z.enum(['npm', 'pnpm', 'yarn', 'bun']).optional()
 });
 
 export type ConnectResult =
@@ -334,6 +361,14 @@ export async function connectRepository(
 	const claim = await resolveAppClaim(platform, projectId, appName);
 	if (!claim.ok) return { ok: false, status: claim.status, error: claim.error };
 
+	// The framework preset travels INTO the workflow at write time; the CLI
+	// reads CLOUDFLAREBASE_ASSETS back out, so reconnecting with different
+	// settings is a rewrite, never a migration.
+	const buildCommand = mode === 'build' ? (parsed.data.buildCommand ?? null) : null;
+	const outputDir = mode === 'build' ? parsed.data.assetsDir?.trim() || null : null;
+	const rootDir =
+		mode === 'build' ? parsed.data.rootDir?.trim().replace(/^\/+|\/+$/g, '') || null : null;
+
 	let workflowWritten = false;
 	if (mode === 'build') {
 		const written = await writeWorkflowFile(
@@ -341,7 +376,15 @@ export async function connectRepository(
 			installationId,
 			repo.fullName,
 			repo.defaultBranch,
-			connectedWorkflowYaml({ origin, projectId, appName: claim.appName })
+			connectedWorkflowYaml({
+				origin,
+				projectId,
+				appName: claim.appName,
+				packageManager: parsed.data.packageManager,
+				buildCommand,
+				outputDir,
+				rootDir
+			})
 		);
 		if (!written.ok) return { ok: false, status: written.status, error: written.error };
 		workflowWritten = true;
@@ -355,7 +398,11 @@ export async function connectRepository(
 		repoFullName: repo.fullName,
 		defaultBranch: repo.defaultBranch,
 		mode,
-		assetsDir: mode === 'direct' ? (parsed.data.assetsDir ?? '') : null
+		// Direct publishes this directory from every push; build records where
+		// the build lands (null = the CLI autodetects at deploy time).
+		assetsDir: mode === 'direct' ? (parsed.data.assetsDir ?? '') : outputDir,
+		buildCommand,
+		rootDir
 	});
 	return { ok: true, connection, subdomain: claim.subdomain, workflowWritten };
 }

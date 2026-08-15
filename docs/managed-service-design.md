@@ -433,6 +433,58 @@ infrastructure. That is the only remaining reason to want a build farm,
 and it buys exactly one thing the above does not - a repository that
 builds AND has no file in it.
 
+### Framework presets - what CF Pages does at connect time (2026-08-15)
+
+Connect inspection grew from "is there a build script" into the preset
+table Pages and Workers Builds show: `src/lib/server/frameworks.ts` (pure,
+pinned by `npm run test:unit`) maps package.json dependencies plus the
+root listing to a framework, a prefilled build command, an output
+directory, and the package manager (lockfile first, `packageManager`
+field as tiebreak). The dialog shows what was detected, the operator can
+edit both fields, and the result is written into the workflow: the
+command replaces `npm run build --if-present` (a custom command also
+drops the step's package.json guard, which is what lets Hugo - preinstalled
+on GitHub runners - build with no package.json at all), the output
+directory travels as `CLOUDFLAREBASE_ASSETS` (the CLI already read it),
+and pnpm/yarn/bun repositories get matching install steps. Both persist
+on `github_connection` (`build_command`, `assets_dir`), so reconnecting
+rewrites rather than migrates.
+
+Two failure philosophies, both away from silent wrong deploys:
+
+- **A framework missing its Cloudflare adapter gets a NOTE, not a generic
+  preset.** adapter-auto SvelteKit detects no environment on a plain
+  runner and emits nothing deployable; Next.js without OpenNext builds
+  `.next`, which cannot be served as files. Saying so at connect beats a
+  green build that published nothing - or worse, the wrong tree.
+- **A known output directory is stated even when it may not exist.**
+  Next-without-OpenNext states `out` so a misconfigured repo fails loudly
+  ("out does not exist") instead of autodetection finding the repo's
+  `public/` SOURCE directory and publishing it as the site. Same reason
+  the CLI's conventional list gained `.output/public` BEFORE `public`:
+  a Nuxt repo has both, and only one of them is the built site.
+
+Wrangler-driven presets (OpenNext, SvelteKit's adapter-cloudflare, Astro
+SSR) leave the output directory empty on purpose - the repo's own wrangler
+config names `main` and `assets.directory`, and the CLI already follows
+it. Their server bundles are what the `.assetsignore` /
+`RESERVED_ROOT_ASSETS` filtering exists for (see Guardrails).
+
+**Root directory** (build mode, for monorepos - `sites/blabla` instead of
+the repo root): editing the field re-inspects THAT directory, so the
+preset describes the app rather than the workspace shell (lockfile
+detection unions the repository root's listing, because workspaces keep
+one lockfile at the top; a directory that does not exist on the default
+branch warns and blocks Connect). The workflow runs install, build, and
+deploy under `working-directory` - and prefixes every `hashFiles` guard
+plus setup-node's `cache-dependency-path`, because `hashFiles` always
+resolves from the workspace root no matter what working-directory says.
+The CLI needs nothing: its cwd IS the root directory, so the wrangler
+config, `CLOUDFLAREBASE_ASSETS`, and bundling all resolve there. Direct
+mode has no root directory on purpose - its "directory to publish" is
+already repo-relative, and a subdirectory suggestion gets the prefix
+folded back in by the dialog.
+
 **Setting the App up** (once per deployment; see the launch checklist):
 register a GitHub App with `contents: write` (writes the workflow) and
 `metadata: read`, subscribe it to the `push` and `installation` events
@@ -458,9 +510,18 @@ installation token only ever reaches repositories the operator selected.
   outbound service is named in the dispatch-namespace binding and must
   exist before the hosting worker deploys.
 - **Hard fixed caps**: apps per project (2), deploys per day (50), bundle
-  size (5 MB gzip), assets (1000 files / 25 MB per deploy, within
-  platform limits). Enforced in the HostingAgent; C replaces the
-  constants with plan lookups.
+  size (20 MB uncompressed - Cloudflare's own 10 MB-compressed ceiling
+  still applies at upload), assets (5000 files / 40 MB per deploy, 25 MB
+  per file, within platform limits). Enforced in the HostingAgent; C
+  replaces the constants with plan lookups. Raised 2026-08-15 from
+  5 MB / 1000 / 25 MB for framework output: an OpenNext worker bundle
+  routinely passes 10 MB and `_next/static` alone passes 1000 files. The
+  asset total is also a DO memory bound (deploys parse in isolate memory).
+- **Root convention files never publish**: `publish()` drops root-level
+  `_worker.js`, `_routes.json`, `_headers`, `_redirects` on both deploy
+  paths - for SvelteKit and Astro SSR, whose assets directory is also the
+  build output, `_worker.js` is the customer's SERVER bundle. The CLI
+  additionally honours the output directory's `.assetsignore`.
 - **No demo hosting.** Anonymous code execution is an abuse machine; demo
   projects get an upsell card, and BOTH the console deploy route and the
   agent answer 403 for demo ids.

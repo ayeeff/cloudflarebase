@@ -1,6 +1,13 @@
 import { githubFetch, installationToken, type GithubAppConfig } from '$lib/server/github';
 import { WORKFLOW_FILENAME } from '$lib/hosting-workflow';
 import type { ConnectionMode } from '$lib/server/github-connect';
+import {
+	detectFramework,
+	detectPackageManager,
+	hasWranglerConfig,
+	type FrameworkPreset,
+	type PackageManager
+} from '$lib/server/frameworks';
 
 /**
  * Repository-facing GitHub operations: what the connect flow reads, what it
@@ -77,12 +84,24 @@ export interface RepoInspection {
 	/** Directories that look like committed static output. */
 	staticDirs: string[];
 	hasIndexHtml: boolean;
+	/** Framework preset (src/lib/server/frameworks.ts); null = unrecognized. */
+	framework: Pick<FrameworkPreset, 'id' | 'label' | 'note'> | null;
+	/** Build-mode prefill: the preset's command, else `<pm> run build`. */
+	buildCommand: string | null;
+	/** Build-mode prefill: where the build lands; '' = autodetect. */
+	outputDir: string;
+	packageManager: PackageManager;
+	/** False when a requested root directory does not exist on the ref -
+	 * the dialog warns instead of connecting a repo that can never build. */
+	rootDirExists: boolean;
 }
 
 /**
- * Decides whether a repository needs a runner.
+ * Decides whether a repository needs a runner, and which framework preset
+ * populates the connect dialog (CF-Pages-style: build command and output
+ * directory prefilled, operator can override).
  *
- * This is the whole Tier-1-vs-Tier-1.5 split: a repo with a `build` script
+ * The mode split is the whole Tier-1-vs-Tier-1.5 line: a repo with a build
  * has to be built somewhere, and that somewhere is GitHub's runners. A repo
  * that is already deployable as it stands - committed HTML, or a committed
  * output directory - needs no runner and no file in the repo at all, so the
@@ -96,31 +115,62 @@ export async function inspectRepo(
 	config: GithubAppConfig,
 	installationId: number,
 	repoFullName: string,
-	ref: string
+	ref: string,
+	rootDir: string | null = null
 ): Promise<RepoInspection> {
+	const dir = rootDir?.replace(/^\/+|\/+$/g, '') || null;
 	const fallback: RepoInspection = {
 		suggestedMode: 'build',
 		assetsDir: '',
 		hasBuildScript: false,
 		staticDirs: [],
-		hasIndexHtml: false
+		hasIndexHtml: false,
+		framework: null,
+		buildCommand: null,
+		outputDir: '',
+		packageManager: 'npm',
+		rootDirExists: true
 	};
 	const token = await installationToken(config, installationId);
 	if (!token) return fallback;
 
 	const query = `?ref=${encodeURIComponent(ref)}`;
-	const [packageResponse, rootResponse] = await Promise.all([
-		githubFetch(token, 'GET', `/repos/${repoFullName}/contents/package.json${query}`),
-		githubFetch(token, 'GET', `/repos/${repoFullName}/contents${query}`)
+	const base = dir ? `/repos/${repoFullName}/contents/${dir}` : `/repos/${repoFullName}/contents`;
+	const [packageResponse, rootResponse, repoRootResponse] = await Promise.all([
+		githubFetch(token, 'GET', `${base}/package.json${query}`),
+		githubFetch(token, 'GET', `${base}${query}`),
+		// Monorepo lockfiles live at the REPOSITORY root, not beside the
+		// package - the union below is what makes pnpm detection work there.
+		dir
+			? githubFetch(token, 'GET', `/repos/${repoFullName}/contents${query}`)
+			: Promise.resolve(null)
 	]);
+	if (dir && !rootResponse.ok) {
+		return { ...fallback, rootDirExists: false };
+	}
 
 	let hasBuildScript = false;
+	let dependencies: Record<string, string> = {};
+	let scripts: Record<string, string> = {};
+	let packageManagerField: string | null = null;
 	if (packageResponse.ok) {
 		const raw = decodeContent(packageResponse.body);
 		if (raw) {
 			try {
-				const parsed = JSON.parse(raw) as { scripts?: Record<string, unknown> };
+				const parsed = JSON.parse(raw) as {
+					scripts?: Record<string, unknown>;
+					dependencies?: Record<string, unknown>;
+					devDependencies?: Record<string, unknown>;
+					packageManager?: unknown;
+				};
 				hasBuildScript = typeof parsed.scripts?.build === 'string';
+				scripts = onlyStrings(parsed.scripts);
+				dependencies = {
+					...onlyStrings(parsed.dependencies),
+					...onlyStrings(parsed.devDependencies)
+				};
+				packageManagerField =
+					typeof parsed.packageManager === 'string' ? parsed.packageManager : null;
 			} catch {
 				// An unparseable package.json is a build-mode repo with a problem;
 				// the runner will say so far more clearly than we can here.
@@ -132,27 +182,113 @@ export async function inspectRepo(
 	const entries = (rootResponse.ok ? rootResponse.body : null) as
 		{ name?: string; type?: string }[] | null;
 	const names = Array.isArray(entries) ? entries : [];
+	const rootEntries = names
+		.map((entry) => entry.name)
+		.filter((name): name is string => typeof name === 'string');
 	const hasIndexHtml = names.some((entry) => entry.name === 'index.html' && entry.type === 'file');
-	const staticDirs = STATIC_DIRS.filter((dir) =>
-		names.some((entry) => entry.name === dir && entry.type === 'dir')
+	const staticDirs = STATIC_DIRS.filter((name) =>
+		names.some((entry) => entry.name === name && entry.type === 'dir')
 	);
 
+	// Lockfiles: the root directory's own, unioned with the repository
+	// root's - a workspace keeps ONE lockfile at the top.
+	const repoRootNames = Array.isArray(repoRootResponse?.body)
+		? (repoRootResponse.body as { name?: string }[])
+				.map((entry) => entry.name)
+				.filter((name): name is string => typeof name === 'string')
+		: [];
+	const packageManager = detectPackageManager(
+		[...rootEntries, ...repoRootNames],
+		packageManagerField
+	);
+	// next.config decides static-export vs server rendering, and only Next
+	// repos pay the extra read. OpenNext repos skip it: the adapter wins.
+	let nextConfigSource: string | null = null;
+	if (dependencies.next && !dependencies['@opennextjs/cloudflare']) {
+		const configName = rootEntries.find((name) => /^next\.config\.(?:js|mjs|ts)$/.test(name));
+		if (configName) {
+			const configResponse = await githubFetch(token, 'GET', `${base}/${configName}${query}`);
+			if (configResponse.ok) nextConfigSource = decodeContent(configResponse.body);
+		}
+	}
+
+	const preset = detectFramework({
+		dependencies,
+		scripts,
+		packageManager,
+		rootEntries,
+		hasWranglerConfig: hasWranglerConfig(rootEntries),
+		nextConfigSource
+	});
+	const framework = preset ? { id: preset.id, label: preset.label, note: preset.note } : null;
+	const common = {
+		hasBuildScript,
+		staticDirs,
+		hasIndexHtml,
+		framework,
+		packageManager,
+		rootDirExists: true as const
+	};
+
+	if (preset && preset.mode === 'build' && preset.buildCommand) {
+		return {
+			...common,
+			suggestedMode: 'build',
+			assetsDir: '',
+			buildCommand: preset.buildCommand,
+			outputDir: preset.outputDir ?? ''
+		};
+	}
+	if (preset && preset.mode === 'direct') {
+		const suggested =
+			preset.outputDir && staticDirs.includes(preset.outputDir) ? preset.outputDir : '';
+		return {
+			...common,
+			suggestedMode: 'direct',
+			assetsDir: suggested || staticDirs[0] || '',
+			buildCommand: null,
+			outputDir: ''
+		};
+	}
+
+	// No runnable preset: the legacy heuristics, now framework-labelled when
+	// we at least recognized what it is (a preset whose script is missing).
 	if (hasBuildScript) {
-		return { suggestedMode: 'build', assetsDir: '', hasBuildScript, staticDirs, hasIndexHtml };
+		return {
+			...common,
+			suggestedMode: 'build',
+			assetsDir: '',
+			buildCommand: `${packageManager} run build`,
+			outputDir: ''
+		};
 	}
 	if (staticDirs.length) {
 		return {
+			...common,
 			suggestedMode: 'direct',
 			assetsDir: staticDirs[0],
-			hasBuildScript,
-			staticDirs,
-			hasIndexHtml
+			buildCommand: null,
+			outputDir: ''
 		};
 	}
 	if (hasIndexHtml) {
-		return { suggestedMode: 'direct', assetsDir: '', hasBuildScript, staticDirs, hasIndexHtml };
+		return {
+			...common,
+			suggestedMode: 'direct',
+			assetsDir: '',
+			buildCommand: null,
+			outputDir: ''
+		};
 	}
-	return { ...fallback, staticDirs, hasIndexHtml };
+	return { ...fallback, ...common, buildCommand: null, outputDir: '' };
+}
+
+function onlyStrings(record: Record<string, unknown> | undefined): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [key, value] of Object.entries(record ?? {})) {
+		if (typeof value === 'string') out[key] = value;
+	}
+	return out;
 }
 
 /**

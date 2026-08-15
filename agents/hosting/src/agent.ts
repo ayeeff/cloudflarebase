@@ -42,16 +42,29 @@ import { gunzip, parseTar, toAssetPaths } from './tar';
 
 const MAX_APPS = 2;
 const MAX_DEPLOYS_PER_DAY = 50;
-const MAX_MODULE_BYTES = 5 * 1024 * 1024;
-const MAX_ASSET_COUNT = 1000;
-const MAX_ASSET_TOTAL_BYTES = 25 * 1024 * 1024;
-const MAX_ASSET_FILE_BYTES = 10 * 1024 * 1024;
+// Sized for framework output, not just hand-rolled Workers: an OpenNext
+// worker bundle routinely passes 10 MB uncompressed, and a Next site blows
+// 1000 files on `_next/static` alone. The DO parses deploys in memory, so
+// the asset total stays well under the 128 MB isolate limit; Cloudflare's
+// own 10 MB-compressed script ceiling still applies at upload.
+const MAX_MODULE_BYTES = 20 * 1024 * 1024;
+const MAX_ASSET_COUNT = 5000;
+const MAX_ASSET_TOTAL_BYTES = 40 * 1024 * 1024;
+const MAX_ASSET_FILE_BYTES = 25 * 1024 * 1024;
 const RECENT_DEPLOYS = 10;
-/** Decompressed ceiling for a direct deploy's tarball. Above the 25 MB asset
+/** Decompressed ceiling for a direct deploy's tarball. Above the 40 MB asset
  * cap because the archive also carries source we filter out - the deploy
  * itself is still bounded by the asset caps in publish(). */
-const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
+const MAX_ARCHIVE_BYTES = 96 * 1024 * 1024;
 const MAX_ARCHIVE_FILES = 20_000;
+
+/** Cloudflare's Pages/Workers convention files: deploy CONFIGURATION, never
+ * content. `_worker.js` doubly so - for any framework whose assets directory
+ * is also its build output (SvelteKit, Astro SSR), it is the customer's
+ * server bundle, and publishing it would hand out their server source. The
+ * CLI filters these too (via .assetsignore); this is the backstop for older
+ * CLIs and direct tarball deploys. */
+const RESERVED_ROOT_ASSETS = new Set(['/_worker.js', '/_routes.json', '/_headers', '/_redirects']);
 
 export interface HostingAppSummary {
 	name: string;
@@ -453,12 +466,19 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 		app: AppRecord,
 		input: { modules: ModuleFile[]; assets: AssetFile[]; meta: DeployMeta; origin: string },
 	): Promise<Response> {
-		const { modules, assets, meta } = input;
+		const { modules, meta } = input;
+		// Root-level convention files never publish, whatever path they arrived
+		// by. A deploy REDUCED to nothing by this (a lone _worker.js) falls
+		// through to the honest "nothing to deploy" below.
+		const assets = input.assets.filter((asset) => !RESERVED_ROOT_ASSETS.has(asset.path));
 		const moduleBytes = modules.reduce((total, module) => total + module.bytes.length, 0);
 		const assetBytes = assets.reduce((total, asset) => total + asset.bytes.length, 0);
 
 		if (moduleBytes > MAX_MODULE_BYTES) {
-			return Response.json({ error: 'the Worker bundle exceeds 5 MB' }, { status: 400 });
+			return Response.json(
+				{ error: `the Worker bundle exceeds ${MAX_MODULE_BYTES / 1024 / 1024} MB` },
+				{ status: 400 },
+			);
 		}
 		if (assets.length > MAX_ASSET_COUNT) {
 			return Response.json(
@@ -467,10 +487,16 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			);
 		}
 		if (assetBytes > MAX_ASSET_TOTAL_BYTES) {
-			return Response.json({ error: 'assets exceed 25 MB' }, { status: 400 });
+			return Response.json(
+				{ error: `assets exceed ${MAX_ASSET_TOTAL_BYTES / 1024 / 1024} MB` },
+				{ status: 400 },
+			);
 		}
 		if (assets.some((asset) => asset.bytes.length > MAX_ASSET_FILE_BYTES)) {
-			return Response.json({ error: 'an asset exceeds 10 MB' }, { status: 400 });
+			return Response.json(
+				{ error: `an asset exceeds ${MAX_ASSET_FILE_BYTES / 1024 / 1024} MB` },
+				{ status: 400 },
+			);
 		}
 		if (!modules.length && !assets.length) {
 			return Response.json({ error: 'nothing to deploy' }, { status: 400 });

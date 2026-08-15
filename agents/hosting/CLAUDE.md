@@ -75,9 +75,21 @@ deploy:production` / `deploy:preview` deploy it first. v1 is pass-through;
 - **No demo hosting.** `DEMO_PROJECT_PATTERN` ids are refused at deploy
   (403) in both the console and the agent - demos are throwaway and never
   run code.
-- **Hard v1 caps** in `src/agent.ts`: 2 apps, 50 deploys/day, 5 MB modules
-  (measured uncompressed - stricter than the design doc's gzip phrasing),
-  1000 assets / 25 MB per deploy. Phase C swaps constants for plan lookups.
+- **Hard v1 caps** in `src/agent.ts`: 2 apps, 50 deploys/day, 20 MB modules
+  (measured uncompressed - Cloudflare's own 10 MB-compressed script ceiling
+  still applies at upload), 5000 assets / 40 MB per deploy, 25 MB per file.
+  Raised 2026-08-15 for framework output (an OpenNext bundle passes 10 MB,
+  `_next/static` alone passes 1000 files); the asset total is also a DO
+  memory bound - deploys parse in isolate memory, so keep it well under
+  128 MB. Phase C swaps constants for plan lookups.
+- **Root convention files never publish as assets.** `publish()` drops
+  root-level `_worker.js`, `_routes.json`, `_headers`, `_redirects`
+  (`RESERVED_ROOT_ASSETS`) on BOTH deploy paths: for frameworks whose assets
+  directory is also their build output (SvelteKit, Astro SSR), `_worker.js`
+  is the customer's server bundle, and publishing it hands out their server
+  source at `https://<app>.cfbase.dev/_worker.js`. The CLI additionally
+  honours the output directory's `.assetsignore`; this filter is the
+  backstop for older CLIs and direct tarball deploys.
 - **The self-hosted default has NO `DISPATCH` binding** - WfP is a paid
   add-on and a binding to a missing namespace fails a zero-config deploy.
   The agent reports `configured: false` and answers deploys 503 with the
