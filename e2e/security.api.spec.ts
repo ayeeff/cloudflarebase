@@ -104,18 +104,25 @@ test.describe('security boundaries', () => {
 		}
 	});
 
-	test('the fleet rollup and the erase route are not on the public path', async ({ request }) => {
-		// Both live outside /agents/*, so the dashboard's passthrough must never
-		// forward them - they are service-binding-only by topology.
-		const fleet = await request.get('/fleet/overview');
-		expect(fleet.status(), 'the fleet rollup is not a public route').not.toBe(200);
-
+	test('the erase route is not on the public path', async ({ request }) => {
+		// It lives outside /agents/*, so the dashboard's passthrough must never
+		// forward it - service-binding-only by topology.
 		const erase = await request.delete(`/internal/projects/${SEED_PROJECT}`);
 		expect(erase.status(), 'the erase route is not a public route').not.toBe(200);
 
-		// ...nor by dressing them up as an agent path.
-		const viaAgents = await request.get('/agents/auth-agent/fleet/overview');
+		// ...nor by dressing it up as an agent path.
+		const viaAgents = await request.delete(`/agents/auth-agent/internal/projects/${SEED_PROJECT}`);
 		expect(viaAgents.status()).not.toBe(200);
+	});
+
+	test('the retired fleet rollup is gone, not merely unreachable', async ({ request }) => {
+		// /admin and its ADMIN_SECRET were removed: a password-gated console page
+		// that fanned out to every project Durable Object. Demo accounting moved
+		// to a D1 query (src/lib/server/demo-log.ts).
+		for (const path of ['/admin', '/fleet/overview', '/agents/auth-agent/fleet/overview']) {
+			const response = await request.get(path);
+			expect(response.status(), `${path} must not answer`).not.toBe(200);
+		}
 	});
 
 	test('a session cookie is not a bearer token for another project', async ({ request }) => {

@@ -18,7 +18,6 @@ User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /agents/
-Disallow: /admin
 Disallow: /cli-auth
 
 Sitemap: https://cloudflarebase.com/sitemap.xml

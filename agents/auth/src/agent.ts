@@ -12,7 +12,6 @@ import {
 	type AuthEmailMessage,
 	type ProjectAuth,
 } from './auth';
-import { coloCountry } from './colo-countries';
 import * as schema from './db/schema';
 import {
 	analyticsApiResponseSchema,
@@ -282,21 +281,6 @@ export interface AuthAnalytics {
 	};
 	/** Event counts from the Analytics Engine SQL API - only when enabled. */
 	eventsLast24h?: { eventType: string; count: number }[];
-}
-
-/** Per-project counts for the platform admin fleet view - cheap SQLite reads only. */
-export interface FleetProjectCounts {
-	projectId: string;
-	users: number;
-	registeredUsers: number;
-	anonymousUsers: number;
-	activeSessions: number;
-	provisionedAt: string | null;
-	lastEventAt: string | null;
-	/** Cloudflare data center (IATA code) this project's Durable Object runs in. */
-	colo: string | null;
-	/** ISO country of that data center - approximates where the demo's visitor is. */
-	coloCountry: string | null;
 }
 
 export interface AgentChatReply {
@@ -1980,37 +1964,6 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		};
 	}
 
-	/** Resolved once per instance; a DO stays in one colo for its lifetime. */
-	private coloCache: { colo: string | null; coloCountry: string | null } | null = null;
-
-	/**
-	 * Where this Durable Object physically runs. A cdn-cgi trace subrequest
-	 * egresses at the DO's own data center, so `colo` reveals its location
-	 * (DOs are created near their first requester, approximating the visitor's
-	 * region). The country comes from a static colo map, NOT the trace's
-	 * `loc` field: `loc` geolocates the Worker's egress IP, and a re-mapping
-	 * of Cloudflare's own ranges once turned the entire fleet Canadian
-	 * overnight. Failures return nulls and are not cached, so a network
-	 * hiccup does not pin "unknown" for the instance's lifetime.
-	 */
-	private async resolveColo(): Promise<{ colo: string | null; coloCountry: string | null }> {
-		if (this.coloCache) return this.coloCache;
-		try {
-			const response = await fetch('https://www.cloudflare.com/cdn-cgi/trace', {
-				signal: AbortSignal.timeout(1_500),
-			});
-			if (!response.ok) throw new Error(`trace responded with ${response.status}`);
-			const fields = new Map(
-				(await response.text()).split('\n').map((line) => line.split('=', 2) as [string, string]),
-			);
-			const colo = fields.get('colo') ?? null;
-			this.coloCache = { colo, coloCountry: coloCountry(colo) };
-			return this.coloCache;
-		} catch {
-			return { colo: null, coloCountry: null };
-		}
-	}
-
 	/**
 	 * Erases this project: every user, session, account, and setting. Called
 	 * over RPC when the registry deletes a project, and by the demo reaper when
@@ -2034,35 +1987,6 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		// revived that way would even schedule itself a fresh expiry.
 		await this.ctx.storage.deleteAlarm();
 		setTimeout(() => this.ctx.abort(), 0);
-	}
-
-	/**
-	 * Counts for the fleet admin rollup, called over Durable Object RPC from the
-	 * worker entrypoint (/fleet/overview). Deliberately avoids getAnalytics() so
-	 * a fleet sweep never fans out Analytics Engine SQL queries per project.
-	 */
-	async getFleetCounts(): Promise<FleetProjectCounts> {
-		const [users] = await this.db.select({ n: count() }).from(schema.user);
-		const [anonymousUsers] = await this.db
-			.select({ n: count() })
-			.from(schema.user)
-			.where(eq(schema.user.isAnonymous, true));
-		const [activeSessions] = await this.db
-			.select({ n: count() })
-			.from(schema.session)
-			.where(gt(schema.session.expiresAt, new Date()));
-		const total = users?.n ?? 0;
-		const anonymous = anonymousUsers?.n ?? 0;
-		return {
-			projectId: this.name,
-			users: total,
-			registeredUsers: total - anonymous,
-			anonymousUsers: anonymous,
-			activeSessions: activeSessions?.n ?? 0,
-			provisionedAt: this.state.provisionedAt,
-			lastEventAt: this.state.lastEventAt,
-			...(await this.resolveColo()),
-		};
 	}
 
 	private async counters(): Promise<Pick<AuthAgentState, 'users' | 'activeSessions'>> {

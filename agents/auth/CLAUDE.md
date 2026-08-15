@@ -6,8 +6,7 @@ One `AuthAgent` Durable Object per Cloudflarebase project; the instance name is 
 
 - `src/agent.ts`: state, HTTP/admin routes, analytics, Workers AI chat, email, project CORS, Better Auth dispatch. DTOs mirrored in the app's `src/lib/agents.ts`.
 - `src/auth.ts`: Better Auth factory - Drizzle adapter, email/password, anonymous and bearer plugins, social providers, rate limiting, project cookie prefix, database hooks.
-- `src/index.ts`: Worker entrypoint, `/health`, internal `/fleet/overview`; delegates agent routes through `routeAgentRequest` without default CORS.
-- `src/fleet.ts`: fleet rollup for `/admin`. Lists projects from auth-event analytics (SQL API, or `LOCAL_ANALYTICS` D1 locally), then fans out over `getAgentByName` RPC (`getFleetCounts`, capped and batched). DTOs mirrored in the app.
+- `src/index.ts`: Worker entrypoint, `/health`, the operator-route gate, internal `/internal/projects/:id`; delegates agent routes through `routeAgentRequest` without default CORS.
 - `src/db/schema.ts`: Better Auth tables. Property names must match Better Auth field names.
 - `drizzle/`: drizzle-kit output. `src/migrations.ts` inlines that SQL as string literals (via `scripts/generate-migrations.mjs`, never hand-edited) and is what `onStart` applies. Inlining means no Wrangler Text-module rule, so the agent works as a plain npm dependency.
 - `src/env.d.ts`: optional secrets not in generated Wrangler types.
@@ -17,7 +16,7 @@ Schema changes: edit `src/db/schema.ts`, run `npm run migrations`, never hand-ed
 
 ## HTTP surface
 
-The Worker itself: `GET /health`, `GET /fleet/overview`, and `DELETE /internal/projects/:projectId` (erases one project via its agent's `destroy()`). The internal route sits outside `/agents/*`, so it is reachable only over the dashboard's service binding; the worker has no public route. The console owns cross-agent fan-out; these endpoints know only their own agent. `AuthAgent.getFleetCounts()` serves the per-project half over DO RPC, including the colo resolved once per instance from a cdn-cgi trace. The colo's COUNTRY comes from the static map in `src/colo-countries.ts`, never from the trace's `loc` field - `loc` geolocates the Worker's egress IP, and a re-mapping of Cloudflare's own ranges once flagged the entire fleet as Canada. Unknown colos render without a flag; extend the map when new colos appear.
+The Worker itself: `GET /health` and `DELETE /internal/projects/:projectId` (erases one project via its agent's `destroy()`). The internal route sits outside `/agents/*`, so it is reachable only over the dashboard's service binding; the worker has no public route. The console owns cross-agent fan-out; these endpoints know only their own agent. **The fleet rollup is gone** (2026-08-15): `GET /fleet/overview`, `src/fleet.ts`, `AuthAgent.getFleetCounts()`, `src/colo-countries.ts` and the cdn-cgi colo probe went with the console's `/admin` page and its `ADMIN_SECRET` - a password-gated surface whose whole job was fanning out to every project Durable Object. All-time demo accounting stayed behind in the control plane's `demo_project` log, read with a D1 query (`src/lib/server/demo-log.ts` in the app).
 
 Agent routes at `/agents/auth-agent/<projectId>/...`:
 

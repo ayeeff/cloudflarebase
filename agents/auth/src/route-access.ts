@@ -82,9 +82,9 @@ export function operatorApiExposed(env: { EXPOSE_OPERATOR_API?: string }): boole
 
 /**
  * The 404 to answer with, or null to carry on. Everything that is not a
- * declared-public agent route is refused, `/internal/*` and `/fleet/*`
- * included - those are service-binding-only by deployment shape alone, which
- * is a property of our topology and not of the package.
+ * declared-public agent route is refused, `/internal/*` included - that one
+ * is service-binding-only by deployment shape alone, which is a property of
+ * our topology and not of the package.
  */
 export function gateOperatorRoutes(
 	url: URL,

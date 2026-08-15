@@ -21,9 +21,9 @@
 /**
  * `DurableObjectNamespace` is branded by its agent class, and the class you
  * bind is the Sentry-instrumented subclass rather than `AuthAgent` itself. The
- * brand is not worth reproducing across a package boundary - `fleet.ts` already
- * casts through it internally - so the contract checks that the binding exists
- * and is a namespace, and leaves the instance type to the caller.
+ * brand is not worth reproducing across a package boundary, so the contract
+ * checks that the binding exists and is a namespace, and leaves the instance
+ * type to the caller.
  *
  * `any` is the only argument that accepts every parameterisation: the namespace
  * is effectively invariant, so `never` and `unknown` each fail one direction of

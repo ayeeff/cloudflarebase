@@ -115,7 +115,7 @@ const applicationHandle: Handle = async ({ event, resolve }) => {
  * stay indexed forever. This is served on every response, including the guard's
  * redirects and 401s, which is what lets Google drop what it already has.
  */
-const PRIVATE_SURFACES = ['/dashboard', '/login', '/admin', '/cli-auth', '/api', '/agents'];
+const PRIVATE_SURFACES = ['/dashboard', '/login', '/cli-auth', '/api', '/agents'];
 
 const noindexHandle: Handle = async ({ event, resolve }) => {
 	const response = await resolve(event);
@@ -133,16 +133,7 @@ const noindexHandle: Handle = async ({ event, resolve }) => {
 };
 
 const apiRateLimitHandle: Handle = async ({ event, resolve }) => {
-	// `/admin` is in scope as well as `/api`: its login action is a password
-	// form the console guard never sees (the route classifies as open and
-	// carries its own ADMIN_SECRET check), so without this it is the one
-	// credential surface on the deployment that nothing throttles at all. It
-	// also fans out to every project agent once authenticated.
-	const limited =
-		event.url.pathname === '/api' ||
-		event.url.pathname.startsWith('/api/') ||
-		event.url.pathname === '/admin' ||
-		event.url.pathname.startsWith('/admin/');
+	const limited = event.url.pathname === '/api' || event.url.pathname.startsWith('/api/');
 	if (limited) {
 		const limiter = event.platform?.env?.API_RATE_LIMITER;
 

@@ -149,60 +149,6 @@ export const authAnalyticsSchema = z
 	})
 	.meta({ id: 'AuthAnalytics' });
 
-export const fleetProjectCountsSchema = z
-	.object({
-		projectId: z.string(),
-		users: z.number().int(),
-		registeredUsers: z.number().int(),
-		anonymousUsers: z.number().int(),
-		activeSessions: z.number().int(),
-		provisionedAt: z.iso.datetime().nullable(),
-		lastEventAt: z.iso.datetime().nullable(),
-		colo: z
-			.string()
-			.nullable()
-			.describe('Cloudflare data center (IATA code) this project runs in.'),
-		coloCountry: z.string().nullable().describe('ISO country of that data center.')
-	})
-	.meta({ id: 'FleetProjectCounts' });
-
-export const fleetProjectSchema = z
-	.object({
-		projectId: z.string(),
-		demo: z.boolean().describe('Matches the browser-demo naming convention (`demo-<hex>`).'),
-		firstSeenAt: z.iso.datetime().nullable(),
-		lastSeenAt: z.iso.datetime().nullable(),
-		events: z.number().int(),
-		counts: fleetProjectCountsSchema
-			.nullable()
-			.describe('Null when the project was beyond the fan-out limit or unreachable.')
-	})
-	.meta({ id: 'FleetProject' });
-
-export const fleetTotalsSchema = z
-	.object({
-		projects: z.number().int(),
-		demoProjects: z.number().int(),
-		users: z.number().int(),
-		registeredUsers: z.number().int(),
-		anonymousUsers: z.number().int(),
-		activeSessions: z.number().int(),
-		uncountedProjects: z.number().int()
-	})
-	.meta({ id: 'FleetTotals' });
-
-export const fleetOverviewSchema = z
-	.object({
-		generatedAt: z.iso.datetime(),
-		source: z
-			.enum(['analytics-engine', 'local-d1', 'none'])
-			.describe('Where the project list came from.'),
-		projects: z.array(fleetProjectSchema),
-		totals: fleetTotalsSchema,
-		error: z.string().optional()
-	})
-	.meta({ id: 'FleetOverview' });
-
 export const agentChatMessageSchema = z
 	.object({
 		id: z.string(),
@@ -780,10 +726,6 @@ export type AuthOverview = z.infer<typeof authOverviewSchema>;
 export type UserPage = z.infer<typeof userPageSchema>;
 export type SessionPage = z.infer<typeof sessionPageSchema>;
 export type AuthAnalytics = z.infer<typeof authAnalyticsSchema>;
-export type FleetProjectCounts = z.infer<typeof fleetProjectCountsSchema>;
-export type FleetProject = z.infer<typeof fleetProjectSchema>;
-export type FleetTotals = z.infer<typeof fleetTotalsSchema>;
-export type FleetOverview = z.infer<typeof fleetOverviewSchema>;
 export type AgentChatMessage = z.infer<typeof agentChatMessageSchema>;
 export type AgentChatReply = z.infer<typeof agentChatReplySchema>;
 export type RegistryProject = z.infer<typeof registryProjectSchema>;

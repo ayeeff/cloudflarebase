@@ -308,11 +308,8 @@
 			<div class="space-y-3">
 				<Button href={resolve('/dashboard')} class="w-full">Try the demo</Button>
 				<p class="text-xs text-muted-foreground">
-					Running this deployment yourself? Fleet monitoring lives at <a
-						class="underline"
-						href={resolve('/admin')}>/admin</a
-					>, behind its own secret. To get a private console with real projects, deploy without
-					<code class="font-mono">DEMO_MODE</code>.
+					Running this deployment yourself? To get a private console with real projects, deploy
+					without <code class="font-mono">DEMO_MODE</code>.
 				</p>
 			</div>
 		</div>

@@ -130,8 +130,9 @@ agent's "first customer"). The managed service deepens that, deliberately:
   resolve memberships via `/console/me` (memoized per request, like
   `locals.consoleUser`), then require `row.org_id` ∈ memberships or
   `row.org_id IS NULL`. Reserved ids (`console`) and demo families keep
-  their existing special-casing. `/admin` stays `ADMIN_SECRET`-gated and
-  fleet-wide.
+  their existing special-casing. (`/admin` was `ADMIN_SECRET`-gated and
+  fleet-wide when this was written; it was removed on 2026-08-15 - see the
+  root CLAUDE.md.)
 - **Backfill**: cloudflarebase.com's existing projects get the founder's
   personal org id in a one-time script; self-hosted installs need nothing.
 - **UI**: `/login` grows sign-up (email + verification notice, social);
