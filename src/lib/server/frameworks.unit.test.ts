@@ -4,6 +4,7 @@ import {
 	detectFramework,
 	detectPackageManager,
 	hasWranglerConfig,
+	wranglerConfigJsonc,
 	type RepoFacts
 } from './frameworks';
 
@@ -37,14 +38,17 @@ test('wrangler config: any of the three spellings', () => {
 	assert.equal(hasWranglerConfig(['package.json']), false);
 });
 
-test('OpenNext beats plain Next and notes a missing wrangler config', () => {
+test('OpenNext beats plain Next and templates a missing wrangler config', () => {
 	const detected = detectFramework(
 		facts({ dependencies: { next: '15', '@opennextjs/cloudflare': '1' } })
 	);
 	assert.equal(detected?.id, 'nextjs-opennext');
 	assert.equal(detected?.buildCommand, 'npx opennextjs-cloudflare build');
 	assert.equal(detected?.outputDir, null);
-	assert.match(detected?.note ?? '', /wrangler/);
+	// No note, no homework: connect commits the config itself.
+	assert.equal(detected?.note, null);
+	assert.equal(detected?.wrangler?.main, '.open-next/worker.js');
+	assert.equal(detected?.wrangler?.assetsDirectory, '.open-next/assets');
 
 	const configured = detectFramework(
 		facts({
@@ -52,7 +56,7 @@ test('OpenNext beats plain Next and notes a missing wrangler config', () => {
 			hasWranglerConfig: true
 		})
 	);
-	assert.equal(configured?.note, null);
+	assert.equal(configured?.wrangler, null);
 });
 
 test('Next static export is detected from next.config source', () => {
@@ -88,7 +92,9 @@ test('SvelteKit branches on the installed adapter', () => {
 	const missing = detectFramework(
 		facts({ dependencies: { '@sveltejs/kit': '2', '@sveltejs/adapter-cloudflare': '7' } })
 	);
-	assert.match(missing?.note ?? '', /wrangler\.jsonc/);
+	assert.equal(missing?.note, null);
+	assert.equal(missing?.wrangler?.main, '.svelte-kit/cloudflare/_worker.js');
+	assert.equal(missing?.wrangler?.assetsDirectory, '.svelte-kit/cloudflare');
 
 	const isStatic = detectFramework(
 		facts({ dependencies: { '@sveltejs/kit': '2', '@sveltejs/adapter-static': '3' } })
@@ -116,6 +122,28 @@ test('Astro: static by default, adapter switches to the wrangler path', () => {
 	);
 	assert.equal(ssr?.id, 'astro-cloudflare');
 	assert.equal(ssr?.outputDir, null);
+	assert.equal(ssr?.wrangler, null);
+
+	const unconfigured = detectFramework(
+		facts({ dependencies: { astro: '5', '@astrojs/cloudflare': '12' } })
+	);
+	assert.equal(unconfigured?.wrangler?.main, 'dist/_worker.js/index.js');
+});
+
+test('the committed wrangler.jsonc names the app and the adapter output', () => {
+	const jsonc = wranglerConfigJsonc('sveltekit-cloudflare', 'landmatch');
+	assert.match(jsonc, /"name": "landmatch"/);
+	assert.match(jsonc, /"main": "\.svelte-kit\/cloudflare\/_worker\.js"/);
+	assert.match(jsonc, /"directory": "\.svelte-kit\/cloudflare"/);
+	assert.match(jsonc, /"binding": "ASSETS"/);
+	assert.match(jsonc, /"nodejs_als"/);
+	// Comments aside, the body is plain JSON - what jsonc parsers and
+	// wrangler itself read.
+	const body = jsonc
+		.split('\n')
+		.filter((line) => !line.trimStart().startsWith('//'))
+		.join('\n');
+	assert.doesNotThrow(() => JSON.parse(body));
 });
 
 test('Nuxt prerenders without wrangler, builds with it', () => {

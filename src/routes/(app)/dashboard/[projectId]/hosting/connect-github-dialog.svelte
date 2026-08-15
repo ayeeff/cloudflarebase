@@ -41,6 +41,7 @@
 		outputDir: string;
 		packageManager: 'npm' | 'pnpm' | 'yarn' | 'bun';
 		rootDirExists: boolean;
+		writesWrangler: boolean;
 	}
 
 	let {
@@ -71,6 +72,7 @@
 	let rootDir = $state('');
 	let rootDirMissing = $state(false);
 	let packageManager = $state<'npm' | 'pnpm' | 'yarn' | 'bun'>('npm');
+	let writesWrangler = $state(false);
 	let framework = $state<Inspection['framework']>(null);
 	let appName = $state('');
 	let showSettings = $state(false);
@@ -169,6 +171,7 @@
 			mode = inspection?.suggestedMode ?? 'build';
 			framework = inspection?.framework ?? null;
 			packageManager = inspection?.packageManager ?? 'npm';
+			writesWrangler = inspection?.writesWrangler ?? false;
 			// One field, two meanings: what direct mode publishes (repo-relative,
 			// so a subdirectory suggestion gets the root dir prefixed back on),
 			// or where a build lands relative to the root dir ('' = autodetect).
@@ -209,7 +212,9 @@
 					assetsDir: mode === 'direct' ? assetsDir.trim() : assetsDir.trim() || undefined,
 					buildCommand: mode === 'build' ? buildCommand.trim() || undefined : undefined,
 					rootDir: mode === 'build' ? rootDir.trim() || undefined : undefined,
-					packageManager: mode === 'build' ? packageManager : undefined
+					packageManager: mode === 'build' ? packageManager : undefined,
+					wranglerTemplate:
+						mode === 'build' && writesWrangler && framework ? framework.id : undefined
 				})
 			});
 			const body = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -392,6 +397,12 @@
 										/>
 									</div>
 								</div>
+							{/if}
+							{#if mode === 'build' && writesWrangler}
+								<p class="text-xs text-muted-foreground" data-testid="github-wrangler-note">
+									A <code class="font-mono">wrangler.jsonc</code> pointing at the adapter's output is
+									committed with the workflow - there is nothing to write by hand.
+								</p>
 							{/if}
 							{#if framework?.note}
 								<p class="text-xs text-amber-600 dark:text-amber-500" data-testid="github-note">
