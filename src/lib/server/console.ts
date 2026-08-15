@@ -335,22 +335,68 @@ export async function getConsoleIdentity(
 }
 
 /**
- * Whether the console has been claimed. Drives first-run setup: while this is
- * false the login page offers owner creation, and the agent permits exactly
- * one sign-up on the console project.
+ * Whether the console has been claimed - in THREE answers, not two.
+ *
+ * `unavailable` is the one that matters: an agent that could not be asked is
+ * not the same as a console with no owner, and collapsing them is what turns
+ * an outage into either a refused sign-in or - far worse for the claim gate -
+ * an ownership window that opens whenever the agent hiccups. Same lesson as
+ * resolveConsoleIdentity, which learned it the expensive way.
+ */
+export type ConsoleOwnerState = 'claimed' | 'unclaimed' | 'unavailable';
+
+/**
+ * Memoised `claimed` answers, per isolate.
+ *
+ * Claiming is one-way (the only thing that unclaims a console is the deliberate
+ * reset in console-setup.ts), so a positive answer stays true, and the claim
+ * gate consults this on every console sign-up and social sign-in - which on a
+ * console taking public sign-ups would otherwise fetch the whole operator list
+ * each time. Only `claimed` is cached: caching a negative would keep the gate
+ * open on stale information, and 60s bounds how long a reset stays invisible.
+ */
+const CLAIMED_TTL_MS = 60_000;
+const claimedUntil = new WeakMap<Fetcher, number>();
+
+export async function consoleOwnerState(
+	platform: App.Platform | undefined,
+	origin: string
+): Promise<ConsoleOwnerState> {
+	const agent = requireAuthAgent(platform);
+
+	const cached = claimedUntil.get(agent);
+	if (cached !== undefined && cached > Date.now()) return 'claimed';
+
+	const response = await agent
+		.fetch(agentUrl(origin, CONSOLE_PROJECT_ID, '/overview'))
+		.catch(() => null);
+	if (!response || !response.ok) return 'unavailable';
+
+	const body = await (response as unknown as Response).json().catch(() => null);
+	const parsed = consoleOverviewSchema.safeParse(body);
+	if (!parsed.success) return 'unavailable';
+
+	if (parsed.data.users.length === 0) return 'unclaimed';
+
+	claimedUntil.set(agent, Date.now() + CLAIMED_TTL_MS);
+	return 'claimed';
+}
+
+/** Forgets the memo, so a reset is visible to the claim gate immediately. */
+export function forgetConsoleOwnerState(platform: App.Platform | undefined): void {
+	const agent = requireAuthAgent(platform);
+	claimedUntil.delete(agent);
+}
+
+/**
+ * Whether the console has been claimed, for callers that render the same thing
+ * either way - the login page offers owner creation while this is false. The
+ * claim gate uses `consoleOwnerState` instead: it is the caller whose answer
+ * depends on WHY there is no owner.
  */
 export async function consoleOwnerExists(
 	platform: App.Platform | undefined,
 	origin: string
 ): Promise<boolean> {
-	const agent = requireAuthAgent(platform);
-	const response = await agent
-		.fetch(agentUrl(origin, CONSOLE_PROJECT_ID, '/overview'))
-		.catch(() => null);
-
-	if (!response || !response.ok) return false;
-
-	const body = await (response as unknown as Response).json().catch(() => null);
-	const parsed = consoleOverviewSchema.safeParse(body);
-	return parsed.success && parsed.data.users.length > 0;
+	return (await consoleOwnerState(platform, origin)) === 'claimed';
 }

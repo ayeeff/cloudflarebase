@@ -48,6 +48,20 @@ export interface DbAgentBindings {
 	LOCAL_ANALYTICS?: D1Database;
 	DEMO_MODE?: 'true';
 	DEMO_TTL_HOURS?: string;
+
+	/**
+	 * Serves the operator routes (`/overview`, `/admin/*`, the state-sync
+	 * socket, `/internal/*`) over HTTP. They carry NO authentication of their
+	 * own - `/admin/query` reads any collection whatever its access mode - so
+	 * set this only on a Worker with no public hostname, fronted by something
+	 * that authenticates operators.
+	 *
+	 * Unset (the default, and what `template/wrangler-fragment.jsonc` ships)
+	 * those routes 404 while the customer data paths (`/collections/*`,
+	 * `/tables/*`, `/realtime`, `/config`) serve normally. Your own code
+	 * reaches the agent through the Durable Object namespace either way.
+	 */
+	EXPOSE_OPERATOR_API?: 'true';
 }
 
 export type AssertDbAgentEnv<E extends DbAgentBindings> = E;

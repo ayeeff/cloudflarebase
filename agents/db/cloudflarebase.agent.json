@@ -17,9 +17,13 @@
 		"analyticsEngine": [{ "binding": "DB_EVENTS", "dataset": "cloudflarebase_db_events" }],
 		"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent", "optional": true }]
 	},
-	"secrets": { "generated": [], "optional": ["SENTRY_DSN"] },
+	"secrets": { "generated": [], "optional": [] },
 	"vars": {
-		"TRUSTED_ORIGINS": { "default": "", "hint": "Extra origins beyond the deployment's own." }
+		"TRUSTED_ORIGINS": { "default": "", "hint": "Extra origins beyond the deployment's own." },
+		"SENTRY_DSN": {
+			"default": "",
+			"hint": "Error reporting; empty disables it. A var, not a secret - a DSN is public by design."
+		}
 	},
 	"routes": [
 		{ "path": "/collections/*", "access": "public" },

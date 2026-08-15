@@ -68,6 +68,44 @@ an `AUTH_AGENT` service binding for multi-worker deployments - in the normal
 single-worker install, having `@cloudflarebase/auth` in the same Worker is
 enough for token verification. No secret is required for a working deploy.
 
+## What your Worker serves
+
+Mounting the default export publishes the data plane to the internet, which
+is the point - your app calls it:
+
+| Route                                        | Who calls it                |
+| -------------------------------------------- | --------------------------- |
+| `/agents/db-agent/<projectId>/collections/*` | Documents, queries, sockets |
+| `/agents/db-agent/<projectId>/tables/*`      | Rows, SQL, sockets          |
+| `/agents/db-agent/<projectId>/realtime`      | The one-socket gateway      |
+| `/agents/db-agent/<projectId>/config`        | Public client config        |
+
+Each of those enforces the collection's or table's access mode, its
+permission keys, and its validators on every request.
+
+`/admin/*` and `/overview` are the **operator plane**, and they enforce none
+of that by design - `/admin/query` reads any collection whatever its access
+mode, and `/admin/.../import` and `/restore` rewrite one. They are meant to
+sit behind a console that has already checked who is calling. On your Worker
+there is no such console, so they answer 404.
+
+Reach them from your own code through the `DbAgent` Durable Object namespace
+binding, which no HTTP caller can:
+
+```ts
+import { getAgentByName } from 'agents';
+
+const agent = await getAgentByName(env.DbAgent, projectId);
+const result = await agent.fetch(`https://agent/agents/db-agent/${projectId}/admin/query`, {
+	method: 'POST',
+	body: JSON.stringify({ collection: 'orders', query: { limit: 10 } }),
+});
+```
+
+If you would rather serve them over HTTP, put your own authentication in
+front and set `"EXPOSE_OPERATOR_API": "true"`. Only do that on a Worker with
+no public hostname of its own.
+
 ## Limits (per collection)
 
 A collection is one Durable Object: 10 GB of SQLite, roughly 1k requests/s,

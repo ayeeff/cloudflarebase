@@ -56,10 +56,25 @@
 		"binding": "AI"
 	},
 
-	// No required secrets: a fresh clone deploys with zero configuration.
-	// ADMIN_SECRET is optional - /admin (the fleet dashboard) reports itself
-	// unconfigured until you enable it with `wrangler secret put ADMIN_SECRET`.
-	// cloudflarebase.com's own environments below do require it.
+	// No required secrets: a fresh clone DEPLOYS with zero configuration.
+	//
+	// CONSOLE_SETUP_TOKEN is the exception worth reading twice: deploying needs
+	// nothing, but CLAIMING the console - creating the first operator account -
+	// requires it (src/lib/server/console-setup.ts). Without that, ownership
+	// goes to whoever reaches the URL first, and workers.dev names are
+	// guessable. Set it when you are ready to claim:
+	//
+	//   npx wrangler secret put CONSOLE_SETUP_TOKEN
+	//
+	// Deliberately NOT in a `secrets.required` block, though it is required in
+	// every sense that matters. That validation fails `wrangler deploy` when
+	// the secret is absent, and a Worker that does not exist yet cannot be
+	// given one - `wrangler secret put` answers 10007 and `.dev.vars` answers
+	// 10057 (workers-sdk#14258), leaving `--secrets-file` as the only way in.
+	// Declaring it here would therefore break the FIRST deploy of every fresh
+	// clone. The console refuses to be claimed without it either way; the only
+	// difference would be whether you learn that from a deploy error or from
+	// the login page, which prints the exact command.
 
 	"services": [
 		{ "binding": "AUTH_AGENT", "service": "auth-agent" },
@@ -118,12 +133,15 @@
 		"local": {
 			"routes": [],
 
-			// ADMIN_SECRET gates the /admin fleet dashboard. Plain var only in
-			// local/test; set it with `wrangler secret put ADMIN_SECRET` (and
-			// `--env preview`) for deployed environments.
+			// CONSOLE_SETUP_UNLOCKED switches OFF the first-run claim gate, so the
+			// dev loop can claim the console at any time without a token. Local
+			// only - on a deployed console this var is the vulnerability the gate
+			// exists to close, so it appears in no other environment (the e2e
+			// stack proves the gate instead, with a token) and it is honoured only
+			// for a loopback hostname.
 			"vars": {
-				"ADMIN_SECRET": "local-admin-secret",
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+				"CONSOLE_SETUP_UNLOCKED": "true",
 				"DEMO_MODE": "true"
 			},
 
@@ -168,12 +186,15 @@
 		"test": {
 			"routes": [],
 
-			// Fixed test-only admin password; keep aligned with wrangler.e2e.jsonc.
 			// No `ai` binding on purpose: e2e chat requests take the 502 path
 			// deterministically, exactly like the test auth agent before it.
+			// CONSOLE_SETUP_TOKEN is a plain var here because the suite needs it:
+			// the claim gate stays ON in test - console.setup.ts unlocks with this
+			// token, which is what keeps the real first-run path covered end to
+			// end. Keep aligned with wrangler.e2e.jsonc.
 			"vars": {
-				"ADMIN_SECRET": "e2e-admin-secret",
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+				"CONSOLE_SETUP_TOKEN": "e2e-console-setup-token-not-a-secret",
 				"DEMO_MODE": "true"
 			},
 
@@ -247,10 +268,7 @@
 					"namespace_id": "4511764381",
 					"simple": { "limit": 1000, "period": 10 }
 				}
-			],
-			"secrets": {
-				"required": ["ADMIN_SECRET"]
-			}
+			]
 		},
 
 		// Preview is a version-level environment of the SAME Worker, not a
@@ -294,10 +312,7 @@
 				{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" },
 				{ "binding": "DB_AGENT", "service": "db-agent-preview" },
 				{ "binding": "HOSTING_AGENT", "service": "hosting-agent-preview" }
-			],
-			"secrets": {
-				"required": ["ADMIN_SECRET"]
-			}
+			]
 		}
 	}
 

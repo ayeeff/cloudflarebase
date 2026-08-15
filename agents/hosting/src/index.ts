@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/cloudflare';
 import { getAgentByName, routeAgentRequest } from 'agents';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { HostingAgent as HostingAgentBase } from './agent';
+import { gateOperatorRoutes } from './route-access';
 import { appNameSchema, projectIdSchema, subdomainSchema } from './schemas';
 
 /**
@@ -106,6 +107,15 @@ class HostingService extends WorkerEntrypoint<Env> {
 		if (url.pathname === '/health') {
 			return Response.json({ service: 'hosting-agent', status: 'ok' });
 		}
+
+		// Past the serving path, every surface this worker has deploys code,
+		// mints subdomains, or writes secrets, and none of them authenticate a
+		// caller: the console guard is the gate, and the package cannot assume
+		// one exists - the documented consumer install mounts this handler on
+		// their own PUBLIC Worker. Closed unless the deployment says otherwise
+		// (src/route-access.ts); a no-op wherever EXPOSE_OPERATOR_API is set.
+		const gated = gateOperatorRoutes(url, this.env);
+		if (gated) return gated;
 
 		const erase = url.pathname.match(/^\/internal\/projects\/([^/]+)$/);
 		if (erase && request.method === 'DELETE') {

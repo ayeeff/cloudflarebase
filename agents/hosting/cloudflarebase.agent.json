@@ -11,9 +11,13 @@
 	"bindings": {},
 	"secrets": {
 		"generated": [],
-		"optional": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN", "SENTRY_DSN"]
+		"optional": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN"]
 	},
 	"vars": {
+		"SENTRY_DSN": {
+			"default": "",
+			"hint": "Error reporting; empty disables it. A var, not a secret - a DSN is public by design."
+		},
 		"HOSTING_DOMAIN": {
 			"default": "",
 			"hint": "Apex domain apps serve under (e.g. cfbase.dev). Empty disables the serving path."

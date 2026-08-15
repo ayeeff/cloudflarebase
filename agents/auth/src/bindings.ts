@@ -21,9 +21,9 @@
 /**
  * `DurableObjectNamespace` is branded by its agent class, and the class you
  * bind is the Sentry-instrumented subclass rather than `AuthAgent` itself. The
- * brand is not worth reproducing across a package boundary - `fleet.ts` already
- * casts through it internally - so the contract checks that the binding exists
- * and is a namespace, and leaves the instance type to the caller.
+ * brand is not worth reproducing across a package boundary, so the contract
+ * checks that the binding exists and is a namespace, and leaves the instance
+ * type to the caller.
  *
  * `any` is the only argument that accepts every parameterisation: the namespace
  * is effectively invariant, so `never` and `unknown` each fail one direction of
@@ -40,12 +40,22 @@ export interface AuthAgentBindings {
 	AuthAgent: AnyDurableObjectNamespace;
 
 	/**
-	 * Workers Analytics Engine dataset for auth events. Writes need no API
-	 * credentials and the dataset auto-creates on first write, so there is no
-	 * reason for a deployment to lack it - every environment in the shipped
-	 * wrangler configuration declares it.
+	 * Workers Analytics Engine dataset for auth events. OPTIONAL, and the reason
+	 * is a deploy-time one rather than a runtime one: Analytics Engine is an
+	 * account-level opt-in with no API and no Wrangler flag, so declaring this
+	 * binding makes `wrangler deploy` fail outright with
+	 * `no_access_to_analytics_engine` (code 10089) on any account that has never
+	 * enabled it in the dashboard. Requiring it meant a first deploy could not
+	 * succeed at all.
+	 *
+	 * It buys nothing on its own either: reading these events needs
+	 * CF_ACCOUNT_ID + CF_ANALYTICS_API_TOKEN, both optional, so an install
+	 * without them was writing datapoints nobody could ever read.
+	 *
+	 * Unset, every write is skipped (`this.env.AUTH_EVENTS?.writeDataPoint`) and
+	 * the agent is otherwise unaffected - analytics simply report nothing.
 	 */
-	AUTH_EVENTS: AnalyticsEngineDataset;
+	AUTH_EVENTS?: AnalyticsEngineDataset;
 
 	/** Workers AI. Required only for `POST /chat`, which 502s without it. */
 	AI?: Ai;
@@ -99,6 +109,20 @@ export interface AuthAgentBindings {
 	/** Empty disables reporting, which is the default - no DSN is committed. */
 	SENTRY_DSN?: string;
 	SENTRY_ENV?: string;
+
+	/**
+	 * Serves the operator routes (`/overview`, `/analytics`, `/chat`,
+	 * `/admin/*`, the state-sync socket, `/internal/*`) over HTTP. They carry
+	 * NO authentication of their own - the caller is trusted because of where
+	 * the request could have come from - so set this only on a Worker with no
+	 * public hostname, fronted by something that authenticates operators.
+	 *
+	 * Unset (the default, and what `template/wrangler-fragment.jsonc` ships)
+	 * those routes 404 and only the manifest's `public` routes answer, which
+	 * is what a Worker that also serves your app needs. Your own code reaches
+	 * the agent through the Durable Object namespace either way.
+	 */
+	EXPOSE_OPERATOR_API?: 'true';
 
 	/** Test-only. Exhausting persisted rate-limit buckets breaks reused stacks. */
 	DISABLE_RATE_LIMIT?: 'true';

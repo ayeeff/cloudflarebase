@@ -1,4 +1,5 @@
 import { activeOrg } from '$lib/console';
+import { isCrawler } from '$lib/server/crawler';
 import { recordDemoProject } from '$lib/server/demo-log';
 import { listProjects } from '$lib/server/registry';
 import { redirect } from '@sveltejs/kit';
@@ -24,8 +25,15 @@ const PROJECT_PATTERN = /^demo-[a-f0-9]{12,20}$/;
  * org - made "All projects" bounce straight back and left the org surfaces
  * unreachable.
  */
-export const load: PageServerLoad = async ({ cookies, locals, platform }) => {
+export const load: PageServerLoad = async ({ cookies, locals, platform, request }) => {
 	if (locals.demoMode && !locals.consoleUser) {
+		// A crawler is an anonymous visitor, so it used to be handed a real demo
+		// project - one Durable Object and one all-time counter row per crawl,
+		// for traffic that will never open it. Send it to the page that is
+		// actually meant to be indexed instead; the console carries
+		// X-Robots-Tag: noindex either way (hooks.server.ts).
+		if (isCrawler(request.headers.get('user-agent'))) redirect(307, '/');
+
 		let projectId = cookies.get(COOKIE);
 		if (!projectId || !PROJECT_PATTERN.test(projectId)) {
 			projectId = `demo-${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`;

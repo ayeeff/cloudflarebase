@@ -15,7 +15,7 @@ import { and, count, desc, eq, gte, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import { AGENT_REGISTRY, type AppAgentEntry } from '$lib/agent-registry';
 import { dbQuerySchema, type AgentChatMessage } from '$lib/agents';
-import { agentUrl, requireAgent } from '$lib/server/agents';
+import { agentSegment, agentUrl, requireAgent } from '$lib/server/agents';
 import { chatMessage } from '$lib/server/db/schema';
 import type { ControlPlaneDatabase } from '$lib/server/db';
 import type { RequestEvent } from '@sveltejs/kit';
@@ -295,7 +295,12 @@ const COPILOT_TOOLS: CopilotTool[] = [
 			return fetchAgentTool(
 				ctx,
 				AGENT_REGISTRY.db,
-				`/admin/tables/${encodeURIComponent(parsed.data.table)}/sql`,
+				// agentSegment, not encodeURIComponent: the latter leaves a bare
+				// `..` intact, and this segment is chosen by the model - which
+				// means by anything that reached the model, including data it
+				// read out of this project. A dot segment resolves inside the
+				// agent URL exactly like a decoded route parameter would.
+				`/admin/tables/${agentSegment(parsed.data.table)}/sql`,
 				{
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },

@@ -32,8 +32,29 @@
 	"workers_dev": false,
 	"preview_urls": false,
 	"vars": {
+		/**
+		 * Serves the agent's own surfaces (/overview, /apps/*, /deploys, the
+		 * state-sync socket, /internal/*) over HTTP. They carry no
+		 * authentication of their own - the console guard in front of them is
+		 * the gate, and this Worker is only reachable through it: the wildcard
+		 * route serves deployed APPS and never our surfaces, workers_dev and
+		 * preview_urls are false, so the dashboard's service binding is the
+		 * sole way in. Every environment below repeats it for the same reason.
+		 *
+		 * Serving a deployed app is unaffected: that path runs on the wildcard
+		 * hostname, before any of this.
+		 *
+		 * A Worker that ALSO serves an application (the shape the published
+		 * package installs into) must leave this unset - see
+		 * template/wrangler-fragment.jsonc.
+		 */
+		"EXPOSE_OPERATOR_API": "true",
 		// Empty on purpose: a committed DSN would collect every fork's errors.
-		// Set your own with `wrangler secret put SENTRY_DSN` to turn it on.
+		// Optional - error reporting is off until you set one, and nothing else
+		// changes. Put your own DSN HERE: a DSN is public by design (the web
+		// app ships one to the browser), so it is a var, and a
+		// `wrangler secret put SENTRY_DSN` would lose to this line on the next
+		// deploy - the var is uploaded as a plain_text binding of that name.
 		"SENTRY_DSN": "",
 		"SENTRY_ENV": "production",
 		// Apex domain apps serve under. Empty disables the serving path - set it
@@ -58,6 +79,7 @@
 				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }],
 			},
 			"vars": {
+				"EXPOSE_OPERATOR_API": "true",
 				"SENTRY_DSN": "",
 				"SENTRY_ENV": "development",
 				// No Cloudflare API locally: deploys are recorded in the agent and
@@ -73,6 +95,7 @@
 				"bindings": [{ "class_name": "HostingAgent", "name": "HostingAgent" }],
 			},
 			"vars": {
+				"EXPOSE_OPERATOR_API": "true",
 				"SENTRY_DSN": "",
 				"SENTRY_ENV": "test",
 				// The e2e suite runs the full CLI -> console -> agent contract
@@ -108,6 +131,7 @@
 				},
 			],
 			"vars": {
+				"EXPOSE_OPERATOR_API": "true",
 				// Committed on purpose: env.production is cloudflarebase.com's own
 				// block (forks deploy the top level, whose DSN stays empty), same as
 				// the auth/db/web workers.
@@ -152,6 +176,7 @@
 				},
 			],
 			"vars": {
+				"EXPOSE_OPERATOR_API": "true",
 				"SENTRY_DSN": "https://093f7505d223a871223f9a15130ef116@o4510375271530496.ingest.de.sentry.io/4511764377043024",
 				"SENTRY_ENV": "preview",
 				// Preview's own apex, matching the route above - so a preview

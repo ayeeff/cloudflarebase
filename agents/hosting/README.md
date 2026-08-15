@@ -35,6 +35,23 @@ served apps (dispatch namespace, API token, wildcard route).
   injected `PROJECT_ID` / `CLOUDFLAREBASE_URL` vars so the SDK works out of
   the box.
 
+## What your Worker serves
+
+Nothing, over HTTP. Every route this agent has - `/overview`, `/apps/*`
+(deploys, secrets), `/deploys`, the state-sync socket, `/internal/*` -
+deploys code, mints subdomains, or writes secrets, and none of them
+authenticate a caller: they are meant to sit behind a console that already
+has. Mounted on your own public Worker they answer 404.
+
+Serving deployed apps is unaffected - that runs on your wildcard hostname,
+ahead of everything else.
+
+Drive deploys from your own code through the `HostingAgent` Durable Object
+namespace binding, which no HTTP caller can reach. To serve the routes over
+HTTP instead, put your own authentication in front and set
+`"EXPOSE_OPERATOR_API": "true"` - only on a Worker with no public hostname of
+its own.
+
 ## License
 
 Apache-2.0. See NOTICE.

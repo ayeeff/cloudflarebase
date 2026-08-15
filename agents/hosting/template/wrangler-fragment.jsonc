@@ -36,8 +36,33 @@
 		"HOSTING_DOMAIN": "",
 		// The Workers for Platforms dispatch namespace name (see header).
 		"DISPATCH_NAMESPACE": "",
-		// Set your own with `wrangler secret put SENTRY_DSN` to turn on error
-		// reporting; empty disables it.
+		/**
+		 * DELIBERATELY ABSENT: "EXPOSE_OPERATOR_API": "true".
+		 *
+		 * Every route this agent serves deploys code, mints subdomains, writes
+		 * secrets, or reports what is deployed, and none of them authenticate a
+		 * caller - they are meant to sit behind a console that already has. On
+		 * this Worker, which serves your application on a public hostname, they
+		 * answer 404. Serving deployed apps on your wildcard hostname is
+		 * unaffected.
+		 *
+		 * Your own code is unaffected too: reach the agent through the
+		 * HostingAgent Durable Object namespace binding, which no HTTP caller
+		 * can.
+		 *
+		 * Set it ONLY on a Worker that has no public hostname of its own
+		 * (workers_dev false, no route beyond the app wildcard) and is fronted
+		 * by something that authenticates operators.
+		 */
+		/**
+		 * OPTIONAL. Empty disables error reporting, which is the default and a
+		 * perfectly good place to stay - nothing else about the agent changes.
+		 *
+		 * To turn it on, put your DSN on the line below. It belongs here as a
+		 * var and not in `wrangler secret put`: a Sentry DSN is public by
+		 * design, and this line is uploaded as a plain_text binding of the same
+		 * name, so it would override a secret you set under it.
+		 */
 		"SENTRY_DSN": "",
 	},
 	"secrets": {

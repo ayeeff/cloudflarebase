@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import ConsoleShell from '$lib/components/console-shell.svelte';
@@ -25,6 +25,41 @@
 	// renders this page.
 	const demoWithoutConsole = $derived(claiming && data.demoMode);
 
+	// The first-run claim hands over the whole deployment, so it needs proof
+	// the claimer controls it - a fresh deploy, or the setup token
+	// (src/lib/server/console-setup.ts). Without one there is no form to offer:
+	// submitting it would only be refused by the guard.
+	const setupLocked = $derived(claiming && !data.demoMode && !data.setup.unlocked);
+	let setupToken = $state('');
+	let unlocking = $state(false);
+	let unlockError = $state<string | null>(null);
+
+	async function submitUnlock(event: SubmitEvent) {
+		event.preventDefault();
+		unlocking = true;
+		unlockError = null;
+		try {
+			const response = await fetch('/api/console/setup', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ token: setupToken })
+			});
+			if (!response.ok) {
+				const body = (await response.json().catch(() => null)) as { error?: string } | null;
+				unlockError = body?.error ?? 'Could not unlock setup.';
+				return;
+			}
+			setupToken = '';
+			// Staying on the page - the load re-runs and the claim form replaces
+			// this one. No goto, so none of the redirect races apply.
+			await invalidateAll();
+		} catch {
+			unlockError = 'Could not reach the console.';
+		} finally {
+			unlocking = false;
+		}
+	}
+
 	const socialLabels: Record<string, string> = {
 		google: 'Google',
 		github: 'GitHub'
@@ -42,7 +77,8 @@
 	// bare error page.
 	const oauthErrors: Record<string, string> = {
 		account_not_linked: 'This email signed up with a password - use it to sign in.',
-		unable_to_create_user: 'Sign-up was refused. A claimed console admits invited emails only.'
+		unable_to_create_user: 'Sign-up was refused. A claimed console admits invited emails only.',
+		setup_locked: 'Console setup is locked - unlock it before claiming ownership.'
 	};
 	const oauthError = page.url.searchParams.get('error');
 
@@ -247,7 +283,13 @@
 
 <svelte:head>
 	<title
-		>{demoWithoutConsole ? 'Demo deployment' : claiming ? 'Set up your console' : 'Sign in'} · Cloudflarebase</title
+		>{demoWithoutConsole
+			? 'Demo deployment'
+			: setupLocked
+				? 'Setup locked'
+				: claiming
+					? 'Set up your console'
+					: 'Sign in'} · Cloudflarebase</title
 	>
 	<meta name="robots" content="noindex" />
 </svelte:head>
@@ -266,13 +308,60 @@
 			<div class="space-y-3">
 				<Button href={resolve('/dashboard')} class="w-full">Try the demo</Button>
 				<p class="text-xs text-muted-foreground">
-					Running this deployment yourself? Fleet monitoring lives at <a
-						class="underline"
-						href={resolve('/admin')}>/admin</a
-					>, behind its own secret. To get a private console with real projects, deploy without
-					<code class="font-mono">DEMO_MODE</code>.
+					Running this deployment yourself? To get a private console with real projects, deploy
+					without <code class="font-mono">DEMO_MODE</code>.
 				</p>
 			</div>
+		</div>
+	{:else if setupLocked}
+		<div data-testid="console-setup-locked" class="space-y-6">
+			<div class="space-y-1.5">
+				<h1 class="text-2xl font-semibold tracking-tight">Setup is locked</h1>
+				<p class="text-sm text-muted-foreground">
+					Nobody owns this console yet, and claiming it needs proof you deployed it - knowing the
+					URL is not enough. Set a setup token from a terminal with access to this Cloudflare
+					account:
+				</p>
+			</div>
+
+			<code class="block rounded-md border bg-muted/50 p-2 font-mono text-xs"
+				>npx wrangler secret put CONSOLE_SETUP_TOKEN</code
+			>
+			<p class="text-xs text-muted-foreground">
+				At least 24 characters. It applies immediately - no redeploy - and you enter it once, here,
+				to create the owner account.
+			</p>
+
+			<form class="space-y-4" onsubmit={submitUnlock} data-testid="console-setup-form">
+				<div class="space-y-1.5">
+					<Label for="setup-token">Setup token</Label>
+					<Input
+						id="setup-token"
+						type="password"
+						bind:value={setupToken}
+						required
+						autocomplete="off"
+						data-testid="console-setup-token"
+					/>
+				</div>
+				{#if data.setup.tokenTooShort}
+					<p class="text-sm text-destructive">
+						CONSOLE_SETUP_TOKEN is set but too short to be a credential - use at least 24
+						characters.
+					</p>
+				{/if}
+				{#if unlockError}
+					<p class="text-sm text-destructive" data-testid="console-setup-error">{unlockError}</p>
+				{/if}
+				<Button
+					type="submit"
+					class="w-full"
+					disabled={unlocking}
+					data-testid="console-setup-submit"
+				>
+					{unlocking ? 'Working…' : 'Unlock setup'}
+				</Button>
+			</form>
 		</div>
 	{:else if verifyNotice}
 		<div data-testid="console-verify-notice" class="space-y-6">

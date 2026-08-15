@@ -21,12 +21,15 @@
 			"GITHUB_CLIENT_ID",
 			"GITHUB_CLIENT_SECRET",
 			"CF_ACCOUNT_ID",
-			"CF_ANALYTICS_API_TOKEN",
-			"SENTRY_DSN"
+			"CF_ANALYTICS_API_TOKEN"
 		]
 	},
 	"vars": {
 		"TRUSTED_ORIGINS": { "default": "", "hint": "Extra origins beyond the deployment's own." },
+		"SENTRY_DSN": {
+			"default": "",
+			"hint": "Error reporting; empty disables it. A var, not a secret - a DSN is public by design."
+		},
 		"WAE_DATASET": { "default": "cloudflarebase_auth_events" },
 		"CHAT_MODEL": { "default": "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }
 	},

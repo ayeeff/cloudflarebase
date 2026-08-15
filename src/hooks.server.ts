@@ -4,6 +4,7 @@ import { CONSOLE_DASHBOARD_PAGES, CONSOLE_PROJECT_ID, RESERVED_PROJECT_IDS } fro
 import { projectIdSchema } from '$lib/schemas/auth';
 import { agentFetcher, agentUrl, serverError } from '$lib/server/agents';
 import { isDemoMode, isDemoProjectId, resolveConsoleIdentity } from '$lib/server/console';
+import { guardConsoleClaim } from '$lib/server/console-setup';
 import { verifyGithubDeployGrant } from '$lib/server/github-connect';
 import {
 	deployTokenCoversProject,
@@ -100,17 +101,39 @@ const applicationHandle: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
+/**
+ * Keeps the console out of search results.
+ *
+ * `/dashboard` on a demo deployment hands an anonymous visitor a throwaway
+ * project - and a crawler is an anonymous visitor, so Googlebot followed the
+ * landing page's demo link, was redirected into `demo-<hex>`, and indexed that
+ * page under the `/dashboard` URL. The indexed project is erased by the demo
+ * TTL days later, leaving a dead id as the site's dashboard result.
+ *
+ * A header rather than robots.txt: a disallowed URL is never fetched, so a
+ * `noindex` in the markup would never be seen and an already-indexed URL would
+ * stay indexed forever. This is served on every response, including the guard's
+ * redirects and 401s, which is what lets Google drop what it already has.
+ */
+const PRIVATE_SURFACES = ['/dashboard', '/login', '/cli-auth', '/api', '/agents'];
+
+const noindexHandle: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+	const { pathname } = event.url;
+	if (PRIVATE_SURFACES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) {
+		// Responses proxied from an agent carry immutable headers; the console
+		// pages this actually targets do not, and a crawler never reaches those.
+		try {
+			response.headers.set('x-robots-tag', 'noindex, nofollow');
+		} catch {
+			// Nothing to do - an unmodifiable response is agent traffic, not a page.
+		}
+	}
+	return response;
+};
+
 const apiRateLimitHandle: Handle = async ({ event, resolve }) => {
-	// `/admin` is in scope as well as `/api`: its login action is a password
-	// form the console guard never sees (the route classifies as open and
-	// carries its own ADMIN_SECRET check), so without this it is the one
-	// credential surface on the deployment that nothing throttles at all. It
-	// also fans out to every project agent once authenticated.
-	const limited =
-		event.url.pathname === '/api' ||
-		event.url.pathname.startsWith('/api/') ||
-		event.url.pathname === '/admin' ||
-		event.url.pathname.startsWith('/admin/');
+	const limited = event.url.pathname === '/api' || event.url.pathname.startsWith('/api/');
 	if (limited) {
 		const limiter = event.platform?.env?.API_RATE_LIMITER;
 
@@ -198,6 +221,13 @@ function classifyAccess(pathname: string): Access {
 			segments.length === 3 &&
 			(segments[2] === 'webhook' || segments[2] === 'callback')
 		) {
+			return { scope: 'open' };
+		}
+		// The first-run setup unlock. Public for the same reason as the two
+		// above: an unclaimed console has no session to authenticate against,
+		// and CONSOLE_SETUP_TOKEN - writable only with Cloudflare account
+		// credentials - is the credential the route checks.
+		if (segments[1] === 'console' && segments[2] === 'setup' && segments.length === 3) {
 			return { scope: 'open' };
 		}
 		// Registry mutations name their project in the path; surfacing the id
@@ -329,6 +359,12 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		if (access.projectId && !(await publicProjectReachable(event, access.projectId))) {
 			return noSuchProject('api');
 		}
+		// The console's auth surface is public so the login page can exist, and
+		// on an UNCLAIMED console that surface hands out ownership of the whole
+		// deployment. Arriving first is not a credential: the claim has to prove
+		// control of the deployment itself (src/lib/server/console-setup.ts).
+		const unproven = await guardConsoleClaim(event);
+		if (unproven) return unproven;
 		return resolve(event);
 	}
 
@@ -531,6 +567,9 @@ export const handle = sequence(
 	platformHandle,
 	cloudflareSentryHandle,
 	sentryHandle(),
+	// Outside the guard: its redirects and 401s are responses a crawler sees
+	// too, and they need the header as much as a rendered page does.
+	noindexHandle,
 	apiRateLimitHandle,
 	// Must precede applicationHandle: that one forwards /agents/* straight to
 	// the agent worker, so the guard is the last chance to reject.

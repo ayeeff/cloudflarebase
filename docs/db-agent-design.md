@@ -172,12 +172,12 @@ Each phase lands green (`npm run check`, `npm run lint`, per-package `npx tsc --
 			"GOOGLE_CLIENT_ID",
 			"GOOGLE_CLIENT_SECRET",
 			"CF_ACCOUNT_ID",
-			"CF_ANALYTICS_API_TOKEN",
-			"SENTRY_DSN"
+			"CF_ANALYTICS_API_TOKEN"
 		]
 	},
 	"vars": {
 		"TRUSTED_ORIGINS": { "default": "", "hint": "Extra origins beyond the deployment's own." },
+		"SENTRY_DSN": { "default": "", "hint": "Error reporting; empty disables it." },
 		"WAE_DATASET": { "default": "cloudflarebase_auth_events" },
 		"CHAT_MODEL": { "default": "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }
 	},
@@ -230,9 +230,10 @@ schema design):
 		"analyticsEngine": [{ "binding": "DB_EVENTS", "dataset": "cloudflarebase_db_events" }],
 		"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent", "optional": true }]
 	},
-	"secrets": { "generated": [], "optional": ["SENTRY_DSN"] },
+	"secrets": { "generated": [], "optional": [] },
 	"vars": {
-		"TRUSTED_ORIGINS": { "default": "", "hint": "Extra origins beyond the deployment's own." }
+		"TRUSTED_ORIGINS": { "default": "", "hint": "Extra origins beyond the deployment's own." },
+		"SENTRY_DSN": { "default": "", "hint": "Error reporting; empty disables it." }
 	},
 	"routes": [
 		{ "path": "/collections/*", "access": "public" },

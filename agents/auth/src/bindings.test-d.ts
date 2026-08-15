@@ -28,10 +28,9 @@ import type { AssertAuthAgentEnv } from './bindings';
  */
 export type _SelfCheck = AssertAuthAgentEnv<Env>;
 
-/** The two required bindings and nothing else. */
+/** The one required binding and nothing else. */
 interface ConsumerMinimal {
 	AuthAgent: DurableObjectNamespace<AuthAgent>;
-	AUTH_EVENTS: AnalyticsEngineDataset;
 }
 export type _Minimal = AssertAuthAgentEnv<ConsumerMinimal>;
 
@@ -48,14 +47,20 @@ interface ConsumerFull {
 }
 export type _Full = AssertAuthAgentEnv<ConsumerFull>;
 
-/** Forgot the Analytics Engine dataset. */
-interface ConsumerMissingEvents {
+/**
+ * No Analytics Engine dataset. VALID: the binding is optional because
+ * Analytics Engine is an account-level opt-in with no API, so requiring it
+ * made a first `wrangler deploy` impossible on an account that never enabled
+ * it (`no_access_to_analytics_engine`, code 10089). Writes are skipped and
+ * nothing else changes.
+ */
+interface ConsumerNoEvents {
 	AuthAgent: DurableObjectNamespace<AuthAgent>;
+	AI: Ai;
 }
-// @ts-expect-error AUTH_EVENTS is required and must be named in the error.
-export type _MissingEvents = AssertAuthAgentEnv<ConsumerMissingEvents>;
+export type _NoEvents = AssertAuthAgentEnv<ConsumerNoEvents>;
 
-/** Bound the right name to the wrong resource. */
+/** Bound the right name to the wrong resource - still rejected when present. */
 interface ConsumerWrongType {
 	AuthAgent: DurableObjectNamespace<AuthAgent>;
 	AUTH_EVENTS: D1Database;

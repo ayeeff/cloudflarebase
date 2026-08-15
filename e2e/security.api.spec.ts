@@ -4,6 +4,7 @@ import {
 	authPath,
 	configPath,
 	CONSOLE_OWNER,
+	CONSOLE_SETUP_TOKEN,
 	CONSOLE_STORAGE_STATE,
 	consoleAuthPath,
 	dbAdminQueryPath,
@@ -103,18 +104,25 @@ test.describe('security boundaries', () => {
 		}
 	});
 
-	test('the fleet rollup and the erase route are not on the public path', async ({ request }) => {
-		// Both live outside /agents/*, so the dashboard's passthrough must never
-		// forward them - they are service-binding-only by topology.
-		const fleet = await request.get('/fleet/overview');
-		expect(fleet.status(), 'the fleet rollup is not a public route').not.toBe(200);
-
+	test('the erase route is not on the public path', async ({ request }) => {
+		// It lives outside /agents/*, so the dashboard's passthrough must never
+		// forward it - service-binding-only by topology.
 		const erase = await request.delete(`/internal/projects/${SEED_PROJECT}`);
 		expect(erase.status(), 'the erase route is not a public route').not.toBe(200);
 
-		// ...nor by dressing them up as an agent path.
-		const viaAgents = await request.get('/agents/auth-agent/fleet/overview');
+		// ...nor by dressing it up as an agent path.
+		const viaAgents = await request.delete(`/agents/auth-agent/internal/projects/${SEED_PROJECT}`);
 		expect(viaAgents.status()).not.toBe(200);
+	});
+
+	test('the retired fleet rollup is gone, not merely unreachable', async ({ request }) => {
+		// /admin and its ADMIN_SECRET were removed: a password-gated console page
+		// that fanned out to every project Durable Object. Demo accounting moved
+		// to a D1 query (src/lib/server/demo-log.ts).
+		for (const path of ['/admin', '/fleet/overview', '/agents/auth-agent/fleet/overview']) {
+			const response = await request.get(path);
+			expect(response.status(), `${path} must not answer`).not.toBe(200);
+		}
 	});
 
 	test('a session cookie is not a bearer token for another project', async ({ request }) => {
@@ -250,6 +258,90 @@ test.describe('security boundaries', () => {
 			await operator.delete(`/api/registry/projects/${project}`);
 			await operator.dispose();
 		}
+	});
+
+	/**
+	 * The first-run console claim (src/lib/server/console-setup.ts). The claim
+	 * hands over every operator surface on the deployment, and it used to be
+	 * gated on `count(user) === 0` - a fact about the world, not about the
+	 * claimer - so whoever guessed a self-hosted URL first became its owner.
+	 *
+	 * The claim path itself is covered by console.setup.ts, which unlocks with
+	 * the token before claiming. What is left to prove here is that the unlock
+	 * is not itself a way in.
+	 */
+	test('the setup unlock refuses everything but the configured token', async ({ request }) => {
+		const wrong = await request.post('/api/console/setup', { data: { token: 'wrong-token' } });
+		expect(wrong.status()).toBe(403);
+		expect(await wrong.text()).not.toContain('e2e-console-setup-token');
+
+		const missing = await request.post('/api/console/setup', { data: {} });
+		expect(missing.status()).toBe(403);
+
+		// A non-string token must not coerce into a match.
+		const wrongType = await request.post('/api/console/setup', { data: { token: true } });
+		expect(wrongType.status()).toBe(403);
+	});
+
+	/**
+	 * The reset reclaims a console whose owner is not you by erasing every
+	 * operator account, so the two things in front of it - a token-proved
+	 * unlock and an explicit confirmation - are the whole safety story.
+	 */
+	test('the console reset needs both an unlock and a confirmation', async ({
+		playwright,
+		baseURL
+	}) => {
+		const anonymous = await playwright.request.newContext({
+			baseURL,
+			extraHTTPHeaders: { origin: baseURL! }
+		});
+		try {
+			const unproven = await anonymous.delete('/api/console/setup', {
+				data: { confirm: 'erase-console-operators' }
+			});
+			expect(unproven.status(), 'no unlock, no reset').toBe(403);
+
+			const unlock = await anonymous.post('/api/console/setup', {
+				data: { token: CONSOLE_SETUP_TOKEN }
+			});
+			expect(unlock.ok()).toBeTruthy();
+
+			const unconfirmed = await anonymous.delete('/api/console/setup', {
+				data: { confirm: 'nope' }
+			});
+			expect(unconfirmed.status(), 'an unconfirmed reset must not erase anything').toBe(400);
+		} finally {
+			await anonymous.dispose();
+		}
+	});
+
+	/**
+	 * The console is crawlable so search engines can SEE the noindex - a
+	 * robots.txt Disallow would leave already-indexed demo pages stuck.
+	 */
+	test('console surfaces are marked noindex', async ({ request }) => {
+		for (const path of ['/login', '/dashboard']) {
+			const response = await request.get(path, { maxRedirects: 0 });
+			expect(response.headers()['x-robots-tag'], `${path} must not be indexable`).toContain(
+				'noindex'
+			);
+		}
+	});
+
+	/**
+	 * A crawler is an anonymous visitor, so /dashboard used to hand it a real
+	 * demo project - a Durable Object and an all-time counter row per crawl.
+	 */
+	test('a crawler is sent to the landing page instead of a demo project', async ({ request }) => {
+		const response = await request.get('/dashboard', {
+			maxRedirects: 0,
+			headers: {
+				'user-agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+			}
+		});
+		expect(response.status()).toBe(307);
+		expect(response.headers()['location']).toBe('/');
 	});
 
 	test('the db operator surface is closed on both hops', async ({ request }) => {
