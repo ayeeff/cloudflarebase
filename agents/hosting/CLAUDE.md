@@ -38,6 +38,28 @@ mechanism; `files` ships `dist`, `template`, `NOTICE`, and the manifest).
   filter grammar is `?tags=<tag>:yes`, so a colon inside a tag collides with
   it. Erase (`DELETE /internal/projects/:id`) bulk-deletes by that tag, then
   wipes the DO.
+- **Namespaced scripts run UNTRUSTED, so `caches.default` is forbidden** -
+  and every code deploy is therefore entered through a generated shim
+  (`wrapEntry` in `src/cloudflare.ts`). Untrusted mode is what isolates one
+  tenant from the next; in it the default cache throws
+  `not permitted to access the default cache` and `request.cf` is absent.
+  Frameworks call it unconditionally - SvelteKit's Cloudflare adapter opens
+  EVERY request with `caches.default.match(req)` - so before this, a stock
+  SvelteKit deploy answered 500 on every SSR path while its static assets
+  served fine (the asset layer answers before the Worker runs), and our own
+  Sentry called it "Hosting agent returned HTTP 500". The namespace-level
+  `trusted_workers` flag would lift the restriction by turning isolation off
+  for EVERY app at once - the opposite trade for a managed platform - so the
+  uploader wraps instead: `__cfbase_entry.js` imports `__cfbase_runtime.js`
+  first and re-exports the customer entry (`export *` keeps Durable Object
+  classes). ES modules evaluate imports depth-first in source order, which is
+  what makes a module-scope capture (`var s2 = caches.default`, exactly what
+  the adapter emits) see the neutralised methods. Named caches
+  (`caches.open`) are per-Worker in untrusted mode and are left alone.
+  Generated names take a free `__cfbase_*` slot, so a customer file of that
+  name is never shadowed. Pinned by `src/cloudflare.unit.test.ts` - the e2e
+  stack runs the stub, which uploads nothing, so this shape has no other
+  coverage.
 - **Limits ride the dispatch call**, not upload metadata:
   `DISPATCH.get(label, {}, { limits: { cpuMs: 50, subRequests: 50 } })`.
   Phase C changes this call, never the deployed scripts. Outbound parameters
@@ -109,7 +131,7 @@ deploy:production` / `deploy:preview` deploy it first. v1 is pass-through;
 | Command                     | Purpose                                                              |
 | --------------------------- | -------------------------------------------------------------------- |
 | `npx tsc --noEmit`          | Typecheck (also runs the `bindings.test-d.ts` contract negatives)    |
-| `npm run test:unit`         | Tar/gzip reader tests against a real archive (direct git deploys)    |
+| `npm run test:unit`         | Route gate, tar/gzip reader, and the injected cache-shim entry       |
 | `npm run migrations`        | Generate migrations after `src/db/schema.ts` edits, then inline them |
 | `npx wrangler types`        | Regenerate Worker types after binding changes                        |
 | `npm run dev`               | env.local on :8790 (stub mode)                                       |

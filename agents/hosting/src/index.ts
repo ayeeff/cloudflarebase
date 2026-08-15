@@ -100,7 +100,15 @@ class HostingService extends WorkerEntrypoint<Env> {
 		// app - our own surfaces exist only on non-serving hostnames.
 		const served = await this.serveIfAppHost(request, url);
 		if (served) {
-			await this.reportServerError(request, url, served);
+			// Reported as the DEPLOYED APP failing, never as this worker failing:
+			// a customer script that throws is their bug, and titling it
+			// "Hosting agent returned HTTP 500" sends every one of them to us
+			// wearing our own name. Kept (rather than dropped) because it is the
+			// only signal a whole class of apps is broken - which is how the
+			// Workers for Platforms default-cache restriction was found - and
+			// kept under ONE title so a hundred broken apps stay one issue with a
+			// subdomain tag, not a hundred issues.
+			await this.reportDispatchError(request, url, served);
 			return served;
 		}
 
@@ -265,6 +273,26 @@ class HostingService extends WorkerEntrypoint<Env> {
 				return brandedNotFound(label, domain);
 			}
 			throw error;
+		}
+	}
+
+	/** Records a 5xx a DEPLOYED APP answered with. Never replaces the response. */
+	private async reportDispatchError(request: Request, url: URL, response: Response): Promise<void> {
+		if (response.status < 500) return;
+		try {
+			const body = (await response.clone().text()).slice(0, 512);
+			Sentry.captureMessage('Deployed app returned HTTP 5xx', {
+				level: 'warning',
+				tags: {
+					'http.method': request.method,
+					'http.status_code': response.status,
+					subdomain: url.hostname.split('.')[0],
+				},
+				contexts: { response: { body } },
+				extra: { pathname: url.pathname },
+			});
+		} catch {
+			// reporting must never replace the response
 		}
 	}
 
