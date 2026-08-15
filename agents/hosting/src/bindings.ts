@@ -39,6 +39,20 @@ export interface HostingAgentBindings {
 	HOSTING_STUB?: 'true';
 	SENTRY_DSN?: string;
 	SENTRY_ENV?: string;
+
+	/**
+	 * Serves the agent's own routes (`/overview`, `/apps/*`, `/deploys`, the
+	 * state-sync socket, `/internal/*`) over HTTP. Every one of them deploys
+	 * code, mints subdomains, or writes secrets, and none authenticate a
+	 * caller - set this only on a Worker with no public hostname, fronted by
+	 * something that authenticates operators.
+	 *
+	 * Unset (the default, and what `template/wrangler-fragment.jsonc` ships)
+	 * they 404. Serving deployed apps on the wildcard hostname is unaffected,
+	 * and your own code reaches the agent through the Durable Object namespace
+	 * either way.
+	 */
+	EXPOSE_OPERATOR_API?: 'true';
 }
 
 export type AssertHostingAgentEnv<E extends HostingAgentBindings> = E;

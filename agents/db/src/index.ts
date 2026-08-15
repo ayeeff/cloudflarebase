@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/cloudflare';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { getAgentByName, routeAgentRequest } from 'agents';
 import { drainUnusedBody } from './access';
+import { gateOperatorRoutes } from './route-access';
 import { isDurableObjectReset, DbAgent as DbAgentBase } from './agent';
 import { DbCollection as DbCollectionBase } from './collection';
 import { DbGateway as DbGatewayBase, gatewayName } from './gateway';
@@ -187,6 +188,16 @@ class DbService extends WorkerEntrypoint<Env> {
 		if (url.pathname === '/health') {
 			return Response.json({ service: 'db-agent', status: 'ok' });
 		}
+
+		// The collection and table paths below are public by design and carry
+		// their own access modes and JWT gate. The operator plane behind them
+		// (/admin/*, /overview, state sync, /internal/*) carries none: the
+		// console guard is its gate, and the package cannot assume one exists -
+		// the documented consumer install mounts this handler on their own
+		// PUBLIC Worker. Closed unless the deployment says otherwise
+		// (src/route-access.ts); a no-op wherever EXPOSE_OPERATOR_API is set.
+		const gated = gateOperatorRoutes(url, this.env);
+		if (gated) return gated;
 
 		const erase = url.pathname.match(/^\/internal\/projects\/([^/]+)$/);
 		if (erase && request.method === 'DELETE') {

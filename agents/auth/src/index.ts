@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/cloudflare';
 import { getAgentByName, routeAgentRequest } from 'agents';
 import { WorkerEntrypoint } from 'cloudflare:workers';
+import { gateOperatorRoutes } from './route-access';
 import { AuthAgent as AuthAgentBase } from './agent';
 import { getFleetOverview } from './fleet';
 import { projectIdSchema } from './schemas';
@@ -44,6 +45,15 @@ class AuthService extends WorkerEntrypoint<Env> {
 		if (url.pathname === '/health') {
 			return Response.json({ service: 'auth-agent', status: 'ok' });
 		}
+
+		// Everything below this line is either an operator route or a
+		// control-plane one, and the package cannot assume a console guard sits
+		// in front of it: the documented consumer install mounts this handler on
+		// their own PUBLIC Worker. Closed unless the deployment says otherwise
+		// (src/route-access.ts). A no-op here, where EXPOSE_OPERATOR_API is on a
+		// worker that has no public hostname to begin with.
+		const gated = gateOperatorRoutes(url, this.env);
+		if (gated) return gated;
 
 		// Erases one project's auth data. Outside /agents/* for the same reason
 		// the fleet rollup is: reachable only over the dashboard's service

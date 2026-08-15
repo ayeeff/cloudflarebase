@@ -100,6 +100,20 @@ export interface AuthAgentBindings {
 	SENTRY_DSN?: string;
 	SENTRY_ENV?: string;
 
+	/**
+	 * Serves the operator routes (`/overview`, `/analytics`, `/chat`,
+	 * `/admin/*`, the state-sync socket, `/internal/*`) over HTTP. They carry
+	 * NO authentication of their own - the caller is trusted because of where
+	 * the request could have come from - so set this only on a Worker with no
+	 * public hostname, fronted by something that authenticates operators.
+	 *
+	 * Unset (the default, and what `template/wrangler-fragment.jsonc` ships)
+	 * those routes 404 and only the manifest's `public` routes answer, which
+	 * is what a Worker that also serves your app needs. Your own code reaches
+	 * the agent through the Durable Object namespace either way.
+	 */
+	EXPOSE_OPERATOR_API?: 'true';
+
 	/** Test-only. Exhausting persisted rate-limit buckets breaks reused stacks. */
 	DISABLE_RATE_LIMIT?: 'true';
 

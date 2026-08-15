@@ -28,8 +28,12 @@ test('uuidv7: later timestamps sort after earlier ones, lexicographically', () =
 });
 
 test('uuidv7: ids minted in the same millisecond stay ordered and unique', () => {
-	const now = Date.now() + 60_000;
-	const ids = Array.from({ length: 50 }, () => uuidv7({ msecs: now }));
+	// Minted the way the agent mints them - `v7()` with no arguments. Passing
+	// an explicit `msecs` would prove nothing about storage: that path skips
+	// the library's monotonic sequence counter and randomizes the sub-
+	// millisecond bits per call, so the ids come back out of order by design.
+	// A tight loop lands well inside one millisecond anyway.
+	const ids = Array.from({ length: 200 }, () => uuidv7());
 	assert.equal(new Set(ids).size, ids.length);
 	assert.deepEqual([...ids].sort(), ids);
 });

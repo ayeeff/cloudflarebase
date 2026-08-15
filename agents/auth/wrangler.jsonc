@@ -80,6 +80,20 @@
 		"SENTRY_ENV": "production",
 		"TRUSTED_ORIGINS": "",
 		"WAE_DATASET": "cloudflarebase_auth_events",
+		/**
+		 * Serves the operator plane (/overview, /analytics, /chat, /admin/*,
+		 * the state-sync socket, /internal/*) over HTTP. Those routes carry no
+		 * authentication of their own: the console guard in front of them is
+		 * the gate, and this Worker is only reachable through it - workers_dev
+		 * and preview_urls are false and no route is claimed, so the dashboard's
+		 * service binding is the sole way in. Every environment below repeats it
+		 * for the same reason.
+		 *
+		 * A Worker that ALSO serves an application (the shape the published
+		 * package installs into) must leave this unset - see
+		 * template/wrangler-fragment.jsonc.
+		 */
+		"EXPOSE_OPERATOR_API": "true",
 		"EMAIL_FROM": "",
 	},
 
@@ -140,6 +154,7 @@
 				"SENTRY_ENV": "production",
 				"TRUSTED_ORIGINS": "https://cloudflarebase.com",
 				"WAE_DATASET": "cloudflarebase_auth_events",
+				"EXPOSE_OPERATOR_API": "true",
 				"EMAIL_FROM": "auth@notifications.cloudflarebase.com",
 			},
 
@@ -196,6 +211,7 @@
 				"EMAIL_FROM": "auth@example.com",
 				"TRUSTED_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8788",
 				"WAE_DATASET": "cloudflarebase_auth_events_local",
+				"EXPOSE_OPERATOR_API": "true",
 			},
 
 			"analytics_engine_datasets": [
@@ -242,6 +258,7 @@
 				// on. A real demo deployment sets both.
 				"TRUSTED_ORIGINS": "http://localhost:8797,http://127.0.0.1:8797",
 				"WAE_DATASET": "cloudflarebase_auth_events_test",
+				"EXPOSE_OPERATOR_API": "true",
 			},
 
 			"analytics_engine_datasets": [
@@ -290,6 +307,7 @@
 				"SENTRY_ENV": "preview",
 				"TRUSTED_ORIGINS": "https://preview-cloudflarebase-com.cloudflarebase.workers.dev",
 				"WAE_DATASET": "cloudflarebase_auth_events_preview",
+				"EXPOSE_OPERATOR_API": "true",
 			},
 
 			"analytics_engine_datasets": [

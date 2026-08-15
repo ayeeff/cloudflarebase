@@ -75,6 +75,31 @@ function listPageSize(url: URL): number {
 }
 
 /**
+ * Escapes text interpolated into outbound mail. Organization names, inviter
+ * addresses, and reset URLs all end up inside an HTML body sent from the
+ * deployment's verified sender to an address the requester chose - markup
+ * that survives is a phishing link wearing our envelope. Attribute-safe as
+ * well as text-safe, since the URL lands in an `href`.
+ */
+function escapeHtml(value: string): string {
+	return value
+		.replaceAll('&', '&amp;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
+		.replaceAll('"', '&quot;')
+		.replaceAll("'", '&#39;');
+}
+
+/**
+ * Collapses the line breaks a header injection needs. The Email Service
+ * takes structured fields rather than raw headers, so this is a second lock
+ * on a door that should already be shut.
+ */
+function headerSafe(value: string): string {
+	return value.replaceAll(/[\r\n]+/g, ' ').trim();
+}
+
+/**
  * Reserved project id for the dashboard's own operator auth - Cloudflarebase
  * authenticating its console with the same stack it sells. Mirrored in the
  * app's src/lib/server/console.ts; keep both in sync.
@@ -765,15 +790,18 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			message.type === 'invitation'
 				? `${message.invitation?.inviter ?? 'A team member'} invited you to "${message.invitation?.organization ?? 'their organization'}" on Cloudflarebase. Sign in - or create an account with this email address - to accept.`
 				: 'Continue securely with the button below.';
-		const safeUrl = message.url
-			.replaceAll('&', '&amp;')
-			.replaceAll('"', '&quot;')
-			.replaceAll('<', '&lt;');
 		const text = `${action}: ${message.url}\n\n${intro}\n\nIf you did not request this, you can ignore this email.`;
-		const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:auto"><h1 style="font-size:22px">${action}</h1><p>${intro}</p><p><a href="${safeUrl}" style="display:inline-block;background:#f6821f;color:white;padding:12px 18px;border-radius:8px;text-decoration:none">${action}</a></p><p style="color:#666;font-size:13px">If you did not request this, you can ignore this email.</p></div>`;
+		// EVERY interpolation is escaped, not just the URL. An organization name
+		// is free text its creator chose, it reaches `action` (the heading AND
+		// the subject) and `intro`, and invitations go to any address the
+		// inviter types - so an unescaped name is an anchor of the attacker's
+		// choosing inside a mail our own verified sender delivers. The plain
+		// text part needs no escaping; the subject is stripped of the line
+		// breaks a header injection would need.
+		const html = `<div style="font-family:system-ui,sans-serif;max-width:560px;margin:auto"><h1 style="font-size:22px">${escapeHtml(action)}</h1><p>${escapeHtml(intro)}</p><p><a href="${escapeHtml(message.url)}" style="display:inline-block;background:#f6821f;color:white;padding:12px 18px;border-radius:8px;text-decoration:none">${escapeHtml(action)}</a></p><p style="color:#666;font-size:13px">If you did not request this, you can ignore this email.</p></div>`;
 
 		try {
-			await this.deliverEmail(message.to, `${action} · Cloudflarebase`, text, html);
+			await this.deliverEmail(message.to, headerSafe(`${action} · Cloudflarebase`), text, html);
 		} catch (error) {
 			// Verification mail is best-effort by design: the user row already
 			// exists when the send runs, so failing the sign-up here would tell

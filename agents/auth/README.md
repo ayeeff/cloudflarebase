@@ -57,6 +57,39 @@ A deployment trusts its own origin automatically, so sign-in works right after
 deploy. `TRUSTED_ORIGINS` (the CSRF allowlist) is only for extra origins:
 other domains serving your UI, or apps calling the API from elsewhere.
 
+## What your Worker serves
+
+Mounting the default export publishes two routes to the internet:
+
+| Route                                             | Who calls it            |
+| ------------------------------------------------- | ----------------------- |
+| `/agents/auth-agent/<projectId>/api/auth/*`       | Better Auth - your app  |
+| `/agents/auth-agent/<projectId>/config`           | Public client config    |
+
+Everything else - `/overview`, `/analytics`, `/chat`, `/admin/*` (users,
+sessions, roles, sign-in settings), the state-sync socket, `/internal/*` -
+is the **operator plane**, and it authenticates nobody. It is designed to sit
+behind a console that has already checked who is calling. On your Worker there
+is no such console, so those routes answer 404.
+
+Reach them from your own code through the `AuthAgent` Durable Object namespace
+binding, which no HTTP caller can:
+
+```ts
+import { getAgentByName } from 'agents';
+
+const agent = await getAgentByName(env.AuthAgent, projectId);
+const users = await agent.fetch(
+	`https://agent/agents/auth-agent/${projectId}/admin/users`
+);
+```
+
+If you would rather serve the operator routes over HTTP, put your own
+authentication in front of them and set `"EXPOSE_OPERATOR_API": "true"`. Only
+do that on a Worker with no public hostname of its own. On the Worker that
+serves your application, it publishes your user table and lets anyone grant
+themselves the `*` permission via `PUT /admin/roles`.
+
 ## Requirements
 
 `compatibility_flags: ["nodejs_compat", "nodejs_als"]` and

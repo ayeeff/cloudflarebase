@@ -82,6 +82,22 @@
 	 * which is only wanted on a public demo.
 	 */
 	"vars": {
+		/**
+		 * Serves the operator plane (/overview, /admin/*, the state-sync socket,
+		 * /internal/*) over HTTP. Those routes carry no authentication of their
+		 * own - the console guard in front of them is the gate, and this Worker
+		 * is only reachable through it: workers_dev and preview_urls are false
+		 * and no route is claimed, so the dashboard's service binding is the
+		 * sole way in. Every environment below repeats it for the same reason.
+		 *
+		 * The customer data paths (/collections/*, /tables/*, /realtime) are
+		 * public either way and carry their own access modes and JWT gate.
+		 *
+		 * A Worker that ALSO serves an application (the shape the published
+		 * package installs into) must leave this unset - see
+		 * template/wrangler-fragment.jsonc.
+		 */
+		"EXPOSE_OPERATOR_API": "true",
 		// Empty on purpose: a committed DSN would collect every fork's errors.
 		// Set your own with `wrangler secret put SENTRY_DSN` to turn it on.
 		"SENTRY_DSN": "",
@@ -137,6 +153,7 @@
 			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent" }],
 
 			"vars": {
+				"EXPOSE_OPERATOR_API": "true",
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
 				// Same Sentry project as the rest of the production deployment
@@ -188,6 +205,7 @@
 			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-local" }],
 
 			"vars": {
+				"EXPOSE_OPERATOR_API": "true",
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
 				"TRUSTED_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8789",
@@ -237,6 +255,7 @@
 			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-test" }],
 
 			"vars": {
+				"EXPOSE_OPERATOR_API": "true",
 				// DEMO_MODE is deliberately NOT set on the agent here, while the web
 				// Worker does set it - mirroring the auth agent's env.test reasoning:
 				// the web flag lets anonymous demo traffic past the console guard,
@@ -297,6 +316,7 @@
 			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" }],
 
 			"vars": {
+				"EXPOSE_OPERATOR_API": "true",
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
 				// Same Sentry project as the rest of the preview deployment.
