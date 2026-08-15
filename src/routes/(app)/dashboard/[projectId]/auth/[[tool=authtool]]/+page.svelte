@@ -737,10 +737,13 @@
 				const result = (await response.json().catch(() => null)) as { error?: string } | null;
 				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
 			}
-			await refreshData(data.projectId);
 		} catch (error) {
 			authError = error instanceof Error ? error.message : String(error);
 		} finally {
+			// Refresh on failure too: a REFUSED change (the console's own-admin
+			// guards answer 409) must snap the select back to the real role
+			// instead of displaying an assignment that never happened.
+			await refreshData(data.projectId);
 			busy = false;
 		}
 	}
