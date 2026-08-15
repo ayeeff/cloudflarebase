@@ -178,7 +178,9 @@ async function managedDeploy(
 	if (!moduleCount && !assetCount) {
 		throw new UserError(
 			'Nothing to deploy - no Worker main and no assets directory.',
-			'Build your app first, or set "assets" in cloudflarebase.json.'
+			'Build your app first, or set "assets" in cloudflarebase.json.\n' +
+				'Framework apps need their Cloudflare adapter: SvelteKit @sveltejs/adapter-cloudflare, ' +
+				'Next.js @opennextjs/cloudflare (adapter-auto and plain `next build` emit nothing deployable).'
 		);
 	}
 

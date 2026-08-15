@@ -1,6 +1,7 @@
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parse as parseJsonc } from 'jsonc-parser';
+import { assetFilter } from './assetsignore.js';
 import { UserError } from './log.js';
 import { run } from './run.js';
 
@@ -202,18 +203,30 @@ export interface CollectedFile {
 }
 
 // Mirror the agent's caps so failures happen before any upload starts.
-const MAX_ASSET_COUNT = 1000;
-const MAX_ASSET_TOTAL_BYTES = 25 * 1024 * 1024;
+const MAX_ASSET_COUNT = 5000;
+const MAX_ASSET_TOTAL_BYTES = 40 * 1024 * 1024;
 
-/** Recursively collects an assets directory into `/path` entries. */
+/**
+ * Recursively collects an assets directory into `/path` entries, honouring
+ * the directory's `.assetsignore` (framework adapters write one - SvelteKit's
+ * lists `_worker.js`, which must never deploy as a public asset).
+ */
 export async function collectAssets(dir: string): Promise<CollectedFile[]> {
 	const files: CollectedFile[] = [];
 	let total = 0;
+	const ignore = assetFilter(
+		await readFile(path.join(dir, '.assetsignore'), 'utf8').catch(() => null)
+	);
 
 	async function walk(current: string, prefix: string): Promise<void> {
 		const entries = await readdir(current, { withFileTypes: true });
 		for (const entry of entries) {
-			if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+			// Dotfiles stay out of a deploy - except `.well-known`, which is a
+			// public directory by definition (specs put challenges there).
+			if (entry.name === 'node_modules') continue;
+			if (entry.name.startsWith('.') && entry.name !== '.well-known') continue;
+			const relative = prefix ? `${prefix.slice(1)}/${entry.name}` : entry.name;
+			if (ignore.ignores(relative)) continue;
 			const full = path.join(current, entry.name);
 			if (entry.isDirectory()) {
 				await walk(full, `${prefix}/${entry.name}`);
@@ -227,7 +240,7 @@ export async function collectAssets(dir: string): Promise<CollectedFile[]> {
 				throw new UserError(`More than ${MAX_ASSET_COUNT} asset files in ${dir}.`);
 			}
 			if (total > MAX_ASSET_TOTAL_BYTES) {
-				throw new UserError(`Assets in ${dir} exceed 25 MB.`);
+				throw new UserError(`Assets in ${dir} exceed 40 MB.`);
 			}
 		}
 	}
@@ -280,7 +293,9 @@ export async function findAssetsDirectory(
 		? [override]
 		: fromWrangler
 			? [fromWrangler]
-			: ['dist', 'build', 'public', '_site', 'out'];
+			: // `.output/public` before `public`: a Nuxt repo has BOTH, and
+				// `public/` is its source directory, not the built site.
+				['dist', 'build', '.output/public', 'public', '_site', 'out'];
 	for (const candidate of candidates) {
 		const full = path.resolve(projectDir, candidate);
 		try {
