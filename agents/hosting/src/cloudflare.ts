@@ -46,6 +46,85 @@ export interface PutScriptOptions {
 
 const API_BASE = 'https://api.cloudflare.com/client/v4';
 
+/**
+ * Workers for Platforms runs namespaced scripts in UNTRUSTED mode, which is
+ * what isolates one tenant from the next - and in that mode `caches.default`
+ * is disabled: touching it throws `This Worker is not permitted to access the
+ * default cache` (`request.cf` is absent for the same reason). Frameworks call
+ * it unconditionally - SvelteKit's Cloudflare adapter opens EVERY request with
+ * `caches.default.match(req)` - so an unmodified framework build answers 500
+ * on every path the asset layer does not serve, which is every SSR route.
+ *
+ * The namespace-level `trusted_workers` flag would lift it by turning tenant
+ * isolation off for every app at once, which is the opposite trade a managed
+ * platform wants. So each module deploy gets a generated entry instead: it
+ * imports the shim FIRST and re-exports the customer's entry. ES modules
+ * evaluate imports depth-first in source order, so the shim runs before the
+ * customer bundle's own body - which is what makes a module-scope capture
+ * (`var s2 = caches.default`, exactly what the SvelteKit adapter emits) pick
+ * up the neutralised methods rather than the forbidden ones.
+ *
+ * Named caches (`caches.open(...)`) are per-Worker in untrusted mode and keep
+ * working; only the shared default cache is patched.
+ */
+const CACHE_SHIM_SOURCE = `// Injected by Cloudflarebase: Workers for Platforms disables the default
+// cache for namespaced scripts, and frameworks call it unconditionally.
+try {
+	const cache = globalThis.caches?.default;
+	if (cache) {
+		cache.match = async () => undefined;
+		cache.put = async () => undefined;
+		cache.delete = async () => false;
+	}
+} catch {
+	// A runtime that exposes no Cache API needs no shim.
+}
+`;
+
+/**
+ * Returns the modules to upload and the entry to declare, with the cache shim
+ * wrapped around the customer's entry. Assets-only deploys (no main module)
+ * are returned untouched - there is no code to shim.
+ *
+ * Generated names carry a `__cfbase` prefix and a counter, so a customer file
+ * of the same name can never be shadowed by ours.
+ */
+export function wrapEntry(
+	modules: ModuleFile[],
+	mainModule: string | undefined,
+): { modules: ModuleFile[]; mainModule: string | undefined } {
+	if (!mainModule) return { modules, mainModule };
+
+	const taken = new Set(modules.map((module) => module.name));
+	const free = (base: string) => {
+		let name = `__cfbase_${base}.js`;
+		for (let suffix = 2; taken.has(name); suffix += 1) name = `__cfbase_${base}_${suffix}.js`;
+		taken.add(name);
+		return name;
+	};
+	const shimName = free('runtime');
+	const entryName = free('entry');
+
+	// JSON.stringify the specifiers: module names arrive from a CLI upload or a
+	// repository tarball, so they are never assumed to be quote-free.
+	const target = JSON.stringify(`./${mainModule}`);
+	const source = `import ${JSON.stringify(`./${shimName}`)};
+import * as entry from ${target};
+export * from ${target};
+export default entry.default;
+`;
+
+	const encoder = new TextEncoder();
+	return {
+		modules: [
+			...modules,
+			{ name: shimName, bytes: encoder.encode(CACHE_SHIM_SOURCE) },
+			{ name: entryName, bytes: encoder.encode(source) },
+		],
+		mainModule: entryName,
+	};
+}
+
 interface CfEnvelope<T> {
 	success: boolean;
 	errors?: { code?: number; message?: string }[];
@@ -171,6 +250,9 @@ export async function putScript(
 		bindings.push({ type: 'assets', name: 'ASSETS' });
 	}
 
+	// Every code deploy is entered through the generated shim entry.
+	const wrapped = wrapEntry(options.modules, options.mainModule);
+
 	const metadata: Record<string, unknown> = {
 		compatibility_date: options.compatibilityDate,
 		compatibility_flags: options.compatibilityFlags,
@@ -181,7 +263,7 @@ export async function putScript(
 		// Secrets are PATCHed separately; redeploys must never drop them.
 		keep_bindings: ['secret_text'],
 	};
-	if (options.mainModule) metadata.main_module = options.mainModule;
+	if (wrapped.mainModule) metadata.main_module = wrapped.mainModule;
 	if (options.assetsJwt) {
 		metadata.assets = {
 			jwt: options.assetsJwt,
@@ -199,7 +281,7 @@ export async function putScript(
 		new Blob([JSON.stringify(metadata)], { type: 'application/json' }),
 		'metadata',
 	);
-	for (const module of options.modules) {
+	for (const module of wrapped.modules) {
 		form.append(
 			module.name,
 			new Blob([module.bytes], { type: 'application/javascript+module' }),
