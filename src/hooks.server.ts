@@ -447,9 +447,19 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 			const grant = await verifyServiceKey(event.platform, serviceBearer.toLowerCase());
 			// Exact project, never a family: for data the branch IS the isolation
 			// boundary, and that is most of what branches are for.
+			//
+			// The registry row is checked too, even though the key already proves
+			// its project: keys are dropped with their project, so a key for a
+			// missing row means a delete fan-out that half-failed - and reaching
+			// an unregistered id is what mints a Durable Object by URL. Nearly
+			// free (projectExists memoizes positives per isolate), and `null` -
+			// the control plane being unreachable - proceeds, because the key was
+			// just verified against that same D1 a line ago.
 			if (grant && grant.projectId === access.projectId) {
-				event.locals.serviceKey = grant;
-				return resolve(event);
+				if ((await projectExists(event.platform, access.projectId)) !== false) {
+					event.locals.serviceKey = grant;
+					return resolve(event);
+				}
 			}
 		}
 		return Response.json({ error: 'invalid service key' }, { status: 401 });

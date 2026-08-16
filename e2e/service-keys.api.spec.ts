@@ -248,4 +248,59 @@ test.describe('service keys', () => {
 			await server.dispose();
 		}
 	});
+
+	/**
+	 * LAST, because it deletes the project. A key outlives its registry row only
+	 * after a delete fan-out that half-failed - and reaching an unregistered id
+	 * is precisely how a Durable Object gets minted by URL, which is the hole
+	 * the guard's registry check exists to close. The key verifies fine here;
+	 * the missing row is what refuses it.
+	 */
+	test('a key whose project is gone is refused, even though the key verifies', async ({
+		baseURL
+	}) => {
+		const operator = await playwrightRequest.newContext({
+			baseURL: base(baseURL),
+			extraHTTPHeaders: { origin: base(baseURL) },
+			storageState: 'e2e/.auth/console.json'
+		});
+		let orphan = '';
+		try {
+			const minted = await operator.post(`/api/projects/${KEY_PROJECT}/keys`, {
+				data: { name: 'orphan' }
+			});
+			expect(minted.status(), await minted.text()).toBe(201);
+			orphan = (await minted.json()).key;
+		} finally {
+			await operator.dispose();
+		}
+
+		const server = await serverContext(baseURL);
+		try {
+			// Positive control: live while the project is.
+			const alive = await server.get(`/api/projects/${KEY_PROJECT}/db/overview`, {
+				headers: { authorization: `Bearer ${orphan}` }
+			});
+			expect(alive.ok(), await alive.text()).toBeTruthy();
+
+			const operator2 = await playwrightRequest.newContext({
+				baseURL: base(baseURL),
+				extraHTTPHeaders: { origin: base(baseURL) },
+				storageState: 'e2e/.auth/console.json'
+			});
+			try {
+				const removed = await operator2.delete(`/api/registry/projects/${KEY_PROJECT}`);
+				expect([200, 207]).toContain(removed.status());
+			} finally {
+				await operator2.dispose();
+			}
+
+			const orphaned = await server.get(`/api/projects/${KEY_PROJECT}/db/overview`, {
+				headers: { authorization: `Bearer ${orphan}` }
+			});
+			expect(orphaned.status()).toBe(401);
+		} finally {
+			await server.dispose();
+		}
+	});
 });
