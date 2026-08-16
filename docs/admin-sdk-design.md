@@ -1,88 +1,111 @@
-# The Admin SDK — the server-side service path
+# The server-side service path
 
-> **Drafted 2026-08-16.** SK2 in `docs/service-keys-design.md`, widened: that
-> phase was scoped as `@cloudflarebase/db/admin` plus "the storage twin". It
-> is neither. The credential is verified at the CONSOLE, not at any agent, so
-> the SDK is one package across every primitive — Firebase's
+> **Drafted 2026-08-16, and reversed the same day.** The first draft of this
+> document proposed a new `@cloudflarebase/admin` npm package — Firebase's
 > `admin.firestore()/.auth()/.storage()`, Supabase's
-> `createClient(url, serviceRoleKey)`.
+> `createClient(url, serviceRoleKey)`. That was wrong, and the reasoning is
+> worth keeping (§3): **the unified server surface already exists**, at the
+> console, because that is where the key is verified. A package would have
+> wrapped HTTP calls that are already unified and already generated into a
+> reference, at the cost of a fourth artifact to version and keep in sync with
+> copied DTOs.
+>
+> What is actually missing is smaller and more useful: three holes in the
+> surface, and six routes missing from the generated reference.
 
 ## 1. The gap
 
-SK1 shipped the credential. There is no client.
+SK1 shipped the credential. What a server can do with it is incomplete in
+three places and invisible in a fourth.
 
-Today a server holding a `cfbs_` key writes hand-rolled `fetch` against
-`/api/projects/<id>/admin/*`, guessing at bodies that are documented only by
-the OpenAPI document. Worse, the shape of those routes is a *console's* shape
-— `POST /admin/query` with `{collection, query}` in the body — not a
-programmer's.
+- It cannot read a db **document** by id, at all (§5.1).
+- It cannot create, read, or update a **user** (§5.2).
+- It cannot read, write, or delete a storage **object** — the whole point of
+  storage (§5.3).
+- Six admin routes it *can* use are absent from the generated OpenAPI
+  document, so nothing tells a developer they exist (§6). One of them is the
+  table SQL endpoint — the escape hatch that gives tables the get-by-id
+  collections lack. It works today and is undiscoverable.
 
-The product ships **one client SDK in total**: `@cloudflarebase/db/client`,
-and it is the browser one. `@cloudflarebase/auth`, `@cloudflarebase/hosting`,
-and `@cloudflarebase/storage` export only a worker entrypoint, a wrangler
-fragment, and a manifest. There is no server-side story anywhere.
+## 2. The decision: no package
 
-## 2. Shape
-
-A new top-level npm project, beside `cli/` — **`@cloudflarebase/admin`**:
+**The REST API is the service path.** A server holds one `cfbs_` key, points
+at one origin, and calls `/api/projects/<id>/...`:
 
 ```ts
-import { createAdminClient } from '@cloudflarebase/admin';
+const cfb = (path, init) =>
+  fetch(`${process.env.CFBASE_URL}/api/projects/${process.env.CFBASE_PROJECT}${path}`, {
+    ...init,
+    headers: { authorization: `Bearer ${process.env.CFBASE_SERVICE_KEY}`, ...init?.headers }
+  });
 
-const cfb = createAdminClient({
-  url: 'https://cloudflarebase.com',   // the CONSOLE origin, always
-  projectId: 'acme-prod',
-  key: process.env.CFBASE_SERVICE_KEY  // cfbs_...
-});
-
-await cfb.db.collection('posts').get(id);
-await cfb.db.table('orders').query({ where: [{ field: 'status', op: '==', value: 'open' }] });
-await cfb.auth.createUser({ email, password });
-await cfb.storage.bucket('avatars').put(key, bytes);
+await cfb('/db/admin/collections/posts/documents/' + id);       // db
+await cfb('/admin/users');                                       // auth
+await cfb('/storage/admin/buckets/avatars/objects/' + key);      // storage
 ```
 
-One install, one key, one construction.
+That is the whole client. It needs no install, no version, and no
+synchronisation with four packages' DTOs.
 
-## 3. Why one package, and why NOT inside an agent
+What makes it a real service path rather than a shrug is the two things this
+document actually builds: an admin surface with no holes in it (§5), and a
+generated reference that describes all of it (§6).
 
-`@cloudflarebase/db/admin` looks like the obvious home. It is a category
-error.
+## 3. Why not a package (the reversal)
 
-**A service key is console-origin-only.** `isServiceKeySurface` matches
-exclusively under `/api/projects/<id>/`, the guard in `src/hooks.server.ts`
-verifies it against control-plane D1, and the request then travels to the
-agent over a SERVICE BINDING that the console has already authorized. The
-agent workers never see a `cfbs_` bearer and have no notion of one. A key
-does not work against `/agents/*` at all.
+The argument FOR one was ergonomics: `cfb.db.collection('posts').get(id)`
+reads better than a fetch wrapper, and Firebase and Supabase both ship one.
 
-So a `@cloudflarebase/db/admin` subpath would ship, inside the db package, a
-client that never calls the db worker — it calls the console. It would
-version with an agent it does not talk to.
+Three things defeat it.
 
-The *public* client is genuinely different and stays where it is: a project
-JWT is verified by the agent itself, which is why `createDbClient` documents
-working against either the direct agent base or the console proxy base.
+**The surface is already unified, and not by the SDK.** The key is verified in
+the console guard (`isServiceKeySurface` matches only under
+`/api/projects/<id>/`), and the request reaches each agent over a service
+binding the console has already authorized. The agent workers never see a
+`cfbs_` bearer and have no notion of one. One key, one origin, every
+primitive — before any client code exists. A package would not be *creating*
+the unified service path; it would be re-describing one.
 
-The admin SDK is a client of the **console API**. It depends on no agent
-package, copies its DTOs like everything else in this repo, and versions
-against the deployment.
+**The reference is generated, and a hand-written SDK is not.** `src/lib/openapi/`
+emits an OpenAPI 3.1 document per project from the same zod schemas the
+routes validate with, served at `/api/projects/<id>/openapi.json` and rendered
+by Scalar at `/dashboard/<id>/api`. It cannot drift from the routes. A
+hand-written client can, and would — that is what "keep the copies
+synchronized" already costs this repo four times over.
 
-## 4. The surface, service by service
+**It would have been a category error where it was first proposed.** SK2 in
+`service-keys-design.md` scoped this as `@cloudflarebase/db/admin` plus a
+storage twin. But a key does not work against `/agents/*` at all, so that
+subpath would have shipped, inside the db package, a client that never calls
+the db worker — versioned against an agent it does not talk to.
 
-What a key opens today (`isServiceKeySurface`: `db/**`, `storage/**`, auth
-`admin/**`, `/overview`, `/analytics`):
+The *public* client is genuinely different and stays: a project JWT is
+verified by the agent itself, which is why `createDbClient` documents working
+against either the direct agent base or the console proxy base. That SDK earns
+its place with live queries, socket multiplexing, and reconnect — real
+behaviour, not a header.
 
-| Service     | Reachable today                                                                                                                                                            | Missing                                                |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| **db**      | query, aggregate, configure/drop collections + tables, PUT/DELETE by id, table SQL, import/export, PITR, views, replication status                                          | **collections: get by id, patch** (§5.1)              |
-| **auth**    | list users, list sessions, set role, delete user, delete session, roles, settings                                                                                          | **createUser, getUser, updateUser, setPassword** (§5.2) |
-| **storage** | list buckets, configure/drop bucket, list objects, GET/HEAD/PUT/DELETE by key                                                                                              | — complete                                             |
-| **hosting** | nothing, deliberately                                                                                                                                                      | out of scope by design                                 |
+If ergonomics later prove to be the thing holding adoption back, the cheap
+answer is a generated client from the OpenAPI document, not a hand-maintained
+one.
 
-Hosting stays out: deploying is what deploy tokens are for, and the two blast
-radii stay separate (`service-keys-design.md` §3).
+## 4. What a key reaches, and what describes it
 
-## 5. The gaps are AGENT changes, not SDK ones
+| Service     | Reachable                                                                                          | In the reference           |
+| ----------- | ---------------------------------------------------------------------------------------------------- | -------------------------- |
+| **db**      | query, aggregate, configure/drop collections + tables, PUT/DELETE by id, table SQL, import/export, PITR, views, replication | 31 paths; 5 missing (§6)  |
+| **auth**    | list users, list sessions, set role, delete user, delete session, roles, settings                  | all 7                      |
+| **storage** | list buckets, configure/drop bucket — **objects are unreachable** (§5.3)                           | 2 paths; objects missing   |
+| **hosting** | nothing, deliberately — deploy tokens own that blast radius                                        | n/a                        |
+
+The proxy topology is not uniform, and that asymmetry is what produced §5.3.
+`db/admin/[...path]` is a catch-all, so any db admin route the agent adds is
+reachable with no console change at all. Auth's six admin routes are explicit
+per-route files, and storage has exactly two. Nothing generic backs them up:
+the only passthrough is `/agents/*` (plus WebSocket upgrades on the REST
+base), and a service key does not work there.
+
+## 5. The agent gaps
 
 ### 5.1 db collections cannot be read by id
 
@@ -92,106 +115,138 @@ no GET and no PATCH, and no way to emulate either: `compileQuery` turns every
 — is unreachable by any query the DSL can express. Neither `DbCollection` nor
 `DbTable` has an `adminGet` RPC to expose.
 
-**Tables already have an escape hatch and collections do not.** `POST
-/admin/tables/:name/sql` takes no JWT (it is guarded upstream by the console,
-which a service key satisfies) and its gate admits SELECT and DML, so
-`SELECT * FROM posts WHERE id = ?1` and `UPDATE posts SET ... WHERE id = ?2`
-work today. Collections have no raw-SQL surface by design.
+**Tables have an escape hatch; collections have none.** `POST
+/admin/tables/:name/sql` takes no JWT (guarded upstream by the console, which
+a service key satisfies) and its gate admits SELECT and DML, so
+`SELECT * FROM posts WHERE id = ?1` works today — see §6, it is simply
+undocumented.
 
-Fix: `adminGet`/`adminPatch` RPCs on both children (tables too — parity, and
-so the SDK is not two different shapes), routed as GET and PATCH on the
-existing item paths. Operator-grade like their PUT siblings: modes,
+Fix: `adminGet`/`adminPatch` RPCs on both children — tables too, for parity,
+so a caller does not need two different idioms — routed as GET and PATCH on
+the existing item paths. Operator-grade like their PUT siblings: modes,
 validators, and permission keys bypassed. PATCH merges shallowly into `data`,
-mirroring the public path's merge semantics.
+mirroring the public path.
 
 ### 5.2 auth cannot create a user
 
-The auth agent's admin surface is a *console's* surface: it lists, re-roles,
-and deletes. `admin.auth().createUser()` — the single most-used call in
-Firebase's Admin SDK — has no equivalent, nor does `getUser`, `updateUser`, or
-a password set.
+The auth agent's admin surface is a console's surface: it lists, re-roles, and
+deletes. `createUser` — the most-used call in Firebase's Admin SDK — has no
+equivalent, nor `getUser`, `updateUser`, or a password set.
 
 There is no workaround. `POST /api/projects/<id>/auth/sign-up/email` is the
-END-USER path: it is subject to the project's sign-up mode, it starts email
+END-USER path: subject to the project's sign-up mode, it starts email
 verification, and it is not admin-grade. Seeding accounts, migrating from
 another provider, and provisioning a service account are all impossible today.
 
 Fix: admin routes over Better Auth's own server API, which already has these
 operations. `user.role` keeps its `input: false` guard — role changes stay on
-the existing `PUT /admin/users/:id/role`, so there is exactly one writer.
+`PUT /admin/users/:id/role`, so there is exactly one writer.
 
-## 6. Throughput: the admin routes are parent-mediated
+Auth has no catch-all proxy, so each new route needs its `+server.ts` beside
+the existing six.
+
+### 5.3 storage objects are unreachable by service key
+
+The storage AGENT is complete: `/admin/buckets/:b/objects[/:key]` serves list,
+GET, HEAD, PUT, and DELETE, modes bypassed, operator-grade. The console never
+got a proxy route for it. `storage/admin/buckets/[bucketName]/+server.ts`
+matches that path and nothing below it, so
+`/api/projects/<id>/storage/admin/buckets/avatars/objects/logo.png` 404s at
+the router — before the agent is ever consulted.
+
+`isServiceKeySurface` admits `storage/**`, so the guard would allow it. There
+is simply nothing there to serve it.
+
+**Why nobody noticed**: both existing consumers reach objects through
+`/agents/storage-agent/<pid>/admin/buckets/<b>/objects/...` — the console's
+upload UI and the whole e2e suite (`e2e/helpers.ts`). That passthrough works
+for a session and is refused for a service key, which only matches under
+`/api/projects/<id>/`. Service keys are the first consumer that cannot use
+it.
+
+Fix is console-only: a `[...key]` proxy under
+`storage/admin/buckets/[bucketName]/objects/`, streaming the body rather than
+buffering it (the agent's whole design is that bytes never enter a DO, and a
+proxy that buffers a 100 MB PUT reintroduces exactly the memory bomb the
+`Content-Length` requirement exists to prevent).
+
+## 6. The reference gaps
+
+Present in the agents, absent from `src/lib/openapi/`:
+
+- `/db/admin/collections/{name}/documents/{docId}` — the collection twin of
+  `/db/admin/tables/{name}/rows/{rowId}`, which IS documented
+- `/db/admin/tables/{name}/sql` — §5.1's escape hatch
+- `/db/admin/settings`
+- `/db/admin/views/{name}`
+- `/db/admin/realtime`
+- `/storage/admin/buckets/{bucket}/objects[/{key}]`
+
+Cheap to close and worth more than any wrapper: these are the routes a server
+uses, and today the generated reference denies six of them exist.
+
+## 7. Throughput
 
 Every admin route is a proxy hop into a coordinator Durable Object, where the
 public paths are one hop to the shard. A hot server loop funnels through a
 single DO at ~1k req/s.
 
-v1 accepts this and documents it. `service-keys-design.md` §10.5 designs the
+Accepted and documented. `service-keys-design.md` §10.5 designs the
 alternative — admitting the key on the public shard paths — and defers it:
 that needs the AGENT to trust a header from the console's service binding, and
-that trust channel is precisely what SK1 avoided introducing. A throughput
-problem nobody has yet is not worth opening it for.
+that trust channel is precisely what SK1 avoided introducing. Not worth
+opening for a throughput problem nobody has yet. Where the caller *does* have
+a user context (an SSR route relaying its visitor), the public paths with a
+project JWT remain the better path, and the docs should say which is which.
 
-What the SDK should do meanwhile: document which calls are parent-mediated,
-and prefer the public paths WITH a project JWT wherever the caller actually
-has a user context (an SSR route relaying its visitor's identity does).
+## 8. Deploy ordering
 
-## 7. Deploy ordering
-
-**The new agent routes must be deployed before the SDK calls them.** An older
-deployed agent answers GET on a document path with a 404 that is
-indistinguishable from "no such document" — the `FOLLOWER_ID_PATTERN` and
-48-char project-id lesson, third occurrence.
-
-Two mitigations, both required:
-
-1. Ship the agent routes first, in their own release, and bump
-   `@cloudflarebase/auth` and `@cloudflarebase/db` before the SDK publishes.
-2. The SDK distinguishes them anyway: a 404 whose body is not the agent's
-   `{ error: 'no such document' }` shape is reported as an
-   agent-too-old error naming the required version, never as a missing record.
-   A silent wrong answer here is a data-loss-shaped bug — a caller that reads
-   "not found" and then writes will overwrite a record that exists.
+**The new agent routes must be deployed before anything calls them.** An older
+deployed agent answers GET on a document path with a 404 indistinguishable
+from "no such document" — the `FOLLOWER_ID_PATTERN` and 48-char project-id
+lesson, third occurrence. Conflating the two is data-loss-shaped: a caller
+that reads "not found" and then writes overwrites a record that exists.
 
 Deploy order stays auth → db → storage → hosting → web.
 
-## 8. Phases
+## 9. Phases
 
-- **A1 — db collection get/patch.** `adminGet`/`adminPatch` on `DbCollection`
-  and `DbTable`, GET/PATCH on the two item routes.
-- **A2 — auth user CRUD.** create/get/update/set-password admin routes.
-- **B — the package.** `@cloudflarebase/admin`: `.db`, `.auth`, `.storage`,
-  plus `.overview()` / `.analytics()`. Method names mirror
-  `@cloudflarebase/db/client` wherever the operation is the same, so the two
-  SDKs read alike.
-- **C — the edges.** e2e driving the real SDK against the live stack (positive
-  controls first — the SK1 lesson), Integration-tab snippets, README, and the
-  CLI's `key create --env-file` from SK3.
+Ordered cheapest-and-largest-effect first: §5.3 is console-only and restores a
+whole primitive, so it leads.
 
-## 9. Non-goals
+- **A1 — storage objects.** The missing `[...key]` proxy (§5.3). No agent
+  change, no redeploy of anything but the web worker.
+- **A2 — db collection get/patch.** `adminGet`/`adminPatch` on `DbCollection`
+  and `DbTable`; GET/PATCH on the two item routes. Reachable through the
+  existing catch-all with no console change.
+- **A3 — auth user CRUD.** create/get/update/set-password admin routes, plus
+  a proxy file each.
+- **B — the reference.** Close the six gaps in §6, and add whatever A1–A3
+  introduce.
+- **C — the edges.** e2e driving the real flows against the live stack
+  (positive controls first — the SK1 lesson), a Server tab snippet per agent
+  showing the key in use, README, and the CLI's `key create --env-file`.
 
-Hosting (§4). Realtime — `subscribe` needs a project JWT for the gateway, and
-a service key is deliberately not one; a server wanting live data uses the
-public client with a JWT. Read-only key tiers (SK1 non-goal, unchanged).
-Codegen from declared table schemas. Any per-collection or per-bucket scoping
-— that is what project JWTs with permission keys already do.
+## 10. Non-goals
 
-## 10. Risks
+An npm package (§3). Hosting (§4). Realtime — `subscribe` needs a project JWT
+for the gateway and a service key is deliberately not one; a server wanting
+live data uses the public client with a JWT. Read-only key tiers (SK1
+non-goal, unchanged). Codegen from declared table schemas.
 
-1. **Blast radius is unchanged from SK1** and is not widened here: the SDK
-   reaches exactly what the guard already admits. But it makes that reach
-   *ergonomic*, which is the point and also the hazard — the docs must keep
-   saying, in these words, that a service key is admin-grade over the whole
-   project's data.
+## 11. Risks
+
+1. **Blast radius is unchanged from SK1** and is not widened here. But
+   completing the surface makes that reach practical, which is the point and
+   also the hazard: the docs must keep saying, in these words, that a service
+   key is admin-grade over the whole project's data.
 2. **Admin semantics bypass validators and permission keys**, because
-   operator surfaces do. An SDK that looks like the public client will be
-   assumed to enforce like it. Method-level documentation, not a footnote.
+   operator surfaces do. Documenting these routes beside the public ones
+   invites the assumption that they enforce alike. Say it per route, not in a
+   footnote.
 3. **Operator surfaces skip the document size check.** `adminPut` writes
-   without `checkDocSize`, where the public path and `importDocs` both
-   enforce it. That was tolerable when a human in a dashboard was the only
-   caller; a server in a loop is not that. Pre-existing, worth closing, listed
-   here so adding `adminPatch` does not quietly extend it.
-4. **Deploy ordering** (§7) — the third instance of this failure mode.
-5. **A fourth published package** to version, release, and keep in sync with
-   copied DTOs. The release workflow already handles per-package version
-   detection, so the cost is real but bounded.
+   without `checkDocSize`, where the public path and `importDocs` both enforce
+   it. Tolerable when a human in a dashboard was the only caller; a server in
+   a loop is not that. Pre-existing — listed so adding `adminPatch` does not
+   quietly extend it.
+4. **Deploy ordering** (§8) — the third instance of this failure mode.
