@@ -20,7 +20,7 @@ export const agentManifestSchema = z.strictObject({
 		.array(
 			z.strictObject({
 				class: z.string().min(1),
-				scope: z.enum(['perProject', 'perCollection', 'perTable'])
+				scope: z.enum(['perProject', 'perCollection', 'perTable', 'perBucket'])
 			})
 		)
 		.min(1),
@@ -38,6 +38,15 @@ export const agentManifestSchema = z.strictObject({
 				z.strictObject({
 					binding: z.string(),
 					service: z.string(),
+					optional: z.boolean().optional()
+				})
+			)
+			.optional(),
+		r2: z
+			.array(
+				z.strictObject({
+					binding: z.string(),
+					bucketName: z.string().optional(),
 					optional: z.boolean().optional()
 				})
 			)

@@ -1,0 +1,27 @@
+CREATE TABLE `buckets` (
+	`name` text PRIMARY KEY NOT NULL,
+	`read_access` text DEFAULT 'auth' NOT NULL,
+	`write_access` text DEFAULT 'auth' NOT NULL,
+	`read_permission` text,
+	`write_permission` text,
+	`public_listing` integer DEFAULT false NOT NULL,
+	`max_object_bytes` integer,
+	`allowed_content_types` text,
+	`cache_control` text,
+	`config_version` integer DEFAULT 1 NOT NULL,
+	`object_count` integer DEFAULT 0 NOT NULL,
+	`total_bytes` integer DEFAULT 0 NOT NULL,
+	`created_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE `objects` (
+	`key` text PRIMARY KEY NOT NULL,
+	`size` integer NOT NULL,
+	`etag` text NOT NULL,
+	`content_type` text DEFAULT 'application/octet-stream' NOT NULL,
+	`owner` text DEFAULT '' NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `objects_owner_key_idx` ON `objects` (`owner`,`key`);

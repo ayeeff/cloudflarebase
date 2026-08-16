@@ -14,6 +14,13 @@ import {
 	SCRATCH_PROJECT,
 	SEED_PROJECT,
 	settingsPath,
+	STORAGE_PROJECT,
+	storageAdminObjectsPath,
+	storageBucketPath,
+	storageBucketsPath,
+	storageObjectPath,
+	storageObjectsPath,
+	storageOverviewPath,
 	uniqueEmail
 } from './helpers';
 
@@ -354,5 +361,130 @@ test.describe('security boundaries', () => {
 			data: { collection: 'anything', query: {} }
 		});
 		expect(direct.status()).toBe(401);
+	});
+
+	test('the storage operator plane is closed on every hop', async ({ request }) => {
+		const closed = [
+			storageOverviewPath(STORAGE_PROJECT),
+			storageBucketsPath(STORAGE_PROJECT),
+			`/agents/storage-agent/${STORAGE_PROJECT}/overview`,
+			`/agents/storage-agent/${STORAGE_PROJECT}/admin/buckets`,
+			storageAdminObjectsPath(STORAGE_PROJECT, 'anything'),
+			// The SDK state-sync socket path: broadcasting the bucket registry to
+			// an anonymous caller is exactly the leak the operator default stops.
+			`/agents/storage-agent/${STORAGE_PROJECT}`
+		];
+		for (const path of closed) {
+			const response = await request.get(path);
+			expect(response.status(), `${path} must not answer anonymously`).toBe(401);
+		}
+
+		// The erase fan-in stays off the public path, in every dressing.
+		const erase = await request.delete(`/agents/storage-agent/internal/projects/${SEED_PROJECT}`);
+		expect(erase.status()).not.toBe(200);
+	});
+
+	test('the public /buckets prefix serves ONLY object paths', async ({ request }) => {
+		// `/buckets/*` is public by manifest for the object paths - but the
+		// worker must refuse everything else under it BEFORE routeAgentRequest,
+		// or an anonymous WebSocket upgrade aimed at the SDK's state-sync
+		// router would ride the public classification into the agent and be
+		// streamed the bucket registry.
+		for (const path of [
+			`/agents/storage-agent/${STORAGE_PROJECT}/buckets`,
+			`/agents/storage-agent/${STORAGE_PROJECT}/buckets/sec-open`,
+			`/agents/storage-agent/${STORAGE_PROJECT}/buckets/sec-open/config`
+		]) {
+			const response = await request.get(path);
+			expect(response.status(), `${path} must not reach the agent`).toBe(404);
+		}
+	});
+
+	test('storage byte paths: default-deny, no tenant oracle, no key traversal', async ({
+		playwright,
+		baseURL,
+		request
+	}) => {
+		// The operator half of the setup opts back into the console session.
+		const operator = await playwright.request.newContext({
+			baseURL,
+			extraHTTPHeaders: { origin: baseURL! },
+			storageState: CONSOLE_STORAGE_STATE
+		});
+		// Its own project: the shared storage project's bucket count must stay
+		// under the 5-bucket cap the caps test pins.
+		const SEC_PROJECT = 'e2e-storage-sec';
+		try {
+			await ensureProject(operator, SEC_PROJECT);
+			const closed = await operator.put(storageBucketPath(SEC_PROJECT, 'sec-closed'), {
+				data: {}
+			});
+			expect([200, 201], await closed.text()).toContain(closed.status());
+			const open = await operator.put(storageBucketPath(SEC_PROJECT, 'sec-open'), {
+				data: { read: 'public', write: 'public' }
+			});
+			expect([200, 201], await open.text()).toContain(open.status());
+
+			// A bucket with default config answers 401 to every anonymous verb -
+			// secure the moment it exists, before anyone configures anything.
+			const objectPath = storageObjectPath(SEC_PROJECT, 'sec-closed', 'probe.txt');
+			expect((await request.get(objectPath)).status()).toBe(401);
+			expect(
+				(
+					await request.put(objectPath, {
+						data: 'x',
+						headers: { 'content-type': 'text/plain' }
+					})
+				).status()
+			).toBe(401);
+			expect((await request.delete(objectPath)).status()).toBe(401);
+			expect((await request.get(storageObjectsPath(SEC_PROJECT, 'sec-closed'))).status()).toBe(401);
+
+			// Unregistered and reserved ids answer the same "no such project" as
+			// the rest of the platform - never a storage-specific oracle.
+			for (const id of [`e2e-never-storage-${Date.now().toString(36)}`, 'fleet', 'admin']) {
+				const probe = await request.get(storageObjectPath(id, 'files', 'x.txt'));
+				expect(probe.status(), `${id} must not resolve`).toBe(404);
+			}
+
+			// Keys cannot traverse: whatever the spelling, a dot segment is
+			// refused before any R2 key is composed - the p/<project>/<bucket>/
+			// prefix is the tenant boundary.
+			for (const rawKey of [
+				'a%2F..%2F..%2Fother-project%2Fsecret',
+				'%2e%2e%2f%2e%2e%2fother',
+				'nul%00'
+			]) {
+				const response = await request.put(
+					`${storageObjectsPath(SEC_PROJECT, 'sec-open')}/${rawKey}`,
+					{ data: 'x', headers: { 'content-type': 'text/plain' } }
+				);
+				expect([400, 404], `${rawKey} answered ${response.status()}`).toContain(response.status());
+			}
+
+			// A literal `//` is collapsed by the console origin's HTTP stack
+			// before the agent classifies, so it lands as the NORMALIZED key -
+			// benign (every arriving segment is still validated, the tenant
+			// prefix is composed from validated parts), and pinned here so a
+			// change in that layer is noticed. The agent's own door refuses the
+			// raw spelling outright (keys.unit.test.ts).
+			const collapsed = await request.put(
+				`${storageObjectsPath(SEC_PROJECT, 'sec-open')}/sec//collapsed.txt`,
+				{ data: 'x', headers: { 'content-type': 'text/plain' } }
+			);
+			expect(collapsed.status(), await collapsed.text()).toBe(200);
+			expect((await collapsed.json()).object.key).toBe('sec/collapsed.txt');
+
+			// And a bare %2e%2e SEGMENT is resolved by URL normalization before
+			// classification, so it lands on (and is refused by) the operator
+			// plane rather than smuggling a public classification upstream.
+			const climbed = await request.put(
+				`/agents/storage-agent/${SEC_PROJECT}/buckets/sec-open/objects/%2e%2e/%2e%2e/%2e%2e/admin/buckets/sec-open`,
+				{ data: '{}', headers: { 'content-type': 'application/json' } }
+			);
+			expect(climbed.status()).toBe(401);
+		} finally {
+			await operator.dispose();
+		}
 	});
 });

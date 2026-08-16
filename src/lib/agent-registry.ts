@@ -2,6 +2,7 @@ import { z } from 'zod';
 import authManifestJson from '../../agents/auth/cloudflarebase.agent.json';
 import dbManifestJson from '../../agents/db/cloudflarebase.agent.json';
 import hostingManifestJson from '../../agents/hosting/cloudflarebase.agent.json';
+import storageManifestJson from '../../agents/storage/cloudflarebase.agent.json';
 
 /**
  * The agent manifest contract from docs/agent-contract.md.
@@ -28,7 +29,7 @@ export const agentManifestSchema = z.strictObject({
 		.array(
 			z.strictObject({
 				class: z.string().min(1),
-				scope: z.enum(['perProject', 'perCollection', 'perTable'])
+				scope: z.enum(['perProject', 'perCollection', 'perTable', 'perBucket'])
 			})
 		)
 		.min(1),
@@ -45,6 +46,15 @@ export const agentManifestSchema = z.strictObject({
 				z.strictObject({
 					binding: z.string(),
 					service: z.string(),
+					optional: z.boolean().optional()
+				})
+			)
+			.optional(),
+		r2: z
+			.array(
+				z.strictObject({
+					binding: z.string(),
+					bucketName: z.string().optional(),
 					optional: z.boolean().optional()
 				})
 			)
@@ -94,7 +104,7 @@ export type RouteAccess = z.infer<typeof routeAccessSchema>;
  */
 export interface AppAgentEntry {
 	manifest: AgentManifest;
-	binding: 'AUTH_AGENT' | 'DB_AGENT' | 'HOSTING_AGENT';
+	binding: 'AUTH_AGENT' | 'DB_AGENT' | 'HOSTING_AGENT' | 'STORAGE_AGENT';
 	devHost: string;
 }
 
@@ -115,6 +125,11 @@ export const AGENT_REGISTRY: Record<string, AppAgentEntry> = {
 		manifest: agentManifestSchema.parse(hostingManifestJson),
 		binding: 'HOSTING_AGENT',
 		devHost: 'localhost:8790'
+	},
+	storage: {
+		manifest: agentManifestSchema.parse(storageManifestJson),
+		binding: 'STORAGE_AGENT',
+		devHost: 'localhost:8791'
 	}
 };
 
@@ -169,6 +184,10 @@ export interface ConsoleNavSection {
 export function buildConsoleNav(projectId: string): ConsoleNavSection[] {
 	const sections = new Map<string, ConsoleNavSection>();
 	for (const { manifest } of Object.values(AGENT_REGISTRY)) {
+		// An agent whose console pages have not shipped yet (storage until S2)
+		// contributes no section - a bare header with nothing under it reads
+		// as broken, and the Coming-soon card already advertises it.
+		if (!manifest.console.pages.length) continue;
 		const section = sections.get(manifest.console.section) ?? {
 			section: manifest.console.section,
 			peek: 1,

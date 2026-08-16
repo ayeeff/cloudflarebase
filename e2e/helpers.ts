@@ -260,6 +260,44 @@ export function githubConnectionPath(projectId: string, app: string): string {
 /** The webhook is public by exception - its HMAC signature is the credential. */
 export const GITHUB_WEBHOOK_PATH = '/api/github/webhook';
 
+// --- Storage (docs/storage-agent-plan.md, S1) ---
+
+/** Project the storage specs self-seed. Buckets use FIXED names (creates are
+ * idempotent upserts) and objects carry per-run keys, so reused local stacks
+ * never collide with the 5-bucket project cap. */
+export const STORAGE_PROJECT = 'e2e-storage';
+
+export function storageOverviewPath(projectId: string): string {
+	return `/api/projects/${projectId}/storage/overview`;
+}
+
+export function storageBucketsPath(projectId: string): string {
+	return `/api/projects/${projectId}/storage/admin/buckets`;
+}
+
+export function storageBucketPath(projectId: string, bucket: string): string {
+	return `/api/projects/${projectId}/storage/admin/buckets/${encodeURIComponent(bucket)}`;
+}
+
+/** The PUBLIC object paths - the direct agent base, because bytes must not
+ * transit the JSON proxy (its handlers buffer bodies). */
+export function storageObjectsPath(projectId: string, bucket: string): string {
+	return `/agents/storage-agent/${projectId}/buckets/${bucket}/objects`;
+}
+
+export function storageObjectPath(projectId: string, bucket: string, key: string): string {
+	return `${storageObjectsPath(projectId, bucket)}/${key.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+/** The OPERATOR object surface (console-guard gated, modes bypassed). */
+export function storageAdminObjectsPath(projectId: string, bucket: string): string {
+	return `/agents/storage-agent/${projectId}/admin/buckets/${bucket}/objects`;
+}
+
+export function storageAdminObjectPath(projectId: string, bucket: string, key: string): string {
+	return `${storageAdminObjectsPath(projectId, bucket)}/${key.split('/').map(encodeURIComponent).join('/')}`;
+}
+
 export function projectBranchesPath(projectId: string): string {
 	return `/api/projects/${projectId}/branches`;
 }

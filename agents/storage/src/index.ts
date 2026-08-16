@@ -1,0 +1,785 @@
+import * as Sentry from '@sentry/cloudflare';
+import { getAgentByName, routeAgentRequest } from 'agents';
+import { WorkerEntrypoint } from 'cloudflare:workers';
+import { checkAccess, corsHeadersFor, drainUnusedBody, withCors } from './access';
+import { StorageAgent as StorageAgentBase, type BucketAccessAnswer } from './agent';
+import { StorageBucket as StorageBucketBase, type BucketIdentity } from './bucket';
+import { parseObjectKey, r2ObjectKey } from './keys';
+import { gateOperatorRoutes } from './route-access';
+import {
+	DEMO_PROJECT_PATTERN,
+	bucketNameSchema,
+	objectCursorSchema,
+	projectIdSchema,
+} from './schemas';
+
+/**
+ * storage-agent worker - the BYTE PATH lives here, not in a Durable Object.
+ *
+ * A Durable Object is 128 MB of memory and one thread; bytes never enter
+ * one. This stateless worker streams request bodies straight to R2 and dials
+ * the `StorageBucket` index only for small metadata RPCs. Everything else
+ * (overview, bucket admin, state sync) goes through `routeAgentRequest` to
+ * `StorageAgent`.
+ *
+ * Enforcement on the object paths (all of it here, because presigned/CDN
+ * variants share this code and must share the policy):
+ *
+ * - the R2 key is ALWAYS `p/<projectId>/<bucket>/<key>` composed from
+ *   schema-validated parts (keys.ts) - the only tenant boundary inside the
+ *   shared bucket,
+ * - per-bucket access modes + JWT + permission keys (access.ts), read from a
+ *   short per-isolate cache of the parent's answer - zero DO hops on cache
+ *   hits, restrictive flips converge within the TTL,
+ * - every object response carries `X-Content-Type-Options: nosniff`, and
+ *   inline rendering is an ALLOWLIST (raster images, video, audio,
+ *   text/plain, PDF) - everything else, HTML/SVG/XML above all, goes out
+ *   `Content-Disposition: attachment`. On the managed service the agent path
+ *   shares the console's origin, so an attacker-uploaded HTML file rendered
+ *   inline would be stored XSS against every operator session.
+ *
+ * `STORAGE_SERVE_DOMAIN` (e.g. cdn.cloudflarebase.com) optionally serves
+ * GET/HEAD at `/<projectId>/<bucket>/<key>` on a dedicated hostname - a
+ * WORKER route with identical enforcement. The R2 bucket itself must NEVER
+ * carry r2.dev or a custom domain: that serves every tenant's keys raw.
+ */
+
+const sentryOptions = (env: Env) => ({
+	dsn: env.SENTRY_DSN,
+	environment: env.SENTRY_ENV,
+	tracesSampleRate: 0.1,
+	enableRpcTracePropagation: true,
+});
+
+/** Workers request bodies cap at 100 MB on Free/Pro - also the single-PUT
+ * ceiling. Larger objects arrive with multipart in S2. */
+const MAX_SINGLE_PUT_BYTES = 100 * 1024 * 1024;
+/** How long an isolate trusts a bucket's access answer. */
+const ACCESS_CACHE_TTL_MS = 30_000;
+/** Misses and erasing answers re-ask sooner: a bucket created a moment ago
+ * must not read as missing for half a minute. */
+const NEGATIVE_CACHE_TTL_MS = 5_000;
+const ACCESS_CACHE_MAX = 5_000;
+const DEFAULT_PUBLIC_CACHE_CONTROL = 'public, max-age=60';
+
+/**
+ * Content types a browser may render INLINE from our origin. Everything else
+ * downloads. Notably absent by design: text/html, image/svg+xml, anything
+ * +xml (all scriptable), text/css and javascript (style/script injection).
+ */
+const INLINE_CONTENT_TYPES =
+	/^(image\/(png|jpe?g|gif|webp|avif|bmp|x-icon)|video\/[a-z0-9.+-]+|audio\/[a-z0-9.+-]+|text\/plain|application\/pdf)$/i;
+
+interface AccessCacheEntry {
+	answer: BucketAccessAnswer;
+	expires: number;
+}
+
+const accessCache = new Map<string, AccessCacheEntry>();
+
+function notConfigured(): Response {
+	return Response.json(
+		{
+			error:
+				'storage is not configured - this install needs an R2 bucket (enable R2 on the Cloudflare account, then add the BUCKET binding in wrangler.jsonc)',
+		},
+		{ status: 503 },
+	);
+}
+
+function erasingResponse(): Response {
+	return Response.json({ error: 'this project is being erased' }, { status: 503 });
+}
+
+interface ObjectRouteTarget {
+	projectId: string;
+	bucket: string;
+	/** null = the listing endpoint (`GET .../objects`). */
+	key: string | null;
+	/** Operator surface: access modes bypassed, console-guard gated. */
+	admin: boolean;
+}
+
+class StorageService extends WorkerEntrypoint<Env> {
+	override async fetch(request: Request): Promise<Response> {
+		const response = await this.dispatch(request);
+		await drainUnusedBody(request);
+		return response;
+	}
+
+	private async dispatch(request: Request): Promise<Response> {
+		const url = new URL(request.url);
+
+		// The dedicated serving hostname, when one is routed at this worker.
+		const cdn = this.serveDomainTarget(request, url);
+		if (cdn) {
+			const served = await cdn;
+			await this.reportServerError(request, url, served);
+			return served;
+		}
+
+		if (url.pathname === '/health') {
+			return Response.json({ service: 'storage-agent', status: 'ok' });
+		}
+
+		// The object paths below are public by design and carry their own
+		// per-bucket access modes and JWT gate. The operator plane (/overview,
+		// /admin/*, state sync, /internal/*) carries none: the console guard is
+		// its gate, and the package cannot assume one exists - the documented
+		// consumer install mounts this handler on their own PUBLIC Worker.
+		// Closed unless the deployment says otherwise (src/route-access.ts).
+		const gated = gateOperatorRoutes(url, this.env);
+		if (gated) return gated;
+
+		const erase = url.pathname.match(/^\/internal\/projects\/([^/]+)$/);
+		if (erase && request.method === 'DELETE') {
+			const projectId = decodeURIComponent(erase[1]);
+			if (!projectIdSchema.safeParse(projectId).success) {
+				return Response.json({ error: 'invalid project id' }, { status: 400 });
+			}
+			const agent = await getAgentByName<Env, StorageAgentBase>(this.env.StorageAgent, projectId);
+			await agent.destroy();
+			// The isolate must not keep trusting configs for an erased project.
+			for (const key of accessCache.keys()) {
+				if (key.startsWith(`${projectId}:`)) accessCache.delete(key);
+			}
+			return Response.json({ erased: true });
+		}
+
+		// /agents/storage-agent/<pid>/buckets/<b>/objects[/<key...>]
+		// /agents/storage-agent/<pid>/admin/buckets/<b>/objects[/<key...>]
+		const objects = url.pathname.match(
+			/^\/agents\/[^/]+\/([^/]+)\/(admin\/)?buckets\/([^/]+)\/objects(\/.*)?$/,
+		);
+		if (objects) {
+			const projectId = decodeURIComponent(objects[1]);
+			const bucket = decodeURIComponent(objects[3]);
+			if (
+				!projectIdSchema.safeParse(projectId).success ||
+				!bucketNameSchema.safeParse(bucket).success
+			) {
+				return Response.json({ error: 'invalid project or bucket name' }, { status: 400 });
+			}
+			const rawKey = objects[4]?.replace(/^\//, '') ?? '';
+			const target: ObjectRouteTarget = {
+				projectId,
+				bucket,
+				key: rawKey ? decodePathKey(rawKey) : null,
+				admin: objects[2] === 'admin/',
+			};
+			if (rawKey && target.key === null) {
+				return Response.json({ error: 'invalid object key encoding' }, { status: 400 });
+			}
+			const response = await this.handleObjects(request, url, target);
+			await this.reportServerError(request, url, response);
+			return response;
+		}
+
+		const response =
+			(await routeAgentRequest(request, this.env)) ??
+			Response.json({ error: 'not found' }, { status: 404 });
+
+		await this.reportServerError(request, url, response);
+		return response;
+	}
+
+	/**
+	 * GET/HEAD serving on the dedicated hostname (`STORAGE_SERVE_DOMAIN`):
+	 * `https://cdn.example.com/<projectId>/<bucket>/<key>`. Same pipeline,
+	 * same enforcement - only the path shape differs. Read-only by design:
+	 * writes stay on the agent surface where the console guard and CORS
+	 * policy already apply.
+	 */
+	private serveDomainTarget(request: Request, url: URL): Promise<Response> | null {
+		const domain = this.env.STORAGE_SERVE_DOMAIN;
+		if (!domain) return null;
+		let host = url.hostname;
+		if (this.env.STORAGE_SERVE_HOST_HEADER === 'true') {
+			// Test-only: local workerd is dialled by port, not hostname, so the
+			// e2e stack stands the serving host in via a header (the hosting
+			// stub's x-cfbase-host idiom). Ignored everywhere else.
+			const override = request.headers.get('x-cfbase-host');
+			if (override) host = override.split(':')[0];
+		}
+		if (host !== domain) return null;
+		if (request.method !== 'GET' && request.method !== 'HEAD' && request.method !== 'OPTIONS') {
+			return Promise.resolve(
+				Response.json(
+					{ error: 'method not allowed' },
+					{ status: 405, headers: { allow: 'GET, HEAD' } },
+				),
+			);
+		}
+		const match = url.pathname.match(/^\/([^/]+)\/([^/]+)(\/.*)?$/);
+		const projectId = match ? decodeURIComponent(match[1]) : '';
+		const bucket = match ? decodeURIComponent(match[2]) : '';
+		const rawKey = match?.[3]?.replace(/^\//, '') ?? '';
+		if (
+			!match ||
+			!rawKey ||
+			!projectIdSchema.safeParse(projectId).success ||
+			!bucketNameSchema.safeParse(bucket).success
+		) {
+			return Promise.resolve(Response.json({ error: 'not found' }, { status: 404 }));
+		}
+		const key = decodePathKey(rawKey);
+		if (key === null) {
+			return Promise.resolve(Response.json({ error: 'not found' }, { status: 404 }));
+		}
+		return this.handleObjects(request, url, { projectId, bucket, key, admin: false });
+	}
+
+	// -----------------------------------------------------------------
+	// The object paths
+
+	private async handleObjects(
+		request: Request,
+		url: URL,
+		target: ObjectRouteTarget,
+	): Promise<Response> {
+		if (DEMO_PROJECT_PATTERN.test(target.projectId)) {
+			// No demo storage in v1: anonymous object hosting on a real origin
+			// is a phishing machine. Belt to the console's braces.
+			return Response.json(
+				{ error: 'storage is not available on demo projects - create a real project to use it' },
+				{ status: 403 },
+			);
+		}
+
+		const cors = corsHeadersFor(request, this.env.TRUSTED_ORIGINS);
+		if (request.method === 'OPTIONS') {
+			return cors
+				? new Response(null, { status: 204, headers: cors })
+				: Response.json({ error: 'INVALID_ORIGIN' }, { status: 403 });
+		}
+		if (request.headers.get('origin') && !cors) {
+			return Response.json({ error: 'INVALID_ORIGIN' }, { status: 403 });
+		}
+
+		const answer = await this.bucketAccess(target.projectId, target.bucket);
+		if (answer.status === 'erasing') return withCors(erasingResponse(), cors);
+		if (answer.status === 'missing') {
+			return withCors(Response.json({ error: 'no such bucket' }, { status: 404 }), cors);
+		}
+
+		const response = await this.routeObjectOp(request, url, target, answer);
+		return withCors(response, cors);
+	}
+
+	private async routeObjectOp(
+		request: Request,
+		url: URL,
+		target: ObjectRouteTarget,
+		answer: Extract<BucketAccessAnswer, { status: 'ok' }>,
+	): Promise<Response> {
+		// Listing - served by the index, never by R2 (sorting and totals).
+		if (target.key === null) {
+			if (request.method !== 'GET') {
+				return Response.json({ error: 'method not allowed' }, { status: 405 });
+			}
+			return this.listObjects(request, url, target, answer);
+		}
+
+		const parsed = parseObjectKey(target.key);
+		if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+		const key = parsed.key;
+
+		switch (request.method) {
+			case 'GET':
+			case 'HEAD':
+				return this.serveObject(request, url, target, answer, key);
+			case 'PUT':
+				return this.putObject(request, url, target, answer, key);
+			case 'DELETE':
+				return this.deleteObject(request, url, target, answer, key);
+			default:
+				return Response.json({ error: 'method not allowed' }, { status: 405 });
+		}
+	}
+
+	private async listObjects(
+		request: Request,
+		url: URL,
+		target: ObjectRouteTarget,
+		answer: Extract<BucketAccessAnswer, { status: 'ok' }>,
+	): Promise<Response> {
+		let owner: string | undefined;
+		if (!target.admin) {
+			const { config } = answer;
+			if (config.read === 'public') {
+				// Enumeration is a separate grant: serving one known key to anyone
+				// is not the same as listing every key (docs/storage-agent-plan.md).
+				if (!config.publicListing) {
+					return Response.json({ error: 'listing is not public on this bucket' }, { status: 403 });
+				}
+			} else {
+				const decision = await checkAccess(
+					request,
+					this.env,
+					target.projectId,
+					config.read,
+					config.readPermission,
+				);
+				if (!decision.ok) return decision.response;
+				if (decision.owner !== null) owner = decision.owner;
+			}
+		}
+
+		const prefix = url.searchParams.get('prefix') ?? undefined;
+		if (prefix !== undefined && prefix.length > 1024) {
+			return Response.json({ error: 'prefix too long' }, { status: 400 });
+		}
+		const cursor = objectCursorSchema.parse(url.searchParams.get('cursor') ?? undefined);
+		const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
+
+		const result = await this.bucketStub(target).listObjects({ prefix, cursor, limit, owner });
+		return Response.json(result, { headers: { 'cache-control': 'private, no-store' } });
+	}
+
+	private async serveObject(
+		request: Request,
+		url: URL,
+		target: ObjectRouteTarget,
+		answer: Extract<BucketAccessAnswer, { status: 'ok' }>,
+		key: string,
+	): Promise<Response> {
+		const bucket = this.env.BUCKET;
+		if (!bucket) return notConfigured();
+		const { config } = answer;
+
+		let subject: string | null = null;
+		if (!target.admin && config.read !== 'public') {
+			const decision = await checkAccess(
+				request,
+				this.env,
+				target.projectId,
+				config.read,
+				config.readPermission,
+			);
+			if (!decision.ok) return decision.response;
+			subject = decision.subject;
+		}
+
+		// The shared cache serves only the plain public GET. Range and
+		// conditional requests go to R2: the cache key is a bare URL, so a
+		// match would answer a full 200 where the conditionals deserve 304/206.
+		const publicRead = target.admin ? false : config.read === 'public';
+		const cacheable =
+			publicRead &&
+			request.method === 'GET' &&
+			!request.headers.has('authorization') &&
+			!request.headers.has('range') &&
+			!request.headers.has('if-none-match') &&
+			!request.headers.has('if-modified-since') &&
+			!request.headers.has('if-match');
+		const cacheKey = this.cacheKey(url);
+		if (cacheable) {
+			const hit = await caches.default.match(cacheKey);
+			if (hit) return hit;
+		}
+
+		const r2Key = r2ObjectKey(target.projectId, target.bucket, key);
+		// The range option is passed only when the request actually carries a
+		// Range header: the local R2 simulator populates `object.range` on FULL
+		// gets (production leaves it undefined), and a 206 is only ever a valid
+		// answer to a request that asked for a range.
+		const wantsRange = request.headers.has('range');
+		let object: R2Object | R2ObjectBody | null;
+		try {
+			object =
+				request.method === 'HEAD'
+					? await bucket.head(r2Key)
+					: await bucket.get(r2Key, {
+							onlyIf: request.headers,
+							range: wantsRange ? request.headers : undefined,
+						});
+		} catch (error) {
+			if (/range/i.test(error instanceof Error ? error.message : '')) {
+				return Response.json({ error: 'range not satisfiable' }, { status: 416 });
+			}
+			throw error;
+		}
+		if (!object) {
+			// Phantom-row prune: the index thought it existed, R2 disagrees.
+			this.ctx.waitUntil(
+				this.bucketStub(target)
+					.recordDelete(this.identity(target), key)
+					.then(() => undefined)
+					.catch(() => undefined),
+			);
+			return Response.json({ error: 'no such object' }, { status: 404 });
+		}
+
+		// Owner-mode reads authorize off custom metadata already in hand - one
+		// R2 op, zero DO hops. Not-yours answers exactly like not-there.
+		if (!target.admin && config.read === 'owner') {
+			const owner = object.customMetadata?.owner ?? '';
+			if (!owner || owner !== subject) {
+				return Response.json({ error: 'no such object' }, { status: 404 });
+			}
+		}
+
+		const headers = new Headers();
+		object.writeHttpMetadata(headers);
+		headers.set('etag', object.httpEtag);
+		headers.set('accept-ranges', 'bytes');
+		headers.set('x-content-type-options', 'nosniff');
+		const contentType = object.httpMetadata?.contentType ?? 'application/octet-stream';
+		headers.set('content-type', contentType);
+		// Serve-time policy, not write-time: presigned writes (S2.5) bypass
+		// write-time checks by design, so the serving layer decides what may
+		// render inline - and HTML/SVG/XML never do.
+		headers.set(
+			'content-disposition',
+			INLINE_CONTENT_TYPES.test(contentType) ? 'inline' : 'attachment',
+		);
+		headers.set(
+			'cache-control',
+			publicRead ? (config.cacheControl ?? DEFAULT_PUBLIC_CACHE_CONTROL) : 'private, no-store',
+		);
+
+		if (request.method === 'HEAD') {
+			headers.set('content-length', String(object.size));
+			return new Response(null, { status: 200, headers });
+		}
+
+		if (!isR2ObjectBody(object)) {
+			// R2 answered metadata-only: a conditional held. Distinguish the
+			// not-modified read from the failed-precondition write shape.
+			if (request.headers.has('if-none-match') || request.headers.has('if-modified-since')) {
+				return new Response(null, { status: 304, headers });
+			}
+			return new Response(null, { status: 412, headers });
+		}
+
+		const body: ReadableStream = object.body;
+		if (wantsRange && object.range) {
+			// Test the VALUE, not the key: the local R2 simulator materializes
+			// `suffix: undefined` beside offset/length, so `'suffix' in range`
+			// lies and `size - undefined` is NaN.
+			const range = object.range as { offset?: number; length?: number; suffix?: number };
+			const offset =
+				typeof range.suffix === 'number' ? object.size - range.suffix : (range.offset ?? 0);
+			const length =
+				typeof range.suffix === 'number' ? range.suffix : (range.length ?? object.size - offset);
+			headers.set('content-range', `bytes ${offset}-${offset + length - 1}/${object.size}`);
+			headers.set('content-length', String(length));
+			return new Response(body, { status: 206, headers });
+		}
+
+		headers.set('content-length', String(object.size));
+		const response = new Response(body, { status: 200, headers });
+		if (cacheable) {
+			this.ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
+		}
+		return response;
+	}
+
+	private async putObject(
+		request: Request,
+		url: URL,
+		target: ObjectRouteTarget,
+		answer: Extract<BucketAccessAnswer, { status: 'ok' }>,
+		key: string,
+	): Promise<Response> {
+		const bucket = this.env.BUCKET;
+		if (!bucket) return notConfigured();
+		const { config } = answer;
+
+		let owner = '';
+		if (!target.admin) {
+			const decision = await checkAccess(
+				request,
+				this.env,
+				target.projectId,
+				config.write,
+				config.writePermission,
+			);
+			if (!decision.ok) return decision.response;
+			owner = decision.subject ?? '';
+		}
+
+		// A stream R2 can store needs a declared length; chunked bodies are
+		// refused rather than buffered (a 100 MB buffer in a shared isolate is
+		// a memory bomb).
+		const declaredLength = Number(request.headers.get('content-length'));
+		if (
+			request.headers.get('content-length') === null ||
+			!Number.isFinite(declaredLength) ||
+			declaredLength < 0
+		) {
+			return Response.json({ error: 'Content-Length is required' }, { status: 411 });
+		}
+		const singlePutCap = Math.min(
+			config.maxObjectBytes ?? MAX_SINGLE_PUT_BYTES,
+			MAX_SINGLE_PUT_BYTES,
+		);
+		if (declaredLength > singlePutCap) {
+			return Response.json(
+				{ error: `objects on this bucket are limited to ${singlePutCap} bytes` },
+				{ status: 413 },
+			);
+		}
+		// Quota checks ride the cached parent answer - eventual by design,
+		// bounded by the report debounce plus the cache TTL.
+		if (answer.projectBytes + declaredLength > answer.maxProjectBytes) {
+			return Response.json({ error: 'project storage quota exceeded' }, { status: 413 });
+		}
+		if (answer.stats.objectCount >= answer.maxObjects) {
+			return Response.json(
+				{ error: `buckets are limited to ${answer.maxObjects} objects` },
+				{ status: 409 },
+			);
+		}
+
+		const contentType = request.headers.get('content-type') ?? 'application/octet-stream';
+		if (!target.admin && config.allowedContentTypes && config.allowedContentTypes.length) {
+			if (!contentTypeAllowed(contentType, config.allowedContentTypes)) {
+				return Response.json(
+					{ error: 'this content type is not allowed on this bucket' },
+					{ status: 415 },
+				);
+			}
+		}
+
+		const r2Key = r2ObjectKey(target.projectId, target.bucket, key);
+
+		// Owner mode: an existing key someone else wrote must not be
+		// overwritable - one head() before the put, owner-mode only.
+		if (!target.admin && config.write === 'owner') {
+			const existing = await bucket.head(r2Key);
+			if (existing && (existing.customMetadata?.owner ?? '') !== owner) {
+				return Response.json({ error: 'you do not own this key' }, { status: 403 });
+			}
+		}
+
+		let stored: R2Object;
+		try {
+			stored = await bucket.put(r2Key, request.body ?? new Uint8Array(0), {
+				httpMetadata: { contentType },
+				customMetadata: { owner, project: target.projectId },
+			});
+		} catch (error) {
+			Sentry.captureException(error, {
+				tags: { operation: 'storage-put', projectId: target.projectId },
+			});
+			return Response.json({ error: 'storing the object failed' }, { status: 502 });
+		}
+
+		// R2 first, index after: the row wants the put's REAL size and etag.
+		// Awaited (not waitUntil) so an index failure is visible to the caller
+		// - until the reconcile alarm exists (S2), a silent orphan would be
+		// unfindable and billed forever.
+		try {
+			const stats = await this.bucketStub(target).recordPut(this.identity(target), {
+				key,
+				size: stored.size,
+				etag: stored.etag,
+				contentType,
+				owner,
+			});
+			this.refreshCachedStats(target, stats);
+		} catch (error) {
+			Sentry.captureException(error, {
+				tags: { operation: 'storage-index', projectId: target.projectId },
+			});
+			return Response.json(
+				{ error: 'the object was stored but indexing failed - retry the upload' },
+				{ status: 502 },
+			);
+		}
+
+		// The write is visible everywhere once colo caches expire; delete our
+		// own colo's copies BEFORE answering (cache.delete is per-colo by
+		// platform) - awaited, not waitUntil, so the writer's own immediate
+		// re-read never races the purge and same-colo read-your-writes holds.
+		await this.purgeCaches(url, target, key);
+
+		return Response.json(
+			{
+				object: {
+					key,
+					size: stored.size,
+					etag: stored.etag,
+					contentType,
+					owner,
+				},
+			},
+			{ status: 200 },
+		);
+	}
+
+	private async deleteObject(
+		request: Request,
+		url: URL,
+		target: ObjectRouteTarget,
+		answer: Extract<BucketAccessAnswer, { status: 'ok' }>,
+		key: string,
+	): Promise<Response> {
+		const bucket = this.env.BUCKET;
+		if (!bucket) return notConfigured();
+		const { config } = answer;
+
+		let subject: string | null = null;
+		if (!target.admin) {
+			const decision = await checkAccess(
+				request,
+				this.env,
+				target.projectId,
+				config.write,
+				config.writePermission,
+			);
+			if (!decision.ok) return decision.response;
+			subject = decision.subject;
+		}
+
+		const r2Key = r2ObjectKey(target.projectId, target.bucket, key);
+		if (!target.admin && config.write === 'owner') {
+			const existing = await bucket.head(r2Key);
+			if (existing && (existing.customMetadata?.owner ?? '') !== subject) {
+				return Response.json({ error: 'no such object' }, { status: 404 });
+			}
+		}
+
+		// R2 FIRST, index after: a crash here leaves a benign phantom row (a
+		// later GET prunes it), never an unindexed orphan.
+		await bucket.delete(r2Key);
+		const stats = await this.bucketStub(target)
+			.recordDelete(this.identity(target), key)
+			.catch(() => null);
+		if (stats) this.refreshCachedStats(target, stats);
+		// Awaited for the same reason as the put path: the deleter's own
+		// immediate re-read must see the delete, not a cached 200.
+		await this.purgeCaches(url, target, key);
+		return Response.json({ deleted: true });
+	}
+
+	// -----------------------------------------------------------------
+	// Plumbing
+
+	private identity(target: ObjectRouteTarget): BucketIdentity {
+		return { projectId: target.projectId, bucket: target.bucket };
+	}
+
+	private bucketStub(target: ObjectRouteTarget): StorageBucketBase {
+		const namespace = this.env.StorageBucket as unknown as DurableObjectNamespace;
+		return namespace.get(
+			namespace.idFromName(`${target.projectId}:${target.bucket}`),
+		) as unknown as StorageBucketBase;
+	}
+
+	/** The shared-cache key: path only, so a query string can never mint a
+	 * fresh cache entry for the same object. */
+	private cacheKey(url: URL): string {
+		return `${url.origin}${url.pathname}`;
+	}
+
+	/** Purge this colo's cached copies of an object - the request URL and, when
+	 * a serving domain is configured, its `/<pid>/<bucket>/<key>` spelling too
+	 * (the same bytes are addressable both ways). */
+	private async purgeCaches(url: URL, target: ObjectRouteTarget, key: string): Promise<void> {
+		try {
+			await caches.default.delete(this.cacheKey(url));
+			const domain = this.env.STORAGE_SERVE_DOMAIN;
+			if (domain) {
+				const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+				await caches.default.delete(
+					`https://${domain}/${target.projectId}/${target.bucket}/${encodedKey}`,
+				);
+			}
+		} catch {
+			// purging is best-effort; the short default TTL is the backstop
+		}
+	}
+
+	private async bucketAccess(projectId: string, bucket: string): Promise<BucketAccessAnswer> {
+		const cacheId = `${projectId}:${bucket}`;
+		const cached = accessCache.get(cacheId);
+		if (cached && cached.expires > Date.now()) return cached.answer;
+
+		const agent = await getAgentByName<Env, StorageAgentBase>(this.env.StorageAgent, projectId);
+		const answer = await agent.getBucketAccess(bucket);
+		if (accessCache.size >= ACCESS_CACHE_MAX) accessCache.clear();
+		accessCache.set(cacheId, {
+			answer,
+			expires: Date.now() + (answer.status === 'ok' ? ACCESS_CACHE_TTL_MS : NEGATIVE_CACHE_TTL_MS),
+		});
+		return answer;
+	}
+
+	/** Keep the cached quota view roughly current between refreshes, so a
+	 * burst inside one TTL cannot sail far past a ceiling. */
+	private refreshCachedStats(
+		target: ObjectRouteTarget,
+		stats: { objectCount: number; totalBytes: number },
+	): void {
+		const cached = accessCache.get(`${target.projectId}:${target.bucket}`);
+		if (!cached || cached.answer.status !== 'ok') return;
+		const delta = stats.totalBytes - cached.answer.stats.totalBytes;
+		cached.answer.stats = stats;
+		cached.answer.projectBytes = Math.max(cached.answer.projectBytes + delta, 0);
+	}
+
+	/** Records any 5xx leaving this worker. Never replaces the response. */
+	private async reportServerError(request: Request, url: URL, response: Response): Promise<void> {
+		if (response.status < 500) return;
+		try {
+			const body = (await response.clone().text()).slice(0, 2048);
+			Sentry.captureMessage(`Storage agent returned HTTP ${response.status}`, {
+				level: 'error',
+				tags: { 'http.method': request.method, 'http.status_code': response.status },
+				contexts: {
+					response: { body, contentType: response.headers.get('content-type') ?? '' },
+				},
+				extra: { pathname: url.pathname },
+			});
+		} catch {
+			// reporting must never replace the response
+		}
+	}
+}
+
+function isR2ObjectBody(object: R2Object | R2ObjectBody): object is R2ObjectBody {
+	return 'body' in object && Boolean((object as R2ObjectBody).body);
+}
+
+/**
+ * Decodes a raw path-key: each segment individually, so an encoded slash
+ * becomes part of the key rather than a new route segment - and the result
+ * still passes through parseObjectKey, which refuses dot segments whatever
+ * spelling they arrived in. Returns null on malformed percent-encoding.
+ */
+function decodePathKey(rawKey: string): string | null {
+	try {
+		return rawKey
+			.split('/')
+			.map((segment) => decodeURIComponent(segment))
+			.join('/');
+	} catch {
+		return null;
+	}
+}
+
+function contentTypeAllowed(contentType: string, allowed: string[]): boolean {
+	const bare = contentType.split(';')[0].trim().toLowerCase();
+	return allowed.some((entry) => {
+		const rule = entry.toLowerCase();
+		if (rule.endsWith('/*')) return bare.startsWith(rule.slice(0, -1));
+		return bare === rule;
+	});
+}
+
+export const StorageAgent = Sentry.instrumentDurableObjectWithSentry(
+	sentryOptions,
+	StorageAgentBase,
+);
+export const StorageBucket = Sentry.instrumentDurableObjectWithSentry(
+	sentryOptions,
+	StorageBucketBase,
+);
+
+export type { StorageAgentState, StorageBucketSummary } from './agent';
+export type { ObjectSummary } from './bucket';
+export type { AssertStorageAgentEnv, StorageAgentBindings } from './bindings';
+
+export default Sentry.withSentry(sentryOptions, StorageService);

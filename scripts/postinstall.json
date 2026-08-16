@@ -14,6 +14,10 @@
 		{
 			"name": "hosting-agent",
 			"command": "cd ./agents/hosting && npm install"
+		},
+		{
+			"name": "storage-agent",
+			"command": "cd ./agents/storage && npm install"
 		}
 	]
 }

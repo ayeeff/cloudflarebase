@@ -1,0 +1,38 @@
+{
+	"manifestVersion": 1,
+	"name": "storage",
+	"title": "Storage",
+	"description": "Object storage on R2 - buckets of files with per-bucket access modes, served through the worker with a sorted, pageable index.",
+	"packageName": "@cloudflarebase/storage",
+	"worker": "storage-agent",
+	"durableObjects": [
+		{ "class": "StorageAgent", "scope": "perProject" },
+		{ "class": "StorageBucket", "scope": "perBucket" }
+	],
+	"entrypoint": { "assertEnvType": "AssertStorageAgentEnv" },
+	"erase": { "method": "DELETE", "path": "/internal/projects/:projectId" },
+	"bindings": {
+		"r2": [{ "binding": "BUCKET", "optional": true }],
+		"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent", "optional": true }]
+	},
+	"secrets": { "generated": [], "optional": [] },
+	"vars": {
+		"TRUSTED_ORIGINS": { "default": "", "hint": "Extra origins beyond the deployment's own." },
+		"SENTRY_DSN": {
+			"default": "",
+			"hint": "Error reporting; empty disables it. A var, not a secret - a DSN is public by design."
+		}
+	},
+	"routes": [
+		{ "path": "/buckets/*", "access": "public" },
+		{ "path": "/overview", "access": "operator" },
+		{ "path": "/admin/*", "access": "operator" }
+	],
+	"proxy": { "apiPrefix": "storage", "agentBasePath": "" },
+	"permissions": ["objects:read", "objects:write"],
+	"console": {
+		"section": "Storage",
+		"icon": "hard-drive",
+		"pages": []
+	}
+}

@@ -38,6 +38,7 @@ export default defineConfig(
 			'agents/auth/dist/',
 			'agents/db/dist/',
 			'agents/hosting/dist/',
+			'agents/storage/dist/',
 			'cli/dist/'
 		]
 	},

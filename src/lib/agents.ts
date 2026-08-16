@@ -717,6 +717,96 @@ export const mintedDeployTokenSchema = z
 	})
 	.meta({ id: 'MintedDeployToken' });
 
+// --- Storage agent (mirrors agents/storage/src/{agent,bucket,schemas}.ts) ---
+
+export const storageAccessModeSchema = z.enum(['public', 'auth', 'owner']);
+
+export const storageBucketSummarySchema = z
+	.object({
+		name: z.string(),
+		read: storageAccessModeSchema,
+		write: storageAccessModeSchema,
+		publicListing: z
+			.boolean()
+			.describe(
+				'Whether anonymous callers may LIST a public bucket - separate from reading a known key.'
+			),
+		objectCount: z.number().int(),
+		totalBytes: z.number().int(),
+		createdAt: z.iso.datetime()
+	})
+	.meta({ id: 'StorageBucketSummary' });
+
+export const storageBucketSchema = storageBucketSummarySchema
+	.extend({
+		readPermission: z.string().nullable(),
+		writePermission: z.string().nullable(),
+		maxObjectBytes: z.number().int().nullable(),
+		allowedContentTypes: z.array(z.string()).nullable(),
+		cacheControl: z.string().nullable(),
+		configVersion: z.number().int()
+	})
+	.meta({
+		id: 'StorageBucket',
+		description:
+			'One bucket: a named namespace of objects with its own access modes. New buckets default to `auth` on both read and write.'
+	});
+
+export const storageBucketConfigInputSchema = z
+	.object({
+		read: storageAccessModeSchema.optional(),
+		write: storageAccessModeSchema.optional(),
+		readPermission: z.string().nullable().optional(),
+		writePermission: z.string().nullable().optional(),
+		publicListing: z.boolean().optional(),
+		maxObjectBytes: z.number().int().nullable().optional(),
+		allowedContentTypes: z.array(z.string()).nullable().optional(),
+		cacheControl: z.string().nullable().optional()
+	})
+	.meta({
+		id: 'StorageBucketConfigInput',
+		description: 'Omitted fields keep their stored value; explicit null clears.'
+	});
+
+export const storageObjectSchema = z
+	.object({
+		key: z.string(),
+		size: z.number().int(),
+		etag: z.string(),
+		contentType: z.string(),
+		owner: z
+			.string()
+			.describe('JWT subject that wrote the object; empty for public/operator writes.'),
+		createdAt: z.iso.datetime(),
+		updatedAt: z.iso.datetime()
+	})
+	.meta({ id: 'StorageObject' });
+
+export const storageObjectPageSchema = z
+	.object({
+		objects: z.array(storageObjectSchema),
+		total: z.number().int(),
+		cursor: z.string().nullable().describe('Keyset cursor for the next page; null on the last one.')
+	})
+	.meta({ id: 'StorageObjectPage' });
+
+export const storageOverviewSchema = z
+	.object({
+		projectId: z.string(),
+		provisionedAt: z.iso.datetime().nullable(),
+		buckets: z.array(storageBucketSummarySchema),
+		totalObjects: z.number().int(),
+		totalBytes: z.number().int(),
+		configured: z.boolean().describe('Whether this install can store bytes (the R2 binding).'),
+		erasing: z.boolean(),
+		caps: z.object({
+			maxBuckets: z.number().int(),
+			maxObjectsPerBucket: z.number().int(),
+			maxProjectBytes: z.number().int()
+		})
+	})
+	.meta({ id: 'StorageOverview' });
+
 export type AuthActivityEvent = z.infer<typeof authActivityEventSchema>;
 export type RoleDefinition = z.infer<typeof roleDefinitionSchema>;
 export type AuthAgentState = z.infer<typeof authAgentStateSchema>;
@@ -761,3 +851,9 @@ export type HostingClaim = z.infer<typeof hostingClaimSchema>;
 export type DeployTokenInfo = z.infer<typeof deployTokenSchema>;
 export type GithubConnectionInfo = z.infer<typeof githubConnectionSchema>;
 export type MintedDeployToken = z.infer<typeof mintedDeployTokenSchema>;
+export type StorageAccessMode = z.infer<typeof storageAccessModeSchema>;
+export type StorageBucketSummary = z.infer<typeof storageBucketSummarySchema>;
+export type StorageBucketInfo = z.infer<typeof storageBucketSchema>;
+export type StorageObjectInfo = z.infer<typeof storageObjectSchema>;
+export type StorageObjectPage = z.infer<typeof storageObjectPageSchema>;
+export type StorageOverview = z.infer<typeof storageOverviewSchema>;

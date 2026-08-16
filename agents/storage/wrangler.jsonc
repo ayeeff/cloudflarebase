@@ -1,0 +1,179 @@
+/**
+ * Cloudflarebase storage agent - object storage on R2.
+ *
+ * The TOP LEVEL is the self-hosted default, deployable by someone who does
+ * not own this project's Cloudflare account. R2 is an account-level opt-in
+ * behind a dashboard checkout flow, so the default deliberately has NO
+ * `r2_buckets` binding: a binding on an account without the subscription
+ * would fail a fresh clone's zero-config deploy (the AUTH_EVENTS lesson).
+ * Without it the agent reports `configured: false` and answers object
+ * requests with a 503 pointing at the setup steps; bucket metadata and
+ * everything else in the install keep working. cloudflarebase.com's own
+ * values live in env.production / env.preview.
+ *
+ * HARD INVARIANT: the shared bucket must never have r2.dev enabled or a
+ * custom domain attached. Either one serves EVERY tenant's keys to the
+ * public internet in one click - serving happens exclusively through this
+ * worker, which is what enforces the per-project key prefix.
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "storage-agent",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-07-10",
+	"compatibility_flags": ["nodejs_compat", "nodejs_als"],
+	"migrations": [{ "new_sqlite_classes": ["StorageAgent", "StorageBucket"], "tag": "v1" }],
+	"durable_objects": {
+		"bindings": [
+			{ "class_name": "StorageAgent", "name": "StorageAgent" },
+			{ "class_name": "StorageBucket", "name": "StorageBucket" },
+		],
+	},
+	"observability": {
+		"logs": { "enabled": true, "invocation_logs": true },
+		"traces": { "enabled": true },
+	},
+	"upload_source_maps": true,
+	"workers_dev": false,
+	"preview_urls": false,
+	/**
+	 * AUTH_AGENT lets buckets in `auth`/`owner` access mode fetch the auth
+	 * agent's JWKS to verify project JWTs. Deploy the auth agent first (the
+	 * repo's `deploy:all` orders this); without the binding - or in a
+	 * single-worker install where the AuthAgent Durable Object namespace
+	 * exists instead - public-mode buckets still work and token-gated ones
+	 * fail closed with 503.
+	 */
+	"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent" }],
+	"vars": {
+		/**
+		 * Serves the agent's own surfaces (/overview, /admin/*, the state-sync
+		 * socket, /internal/*) over HTTP. They carry no authentication of their
+		 * own - the console guard in front of them is the gate, and this Worker
+		 * is only reachable through it (workers_dev and preview_urls are false,
+		 * so the dashboard's service binding is the sole way in). The public
+		 * /buckets/* object paths are unaffected: they carry their own
+		 * per-bucket access modes and JWT gate.
+		 *
+		 * A Worker that ALSO serves an application (the shape the published
+		 * package installs into) must leave this unset - see
+		 * template/wrangler-fragment.jsonc.
+		 */
+		"EXPOSE_OPERATOR_API": "true",
+		// Extra origins the object paths trust for CORS, beyond the
+		// deployment's own (comma-separated). Same contract as the db agent.
+		"TRUSTED_ORIGINS": "",
+		// Hostname to serve objects on (GET/HEAD, /<pid>/<bucket>/<key>) when a
+		// route on your zone points that domain AT THIS WORKER. Never attach a
+		// domain to the R2 bucket itself - see the header invariant.
+		"STORAGE_SERVE_DOMAIN": "",
+		// Empty on purpose: a committed DSN would collect every fork's errors.
+		// A var, not a secret - a DSN is public by design, and this plain_text
+		// binding would override a same-named secret on the next deploy.
+		"SENTRY_DSN": "",
+		"SENTRY_ENV": "production",
+	},
+	"secrets": {
+		// No secret has to be set for this Worker to deploy.
+		"required": [],
+	},
+	"env": {
+		"local": {
+			"name": "storage-agent-local",
+			"durable_objects": {
+				"bindings": [
+					{ "class_name": "StorageAgent", "name": "StorageAgent" },
+					{ "class_name": "StorageBucket", "name": "StorageBucket" },
+				],
+			},
+			// Local dev runs against miniflare's R2 simulator - full fidelity,
+			// no account subscription involved.
+			"r2_buckets": [{ "binding": "BUCKET", "bucket_name": "cfbase-storage-local" }],
+			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-local" }],
+			"vars": {
+				"EXPOSE_OPERATOR_API": "true",
+				// The Vite dev server's origin - object paths answer CORS for it.
+				"TRUSTED_ORIGINS": "http://localhost:5173",
+				// Local workerd is dialled by port; the header override lets the
+				// dev loop exercise the serving-domain path.
+				"STORAGE_SERVE_DOMAIN": "cdn.cfbase.test",
+				"STORAGE_SERVE_HOST_HEADER": "true",
+				"SENTRY_DSN": "",
+				"SENTRY_ENV": "development",
+			},
+		},
+		"test": {
+			"name": "storage-agent-test",
+			"durable_objects": {
+				"bindings": [
+					{ "class_name": "StorageAgent", "name": "StorageAgent" },
+					{ "class_name": "StorageBucket", "name": "StorageBucket" },
+				],
+			},
+			"r2_buckets": [{ "binding": "BUCKET", "bucket_name": "cfbase-storage-test" }],
+			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-test" }],
+			"vars": {
+				"EXPOSE_OPERATOR_API": "true",
+				"TRUSTED_ORIGINS": "",
+				// The e2e suite proves the serving-domain path with the header
+				// stand-in (Playwright dials the worker by port).
+				"STORAGE_SERVE_DOMAIN": "cdn.cfbase.test",
+				"STORAGE_SERVE_HOST_HEADER": "true",
+				"SENTRY_DSN": "",
+				"SENTRY_ENV": "test",
+			},
+		},
+		"production": {
+			// Pinned name: the web Worker's STORAGE_AGENT service binding
+			// resolves `storage-agent`, the auth/db/hosting precedent.
+			"name": "storage-agent",
+			"workers_dev": false,
+			"preview_urls": false,
+			"durable_objects": {
+				"bindings": [
+					{ "class_name": "StorageAgent", "name": "StorageAgent" },
+					{ "class_name": "StorageBucket", "name": "StorageBucket" },
+				],
+			},
+			// ONE shared bucket, key-prefixed per project (p/<projectId>/...).
+			// Never enable r2.dev and never attach a custom domain - see the
+			// header invariant.
+			"r2_buckets": [{ "binding": "BUCKET", "bucket_name": "cfbase-storage" }],
+			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent" }],
+			"vars": {
+				"EXPOSE_OPERATOR_API": "true",
+				"TRUSTED_ORIGINS": "",
+				// cloudflarebase.com's dedicated object-serving hostname. Inert
+				// until the route below is enabled - add, when DNS is ready:
+				//   "routes": [{ "pattern": "cdn.cloudflarebase.com/*", "zone_name": "cloudflarebase.com" }]
+				// The domain points at the WORKER; the R2 bucket itself must never
+				// carry r2.dev or a custom domain (header invariant).
+				"STORAGE_SERVE_DOMAIN": "cdn.cloudflarebase.com",
+				// No DSN minted for this worker yet; add one alongside launch.
+				"SENTRY_DSN": "",
+				"SENTRY_ENV": "production",
+			},
+		},
+		"preview": {
+			"name": "storage-agent-preview",
+			"workers_dev": false,
+			"preview_urls": false,
+			"durable_objects": {
+				"bindings": [
+					{ "class_name": "StorageAgent", "name": "StorageAgent" },
+					{ "class_name": "StorageBucket", "name": "StorageBucket" },
+				],
+			},
+			// Preview gets its OWN bucket: preview code must never be able to
+			// serve or drain production tenants' objects.
+			"r2_buckets": [{ "binding": "BUCKET", "bucket_name": "cfbase-storage-preview" }],
+			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" }],
+			"vars": {
+				"EXPOSE_OPERATOR_API": "true",
+				"TRUSTED_ORIGINS": "",
+				"SENTRY_DSN": "",
+				"SENTRY_ENV": "preview",
+			},
+		},
+	},
+}
