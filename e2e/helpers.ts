@@ -289,8 +289,9 @@ export function storageBucketPath(projectId: string, bucket: string): string {
 	return `/api/projects/${projectId}/storage/admin/buckets/${encodeURIComponent(bucket)}`;
 }
 
-/** The PUBLIC object paths - the direct agent base, because bytes must not
- * transit the JSON proxy (its handlers buffer bodies). */
+/** The PUBLIC object paths - the direct agent base. Bytes must not transit a
+ * BUFFERING proxy, which is what every JSON proxy here is; the operator
+ * object proxy below streams instead (docs/admin-sdk-design.md 5.3). */
 export function storageObjectsPath(projectId: string, bucket: string): string {
 	return `/agents/storage-agent/${projectId}/buckets/${bucket}/objects`;
 }
@@ -306,6 +307,21 @@ export function storageAdminObjectsPath(projectId: string, bucket: string): stri
 
 export function storageAdminObjectPath(projectId: string, bucket: string, key: string): string {
 	return `${storageAdminObjectsPath(projectId, bucket)}/${key.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+/**
+ * The operator object surface over the CONSOLE proxy - the only door a service
+ * key can use, since `isServiceKeySurface` matches only under
+ * `/api/projects/<id>/` and `/agents/*` refuses a `cfbs_` bearer outright.
+ * Unlike every other proxy here it STREAMS the body through to the agent
+ * (docs/admin-sdk-design.md 5.3).
+ */
+export function storageProxyObjectsPath(projectId: string, bucket: string): string {
+	return `/api/projects/${projectId}/storage/admin/buckets/${encodeURIComponent(bucket)}/objects`;
+}
+
+export function storageProxyObjectPath(projectId: string, bucket: string, key: string): string {
+	return `${storageProxyObjectsPath(projectId, bucket)}/${key.split('/').map(encodeURIComponent).join('/')}`;
 }
 
 export function projectBranchesPath(projectId: string): string {

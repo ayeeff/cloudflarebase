@@ -168,7 +168,42 @@ Fix is console-only: a `[...key]` proxy under
 `storage/admin/buckets/[bucketName]/objects/`, streaming the body rather than
 buffering it (the agent's whole design is that bytes never enter a DO, and a
 proxy that buffers a 100 MB PUT reintroduces exactly the memory bomb the
-`Content-Length` requirement exists to prevent).
+`Content-Length` requirement exists to prevent). **Shipped and verified
+against the live e2e stack**: PUT streamed, bytes read back byte-identical,
+listing indexed, DELETE, then 404.
+
+#### The CSRF wrinkle, still open
+
+SvelteKit's CSRF check runs at the top of `internal_respond`, **before any
+hook**, so the console guard never sees the request. It forbids
+POST/PUT/PATCH/DELETE whenever the content type is form-shaped —
+`text/plain`, `multipart/form-data`, `application/x-www-form-urlencoded` — and
+a MISSING origin counts as cross-site (`!request_origin` forbids outright, so
+no trusted-origins list can admit it).
+
+A service key sends no Origin by design. So uploading `text/plain` — a `.txt`,
+a `.csv`, a `.md` — answers 403 with `Cross-site PUT form submissions are
+forbidden`, before the key is ever examined. Every other content type works;
+`application/octet-stream` is the storage agent's own default.
+
+It is also invisible in development: the whole block sits behind
+`if (!__SVELTEKIT_DEV__)`, so `vite dev` never applies it. Only the built
+worker does, which is why this surfaced in e2e and would not have surfaced by
+hand.
+
+Two ways out, and the choice is a security decision rather than a technical
+one:
+
+1. **Leave it, document it.** Servers send a real content type or
+   `application/octet-stream`. Zero risk, but a wart on "just use fetch", and
+   S2's proxied multipart uploads would hit the same wall.
+2. **Turn `csrf.checkOrigin` off and re-implement the check in the guard**,
+   where it can be credential-aware: apply SvelteKit's exact rule to ambient
+   credentials (session cookies) and skip it for credentials a browser cannot
+   attach cross-origin (`cfbs_`, `cfbd_`, OIDC bearers — `Authorization` is not
+   CORS-safelisted, so those are structurally immune to CSRF). Correct, and
+   app-wide blast radius: get it wrong and the console's whole API is CSRF-able,
+   sign-in included. Not to be done casually or in passing.
 
 ## 6. The reference gaps
 

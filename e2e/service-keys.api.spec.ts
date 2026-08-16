@@ -4,7 +4,12 @@ import {
 	test,
 	type APIRequestContext
 } from '@playwright/test';
-import { ensureProject, SCRATCH_PROJECT } from './helpers';
+import {
+	ensureProject,
+	SCRATCH_PROJECT,
+	storageProxyObjectPath,
+	storageProxyObjectsPath
+} from './helpers';
 
 /**
  * Project service keys (docs/service-keys-design.md, SK1).
@@ -112,6 +117,72 @@ test.describe('service keys', () => {
 			expect(read.ok(), await read.text()).toBeTruthy();
 			const { docs } = await read.json();
 			expect(docs.map((doc: { id: string }) => doc.id)).toContain('seed-1');
+		} finally {
+			await server.dispose();
+		}
+	});
+
+	/**
+	 * Storage OBJECTS, not just bucket config (docs/admin-sdk-design.md 5.3).
+	 *
+	 * Bucket metadata always worked. The BYTES did not and could not: the object
+	 * routes existed only under `/agents/*`, which a service key is refused on,
+	 * so a key could create a bucket and then never put anything in it. That
+	 * made storage - a whole primitive - unreachable from a server.
+	 *
+	 * This test is its own positive control by construction: every assertion
+	 * fails with 404 if the proxy route is missing, which is distinguishable
+	 * from the 401 a rejected key produces. It cannot pass on nothing.
+	 */
+	test('reads and writes storage OBJECTS, not just bucket config', async ({ baseURL }) => {
+		const server = await serverContext(baseURL);
+		try {
+			const bucket = 'svc-objects';
+			// A folder-shaped key: slashes are legitimate in object keys, and the
+			// proxy has to carry them through without the URL parser eating them.
+			const objectKey = `cron/note-${run}.txt`;
+			const body = `written with no user and no session at ${run}`;
+			const auth = { authorization: `Bearer ${key}` };
+
+			const declare = await server.put(
+				`/api/projects/${KEY_PROJECT}/storage/admin/buckets/${bucket}`,
+				{ headers: auth, data: {} }
+			);
+			expect(declare.ok(), await declare.text()).toBeTruthy();
+
+			// NOT text/plain, and that is not an arbitrary choice: SvelteKit's CSRF
+			// check runs before any hook and forbids PUT with a FORM content type
+			// (text/plain, multipart/form-data, x-www-form-urlencoded) when the
+			// request carries no Origin - which is exactly what a service key is.
+			// Tracked in docs/admin-sdk-design.md 5.3; everything else passes.
+			const put = await server.put(storageProxyObjectPath(KEY_PROJECT, bucket, objectKey), {
+				headers: { ...auth, 'content-type': 'application/octet-stream' },
+				data: body
+			});
+			expect(put.ok(), await put.text()).toBeTruthy();
+
+			const got = await server.get(storageProxyObjectPath(KEY_PROJECT, bucket, objectKey), {
+				headers: auth
+			});
+			expect(got.status(), await got.text()).toBe(200);
+			expect(await got.text()).toBe(body);
+
+			const listed = await server.get(storageProxyObjectsPath(KEY_PROJECT, bucket), {
+				headers: auth
+			});
+			expect(listed.ok(), await listed.text()).toBeTruthy();
+			expect((await listed.json()).objects.map((o: { key: string }) => o.key)).toContain(objectKey);
+
+			const removed = await server.delete(
+				storageProxyObjectPath(KEY_PROJECT, bucket, objectKey),
+				{ headers: auth }
+			);
+			expect(removed.ok(), await removed.text()).toBeTruthy();
+
+			const gone = await server.get(storageProxyObjectPath(KEY_PROJECT, bucket, objectKey), {
+				headers: auth
+			});
+			expect(gone.status()).toBe(404);
 		} finally {
 			await server.dispose();
 		}
