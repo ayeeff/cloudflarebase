@@ -1,9 +1,24 @@
 # Service Keys — the credential a server can hold
 
-> **Drafted 2026-08-16 — NOT implemented.** Normative for implementation when
-> scheduled. Closes the gap named in the DX review: Cloudflarebase today is a
-> **client-first** backend. The Firebase client-SDK story is complete; the
-> Firebase Admin SDK story does not exist.
+> **Drafted 2026-08-16. SK1 implemented the same day.** Closes the gap named
+> in the DX review: Cloudflarebase was a **client-first** backend — the
+> Firebase client-SDK story complete, the Admin SDK story absent.
+>
+> Deviations from the draft, for future readers:
+>
+> - **No verification cache** (§5, rewritten): revocation is instant instead.
+> - **A present-but-empty `Origin` counts as absent** (§6), because an HTTP
+>   client can blank the header and a browser cannot.
+> - `/overview` and `/analytics` joined the accepted surfaces alongside
+>   `db/**`, `storage/**`, and the auth `admin/**` routes — a server that can
+>   read the data can read the counts describing it.
+> - **The negative tests needed positive controls.** The first green run of
+>   `service-keys.api.spec.ts` was green on nothing: every assertion expected
+>   401, so they all passed while the key did not work at all (the api
+>   project injects `Origin` into every context, so every request was being
+>   refused by §6). Each containment test now proves the key is LIVE in that
+>   same context first. A suite of negative assertions that never checks the
+>   positive case is a suite that cannot fail for the right reason.
 
 ## 1. The gap
 
@@ -77,20 +92,29 @@ One key, one registry row. Mint a second for the branch.
 
 ## 5. Verification, and the hot path
 
-Deploy tokens are checked a few times a day; a service key is checked on every
-request a backend makes. So the digest lookup is cached per isolate
-(`digest -> { projectId, revokedAt }`, 30s), the pattern the ownership and
-bucket-config caches already use.
+**No verification cache. Revocation is instant.** (This section was drafted the
+other way and changed during implementation - the reasoning is worth keeping.)
 
-**Revocation therefore converges within the TTL**, and that is the stated
-bargain - the same one `getBucketAccess` makes. A key revoked because it
-leaked keeps working for up to 30 seconds. If that is ever not good enough,
-the answer is a revocation epoch on the project row, not a lookup per request.
+The draft cached verified digests per isolate for 30s, on the argument that a
+service key is checked on every request a backend makes, where a deploy token
+is checked a few times a day. But every surface a key opens is
+PARENT-MEDIATED: each one is a proxy hop into a coordinator Durable Object,
+which dwarfs an indexed D1 read on the same request. The cache bought very
+little, and what it cost was revocation latency on the most powerful
+credential in the system - an admin-grade key, revoked precisely BECAUSE it
+leaked, still working for half a minute across every isolate that had seen it.
 
-`last_used_at` is written debounced (once per minute per key, `waitUntil`), so
-the console can show "last used 4 minutes ago" before an operator revokes
-something they are not sure about - without paying a D1 write per data
-request.
+Instant revocation is worth more than a saved read here. If service-key
+throughput ever becomes the bottleneck, the fix is admitting keys on the
+one-hop shard paths (§10.5) - not making a leaked credential outlive its
+revocation. Note also that a Durable Object's own storage is local to its
+compute and genuinely fast; the caches elsewhere in this codebase sit in front
+of cross-object RPCs, never in front of `ctx.storage`, and this one would have
+sat in front of D1, which is neither.
+
+`last_used_at` is written debounced (once per minute per key), so the console
+can show "last used 4 minutes ago" before an operator revokes something they
+are unsure about - without paying a D1 write per data request.
 
 ## 6. A service key must not work from a browser
 
@@ -103,7 +127,21 @@ bundle on a CDN. No CORS headers are ever sent on a service-key response
 either: there is no legitimate cross-origin use.
 
 This is the single highest-value guard in the design, because the failure it
-prevents is the one that actually happens.
+prevents is the one that actually happens - and it is strict enough to bite in
+testing: Playwright's api project injects `Origin` into every context it
+creates, so the e2e spec had to blank the header explicitly, and until it did,
+every service-key request 401'd while the suite still "passed" on nothing but
+negative assertions.
+
+A PRESENT-but-empty `Origin` counts as absent, and only that. A browser cannot
+produce one - it sends a real origin or the literal `null`, which is a
+non-empty string and stays refused - and `Origin` is a forbidden header name
+in browsers, so no page can strip its own. HTTP clients that blank it can.
+
+The DX caveat this creates, which belongs in the published docs: an HTTP
+client or proxy that adds an `Origin` to server-side requests will be refused.
+Node `fetch`, Workers `fetch`, curl, and the usual language HTTP libraries do
+not.
 
 ## 7. Storage
 

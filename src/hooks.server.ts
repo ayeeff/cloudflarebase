@@ -11,6 +11,7 @@ import {
 	isDeployTokenSurface,
 	verifyDeployToken
 } from '$lib/server/hosting';
+import { isServiceKeySurface, verifyServiceKey } from '$lib/server/service-keys';
 import { getProjectOwnership, projectExists, type ProjectOwnership } from '$lib/server/registry';
 import { handleErrorWithSentry, initCloudflareSentryHandle, sentryHandle } from '@sentry/sveltekit';
 import { redirect } from '@sveltejs/kit';
@@ -349,6 +350,7 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 	event.locals.consoleIdentity = null;
 	event.locals.deployToken = null;
 	event.locals.githubDeploy = null;
+	event.locals.serviceKey = null;
 
 	const access = classifyAccess(event.url.pathname);
 	if (access.scope === 'open') {
@@ -407,6 +409,50 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 			}
 		}
 		return Response.json({ error: 'invalid deploy token' }, { status: 401 });
+	}
+
+	// Service keys (docs/service-keys-design.md, SK1): a `cfbs_` bearer is the
+	// credential a SERVER holds for the cases with no user to relay - crons,
+	// queue consumers, webhook handlers, seed scripts. It reaches the DATA
+	// plane of its own project and nothing else (isServiceKeySurface), so it
+	// can never mint another credential, re-role an operator, or delete the
+	// project it belongs to.
+	//
+	// It is ADMIN-GRADE on that surface, exactly like the operator session it
+	// stands in for: those agent routes already bypass access modes, validators,
+	// and permission keys, which is why this is an authentication change and not
+	// an authorization one.
+	//
+	// A REQUEST CARRYING AN `Origin` IS REFUSED, whatever the key. Server
+	// fetches send no Origin and browsers always do, so a key pasted into
+	// frontend code fails immediately at the developer's desk instead of
+	// shipping inside a JS bundle on a CDN. Same all-or-nothing contract as a
+	// deploy token: never a fall-through to session resolution.
+	const serviceBearer = event.request.headers
+		.get('authorization')
+		?.match(/^Bearer\s+(cfbs_[0-9a-f]{64})$/i)?.[1];
+	if (serviceBearer) {
+		// A PRESENT-but-empty Origin counts as absent, and only that: browsers
+		// cannot produce one (they send a real origin or the literal `null`,
+		// which is a non-empty string and stays refused), while HTTP clients
+		// that blank the header out can. `Origin` is a forbidden header name in
+		// browsers, so no page can strip its own.
+		const origin = event.request.headers.get('origin');
+		if (
+			access.projectId &&
+			!origin &&
+			isServiceKeySurface(event.url.pathname, access.projectId) &&
+			!isDemoProjectId(access.projectId)
+		) {
+			const grant = await verifyServiceKey(event.platform, serviceBearer.toLowerCase());
+			// Exact project, never a family: for data the branch IS the isolation
+			// boundary, and that is most of what branches are for.
+			if (grant && grant.projectId === access.projectId) {
+				event.locals.serviceKey = grant;
+				return resolve(event);
+			}
+		}
+		return Response.json({ error: 'invalid service key' }, { status: 401 });
 	}
 
 	// GitHub Actions OIDC (docs/managed-service-design.md, Phase B): a

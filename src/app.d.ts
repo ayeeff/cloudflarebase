@@ -29,6 +29,13 @@ declare global {
 			 * Set on exactly the same surfaces as `deployToken`, never a session.
 			 */
 			githubDeploy: import('$lib/server/github-connect').GithubDeployGrant | null;
+			/**
+			 * Grant when the request authenticated with a `cfbs_` service key
+			 * (docs/service-keys-design.md). Set only on its own project's DATA
+			 * plane, and only when the request carried no `Origin` - a service
+			 * key is a server credential and must never work from a browser.
+			 */
+			serviceKey: import('$lib/server/service-keys').ServiceKeyGrant | null;
 		}
 
 		interface Platform {

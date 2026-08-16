@@ -6,7 +6,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { GitBranch, TriangleAlert } from '@lucide/svelte';
+	import { GitBranch, KeyRound, TriangleAlert } from '@lucide/svelte';
 
 	let { data } = $props();
 
@@ -41,6 +41,63 @@
 			renameError = 'Could not reach the control plane.';
 		} finally {
 			renameBusy = false;
+		}
+	}
+
+	// Service keys. The minted secret lives in component state and nowhere
+	// else - it is in the mint response and never retrievable again, so it is
+	// deliberately NOT written back into `data` or re-fetched on invalidate.
+	let keyName = $state('');
+	let keyBusy = $state(false);
+	let keyError = $state<string | null>(null);
+	let mintedKey = $state<string | null>(null);
+
+	async function mintKey(event: SubmitEvent) {
+		event.preventDefault();
+		keyBusy = true;
+		keyError = null;
+		try {
+			const response = await fetch(`/api/projects/${data.projectId}/keys`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ name: keyName.trim() })
+			});
+			const body = (await response.json().catch(() => null)) as {
+				key?: string;
+				error?: string;
+			} | null;
+			if (!response.ok || !body?.key) {
+				keyError = body?.error ?? 'Could not create the key.';
+				return;
+			}
+			mintedKey = body.key;
+			keyName = '';
+			await invalidateAll();
+		} catch {
+			keyError = 'Could not reach the control plane.';
+		} finally {
+			keyBusy = false;
+		}
+	}
+
+	async function revokeKey(keyId: string) {
+		keyBusy = true;
+		keyError = null;
+		try {
+			const response = await fetch(`/api/projects/${data.projectId}/keys/${keyId}`, {
+				method: 'DELETE'
+			});
+			if (!response.ok) {
+				const body = (await response.json().catch(() => null)) as { error?: string } | null;
+				keyError = body?.error ?? 'Could not revoke the key.';
+				return;
+			}
+			mintedKey = null;
+			await invalidateAll();
+		} catch {
+			keyError = 'Could not reach the control plane.';
+		} finally {
+			keyBusy = false;
 		}
 	}
 
@@ -162,6 +219,98 @@
 					</div>
 					<p class="self-center text-sm">{new Date(data.project.createdAt).toLocaleDateString()}</p>
 				</div>
+			</Card.Content>
+		</Card.Root>
+
+		<Card.Root data-testid="service-keys-card">
+			<Card.Header>
+				<Card.Title class="flex items-center gap-2 text-base">
+					<KeyRound class="h-4 w-4 text-primary" /> Service keys
+				</Card.Title>
+				<Card.Description>
+					For a server with no signed-in user: crons, queue consumers, webhook handlers, seed
+					scripts. In a browser your users' own tokens are the credential and you need none of this
+					— a key is <strong>refused outright</strong> from any request carrying an
+					<code>Origin</code>, so it cannot work in frontend code.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content class="space-y-4">
+				<p class="text-xs text-muted-foreground">
+					A key reads and writes <strong>this project's</strong> data with full access, ignoring
+					collection access modes and validators — the Admin-SDK contract. It cannot create or
+					delete projects, mint other keys, or touch operator accounts.
+					{#if isBranch}
+						This key covers <span class="font-mono">{data.projectId}</span> only; the root and its other
+						branches each need their own.
+					{/if}
+				</p>
+
+				{#if mintedKey}
+					<div class="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3">
+						<p class="text-sm font-medium">Copy it now — it is never shown again.</p>
+						<code
+							class="block font-mono text-xs break-all select-all"
+							data-testid="service-key-secret">{mintedKey}</code
+						>
+					</div>
+				{/if}
+
+				{#if data.serviceKeys.length}
+					<ul class="divide-y rounded-md border" data-testid="service-key-list">
+						{#each data.serviceKeys as entry (entry.id)}
+							<li class="flex flex-wrap items-center gap-3 px-3 py-2.5">
+								<div class="min-w-0 flex-1">
+									<p class="truncate text-sm font-medium">{entry.name}</p>
+									<p class="text-xs text-muted-foreground">
+										Created {new Date(entry.createdAt).toLocaleDateString()} ·
+										{entry.lastUsedAt
+											? `last used ${new Date(entry.lastUsedAt).toLocaleString()}`
+											: 'never used'}
+									</p>
+								</div>
+								<Button
+									variant="ghost"
+									size="sm"
+									class="text-destructive"
+									disabled={keyBusy}
+									onclick={() => revokeKey(entry.id)}
+									data-testid="revoke-service-key"
+								>
+									Revoke
+								</Button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+
+				<form class="flex flex-wrap items-end gap-3" onsubmit={mintKey}>
+					<div class="min-w-48 flex-1 space-y-1.5">
+						<!-- Deliberately not "…name": `getByLabel` matches by substring,
+						     and project-settings.ui.spec.ts locates the rename field with
+						     getByLabel('Name'). A second labelled input containing that
+						     word on the same page makes their locator ambiguous. -->
+						<Label for="service-key-name" class="sr-only">What this key is for</Label>
+						<Input
+							id="service-key-name"
+							bind:value={keyName}
+							placeholder="What will use this key? e.g. nightly-import"
+							required
+							maxlength={60}
+							data-testid="service-key-name"
+						/>
+					</div>
+					<Button
+						type="submit"
+						variant="outline"
+						disabled={keyBusy}
+						data-testid="create-service-key"
+					>
+						{keyBusy ? 'Working…' : 'Create key'}
+					</Button>
+				</form>
+				{#if keyError}
+					<p class="text-sm text-destructive" data-testid="service-key-error">{keyError}</p>
+				{/if}
 			</Card.Content>
 		</Card.Root>
 

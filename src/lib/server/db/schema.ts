@@ -148,6 +148,40 @@ export const deployToken = sqliteTable(
 export type DeployTokenRow = typeof deployToken.$inferSelect;
 
 /**
+ * Project service keys (docs/service-keys-design.md) - the credential a SERVER
+ * can hold, for the cases with no user to relay: crons, queue consumers,
+ * webhook handlers, seed scripts, and backends we do not host.
+ *
+ * Scoped to ONE registry row, deliberately NOT to the root-and-branches family
+ * deploy tokens use: for data the branch IS the isolation boundary, and a
+ * preview key that reached production rows would make branches a lie.
+ *
+ * Only the SHA-256 digest is stored, so a control-plane leak yields no working
+ * credential, and the secret is unrecoverable after the one-time reveal.
+ */
+export const serviceKey = sqliteTable(
+	'service_key',
+	{
+		id: text('id').primaryKey(),
+		projectId: text('project_id').notNull(),
+		name: text('name').notNull(),
+		keyHash: text('key_hash').notNull(),
+		/** Operator user id, so a key has an author in the audit trail. */
+		createdBy: text('created_by'),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' })
+			.notNull()
+			.default(sql`(unixepoch() * 1000)`),
+		lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' })
+	},
+	(table) => [
+		index('service_key_project').on(table.projectId),
+		index('service_key_hash').on(table.keyHash)
+	]
+);
+
+export type ServiceKeyRow = typeof serviceKey.$inferSelect;
+
+/**
  * GitHub App installations, bound to the console org that installed them.
  *
  * The binding is what stops one operator connecting another account's repo:

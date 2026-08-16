@@ -2,6 +2,7 @@ import { canAdministerOrg } from '$lib/console';
 import { isDemoProjectId } from '$lib/server/console';
 import { assertProjectId } from '$lib/server/agents';
 import { getProject } from '$lib/server/registry';
+import { listServiceKeys } from '$lib/server/service-keys';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -20,5 +21,9 @@ export const load: PageServerLoad = async ({ locals, params, platform }) => {
 		: null;
 	const canDelete = project ? !project.orgId || canAdministerOrg(role) : false;
 
-	return { projectId, project, canDelete };
+	// Metadata only - the secret is unrecoverable after its one-time reveal.
+	// Loaded server-side so the card SSRs without a hydration flash.
+	const serviceKeys = project ? await listServiceKeys(platform, projectId) : [];
+
+	return { projectId, project, canDelete, serviceKeys };
 };
