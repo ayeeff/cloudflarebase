@@ -293,6 +293,45 @@ export class DbCollection extends LiveShard {
 		return this.writeDocument(id, parsed, { mode: 'replace', owner: undefined, upsert: true });
 	}
 
+	/**
+	 * Operator read by id.
+	 *
+	 * The admin surface had no way to fetch ONE document, and no way to emulate
+	 * it: `compileQuery` turns every `where.field` into a JSON path into the
+	 * `data` blob, so `id` - a system column - is unreachable by any query the
+	 * DSL can express. A server holding a service key could write a document
+	 * and then never read it back (docs/admin-sdk-design.md 5.1).
+	 *
+	 * Null, not a throw, so the parent can answer 404 - and so an older
+	 * deployed agent's route-level 404 stays distinguishable from this one.
+	 */
+	async adminGet(id: string): Promise<DbDocument | null> {
+		const [row] = await this.db.select().from(documents).where(eq(documents.id, id)).limit(1);
+		return row ? toDto(row) : null;
+	}
+
+	/**
+	 * Operator shallow merge into `data` - the public PATCH's semantics on an
+	 * operator surface, so validators and permission keys do not apply (the
+	 * Admin-SDK contract adminPut already follows).
+	 *
+	 * Never creates. PUT is the upsert; a PATCH that invented a document from a
+	 * partial body would write a record missing every field the caller assumed
+	 * was already there.
+	 */
+	async adminPatch(id: string, partial: unknown): Promise<DbDocument | null> {
+		const parsed = documentDataSchema.parse(partial);
+		const [existing] = await this.db.select().from(documents).where(eq(documents.id, id)).limit(1);
+		if (!existing) return null;
+
+		const merged = { ...(JSON.parse(existing.data) as Record<string, unknown>), ...parsed };
+		return this.writeDocument(id, merged, {
+			mode: 'replace',
+			owner: existing.owner,
+			upsert: false,
+		});
+	}
+
 	/** Operator delete. Returns false when the document does not exist. */
 	async adminDelete(id: string): Promise<boolean> {
 		return this.deleteDocument(id, null);

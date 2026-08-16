@@ -240,6 +240,42 @@ export class DbTable extends LiveShard {
 		return this.writeRow(id, full, { owner: undefined });
 	}
 
+	/**
+	 * Operator read by id - the collection twin (docs/admin-sdk-design.md 5.1).
+	 *
+	 * Tables could already do this through `POST /admin/tables/:name/sql`
+	 * (`SELECT * FROM t WHERE id = ?`), but only because they happen to have a
+	 * raw-SQL surface that collections do not. Going through SQL for a
+	 * single-row read is not an API, and the two kinds must not need different
+	 * idioms for the same operation.
+	 */
+	async adminGet(id: string): Promise<DbRow | null> {
+		const row = this.rowById(id);
+		return row ? this.toDto(row) : null;
+	}
+
+	/**
+	 * Operator shallow merge - the public PATCH's semantics on the operator
+	 * surface. STRUCTURE always validates (the schema is the storage) while
+	 * policy bounds are bypassed, exactly like adminPut.
+	 *
+	 * Never creates: PUT is the upsert.
+	 */
+	async adminPatch(
+		id: string,
+		partial: unknown,
+	): Promise<DbRow | { invalid: string[] } | null> {
+		const parsed = documentDataSchema.parse(partial);
+		const existing = this.rowById(id);
+		if (!existing) return null;
+
+		const merged = { ...rowDataFromSql(this.columns, existing), ...parsed };
+		const issues = validateRow(this.columns, merged, { skipPolicy: true });
+		if (issues.length) return { invalid: issues };
+
+		return this.writeRow(id, merged, { owner: (existing.owner as string | null) ?? null });
+	}
+
 	/** Operator delete. Returns false when the row does not exist. */
 	async adminDelete(id: string): Promise<boolean> {
 		return this.deleteRow(id, null);

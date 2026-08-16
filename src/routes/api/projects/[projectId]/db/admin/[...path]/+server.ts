@@ -30,4 +30,8 @@ const proxy: RequestHandler = async ({ params, request, url, platform }) => {
 export const GET = proxy;
 export const POST = proxy;
 export const PUT = proxy;
+// PATCH arrived with the admin get/patch pair (docs/admin-sdk-design.md 5.1).
+// The catch-all forwards any path, but SvelteKit routes by EXPORTED method, so
+// an unexported verb 405s at the router and never reaches the agent.
+export const PATCH = proxy;
 export const DELETE = proxy;

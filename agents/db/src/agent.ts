@@ -1324,6 +1324,28 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			}
 			return Response.json(result);
 		}
+		// GET and PATCH landed with the server-side service path
+		// (docs/admin-sdk-design.md 5.1): until then this route was PUT and
+		// DELETE only, so a service key could write a document and never read it
+		// back - /admin/query cannot filter on `id` at all.
+		if (request.method === 'GET') {
+			const found = (await child.adminGet(docId)) as unknown as Awaited<
+				ReturnType<DbCollection['adminGet']>
+			>;
+			if (!found) return Response.json({ error: 'no such document' }, { status: 404 });
+			return Response.json(found);
+		}
+		if (request.method === 'PATCH') {
+			const data = (await request.json().catch(() => null)) as { data?: unknown } | null;
+			if (!data || typeof data.data !== 'object' || data.data === null) {
+				return Response.json({ error: 'invalid document body' }, { status: 400 });
+			}
+			const merged = (await child.adminPatch(docId, data.data)) as unknown as Awaited<
+				ReturnType<DbCollection['adminPatch']>
+			>;
+			if (!merged) return Response.json({ error: 'no such document' }, { status: 404 });
+			return Response.json(merged);
+		}
 		if (request.method === 'DELETE') {
 			const deleted = await child.adminDelete(docId);
 			if (!deleted) return Response.json({ error: 'no such document' }, { status: 404 });
@@ -1773,6 +1795,44 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				);
 			}
 			return Response.json(result);
+		}
+		// The collection twin's GET/PATCH, so both kinds read and merge through
+		// the same idiom (docs/admin-sdk-design.md 5.1). Tables could already do
+		// this via /admin/tables/:name/sql; raw SQL is not an API for a
+		// single-row read.
+		if (request.method === 'GET') {
+			const found = (await child.adminGet(rowId)) as unknown as Awaited<
+				ReturnType<DbTable['adminGet']>
+			>;
+			if (!found) return Response.json({ error: 'no such row' }, { status: 404 });
+			return Response.json(found);
+		}
+		if (request.method === 'PATCH') {
+			const data = (await request.json().catch(() => null)) as { data?: unknown } | null;
+			if (!data || typeof data.data !== 'object' || data.data === null) {
+				return Response.json({ error: 'invalid row body' }, { status: 400 });
+			}
+			let merged: Awaited<ReturnType<DbTable['adminPatch']>>;
+			try {
+				merged = (await child.adminPatch(rowId, data.data)) as unknown as Awaited<
+					ReturnType<DbTable['adminPatch']>
+				>;
+			} catch (error) {
+				const column = uniqueViolationColumn(error);
+				if (!column) throw error;
+				return Response.json(
+					{ error: `a row with that ${column} already exists (unique column)` },
+					{ status: 409 },
+				);
+			}
+			if (!merged) return Response.json({ error: 'no such row' }, { status: 404 });
+			if (typeof merged === 'object' && 'invalid' in merged) {
+				return Response.json(
+					{ error: 'row failed validation', issues: merged.invalid },
+					{ status: 400 },
+				);
+			}
+			return Response.json(merged);
 		}
 		if (request.method === 'DELETE') {
 			const deleted = await child.adminDelete(rowId);

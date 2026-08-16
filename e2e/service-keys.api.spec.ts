@@ -188,6 +188,112 @@ test.describe('service keys', () => {
 		}
 	});
 
+	/**
+	 * Reading and merging ONE record by id (docs/admin-sdk-design.md 5.1).
+	 *
+	 * The admin surface used to be write-only per record: PUT and DELETE
+	 * existed, GET and PATCH did not, and `/admin/query` cannot stand in -
+	 * compileQuery turns every `where.field` into a JSON path into `data`, so
+	 * `id` (a system column) is unreachable by any query the DSL can express. A
+	 * server could write a document and then never read it back.
+	 *
+	 * Both kinds, because they must not need different idioms for the same
+	 * operation - tables could already do this through admin SQL, which is not
+	 * an API for a single-row read.
+	 */
+	test('reads and merges a single record by id, collections and tables alike', async ({
+		baseURL
+	}) => {
+		const server = await serverContext(baseURL);
+		try {
+			const auth = { authorization: `Bearer ${key}` };
+			const collection = `svc-doc-${run}`;
+			const table = `svc-row-${run}`;
+			const docPath = `/api/projects/${KEY_PROJECT}/db/admin/collections/${collection}/documents/item-1`;
+			const rowPath = `/api/projects/${KEY_PROJECT}/db/admin/tables/${table}/rows/row-1`;
+
+			// --- documents ---
+			const declareCollection = await server.put(
+				`/api/projects/${KEY_PROJECT}/db/admin/collections/${collection}`,
+				{ headers: auth, data: { readAccess: 'auth', writeAccess: 'auth' } }
+			);
+			expect(declareCollection.ok(), await declareCollection.text()).toBeTruthy();
+
+			const wrote = await server.put(docPath, {
+				headers: auth,
+				data: { data: { title: 'first', keep: 'untouched' } }
+			});
+			expect(wrote.ok(), await wrote.text()).toBeTruthy();
+
+			const readBack = await server.get(docPath, { headers: auth });
+			expect(readBack.status(), await readBack.text()).toBe(200);
+			expect((await readBack.json()).data.title).toBe('first');
+
+			const patched = await server.patch(docPath, {
+				headers: auth,
+				data: { data: { title: 'second' } }
+			});
+			expect(patched.ok(), await patched.text()).toBeTruthy();
+
+			// A MERGE, not a replace: the field the patch never mentioned survives.
+			const merged = await server.get(docPath, { headers: auth });
+			const doc = await merged.json();
+			expect(doc.data.title).toBe('second');
+			expect(doc.data.keep).toBe('untouched');
+
+			// Absent ids are 404 on both verbs - and PATCH must never CREATE, or
+			// it would invent a record missing every field the caller assumed was
+			// already there.
+			const missing = await server.get(`${docPath}-nope`, { headers: auth });
+			expect(missing.status()).toBe(404);
+			const patchMissing = await server.patch(`${docPath}-nope`, {
+				headers: auth,
+				data: { data: { title: 'ghost' } }
+			});
+			expect(patchMissing.status()).toBe(404);
+
+			// --- typed rows, same idiom ---
+			const declareTable = await server.put(
+				`/api/projects/${KEY_PROJECT}/db/admin/tables/${table}`,
+				{
+					headers: auth,
+					data: {
+						readAccess: 'auth',
+						writeAccess: 'auth',
+						replication: 'off',
+						columns: [
+							{ name: 'title', type: 'text' },
+							{ name: 'done', type: 'boolean', nullable: true }
+						]
+					}
+				}
+			);
+			expect(declareTable.ok(), await declareTable.text()).toBeTruthy();
+
+			const wroteRow = await server.put(rowPath, {
+				headers: auth,
+				data: { data: { title: 'first', done: false } }
+			});
+			expect(wroteRow.ok(), await wroteRow.text()).toBeTruthy();
+
+			const readRow = await server.get(rowPath, { headers: auth });
+			expect(readRow.status(), await readRow.text()).toBe(200);
+			expect((await readRow.json()).data.title).toBe('first');
+
+			const patchedRow = await server.patch(rowPath, {
+				headers: auth,
+				data: { data: { done: true } }
+			});
+			expect(patchedRow.ok(), await patchedRow.text()).toBeTruthy();
+
+			const mergedRow = await (await server.get(rowPath, { headers: auth })).json();
+			expect(mergedRow.data.done).toBe(true);
+			expect(mergedRow.data.title).toBe('first');
+		} finally {
+			await server.dispose();
+		}
+	});
+
 	test('is refused from a browser - any Origin at all', async ({ baseURL }) => {
 		// The single highest-value guard: a key pasted into frontend code fails
 		// at the developer's desk instead of shipping inside a JS bundle.
