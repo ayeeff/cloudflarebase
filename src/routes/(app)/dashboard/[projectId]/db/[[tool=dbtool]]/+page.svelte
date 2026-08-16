@@ -876,8 +876,11 @@
 			id: 'rest',
 			label: 'REST',
 			lang: 'bash',
-			code: `# A project JWT for the signed-in user (session cookie or bearer token)
-curl ${origin}/api/projects/${data.projectId}/auth/token
+			code: `# A project JWT for the SIGNED-IN USER. There is no ambient API key:
+# the caller's own session is what mints it - a cookie in a browser, or a
+# bearer session token anywhere else (what a server relays; see Server tab).
+curl ${origin}/api/projects/${data.projectId}/auth/token \\
+  -H 'authorization: Bearer <session-token>'
 
 # Create a document (owner comes from the token subject)
 curl -X POST ${dbBase}/collections/posts/documents \\
@@ -891,6 +894,10 @@ curl -X POST ${dbBase}/collections/posts/documents \\
 			lang: 'typescript',
 			code: `import { createDbClient } from '@cloudflarebase/db/client';
 
+// IN THE BROWSER. This fetch sends no Authorization header - it works
+// because the browser attaches the signed-in user's session cookie, so the
+// token you get back is THAT USER's. On a server there is no cookie jar and
+// no signed-in user, so this same call answers 401: see the Server tab.
 const db = createDbClient({
 	baseUrl: '${dbBase}',
 	getToken: async () => {
@@ -914,6 +921,35 @@ const unsubscribe = posts.subscribe(
 		onChange: (change, docs) => render(docs)
 	}
 );`
+		},
+		{
+			id: 'ssr',
+			label: 'Server (SSR)',
+			lang: 'typescript',
+			code: `import { createDbClient } from '@cloudflarebase/db/client';
+
+// ON A SERVER there is no ambient session, so you RELAY the identity the
+// user already sent you: /auth/token accepts the session cookie or a bearer
+// session token. You are not authenticating your server - you are acting as
+// that signed-in user, with exactly their access.
+export async function load({ request }) {
+	const db = createDbClient({
+		baseUrl: '${dbBase}',
+		getToken: async () => {
+			const response = await fetch('${origin}/api/projects/${data.projectId}/auth/token', {
+				headers: { cookie: request.headers.get('cookie') ?? '' }
+			});
+			if (!response.ok) return null; // not signed in - public data still reads
+			return (await response.json()).token;
+		}
+	});
+
+	return { posts: await db.collection('posts').query({ limit: 25 }) };
+}
+
+// NO USER AT ALL - a cron, a queue consumer, a Stripe webhook, a seed
+// script? There is nobody to relay, so none of the above applies. That is
+// what a project service key is for; mint one under Settings.`
 		},
 		{
 			id: 'tables',
