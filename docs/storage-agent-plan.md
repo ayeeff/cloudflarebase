@@ -1,8 +1,19 @@
 # Storage Agent — `@cloudflarebase/storage` (Cloudflarebase's fourth primitive)
 
-> **Status: planned, not started.** This file is the executable summary; it is
-> normative until `agents/storage/CLAUDE.md` exists, which then becomes
-> authoritative for what actually shipped.
+> **Status: S1 shipped 2026-08-15** — with S2's access modes, JWT
+> verification, permission keys, and the serve-time inline allowlist pulled
+> forward (security first: a substrate with anonymous-writable buckets was
+> never going to ship). `agents/storage/CLAUDE.md` is now authoritative for
+> what shipped; this file remains the plan of record for S2 — **designed in
+> full 2026-08-15**: signed URLs, proxied multipart, reconcile, folder
+> listing, the console pages, the demo bucket — plus S2.5 (presigned
+> transport) and S3 (packaging/publish). Deltas from the plan:
+> the byte path's config cache asks the PARENT (not the child) on miss — one
+> answer carries config, counters, and the quota verdict; the index RPC on
+> writes is awaited rather than waitUntil'd until reconcile exists; and a
+> dedicated serving hostname landed early as a worker route
+> (`STORAGE_SERVE_DOMAIN`, cdn.cloudflarebase.com — never a bucket-level
+> domain).
 
 ## Context
 
@@ -130,22 +141,35 @@ that anonymity.
   `cacheControl`. Owner-mode authorization reads `customMetadata.owner` off the
   object already in hand.
 - **`HEAD` / `DELETE objects/<key...>`** — as above; delete hits R2 first.
-- **`GET objects?prefix=&delimiter=/&cursor=&sort=`** — served by the index, not
-  by R2: keyset paging with a `range of total` readout, the convention every
-  other operator list in the console follows.
+- **`GET objects?prefix=&delimiter=&cursor=&limit=`** — served by the index,
+  not by R2: keyset paging in key order with a `range of total` readout, the
+  convention every other operator list in the console follows. `delimiter=/`
+  collapses folders ("Folder listing" below).
 - **`POST signed-urls`** `{ key, method, ttl }` → a URL carrying
   `?v=&exp=&sig=`, HMAC over `pid \0 bucket \0 key \0 method \0 exp`. Minting
   is body-addressed, deliberately not `objects/<key...>/signed-url`: a suffix
   route is ambiguous against an object whose key ends in `/signed-url`, and
   route grammar must never be reachable from user data. Verified in the worker
   with **zero DO hops**, which is what makes a private image work in a plain
-  `<img src>`. The signing key is a manifest `secrets.generated` value — minted
-  by `StorageAgent` on first start, overridable by env var — cached per isolate
-  WITH its version; `v=` names the version that signed, and a verifier holding
-  a different one refetches once before refusing, so rotation bites on the next
-  request rather than at cache expiry. Rotating invalidates every outstanding
-  URL — the intended revocation mechanism — and `ttl` is capped at 7 days so no
-  URL outlives the decision to mint it by much.
+  `<img src>`. **S2 signs GET and HEAD only**: a signed URL BYPASSES the
+  bucket's read mode at serve time — that is its purpose — so minting requires
+  exactly what reading requires, and `owner` mode verifies ownership AT MINT
+  with one `head()`. Write capabilities stay out (Non-goals): uploads have a
+  protocol, and S2.5's presigning is the direct-to-R2 path. The admin mirror
+  mints too — the console's preview pane needs URLs for private buckets. The
+  signature covers project, bucket, key, method, and expiry but NOT the host,
+  so one URL verifies on the agent path and the serving domain alike; mint
+  builds on `STORAGE_SERVE_DOMAIN` when configured. The signing secret is a
+  manifest `secrets.generated` value — minted by `StorageAgent` on first
+  start, overridable by env var — versioned, and delivered to the worker
+  INSIDE the same cached parent answer the access check reads: one cache,
+  zero extra hops. `v=` names the version that signed, and a verifier holding
+  a different one refetches once before refusing, so rotation bites on the
+  next request rather than at cache expiry. Rotating invalidates every
+  outstanding URL — the intended revocation mechanism — and `ttl` is capped
+  at 7 days so no URL outlives the decision to mint it by much. Signed
+  responses go out `Cache-Control: private, no-store` and never enter the
+  shared cache.
 
 Public objects are cached in `caches.default` keyed by URL. Signed URLs are
 `Cache-Control: private` and never enter the shared cache. Writes and deletes
@@ -187,34 +211,75 @@ what the overwhelming majority of real uploads are — pay three operations and
 three round trips to share a code path with the 4 GB video is paying for
 symmetry with the common case's latency and the customer's bill.
 
+**Upload state lives on the parent, and the reservation IS the record** —
+resolving S1's open lean toward the child the other way. The part hot path
+never touches a Durable Object (the envelope makes it stateless), so the only
+record traffic is create/complete/abort/sweep — once per FILE, never per part
+— and create already pays the parent hop for facts only the parent holds: the
+project byte total and the concurrent-upload count. Splitting reservation
+(parent) from record (child) would double the create hops and leave the sweep
+needing a cross-DO join; one `uploads` table on `StorageAgent` (id, bucket,
+key, R2 uploadId, `partSize`, reserved bytes, content type, owner, createdAt)
+is the whole thing. `getBucketAccess` folds the open reservations into its
+quota verdict, so single-shot PUTs see them too.
+
 The control plane is the same for both multipart transports:
 
 - `POST uploads` `{ key, contentType, size }` → `{ uploadId, partSize, mode }`
-  where `mode` is `proxy` or `presigned`. `partSize` is **server-dictated** (R2
-  requires every part but the last to be identical) and sized so 10,000 parts
-  always cover the declared size. Quota is reserved here, from `size` — the
-  one storage call that consults the parent (project byte total and the
-  concurrent-multipart cap), affordable once per file and never per part. The `uploadId`
-  on the wire is **our own HMAC envelope** over the R2 uploadId plus project,
-  bucket, key, and `partSize`: `resumeMultipartUpload()` validates nothing, so
+  where `mode` is `proxy` or `presigned` — always `proxy` in S2; the field
+  ships now so S2.5 never changes the client contract. The create runs the
+  write-mode check and the write-time rules against DECLARED values
+  (`contentType` vs `allowedContentTypes`, `size` vs `maxObjectBytes` and the
+  5 GB multipart ceiling — which is where a `maxObjectBytes` above 100 MB
+  becomes meaningful), counts open uploads against the concurrent cap, and
+  reserves `size` against the project quota. `partSize` is
+  **server-dictated** (R2 requires every part but the last to be identical):
+  the declared size over 10,000 parts, rounded up to a MiB, clamped to
+  [8 MiB, 95 MiB] — the floor keeps part counts sane above R2's 5 MiB
+  minimum, the ceiling keeps a proxied part under the Workers body cap. The
+  `uploadId` on the wire is **our own HMAC envelope** over the R2 uploadId
+  plus project, bucket, key, `partSize`, declared size, the reservation id,
+  and a 25-hour expiry — signed with the same generated secret as download
+  URLs under a distinct context label (`upload` vs `url`: one secret, no
+  cross-protocol forgery). `resumeMultipartUpload()` validates nothing, so
   the raw R2 id must never be the capability, and the envelope is what lets
-  every part `PUT` verify statelessly — zero DO hops — while staying unable to
-  cross into another tenant's upload.
+  every part `PUT` verify statelessly — zero DO hops — while staying unable
+  to cross into another tenant's upload. The expiry means a swept upload's
+  parts die at the signature check instead of surfacing as an R2 error to
+  interpret; and rotating the secret kills in-flight multiparts along with
+  outstanding URLs — stated, not accidental: rotation is the revocation
+  lever, and uploads are day-scale.
 - `POST uploads/<id>/parts` `{ from, count }` → for `presigned`, a batch of
   short-TTL presigned `PUT` URLs, minted in windows rather than 10,000 at once.
   Not called at all in `proxy` mode.
 - Part upload: `PUT uploads/<id>/parts/<n>` at us, or the presigned URL at R2.
-  Either way the client keeps `{ partNumber, etag }`.
+  Either way the client keeps `{ partNumber, etag }`. Proxied parts require
+  `Content-Length` (411, the single-PUT rule) and must declare exactly
+  `partSize` bytes — except the final part (the envelope carries the declared
+  size, so the worker knows which number is last) — so a malformed client
+  fails at its first part, never at complete.
 - `POST uploads/<id>/complete` `{ parts }` → completion runs **inside whichever
   API created the upload** (binding or S3), because uploadId interop between
   the two is undocumented and an upload that starts on one must not finish on
   the other. The worker then `head()`s the object to verify the real size
-  against the reservation, deletes and 413s if it overran, and commits the
-  index row.
-- `DELETE uploads/<id>` aborts and refunds the reservation. An alarm sweeps
-  uploads idle over 24 h — R2 aborts them itself after 7 days, but the
-  reservation is ours to release and incomplete parts bill as storage until
-  then.
+  against the reservation (an invariant check in proxy mode, the real
+  enforcement for S2.5's presigned parts), deletes and 413s if it overran,
+  commits the index row — the child's `recordPut`, awaited, the single-shot
+  visibility contract — and settles the parent: the reservation drops and the
+  registry counters take a provisional bump the child's next absolute
+  heartbeat corrects.
+- `DELETE uploads/<id>` aborts and refunds the reservation. The parent's
+  sweep alarm aborts uploads older than 24 hours **by age, not idleness** —
+  tracking idleness would cost a parent hop per part, age needs nothing, and
+  24 h covers any single file on any real link. R2 aborts them itself after
+  7 days, but the reservation is ours to release and incomplete parts bill as
+  storage until then.
+
+The whole control plane exists under the `/admin/buckets/<b>/…` mirror too —
+modes bypassed, console-guard gated — because the console's own big-file
+uploads use the SAME protocol ("Console pages" below). Create, complete, and
+abort are small JSON and may ride the `/api` proxy; part `PUT`s never do (the
+proxy buffers bodies — the memory bomb the byte paths already route around).
 
 So presigning is a **transport swap under an unchanged protocol**, not a
 separate feature with its own client path. Without credentials every size still
@@ -261,21 +326,53 @@ so a delete crash can only leave the benign shape. **Writes also go to R2
 first** — the row wants the put's real size and etag, and an index-first
 "pending" row would cost a second RPC on every 40 KB single-shot upload —
 which is the one place the bad shape can occur: a crash between the put
-landing and the metadata RPC orphans the object. The RPC runs under
-`waitUntil` with retries, and the reconcile alarm exists precisely because
-that window cannot be closed from the write path.
+landing and the metadata RPC orphans the object. S1 shipped that RPC
+**awaited, and it stays awaited even once reconcile exists** — a deliberate
+override of this plan's original `waitUntil`: the caller learns "stored but
+unindexed — retry" instead of silently diverging, and the returned counters
+are what the worker folds into its cached quota view, so a burst cannot sail
+past a ceiling inside one cache window. The price is one metadata RPC on a
+path that already paid an R2 round trip. Reconcile is the CRASH backstop, not
+the consistency mechanism.
 
-A daily reconcile alarm walks the bucket's R2 prefix, adopts unindexed objects
-and prunes phantom rows, so the index is self-healing rather than merely
-careful. `POST /admin/buckets/:name/reconcile` runs it on demand. Adoption is
-also what makes the index **rebuildable**: drop a bucket's rows and reconcile
-regenerates them from the R2 walk — the escape hatch for index schema changes
-and for any future resharding.
+The reconcile alarm lives on the **child** — `StorageBucket` owns the index
+and its own R2 prefix — as a plain-DO `setAlarm`: armed lazily on the first
+write, re-armed daily on fire, deleted by `destroy()`. The walk is a
+streaming **merge join** of two key-ordered streams — R2 `list()` pages
+(`include: ['httpMetadata', 'customMetadata']`) against the index scanned in
+key order — so memory stays one page deep whatever the bucket holds. An R2
+key with no row is adopted (size, etag, content type, owner, and uploaded-at
+all come off the listing); a row with no R2 key is pruned. Both actions skip
+anything younger than ONE HOUR, object or row, because a write landing
+mid-walk reads as divergence to whichever stream was read first — the grace
+window turns that race into a no-op. In-flight multipart uploads never appear
+in `list()`, so the walk is blind to them by construction.
+`POST /admin/buckets/:name/reconcile` runs the same walk on demand and
+reports `{ adopted, pruned }`. Adoption is also what makes the index
+**rebuildable**: drop a bucket's rows and reconcile regenerates them from the
+R2 walk — the escape hatch for index schema changes and for any future
+resharding. The merge join is pinned by unit tests, not e2e: an orphan cannot
+be staged through any public surface, which is rather the point.
 
 The parent↔child protocol is db's, unchanged: row first then push, monotonic
 `configVersion` so a stale push cannot regress a child, debounced absolute
 counters reported by the child as a heartbeat rather than a change
 notification, and the hot path never consulting the parent.
+
+## Folder listing
+
+The console browser navigates folders, and folders are VIRTUAL — exactly as
+R2 treats them: nothing is created or deleted, `/` is just a byte keys may
+contain. `GET objects?delimiter=/` collapses keys under the requested
+`prefix` into first-segment entries `{ name, objectCount, totalBytes }`,
+interleaved lexicographically with the leaf objects, keyset-paged over the
+COLLAPSED sequence — the cursor is the last emitted entry name, folder or
+leaf. Implementation is a computed-segment `GROUP BY` in the child: no tree
+tables, no new columns, acceptable outright because a bucket caps at 10k
+rows. Listing stays **key order only** — a secondary sort (size, updated)
+wants a composite cursor, no operator list in the console re-sorts either,
+and the `sort=` parameter this plan once sketched is dropped.
+`publicListing` governs the delimited form exactly as the flat one.
 
 ## Access control
 
@@ -303,8 +400,9 @@ and the 503-on-neither-binding degradation are copied from `agents/db/src/jwt.ts
 
 **The byte path reads this config from a per-isolate cache**, not from a DO:
 the worker holds each bucket's access config for a short TTL (30 s), refreshed
-from `StorageBucket` on miss, beside the JWKS and the signing key — three
-caches, one policy. That cache is what every zero-hop claim in this document
+from `StorageAgent` on miss (the S1 delta: one parent answer carries config,
+counters, quota verdict — and, in S2, the signing secret), beside the JWKS —
+two caches, one policy. That cache is what every zero-hop claim in this document
 is made of, and its price is stated rather than hidden: there is no push
 channel to isolates, so a flip toward MORE restrictive access converges within
 the TTL per isolate, not instantly, and the combined worst case with the
@@ -326,8 +424,91 @@ cleanup for the TTL reaper to get wrong. And it works on the **self-hosted
 default with no R2 subscription at all**, so a fresh install can open the
 Storage page and see the product instead of a 503.
 
-Writes, deletes, and bucket creation answer 403 with the upsell card, the
-hosting precedent.
+Mechanically it is a WORKER concern, never a DO. S1 already refuses demo ids,
+but does part of it inside `StorageAgent.onRequest` — which means addressing
+the route provisions the object first. S2 moves the whole demo answer INTO
+the worker, before any stub is dialled, so a demo visit costs storage nothing
+at all: the guard's zero-cost demo rule, extended down the stack.
+`src/demo.ts` holds a fixed manifest of a handful of small assets — a few
+raster images, a text file, a PDF, every one inside the serve allowlist —
+with bytes imported into the bundle and FIXED timestamps, so listings are
+deterministic. The overview reports one bucket, `samples` (`read: public`,
+`publicListing: true`); the flat and delimited listings are generated from
+the manifest; GET/HEAD serve module bytes through the same response pipeline
+as real objects (nosniff, allowlist, cache headers). The console's demo pages
+render from REST alone — no `AgentClient` session, because the state socket
+would dial the DO the demo path exists to avoid.
+
+Writes, deletes, bucket admin, signed URLs, and uploads answer 403 with the
+upsell card, the hosting precedent.
+
+## Console pages
+
+Routes are `[projectId]/storage/[[tool=storagetool]]` — the db convention: an
+optional-param route with a matcher (`access`, `integration`; bare `/storage`
+is Files), exact-match nav highlighting for free. The manifest's console
+block turns real:
+
+```json
+"console": {
+	"section": "Storage",
+	"icon": "hard-drive",
+	"peek": 2,
+	"pages": [
+		{ "path": "/storage", "title": "Files", "testId": "nav-storage", "icon": "folder-open" },
+		{ "path": "/storage/access", "title": "Access", "testId": "nav-storage-access", "icon": "shield-check" },
+		{ "path": "/storage/integration", "title": "Integration", "testId": "nav-storage-integration", "icon": "plug" }
+	]
+}
+```
+
+The registry emits the sidebar section the moment `pages` is non-empty — no
+console code change for the nav. Storage leaves the `comingSoon` arrays in
+`[projectId]/+layout.svelte` and `[projectId]/+page.svelte`, and the project
+overview trades the roadmap card for a live agent card (buckets / objects /
+bytes over the pinned Integration + Open row) fed by the `StorageAgentState`
+the SDK already syncs.
+
+**Files** is the table-editor shape (db's tables workspace, not the Miller
+columns): a permanent bucket rail — bucket list with object counts, a
+New-bucket dialog that states the `auth`/`auth` default in plain words —
+beside a full-bleed browser. Breadcrumb path segments navigate the delimiter
+listing; a toolbar carries Upload plus a drag-drop overlay; the entry table
+is name (per-type icon), size, content type, updated. Folder rows descend;
+object rows open a right-side preview sheet: a metadata block (key, size,
+type, etag, owner, timestamps), an inline preview honouring the serve
+allowlist (anything outside it shows a download action instead — the console
+must not render what the byte path will not), copy-URL, mint-signed-URL with
+a TTL picker on non-public buckets, and delete behind an AlertDialog. Paging
+is `range of total` + Prev/Next over the index's keyset cursors with the
+client-side cursor stack; the 5s poll re-reads the CURRENT page — the
+operator-list convention, verbatim. Bulk select rides the same confirm.
+
+Console uploads ride the ADMIN mirror through the `/agents/*` passthrough —
+streaming, guard-gated, modes bypassed, the Firestore Admin model — with
+per-file progress, escalating to the multipart protocol above 100 MB: the
+exact protocol end-user SDKs get, no special console path to diverge. "New
+folder" just seeds a key prefix for the next upload — folders are virtual and
+nothing is created.
+
+Degraded states, each honest: no buckets → the create hero; `configured:
+false` → the R2 setup-steps card (hosting's 503 card precedent); `erasing` →
+a wipe-in-progress notice; demo → read-only browsing of the synthetic bucket
+with the upsell replacing every mutating control.
+
+**Access** mirrors the db Access tab: one card per bucket rendering the
+config as the live plain-English sentence, with the read/write mode selects,
+the `publicListing` switch, permission-key inputs, `maxObjectBytes`,
+`allowedContentTypes` chips, and `cacheControl` — saved through the
+omitted-field-preserving `PUT`. Bucket DELETION lives here behind the
+typed-name confirm: the rail creates, Access destroys — the table/collection
+convention.
+
+**Integration** follows the db integration tab: REST snippets against the
+project's real base URL (upload, download, list, signed-URL mint), the caps
+readout from `/overview`, and the SDK snippet
+(`storage.bucket('avatars').upload(file)`) marked as arriving with S3's
+`./client`.
 
 ## Caps
 
@@ -388,33 +569,39 @@ e2e spec polls the flag away before asserting emptiness.
   DTO mirrors in `src/lib/agents.ts`; `npm run dev` gains :8791;
   `wrangler.e2e.jsonc` and the Playwright config gain :8801; `deploy:all` gains
   the storage step in order.
-- **Console**: three pages — `/storage` (bucket rail + object browser with
-  folder navigation, upload dropzone, preview pane, keyset paging, AlertDialog
-  deletes), `/storage/access` (the plain-English access sentence, mirroring the
-  db Access tab), `/storage/integration`. `peek: 2`. Storage leaves the
-  `comingSoon` arrays in `[projectId]/+layout.svelte` and `[projectId]/+page.svelte`.
-- **CLI**: one `AGENTS.storage` entry; everything else rides the manifest.
-- **e2e**: `storage.api.spec.ts` (CRUD, access modes, multipart, signed URLs,
-  caps, erase-then-re-mint), `storage.ui.spec.ts` (browser, upload, delete
-  confirm, paging), plus key-traversal, cross-project-prefix, byte-path
-  anonymity, and inline-serving-allowlist cases added to
-  `security.api.spec.ts`.
+- **Console**: the three pages and the sidebar/overview promotion, designed
+  in full under "Console pages" above, plus the `storagetool` param matcher.
+- **CLI**: one `AGENTS.storage` entry; everything else rides the manifest
+  (S2's `secrets.generated` signing-secret entry included).
+- **e2e** (S1 shipped the api spec and the security cases; S2 adds):
+  multipart happy path, envelope tamper and cross-tenant reuse, the
+  concurrent cap, and abort-refunds; signed-URL mint / anonymous fetch on a
+  private bucket / expiry / tamper / rotation-invalidates; the on-demand
+  reconcile shape; demo synthetic-bucket reads and write refusals; and
+  `storage.ui.spec.ts` (create → upload → browse folders → preview → delete
+  confirm → paging, the access sentence, demo read-only).
 
 Local dev and e2e declare the R2 bucket and run against miniflare's simulator,
 so the dev loop is full fidelity — only the self-hosted top level omits it.
 
 ## Phases
 
-**S1 — Substrate.** Scaffold from `agents/hosting` (the smallest agent),
-manifest and contract deltas, root wiring, bucket registry and index schema,
-single-shot `PUT`/`GET`/`HEAD`/`DELETE`/list, the erase drain, the
-`configured: false` degradation, `storage.api.spec.ts`.
+**S1 — Substrate. Shipped 2026-08-15**, plus the S2 pull-forwards (access
+modes, JWT, permission keys, quotas and counters, the serve-time allowlist)
+and two additions the plan lacked: the operator admin mirror
+(`/admin/buckets/<b>/objects…`, modes bypassed, guard-gated) and the
+`STORAGE_SERVE_DOMAIN` worker route. `agents/storage/CLAUDE.md` records the
+as-built shape.
 
-**S2 — Product.** Access modes, JWT verification, rules (size, content type,
-permission keys), signed download URLs, **proxied multipart** (the
-credential-free transport, which is what pins the upload protocol), quotas and
-counters, reconcile, the three console pages, the synthetic demo bucket,
-`storage.ui.spec.ts`.
+**S2 — Product.** What remains after the pull-forwards, in build order: the
+generated signing secret + signed download URLs first (smallest, and the
+multipart envelope wants the secret in place); **proxied multipart** (the
+credential-free transport, which is what pins the upload protocol);
+reconcile; folder listing; the console pages; the synthetic demo bucket
+(moving the demo refusal out of the DO); `storage.ui.spec.ts`. Exit gates: a
+~100 MB streaming `PUT` through the `/agents/*` passthrough verified against
+a real stack (S1's open question, inherited — per the verify-don't-reason
+rule), and the full suite green.
 
 **S2.5 — Presigned transport.** `aws4fetch`, the optional S3 credentials, the
 batch part-URL mint, bucket CORS on the managed service, and the size
@@ -430,7 +617,9 @@ events), `agents/storage/CLAUDE.md`, root `CLAUDE.md` entries, publish.
 
 ## Non-goals for v1
 
-Image transformations (the Images binding is Phase 3); uploads that resume
+Image transformations (the Images binding is Phase 3); write-capability
+signed URLs (uploads have a protocol, and S2.5's presigning is the
+direct-to-R2 path); uploads that resume
 across a page reload (the server-side upload record already outlives the
 session — it is the client's part bookkeeping that does not, so this is SDK
 persistence work, not protocol work); TUS; **tenant-configurable** CORS (the
@@ -442,13 +631,18 @@ notifications; and cross-project copy.
 
 ## Open questions
 
-- **Does the console's own upload UI use the `/agents/*` passthrough?** It
-  should — it is same-origin and already behind the guard — but that path has
-  only ever carried WebSocket upgrades and small JSON. Verify a 100 MB
-  streaming `PUT` through it against a real stack before S1 closes, per the
-  verify-don't-reason rule.
-- **Should `StorageBucket` exist in S1 at all**, or should the index start on
-  `StorageAgent` and shard later? Reconcile makes either answer cheap to
-  revise — the index drops and rebuilds from the R2 walk, so resharding is a
-  reconcile, not a migration. Leaning shard-now anyway: symmetry with db, and
-  the multipart upload records want a home that is not the parent.
+Both S1 questions closed:
+
+- **Console upload path — resolved.** The console rides the operator admin
+  mirror through the `/agents/*` passthrough (S1 built it); the 100 MB
+  live-stack streaming verification moved into S2's exit gates rather than
+  blocking S1.
+- **`StorageBucket` in S1 — resolved: it shipped.** And the upload-record
+  lean this question carried is now resolved the OTHER way — upload state
+  lives on the parent, because the reservation is the record (see "Upload").
+
+Still open for S2:
+
+- **The demo sample set.** Which files ship in the bundle — they must be
+  small (tens of KB total: they ride every worker deploy), inside the serve
+  allowlist, and licence-clean (anything third-party gets a NOTICE entry).

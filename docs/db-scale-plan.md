@@ -257,9 +257,14 @@ comparison table (variant picker first).
 
 ## Non-goals
 
-No cross-shard joins/batches/transactions (table groups — co-locating small
-tables in one DO for real joins — is a possible later opt-in, not planned);
-no partitioned primaries (designed-for, not built); no per-colo placement;
+No cross-shard batches/transactions. Joins are no longer a flat non-goal:
+[db-join-design.md](db-join-design.md) designs them as read-only **join
+views** — a replica that follows N primaries into one SQLite — which is
+additive to this plan rather than a change to it (writes stay sharded, no
+member migrates). Table groups — co-locating primaries for transactional
+cross-table writes — stay unplanned; that doc explains why views win for the
+read case. No partitioned primaries (designed-for, not built); no per-colo
+placement;
 no resume tokens at REP2 launch; no billing API behind `/pricing`; auth agent
 scaling is out of scope.
 
