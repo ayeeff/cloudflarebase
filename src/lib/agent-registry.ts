@@ -29,7 +29,7 @@ export const agentManifestSchema = z.strictObject({
 		.array(
 			z.strictObject({
 				class: z.string().min(1),
-				scope: z.enum(['perProject', 'perCollection', 'perTable', 'perBucket'])
+				scope: z.enum(['perProject', 'perCollection', 'perTable', 'perBucket', 'perView'])
 			})
 		)
 		.min(1),

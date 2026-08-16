@@ -46,16 +46,18 @@ const INTERNAL_NAMES = [
 	'replica_meta',
 	'gateways',
 	'gateway_subs',
+	'view_sources',
 	'__drizzle_migrations',
 ];
 
 const KIND_PATTERN = /^\s*(select|insert|update|delete|with)\b/i;
 
-export function prepareTableSql(
-	rawSql: string,
-	table: string,
-	columns: TableColumn[],
-): PreparedSql {
+/**
+ * The refusals both entry points share: one statement, a recognised leading
+ * keyword, no internal storage, no sqlite internals, no DDL/PRAGMA/
+ * transactions. Returns the trimmed statement and its kind.
+ */
+function gateStatement(rawSql: string, selectOnly: boolean): PreparedSql {
 	let sql = rawSql.trim();
 	// One trailing semicolon is tolerated (ORMs emit it); any other semicolon
 	// means a second statement - refused, string literals included (bind
@@ -69,8 +71,9 @@ export function prepareTableSql(
 	if (!kindMatch) {
 		return {
 			ok: false,
-			error:
-				'only SELECT, INSERT, UPDATE, and DELETE run here - schema changes go through the column DSL',
+			error: selectOnly
+				? 'a view is read-only - only SELECT runs here'
+				: 'only SELECT, INSERT, UPDATE, and DELETE run here - schema changes go through the column DSL',
 		};
 	}
 	let kind: SqlKind;
@@ -83,6 +86,12 @@ export function prepareTableSql(
 		kind = 'select';
 	} else {
 		kind = kindMatch[1].toLowerCase() as SqlKind;
+	}
+	if (selectOnly && kind !== 'select') {
+		return {
+			ok: false,
+			error: 'a view is read-only - write to the member table instead',
+		};
 	}
 
 	const lowered = sql.toLowerCase();
@@ -110,9 +119,39 @@ export function prepareTableSql(
 	) {
 		return {
 			ok: false,
-			error: 'only plain SELECT/INSERT/UPDATE/DELETE statements run here',
+			error: selectOnly
+				? 'only plain SELECT statements run here'
+				: 'only plain SELECT/INSERT/UPDATE/DELETE statements run here',
 		};
 	}
+	return { ok: true, kind, sql };
+}
+
+/**
+ * The join-view gate (JOIN1): SELECT only, over the view's own SQLite.
+ *
+ * Joins need no allowlist of member names. The only user tables that exist in
+ * a view's storage ARE its members, so a reference to anything else fails at
+ * SQLite with `no such table` - the same property that makes the single-table
+ * gate safe, applied to a set instead of one name. And with no DML to police,
+ * the target-table checks and the automatic RETURNING simply do not exist
+ * here: what survives is the part that earns its keep.
+ */
+export function prepareViewSql(rawSql: string): PreparedSql {
+	return gateStatement(rawSql, true);
+}
+
+export function prepareTableSql(
+	rawSql: string,
+	table: string,
+	columns: TableColumn[],
+): PreparedSql {
+	const gated = gateStatement(rawSql, false);
+	if (!gated.ok) return gated;
+	const { kind } = gated;
+	let sql = gated.sql;
+
+	const lowered = sql.toLowerCase();
 	if (kind !== 'select' && /\breturning\b/.test(lowered)) {
 		return {
 			ok: false,

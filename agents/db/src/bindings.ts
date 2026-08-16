@@ -25,6 +25,9 @@ export interface DbAgentBindings {
 	DbTable: AnyDurableObjectNamespace;
 	/** The realtime gateway class (one client socket, all shards). Required. */
 	DbGateway: AnyDurableObjectNamespace;
+	/** The join-view class (read-only copies of several tables in one SQLite,
+	 * followed from their change logs). Required. */
+	DbView: AnyDurableObjectNamespace;
 	/** Document/collection events; auto-creates on first write. Required. */
 	DB_EVENTS: AnalyticsEngineDataset;
 

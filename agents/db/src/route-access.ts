@@ -49,6 +49,10 @@ export interface RouteRule {
 export const ROUTES: readonly RouteRule[] = [
 	{ path: '/collections/*', access: 'public' },
 	{ path: '/tables/*', access: 'public' },
+	// Public in the same sense the shard paths are: reachable, and gated by
+	// its own rules. A view demands a project JWT on EVERY request and checks
+	// each member's permission on top - it is the strictest public path here.
+	{ path: '/views/*', access: 'public' },
 	{ path: '/realtime', access: 'public' },
 	{ path: '/config', access: 'public' },
 	{ path: '/overview', access: 'operator' },

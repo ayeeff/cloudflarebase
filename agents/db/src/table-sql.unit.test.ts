@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { prepareTableSql } from './table-sql';
+import { prepareTableSql, prepareViewSql } from './table-sql';
 import { compileTableAggregate } from './table-query';
 import { tableColumnsSchema, type TableColumn } from './schemas';
 
@@ -123,6 +123,7 @@ test('sql gate: every internal table stays unreachable, shadowing included', () 
 		'replica_meta',
 		'gateways',
 		'gateway_subs',
+		'view_sources',
 	]) {
 		refused(`SELECT * FROM ${name}`, 'internal storage');
 	}
@@ -132,6 +133,56 @@ test('sql gate: every internal table stays unreachable, shadowing included', () 
 	// must stay refused: the physical table it reaches IS the internal one.
 	const shadow = prepareTableSql('SELECT * FROM subscriptions', 'subscriptions', TODO);
 	assert.equal(shadow.ok, false, 'a shadowing table does not unlock internal storage');
+});
+
+test('view gate: joins run, and nothing that writes does', () => {
+	const refusedView = (sql: string, fragment: string) => {
+		const prepared = prepareViewSql(sql);
+		assert.equal(prepared.ok, false, `should refuse: ${sql}`);
+		if (!prepared.ok) assert.match(prepared.error, new RegExp(fragment), sql);
+	};
+
+	// The whole point: a join across member tables, which the single-table
+	// gate has no way to express.
+	const joined = prepareViewSql(
+		'SELECT t."title", u."email" FROM todos t JOIN users u ON u."id" = t."owner" WHERE t."votes" > ?',
+	);
+	assert.equal(joined.ok, true, !joined.ok ? new Error(joined.error) : undefined);
+	if (joined.ok) {
+		assert.equal(joined.kind, 'select');
+		// No RETURNING is ever appended: there is no write to capture.
+		assert.ok(!/returning/i.test(joined.sql));
+	}
+
+	// CTEs, subqueries, aggregates and window functions were never blocked -
+	// only unavailable across tables.
+	assert.equal(
+		prepareViewSql(
+			'WITH top AS (SELECT "owner", COUNT(*) c FROM todos GROUP BY "owner") ' +
+				'SELECT u."email", top.c FROM top JOIN users u ON u."id" = top."owner"',
+		).ok,
+		true,
+	);
+	assert.equal(
+		prepareViewSql('SELECT "id", ROW_NUMBER() OVER (ORDER BY "votes" DESC) FROM todos').ok,
+		true,
+	);
+
+	// A view is read-only, and says so rather than failing obscurely later.
+	refusedView('INSERT INTO todos (id) VALUES (?)', 'read-only');
+	refusedView('UPDATE todos SET votes = 1', 'read-only');
+	refusedView('DELETE FROM todos', 'read-only');
+	refusedView('WITH x AS (SELECT 1) INSERT INTO todos (id) SELECT * FROM x', 'CTEs');
+
+	// Everything the table gate refuses, the view gate refuses too.
+	refusedView('SELECT 1; SELECT 2', 'one statement');
+	refusedView('DROP TABLE todos', 'read-only');
+	refusedView('CREATE INDEX x ON todos (title)', 'read-only');
+	refusedView('SELECT * FROM changelog', 'internal storage');
+	refusedView('SELECT t.* FROM todos t JOIN replica_meta', 'internal storage');
+	refusedView('SELECT * FROM view_sources', 'internal storage');
+	refusedView('SELECT * FROM sqlite_master', 'sqlite internals');
+	refusedView('SELECT * FROM todos JOIN pragma_table_info(?)', 'plain SELECT');
 });
 
 test('table aggregates: typed columns sum directly, json paths stay gated', () => {

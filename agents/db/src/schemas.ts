@@ -233,9 +233,26 @@ export type RepPullResult =
 	| { resync: true; epoch: number }
 	| { resync: false; entries: LogEntry[]; lastLsn: number; epoch: number };
 
+/**
+ * Who may follow a primary's feed. Two spellings, and the difference is the
+ * whole reason the pattern is not just `r:`:
+ *
+ * - `r:<region>:<n>` - a region replica of THIS shard (REP1/REP2).
+ * - `v:<view>:<region>:<n>` - a join view (docs/db-join-design.md), which
+ *   follows SEVERAL primaries into one SQLite. It registers in each member's
+ *   `replicas` table like any other follower, so the erase fan-out reaches it.
+ *
+ * A deployed agent must carry this widening BEFORE any console can declare a
+ * view: the id is refused by zod here, before any handler runs, so an older
+ * agent answers a view's bootstrap with a parse failure rather than a feed.
+ * (Same ordering lesson as widening the project-id ceiling to 48 characters
+ * ahead of minting a longer id.)
+ */
+export const FOLLOWER_ID_PATTERN = /^(?:r:[a-z-]+|v:[a-z][a-z0-9_-]{0,63}:[a-z-]+):\d+$/;
+
 export const repPullInputSchema = z.strictObject({
 	since: z.number().int().min(0),
-	replicaId: z.string().regex(/^r:[a-z-]+:\d+$/),
+	replicaId: z.string().regex(FOLLOWER_ID_PATTERN),
 	region: z.string().min(1).max(16),
 });
 
@@ -252,6 +269,9 @@ export type RepApplyResult =
 	/** No subscribers left here - stop pushing until they return. */
 	| { stop: true };
 
+/** Deliberately NOT widened to FOLLOWER_ID_PATTERN: live push and sibling
+ * spawn are replica machinery, and a JOIN1 view is pull-only. Views gain a
+ * push reason in JOIN2; until then this surface refuses them by shape. */
 export const repSetPushInputSchema = z.strictObject({
 	replicaId: z.string().regex(/^r:[a-z-]+:\d+$/),
 	region: z.string().min(1).max(16),
@@ -398,6 +418,7 @@ export const RESERVED_SHARD_TABLES = new Set([
 	'replica_meta',
 	'gateways',
 	'gateway_subs',
+	'view_sources',
 ]);
 
 export const tableNameSchema = collectionNameSchema.refine(
@@ -608,6 +629,91 @@ export type TableSqlResponse =
 	| { success: true; result: TableSqlResult }
 	| { success: true; batch: TableSqlResult[] }
 	| { success: false; error: string };
+
+// ---------------------------------------------------------------------------
+// Join views (JOIN1; docs/db-join-design.md)
+
+/** A view name is a registry name like any other - unique ACROSS kinds, and
+ * a Durable Object name segment, so the same tame grammar applies. */
+export const viewNameSchema = collectionNameSchema;
+
+/** Small on purpose. Every member is a full local COPY of that table, so a
+ * view's storage is the sum of its members against one 10 GB shard budget,
+ * and its bootstrap is the sum of their sizes. */
+export const MIN_VIEW_MEMBERS = 2;
+export const MAX_VIEW_MEMBERS = 5;
+export const MAX_VIEWS_PER_PROJECT = 3;
+
+/** How stale a view read may be before it pulls its members first. REP1's
+ * window: a view is a replica, and joins are explicitly stale-tolerant. */
+export const MAX_VIEW_LAG_MS = MAX_REPLICA_LAG_MS;
+
+/**
+ * The `PUT /admin/views/:name` body.
+ *
+ * No `writeAccess`: a view serves SELECT and nothing else. No `readAccess`
+ * either, and that absence is deliberate rather than an omission - a view is
+ * a raw-SQL surface, and raw SQL ALWAYS requires a project JWT (the table
+ * endpoint's rule). A mode field could only ever say `auth`, so instead the
+ * gate is stated once and exactly: a valid token, plus this key, plus EVERY
+ * member's own key. Members in `public` mode are read through a token here,
+ * which is stricter than reading them directly - never looser.
+ */
+export const viewModesSchema = z.strictObject({
+	members: z.array(collectionNameSchema).min(MIN_VIEW_MEMBERS).max(MAX_VIEW_MEMBERS),
+	/** In ADDITION to every member's own key - never instead of one. */
+	readPermission: permissionKeySchema.nullable().optional(),
+});
+
+/**
+ * Pushed parent -> view child. Deliberately carries only member NAMES: each
+ * member's columns and access config arrive from that member's own feed
+ * (`repBootstrap` answers with its TableConfig, and later `cfg` entries
+ * replicate changes in write order), so the view never has to ask the parent
+ * about a table and can never hold a config the feed disagrees with.
+ */
+export const viewConfigSchema = z.strictObject({
+	kind: z.literal('view'),
+	projectId: projectIdSchema,
+	view: viewNameSchema,
+	members: z.array(collectionNameSchema).min(MIN_VIEW_MEMBERS).max(MAX_VIEW_MEMBERS),
+	readPermission: z.string().nullable(),
+	allowedOrigins: z.array(z.string()).max(10),
+	demo: z.boolean(),
+	configVersion: z.number().int().min(0),
+});
+export type ViewConfig = z.infer<typeof viewConfigSchema>;
+
+export const storedViewConfigSchema = viewConfigSchema.nullable().catch(null);
+
+/** Per-member follow position and the member config the feed last delivered. */
+export const viewSourceStateSchema = z.object({
+	table: collectionNameSchema,
+	epoch: z.number().int().min(0),
+	appliedLsn: z.number().int().min(0),
+	pulledAt: z.number().int().min(0),
+	config: tableConfigSchema.nullable(),
+});
+export type ViewSourceState = z.infer<typeof viewSourceStateSchema>;
+
+/** `GET /admin/views/:name` - what the parent reports about a view's follow
+ * state, one row per member (the multi-source answer to `RepStatus`). */
+export interface ViewSourceStatus {
+	table: string;
+	appliedLsn: number;
+	/** Null when the member's primary could not be reached. */
+	lagLsn: number | null;
+	epoch: number;
+	pulledAt: string | null;
+	bootstrapped: boolean;
+}
+
+export interface ViewStatus {
+	view: string;
+	members: ViewSourceStatus[];
+	/** The oldest member pull - what the freshness window is judged on. */
+	stalestPulledAt: string | null;
+}
 
 // ---------------------------------------------------------------------------
 // Export / import / point-in-time restore

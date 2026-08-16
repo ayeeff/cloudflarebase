@@ -45,6 +45,14 @@ const tableParam = {
 	description:
 		'Table name. Tables are schema-first: declare columns via the admin surface before writing.'
 };
+const viewParam = {
+	name: 'view',
+	in: 'path',
+	required: true,
+	schema: { type: 'string', pattern: '^[a-z][a-z0-9_-]{0,63}$' },
+	description:
+		'View name. Views are declared through the admin surface over 2-5 member tables; none of them may be owner-scoped.'
+};
 const docIdParam = { name: 'docId', in: 'path', required: true, schema: { type: 'string' } };
 const rowIdParam = { name: 'rowId', in: 'path', required: true, schema: { type: 'string' } };
 const PUBLIC_SECURITY = [{ bearerAuth: [] }];
@@ -357,6 +365,57 @@ export const dbOpenApi: AgentOpenApiModule = {
 				responses: {
 					'200': { description: 'An application/x-ndjson stream of row lines.' },
 					'401': { description: 'The table requires a project token.' }
+				}
+			}
+		},
+		'/db/views/{view}/sql': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'Query a join view (SELECT across tables)',
+				description:
+					'A view is a read-only Durable Object that follows several tables’ change logs into one SQLite, so a plain SELECT can JOIN them - what single-table SQL cannot express. SELECT only (or a `batch` of them): there is no write surface, and writes go to the member table. ALWAYS requires a project JWT, and the token must additionally carry every member table’s read permission - a view can never launder access to a table you could not read directly. Reads are eventually consistent: a view may be up to ~3s behind its members, so two members read at different instants can show a join that was never a committed state. Use views for reporting reads, not for invariants.',
+				parameters: [viewParam],
+				security: PUBLIC_SECURITY,
+				requestBody: {
+					description: '`{ sql, params? }` or `{ batch: [{ sql, params? }, ...] }`.',
+					required: true,
+					content: {
+						'application/json': {
+							schema: {
+								type: 'object',
+								properties: {
+									sql: { type: 'string' },
+									params: { type: 'array', items: {} },
+									batch: {
+										type: 'array',
+										items: {
+											type: 'object',
+											required: ['sql'],
+											properties: { sql: { type: 'string' }, params: { type: 'array', items: {} } }
+										}
+									}
+								}
+							}
+						}
+					}
+				},
+				responses: {
+					'200': {
+						description:
+							'`{ success, result }` (or `batch: [...]`), each with `results`, `columns`, `raw`, and D1-style `meta`.'
+					},
+					'400': {
+						description: 'Statement refused by the gate (anything that writes), or a SQL error.'
+					},
+					'401': { description: 'A view requires a project token.' },
+					'403': {
+						description:
+							'Missing the view’s permission key, or a member table’s - including a member that has become owner-scoped.'
+					},
+					'404': { description: 'No such view - views are declared, never auto-created.' },
+					'503': {
+						description: 'A member has not finished replicating into the view yet; retry shortly.'
+					}
 				}
 			}
 		},

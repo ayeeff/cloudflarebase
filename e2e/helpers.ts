@@ -205,6 +205,16 @@ export function dbTableQueryPath(projectId: string, table: string): string {
 	return `/api/projects/${projectId}/db/tables/${table}/query`;
 }
 
+// --- Join views (JOIN1, docs/db-join-design.md) ---
+
+export function dbAdminViewPath(projectId: string, name: string): string {
+	return `/api/projects/${projectId}/db/admin/views/${encodeURIComponent(name)}`;
+}
+
+export function dbViewSqlPath(projectId: string, view: string): string {
+	return `/api/projects/${projectId}/db/views/${view}/sql`;
+}
+
 // --- Hosting (docs/managed-service-design.md, Phase B) ---
 
 export function hostingOverviewPath(projectId: string): string {

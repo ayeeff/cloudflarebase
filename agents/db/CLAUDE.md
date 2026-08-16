@@ -12,6 +12,55 @@ Shard-per-DO is the scaling architecture: each collection or table gets its own 
 
 Per-shard `replication: 'off' | 'auto'`, **default `auto` for every shard - demo projects included** (the demo is the pitch; `shardReplication` in `agent.ts` is the one normalization choke point). `off` is the explicit single-region opt-out via `PUT /admin/collections/:name` / `/admin/tables/:name` (dashboard: Access tab and table designer; the Replication tab itself is read-only). The child config schemas keep `.default('off')` deliberately - that back-compat default only fires for configs cached before REP1, which really were unreplicated. The SAME classes host both roles - the `:r:<region>:<n>` name suffix makes an instance a replica (`LiveShard.role`). Primaries append row-image `put`/`del`/`cfg` entries to their `changelog` **in the same task as the data write** (DO write coalescing is the atomicity - never insert an await between them), answer writes with the `cfb-lsn` session bookmark, and serve the feed (`repBootstrap`/`exportChunk` or `repSnapshotChunk`/`repPull`) - registering every replica durably BEFORE data leaves, which is what keeps the erase fan-out complete (primaries destroy their replicas first). Replicas never consult the parent: config arrives through the feed (`cfg` entries run configure(), including table DDL), reads serve locally within a 3s freshness window or after a catch-up pull forced by `cfb-min-lsn`, and EVERYTHING else - writes, unsatisfiable bookmarks, failed bootstraps - forwards to the primary, so routing staleness is a latency wobble, never a correctness bug. **Live queries run ON replicas (REP2)**: subscribers land on their region replica; on each write the primary RPCs `repApply` to every push-flagged replica (waitUntil, after the response) - RPC wakes a hibernated replica, which applies the row image and fires its local live engine. Replicas flip the push flag on subscriber transitions; `{stop}` answers heal stale flags; gaps/epoch mismatches trigger a pull that notifies subscribers too. Deliberately RPC, never a tail socket: an outgoing socket dies with hibernation exactly when pushes must arrive. **Sibling spawn under socket pressure**: replicas report their hibernatable-socket count to the primary (piggybacked on `repSetPush` transitions, step-debounced on socket accept - `socketReportStep`), the registry keeps it in `replicas.sockets`, and the worker asks the primary's `repSubscribeTarget(region)` (isolate cache, 60s / `SIBLING_ROUTING_TTL_MS`) before naming a NEW subscriber's instance: `pickSubscribeSibling` fills the lowest sibling with headroom (`SIBLING_SPAWN_SOCKETS` 24k, env-overridable - env.test forces 2; unregistered = 0 sockets, so picking it IS the spawn), capped at `MAX_REGION_SIBLINGS` 8. Plain reads stay on `:1`; drained siblings linger (hibernated zero-socket DOs are free, the registry keeps them for the erase fan-out, re-pressure reuses them); demo shards never spawn. Pinned by `db-replication-siblings.api.spec.ts` + pick unit tests. The worker routes reads to `…:r:<region>:1` (region from `request.cf` via `region.ts`, or `x-cfb-region` when env.test's `REGION_OVERRIDE_HEADER` is set) behind a 60s isolate-local flag cache filled by the parent's `getShardRouting`. Restores bump the PARENT-owned `repEpoch` (a restore rewinds the primary's own storage, log included - `canServeSince` also detects the rewind directly); epoch or horizon misses force replica re-bootstrap. `/admin/replication/:name` returns the replica map. Pinned by `db-replication.api.spec.ts`; the log/role/region pure parts by `replication.unit.test.ts`.
 
+## Join views (`DbView`, JOIN1 — docs/db-join-design.md)
+
+**A join view is a replica that follows N primaries into one SQLite.** That is
+the whole idea: REP1 already gives every shard a row-image change log that
+other DOs bootstrap from and then follow, and nothing about that machinery is
+inherently single-source. `DbView` (`<pid>:v:<view>:<region>:<n>`, a plain
+DurableObject — no live engine, no second source of truth) bootstraps each
+member table and then pulls its feed, so a plain SELECT can JOIN across shards.
+**Writes never come here**: they stay on the member primaries, so sharding,
+write throughput, and every existing shard's behaviour are untouched. Purely
+additive — which is why this, and not table groups (co-locating primaries),
+is how joins landed.
+
+- **Read-only and eventually consistent.** A view read may be `MAX_VIEW_LAG_MS`
+  (3s, REP1's window) behind; `freshen()` pulls stale members before serving
+  and BLOCKS (503) on a member that has never bootstrapped — a join answered
+  from a table that is not there yet returns fewer rows than exist, and a
+  quietly wrong join is worse than a slow one. A member that is merely stale
+  and briefly unreachable serves what is here: bounded staleness is the stated
+  contract. Two members pulled at different instants can show a join that was
+  never a committed state; that is the bargain of a derived read copy.
+- **The gate is all-of, never any-of**: a valid project JWT (always — a view
+  is a raw-SQL surface, so there is no `readAccess` field to weaken it), the
+  view's own permission key, and EVERY member's `readPermission`. Anything
+  less would let a view launder access to a table the caller cannot read.
+- **`owner`-mode tables cannot be members**, refused at all three edges
+  (declare, member reconfigure, read time). Row ownership does not survive a
+  join — `todos JOIN users` over owner-scoped todos returns the `users` rows
+  selected by OTHER owners' todos — and the general fix is a row-level
+  security engine this is not.
+- **Views are not replicas of a shard.** `registerReplica` ignores any
+  follower id that is not `r:`, because `destroyReplicaInstances` resolves
+  each registry row inside the SHARD's namespace — a view id there names a
+  different DO, so the primary would destroy a stranger and leave the view
+  alive. The PARENT owns view lifecycle: it destroys views BEFORE their
+  members on erase (a view holds copies), refuses to delete a covered member
+  (409), and refuses a member flip to owner/replication-off (409).
+- **`repPullInputSchema.replicaId` admits both spellings** (`FOLLOWER_ID_PATTERN`).
+  A deployed agent must carry that widening before a console can declare a
+  view — the 48-char project-id lesson.
+- Config comes from the FEED, never the parent: `repBootstrap` answers with
+  the member's `TableConfig` and later `cfg` entries replace it, so member DDL
+  replicates into the view in write order and the view never asks about a
+  table. Per-member position lives in `view_sources` (a position VECTOR —
+  `replica_meta`'s hardcoded `id = 1` is the one thing that could not be
+  reused). Caps: 2–5 members, 3 views/project, no demo views.
+- JOIN1 materializes ONE instance per view (`:global:1`); the region slot in
+  the name is already there for when that changes. Live joins are JOIN2.
+
 ## The realtime gateway (`DbGateway`, docs/db-gateway-design.md)
 
 One client WebSocket for the whole database: `GET /agents/db-agent/<pid>/realtime` upgrades on a `DbGateway` instance in the SUBSCRIBER'S region (`<pid>:gw:<region>:<n>`, locationHint = region; `<n>` grows under socket pressure via the parent's `gatewaySubscribeTarget` - the replica sibling-spawn mechanism verbatim, socket counts in the parent's `gateways` registry, demos never spawn). Frames are the shard protocol plus a `shard: { kind, name }` address on subscribe. The gateway holds ZERO data and zero query state: it registers each subscription AT the shard (`remoteSubscribe` on `LiveShard` - the shard re-verifies the token, enforces its caps, answers the snapshot inline, and stores the row in its normal `subscriptions` table under a `via` column), routing to `:r:<region>:1` when replication is auto (a `{forward}` answer retries the primary). On every write the shard batches via-frames per connection and RPCs `gatewayDeliver` in `waitUntil` - RPC wakes a hibernated gateway, never an outgoing socket (the REP2 lesson); `{stop}` answers prune dead connections both sides. Gateway durable state is only `gateway_subs` (connId/subId -> shard instance) for close-time cleanup; origin gating at accept uses env `TRUSTED_ORIGINS` + the project's per-project origins pulled from the parent (60s cache). Caps: 100 subscriptions/connection (25 demo), per-shard caps unchanged. `GET /admin/realtime` lists the registry; erase destroys gateways with the shards. The SDK multiplexes ALL `collection()`/`table()` subscriptions over one gateway socket by default (`realtime: 'auto'`), falling back to per-shard sockets permanently if the endpoint never answers (pre-gateway agent); direct per-shard `/subscribe` remains for raw-WebSocket users and the dashboard. Pinned by `db-gateway.api.spec.ts`.

@@ -343,7 +343,10 @@ export const dbActivityEventSchema = z
 			'table.deleted',
 			'table.restored',
 			'rows.changed',
-			'rows.imported'
+			'rows.imported',
+			'view.created',
+			'view.configured',
+			'view.deleted'
 		]),
 		message: z.string(),
 		at: z.iso.datetime()
@@ -516,6 +519,40 @@ export const dbBookmarkResolutionSchema = z
 		description: 'The closest available bookmark for a wall-clock time, D1-restore-style.'
 	});
 
+// --- Join views (JOIN1 of docs/db-join-design.md) ---
+
+/** A read-only view over several member tables: one Durable Object that
+ * follows each member's change log into one SQLite, so a SELECT can join
+ * them. Read-only and eventually consistent by construction. */
+export const dbViewSummarySchema = z
+	.object({
+		name: z.string(),
+		members: z.array(z.string()),
+		readPermission: z.string().nullable().catch(null)
+	})
+	.meta({ id: 'DbViewSummary' });
+
+export const dbViewSourceStatusSchema = z
+	.object({
+		table: z.string(),
+		appliedLsn: z.number(),
+		/** Null when that member's primary could not be reached. */
+		lagLsn: z.number().nullable(),
+		epoch: z.number(),
+		pulledAt: z.iso.datetime().nullable(),
+		bootstrapped: z.boolean()
+	})
+	.meta({ id: 'DbViewSourceStatus' });
+
+export const dbViewStatusSchema = z
+	.object({
+		view: z.string(),
+		members: z.array(dbViewSourceStatusSchema),
+		/** The oldest member pull - what the freshness window is judged on. */
+		stalestPulledAt: z.iso.datetime().nullable()
+	})
+	.meta({ id: 'DbViewStatus' });
+
 export const dbAgentStateSchema = z
 	.object({
 		projectId: z.string(),
@@ -525,6 +562,9 @@ export const dbAgentStateSchema = z
 		// Tolerant like the summary fields: state persisted before tables
 		// existed still parses (the agent re-syncs on its next wake).
 		tables: z.array(dbTableSummarySchema).catch([]),
+		// Same tolerance, same reason: state persisted before join views
+		// existed has no `views` key at all.
+		views: z.array(dbViewSummarySchema).catch([]),
 		totalDocs: z.number(),
 		totalRows: z.number().catch(0),
 		rev: z.number(),

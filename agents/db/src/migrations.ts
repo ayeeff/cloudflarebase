@@ -71,6 +71,13 @@ const journal = {
 			tag: '0008_blushing_shotgun',
 			breakpoints: true,
 		},
+		{
+			idx: 9,
+			version: '6',
+			when: 1786907207210,
+			tag: '0009_dark_angel',
+			breakpoints: true,
+		},
 	],
 };
 
@@ -200,6 +207,16 @@ CREATE TABLE \`gateways\` (
 --> statement-breakpoint
 ALTER TABLE \`subscriptions\` ADD \`via\` text;`;
 
+const m0009 = `CREATE TABLE \`view_sources\` (
+	\`table\` text PRIMARY KEY NOT NULL,
+	\`epoch\` integer DEFAULT 0 NOT NULL,
+	\`applied_lsn\` integer DEFAULT 0 NOT NULL,
+	\`pulled_at\` integer DEFAULT 0 NOT NULL,
+	\`config\` text
+);
+--> statement-breakpoint
+ALTER TABLE \`collections\` ADD \`members\` text;`;
+
 export default {
 	journal,
 	migrations: {
@@ -212,5 +229,6 @@ export default {
 		m0006,
 		m0007,
 		m0008,
+		m0009,
 	},
 };

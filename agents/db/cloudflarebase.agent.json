@@ -9,7 +9,8 @@
 		{ "class": "DbAgent", "scope": "perProject" },
 		{ "class": "DbCollection", "scope": "perCollection" },
 		{ "class": "DbTable", "scope": "perTable" },
-		{ "class": "DbGateway", "scope": "perProject" }
+		{ "class": "DbGateway", "scope": "perProject" },
+		{ "class": "DbView", "scope": "perView" }
 	],
 	"entrypoint": { "assertEnvType": "AssertDbAgentEnv" },
 	"erase": { "method": "DELETE", "path": "/internal/projects/:projectId" },
@@ -28,6 +29,7 @@
 	"routes": [
 		{ "path": "/collections/*", "access": "public" },
 		{ "path": "/tables/*", "access": "public" },
+		{ "path": "/views/*", "access": "public" },
 		{ "path": "/realtime", "access": "public" },
 		{ "path": "/config", "access": "public" },
 		{ "path": "/overview", "access": "operator" },

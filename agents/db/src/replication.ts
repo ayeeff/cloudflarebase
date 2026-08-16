@@ -145,14 +145,32 @@ export interface RepPullInput {
 	region: string;
 }
 
-/** Durable registration - MUST happen before any data leaves the primary
- * (bootstrap included): the erase fan-out iterates this registry. */
+/**
+ * Durable registration - MUST happen before any data leaves the primary
+ * (bootstrap included): the erase fan-out iterates this registry.
+ *
+ * JOIN VIEWS ARE NOT REGISTERED (`v:<view>:<region>:<n>`, JOIN1). They follow
+ * the same feed, but they are not replicas OF this shard, and one guard here
+ * keeps every consumer of the table honest at once:
+ *
+ * - `destroyReplicaInstances` resolves each row as `<shardName>:<id>` in the
+ *   SHARD's own namespace. For a view that names a different Durable Object
+ *   entirely, so the primary would destroy an empty stranger while the real
+ *   view survived - the worst possible outcome for an erase.
+ * - the replica map would render a view as a region replica of this table.
+ * - `regionSocketCounts` would fold it into the sibling-spawn arithmetic.
+ *
+ * A view's lifecycle belongs to the PARENT instead, which is the only party
+ * that knows a view's whole membership: it destroys views before their
+ * members, and refuses to drop a member a view still covers.
+ */
 export function registerReplica(
 	sql: SqlStorage,
 	replicaId: string,
 	region: string,
 	appliedLsn: number,
 ): void {
+	if (!replicaId.startsWith('r:')) return;
 	sql.exec(
 		`INSERT INTO replicas (id, region, applied_lsn, last_seen_at) VALUES (?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET applied_lsn = excluded.applied_lsn, last_seen_at = excluded.last_seen_at`,
@@ -318,6 +336,123 @@ export interface ReplicaMeta {
 	epoch: number;
 	appliedLsn: number;
 	pulledAt: number;
+}
+
+// ---------------------------------------------------------------------------
+// Join views (JOIN1): names, and the per-source position vector
+
+/** `<pid>:v:<view>:<region>:<n>` - the view instance's Durable Object name.
+ * `:` cannot appear in a project or shard name, so the `:v:` infix is as
+ * unambiguous as `:r:` is for replicas. */
+export function viewInstanceName(
+	projectId: string,
+	view: string,
+	region: string,
+	n: number,
+): string {
+	return `${projectId}:v:${view}:${region}:${n}`;
+}
+
+export interface ViewRole {
+	projectId: string;
+	view: string;
+	region: string;
+	n: number;
+	/** What the view calls itself on every member's feed. ONE id for all
+	 * members: it identifies the follower, not the thing followed. */
+	followerId: string;
+}
+
+const VIEW_SUFFIX = /^(.+):v:([a-z][a-z0-9_-]{0,63}):([a-z-]+):(\d+)$/;
+
+/** The view's identity from its instance name, or null for a malformed one
+ * (a bare stub with no name included) - a DbView cannot serve without it.
+ * The project id comes from the NAME rather than from pushed config, so a
+ * view can resolve its members before the parent has ever reached it. */
+export function parseViewRole(instanceName: string | undefined): ViewRole | null {
+	const match = instanceName ? VIEW_SUFFIX.exec(instanceName) : null;
+	if (!match) return null;
+	return {
+		projectId: match[1],
+		view: match[2],
+		region: match[3],
+		n: Number(match[4]),
+		followerId: `v:${match[2]}:${match[3]}:${match[4]}`,
+	};
+}
+
+export interface ViewSourceRow {
+	table: string;
+	epoch: number;
+	appliedLsn: number;
+	/** 0 = registered but never bootstrapped. */
+	pulledAt: number;
+	config: string | null;
+}
+
+export function readViewSources(sql: SqlStorage): ViewSourceRow[] {
+	return sql
+		.exec(
+			`SELECT "table", epoch, applied_lsn, pulled_at, config FROM view_sources ORDER BY "table"`,
+		)
+		.toArray()
+		.map((row) => ({
+			table: row.table as string,
+			epoch: row.epoch as number,
+			appliedLsn: row.applied_lsn as number,
+			pulledAt: row.pulled_at as number,
+			config: (row.config ?? null) as string | null,
+		}));
+}
+
+export function readViewSource(sql: SqlStorage, table: string): ViewSourceRow | null {
+	const [row] = sql
+		.exec(
+			`SELECT "table", epoch, applied_lsn, pulled_at, config FROM view_sources WHERE "table" = ?`,
+			table,
+		)
+		.toArray() as {
+		table: string;
+		epoch: number;
+		applied_lsn: number;
+		pulled_at: number;
+		config: string | null;
+	}[];
+	return row
+		? {
+				table: row.table,
+				epoch: row.epoch,
+				appliedLsn: row.applied_lsn,
+				pulledAt: row.pulled_at,
+				config: row.config ?? null,
+			}
+		: null;
+}
+
+export function writeViewSource(sql: SqlStorage, row: ViewSourceRow): void {
+	sql.exec(
+		`INSERT INTO view_sources ("table", epoch, applied_lsn, pulled_at, config)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT("table") DO UPDATE SET epoch = excluded.epoch,
+		   applied_lsn = excluded.applied_lsn, pulled_at = excluded.pulled_at,
+		   config = excluded.config`,
+		row.table,
+		row.epoch,
+		row.appliedLsn,
+		row.pulledAt,
+		row.config,
+	);
+}
+
+/** Drop sources no longer in the member list (a view was reconfigured). The
+ * COPIES they left behind are dropped by the caller, which knows the physical
+ * table names - orphaned rows here would otherwise keep being pulled. */
+export function pruneViewSources(sql: SqlStorage, keep: string[]): string[] {
+	const dropped = readViewSources(sql)
+		.map((row) => row.table)
+		.filter((table) => !keep.includes(table));
+	for (const table of dropped) sql.exec(`DELETE FROM view_sources WHERE "table" = ?`, table);
+	return dropped;
 }
 
 export function readReplicaMeta(sql: SqlStorage): ReplicaMeta | null {

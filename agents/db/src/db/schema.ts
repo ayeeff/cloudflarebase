@@ -30,6 +30,11 @@ export const collections = sqliteTable('collections', {
 	validator: text('validator'),
 	/** JSON TableColumn[]; the declared schema of record. Tables only. */
 	columns: text('columns'),
+	/** JSON string[] of member table names. Views only (JOIN1); null for the
+	 * other kinds. The registry is where membership lives because only the
+	 * parent knows the whole set - which is also why the parent, not a member
+	 * primary, owns destroying a view. */
+	members: text('members'),
 	/** 'off' | 'auto' - whether reads route to per-region replicas. AUTO by
 	 * default ("read replicas out of the box"), demos included: replicas cost
 	 * nothing until a region actually reads. `off` is the explicit opt-out
@@ -164,6 +169,28 @@ export const replicaMeta = sqliteTable('replica_meta', {
 	epoch: integer('epoch').notNull().default(0),
 	appliedLsn: integer('applied_lsn').notNull().default(0),
 	pulledAt: integer('pulled_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
+/**
+ * VIEW role (JOIN1): `replica_meta` once per SOURCE. A region replica follows
+ * one primary and keeps one row; a join view follows N and keeps a position
+ * VECTOR - which is the single structural difference between the two, and why
+ * `replica_meta`'s hardcoded `id = 1` could not simply be reused.
+ *
+ * `config` caches the member's `TableConfig` as the feed last delivered it
+ * (bootstrap answers with it, later `cfg` entries replace it). It is what the
+ * view applies row images against and what it enforces member read access
+ * from, so a view never consults the parent about a member table.
+ */
+export const viewSources = sqliteTable('view_sources', {
+	/** The member table's registry name. */
+	table: text('table').primaryKey(),
+	epoch: integer('epoch').notNull().default(0),
+	appliedLsn: integer('applied_lsn').notNull().default(0),
+	/** 0 until the first successful bootstrap - the "not ready" marker. */
+	pulledAt: integer('pulled_at').notNull().default(0),
+	/** JSON TableConfig; null between registration and first bootstrap. */
+	config: text('config'),
 });
 
 /**

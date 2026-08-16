@@ -16,6 +16,47 @@
 > The prize is not catching up to Postgres. It is **live joins**: the view holds
 > every member row locally, so a join can be subscribed to. Firebase cannot do
 > that at all.
+>
+> **JOIN1 implemented 2026-08-16.** Deviations, for future readers:
+>
+> - **Views do NOT register in a member's `replicas` table** (§4 as drafted).
+>   They follow the same feed, but `destroyReplicaInstances` resolves every
+>   registry row as `<shardName>:<id>` in the SHARD's own namespace - for a
+>   view id that names a different Durable Object entirely, so the primary
+>   would have destroyed an empty stranger while the real view survived. One
+>   guard in `registerReplica` (ignore anything not `r:`) fixes the replica
+>   map, the sibling-spawn counts, and the erase path at once. The PARENT owns
+>   a view's lifecycle instead, which it must anyway: only the parent knows a
+>   view's whole membership.
+> - **One instance per view, not one per region.** The name grammar keeps the
+>   region slot and JOIN1 always fills it with `global`. A view already stores
+>   a second copy of every member; multiplying that by regions is a latency
+>   optimization for a feature whose first job is being correct. Making views
+>   regional later is a change in `index.ts` and nowhere else.
+> - **No `readAccess` on a view.** Raw SQL always requires a project JWT (the
+>   table endpoint's rule), so the field could only ever hold `auth`. The gate
+>   is stated exactly instead: a valid token, plus the view's key, plus EVERY
+>   member's key. `public` members are read through a token here - stricter
+>   than reading them directly, never looser.
+> - **The owner-mode refusal is enforced at three edges**, not one: declaring
+>   a view over an owner-scoped table (400), flipping a member to owner-scoped
+>   or replication-off afterwards (409, naming the view), and at read time in
+>   the view itself - the member config it checks comes from that member's own
+>   feed, so a member that changed underneath is caught before it is served.
+> - **The member-permission check runs AFTER `freshen()`, and fails closed.**
+>   Drafted, it ran first - and member configs arrive from each member's FEED,
+>   so before the first bootstrap there are none, and checking permissions
+>   against an empty config set passes everything. An unentitled token read a
+>   permission-gated member through a brand-new view, on that view's FIRST
+>   request only, which is the worst possible shape for a hole. Caught by
+>   `db-views.api.spec.ts` on the first run. A member whose config is still
+>   missing after freshening now answers 503: "we do not know what this table
+>   requires" can never mean "so let it through".
+> - Deleting a table a view covers is refused (409) rather than cascading: a
+>   view missing a member is invalid, not degraded.
+> - `view_sources` joined `RESERVED_SHARD_TABLES` and the SQL gate's
+>   internal-name blocklist, so a view cannot read its own bookkeeping and no
+>   table can be declared with that name.
 
 ## 1. Shape
 

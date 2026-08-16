@@ -6,11 +6,11 @@
  * configuration, not from the package - see `AssertDbAgentEnv` for a
  * compile-time check that you declared everything it needs.
  *
- * The `migrations` block below is a FRESH v1 declaring all FOUR Durable
+ * The `migrations` block below is a FRESH v1 declaring all FIVE Durable
  * Object classes. Do not copy the tag history from the Cloudflarebase
- * repository. (Upgrading an install that predates DbTable or DbGateway? The
- * CLI's merge appends the missing classes under your next free tag
- * automatically.)
+ * repository. (Upgrading an install that predates DbTable, DbGateway, or
+ * DbView? The CLI's merge appends the missing classes under your next free
+ * tag automatically.)
  */
 {
 	"main": "src/index.ts",
@@ -20,17 +20,19 @@
 	"compatibility_date": "2026-07-10",
 	"compatibility_flags": ["nodejs_compat", "nodejs_als"],
 
-	// Four SQLite-backed Durable Object classes: DbAgent is the per-project
+	// Five SQLite-backed Durable Object classes: DbAgent is the per-project
 	// coordinator; DbCollection holds one collection's documents and live
 	// queries; DbTable holds one SQL table's typed rows (drizzle/prisma-
 	// compatible storage) - both named `<projectId>:<name>`; DbGateway
-	// terminates the one-socket realtime channel near the subscriber.
+	// terminates the one-socket realtime channel near the subscriber; DbView
+	// holds a read-only join view, following several tables' change logs into
+	// one SQLite so a SELECT can join them.
 	// `new_sqlite_classes` is required - the classic key-value backend cannot
 	// run the embedded database.
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_sqlite_classes": ["DbAgent", "DbCollection", "DbTable", "DbGateway"],
+			"new_sqlite_classes": ["DbAgent", "DbCollection", "DbTable", "DbGateway", "DbView"],
 		},
 	],
 
@@ -51,6 +53,10 @@
 			{
 				"class_name": "DbGateway",
 				"name": "DbGateway",
+			},
+			{
+				"class_name": "DbView",
+				"name": "DbView",
 			},
 		],
 	},
