@@ -156,6 +156,15 @@
 	let docPage = $state(0);
 	let docPageCursors = $state<(string | undefined)[]>([undefined]);
 	let docsNextCursor = $state<string | null>(null);
+	// Loads can overlap: the 5s poll re-reads while a Prev/Next click fetches
+	// another page. Two rules keep them straight: only the NEWEST read may
+	// land (docsLoadSeq - a stale response resolving late would yank the
+	// operator off their page), and a poll re-reads the page the operator is
+	// heading FOR (docDesiredPage, set by navigation before its fetch lands),
+	// not the page last rendered - or a poll fired mid-navigation would
+	// supersede the click with a re-read of the page being left.
+	let docsLoadSeq = 0;
+	let docDesiredPage = 0;
 	const openCollectionDocs = $derived(
 		agentState.collections.find((entry) => entry.name === selected)?.docs ?? 0
 	);
@@ -164,6 +173,7 @@
 
 	function resetDocPaging() {
 		docPage = 0;
+		docDesiredPage = 0;
 		docPageCursors = [undefined];
 		docsNextCursor = null;
 	}
@@ -260,7 +270,9 @@
 		if (selected) void loadDocuments(selected);
 	}
 
-	async function loadDocuments(collection: string, page = docPage) {
+	async function loadDocuments(collection: string, page = docDesiredPage) {
+		docDesiredPage = page;
+		const seq = ++docsLoadSeq;
 		const cursor = docPageCursors[page];
 		try {
 			const response = await fetch(`/api/projects/${data.projectId}/db/admin/query`, {
@@ -273,9 +285,10 @@
 					query: { limit: DOC_PAGE_SIZE, ...(cursor ? { cursor } : {}) }
 				})
 			});
-			if (selected !== collection) return;
+			if (selected !== collection || seq !== docsLoadSeq) return;
 			const result = (await response.json().catch(() => null)) as
 				(DbQueryResult & { error?: string }) | null;
+			if (selected !== collection || seq !== docsLoadSeq) return;
 			if (!response.ok || !result) {
 				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
 			}
@@ -300,10 +313,10 @@
 			}
 			docsError = null;
 		} catch (error) {
-			if (selected !== collection) return;
+			if (selected !== collection || seq !== docsLoadSeq) return;
 			docsError = error instanceof Error ? error.message : String(error);
 		} finally {
-			if (selected === collection) docsLoaded = true;
+			if (selected === collection && seq === docsLoadSeq) docsLoaded = true;
 		}
 	}
 
