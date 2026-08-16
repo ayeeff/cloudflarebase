@@ -5,6 +5,7 @@ import {
 	type APIRequestContext
 } from '@playwright/test';
 import {
+	authPath,
 	ensureProject,
 	SCRATCH_PROJECT,
 	storageProxyObjectPath,
@@ -291,6 +292,154 @@ test.describe('service keys', () => {
 			expect(mergedRow.data.title).toBe('first');
 		} finally {
 			await server.dispose();
+		}
+	});
+
+	/**
+	 * User management with no sign-up flow (docs/admin-sdk-design.md 5.2).
+	 *
+	 * The auth admin surface could list, re-role, and delete. It could not
+	 * CREATE an account, read one by id, update one, or set a password - so
+	 * seeding, invite-first products, and migrating off another provider were
+	 * all impossible from a server. The end-user sign-up route is not a
+	 * substitute: it obeys the project's sign-up mode and starts a verification
+	 * mail.
+	 *
+	 * The positive control is deliberately the strongest one available: the
+	 * created account SIGNS IN through the ordinary public route, which is the
+	 * only thing that proves the password was hashed the way Better Auth
+	 * expects rather than merely written somewhere.
+	 */
+	test('creates, reads, updates, and re-passwords a user with no sign-up flow', async ({
+		baseURL
+	}) => {
+		const server = await serverContext(baseURL);
+		// Signing in is a browser-shaped act, so it needs a real Origin - the
+		// opposite of the service-key contract, and the point: two different
+		// credentials, two different doors, one account.
+		const enduser = await playwrightRequest.newContext({
+			baseURL: base(baseURL),
+			extraHTTPHeaders: { origin: base(baseURL) }
+		});
+		try {
+			const auth = { authorization: `Bearer ${key}` };
+			const email = `svc-user-${run}@example.com`;
+			const first = 'seeded-password-1';
+			const second = 'rotated-password-2';
+
+			const created = await server.post(`/api/projects/${KEY_PROJECT}/admin/users`, {
+				headers: auth,
+				data: { email, password: first, name: 'Seeded By Cron' }
+			});
+			expect(created.status(), await created.text()).toBe(201);
+			const user = await created.json();
+			expect(user.email).toBe(email);
+			// Not verified merely because an admin made it.
+			expect(user.emailVerified).toBe(false);
+			const userId = user.id;
+
+			const read = await server.get(`/api/projects/${KEY_PROJECT}/admin/users/${userId}`, {
+				headers: auth
+			});
+			expect(read.status(), await read.text()).toBe(200);
+			expect((await read.json()).name).toBe('Seeded By Cron');
+
+			// Email is the identity: a second account on it is a 409, never a
+			// silent duplicate that makes sign-in resolve to the wrong person.
+			const duplicate = await server.post(`/api/projects/${KEY_PROJECT}/admin/users`, {
+				headers: auth,
+				data: { email }
+			});
+			expect(duplicate.status()).toBe(409);
+
+			const patched = await server.patch(`/api/projects/${KEY_PROJECT}/admin/users/${userId}`, {
+				headers: auth,
+				data: { name: 'Renamed', emailVerified: true }
+			});
+			expect(patched.ok(), await patched.text()).toBeTruthy();
+			const updated = await patched.json();
+			expect(updated.name).toBe('Renamed');
+			expect(updated.emailVerified).toBe(true);
+
+			// The control: a real sign-in with the admin-set password.
+			const signIn = await enduser.post(authPath(KEY_PROJECT, 'sign-in/email'), {
+				data: { email, password: first }
+			});
+			expect(signIn.ok(), await signIn.text()).toBeTruthy();
+
+			// Rotate it, then prove BOTH halves - the old one stops working and
+			// the new one starts. Only asserting the new one would pass just as
+			// well if the write had done nothing at all.
+			const rotated = await server.put(
+				`/api/projects/${KEY_PROJECT}/admin/users/${userId}/password`,
+				{ headers: auth, data: { newPassword: second } }
+			);
+			expect(rotated.ok(), await rotated.text()).toBeTruthy();
+
+			const stale = await enduser.post(authPath(KEY_PROJECT, 'sign-in/email'), {
+				data: { email, password: first }
+			});
+			expect(stale.ok()).toBeFalsy();
+
+			const fresh = await enduser.post(authPath(KEY_PROJECT, 'sign-in/email'), {
+				data: { email, password: second }
+			});
+			expect(fresh.ok(), await fresh.text()).toBeTruthy();
+
+			// And role is NOT writable through the general update - the lockout
+			// guards on /role must not be reachable around.
+			const escalate = await server.patch(`/api/projects/${KEY_PROJECT}/admin/users/${userId}`, {
+				headers: auth,
+				data: { role: 'admin' }
+			});
+			expect(escalate.status()).toBe(400);
+
+			// The OTHER branch of writePassword: an account created with no
+			// password has no credential row at all, so setting one has to LINK
+			// rather than update. That is the same branch the local-dev reset
+			// hatch relies on for social-only accounts, and nothing else in the
+			// suite reaches it (that route only exists under
+			// DISABLE_EMAIL_VERIFICATION, which env.test does not set).
+			const invited = `svc-invite-${run}@example.com`;
+			const passwordless = await server.post(`/api/projects/${KEY_PROJECT}/admin/users`, {
+				headers: auth,
+				data: { email: invited, name: 'No Credential Yet' }
+			});
+			expect(passwordless.status(), await passwordless.text()).toBe(201);
+			const invitedId = (await passwordless.json()).id;
+
+			const cannotSignIn = await enduser.post(authPath(KEY_PROJECT, 'sign-in/email'), {
+				data: { email: invited, password: second }
+			});
+			expect(cannotSignIn.ok()).toBeFalsy();
+
+			const linked = await server.put(
+				`/api/projects/${KEY_PROJECT}/admin/users/${invitedId}/password`,
+				{ headers: auth, data: { newPassword: second } }
+			);
+			expect(linked.ok(), await linked.text()).toBeTruthy();
+
+			const nowSignsIn = await enduser.post(authPath(KEY_PROJECT, 'sign-in/email'), {
+				data: { email: invited, password: second }
+			});
+			expect(nowSignsIn.ok(), await nowSignsIn.text()).toBeTruthy();
+
+			await server.delete(`/api/projects/${KEY_PROJECT}/admin/users/${invitedId}`, {
+				headers: auth
+			});
+
+			const cleanup = await server.delete(`/api/projects/${KEY_PROJECT}/admin/users/${userId}`, {
+				headers: auth
+			});
+			expect(cleanup.ok(), await cleanup.text()).toBeTruthy();
+
+			const gone = await server.get(`/api/projects/${KEY_PROJECT}/admin/users/${userId}`, {
+				headers: auth
+			});
+			expect(gone.status()).toBe(404);
+		} finally {
+			await server.dispose();
+			await enduser.dispose();
 		}
 	});
 
