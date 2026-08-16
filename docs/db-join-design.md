@@ -59,10 +59,18 @@ become the ask. The two designs compose; neither forecloses the other.
 
 ## 2. Phasing
 
-**JOIN1 requires no changes to the primaries at all.** `repBootstrap`,
-`repSnapshotChunk`, and `repPull` already serve any caller that registers
-itself ([table.ts:469](../agents/db/src/table.ts#L469)) - so a pull-based view
-is a new consumer of an existing feed, exactly REP1's model.
+**JOIN1 needs no primary LOGIC at all.** `repBootstrap`, `repSnapshotChunk`,
+and `repPull` already serve any caller that registers itself
+([table.ts:469](../agents/db/src/table.ts#L469)) - so a pull-based view is a
+new consumer of an existing feed, exactly REP1's model.
+
+One line is the exception, and it is a deployment-ordering fact rather than a
+design one: `repPullInputSchema` validates `replicaId` against
+`/^r:[a-z-]+:\d+$/` ([schemas.ts:236](../agents/db/src/schemas.ts#L236)), so a
+view's `v:<view>:<region>:<n>` is refused by zod before any handler runs. The
+regex has to admit both spellings, and **every deployed agent must carry that
+widening before a console can declare a view** - the same lesson as widening
+the project-id ceiling to 48 characters ahead of minting a longer id.
 
 - **JOIN1 — pull-based read-only views.** New DO class, registry kind, routing,
   widened SQL gate. The view serves a read if it pulled within `MAX_LAG_MS`
@@ -221,6 +229,7 @@ todos=418`) forces that member's pull before serving. The SDK sends it when
 | `agents/db/src/view.ts`                   | NEW `DbView` class: multi-source bootstrap/pull, local SELECT execution, freshness window                                                |
 | `agents/db/src/replication.ts`            | `view` role parsing; per-source meta helpers; sibling-count parse guarded to `r:` ids                                                    |
 | `agents/db/src/db/schema.ts` + migrations | `members` column on the registry; NEW `view_sources` table                                                                               |
+| `agents/db/src/schemas.ts` (feed input)   | `repPullInputSchema.replicaId` admits `v:<view>:<region>:<n>` - must be DEPLOYED before any console declares a view                      |
 | `agents/db/src/table-sql.ts`              | SELECT-only mode for views (drops DML target checks and auto-RETURNING)                                                                  |
 | `agents/db/src/agent.ts`                  | `kind: 'view'` registry, `PUT/GET/DELETE /admin/views/:name`, declare-time constraints, erase order                                      |
 | `agents/db/src/index.ts`                  | `/views/<v>/**` routing to the region view instance, behind the existing isolate cache                                                   |
