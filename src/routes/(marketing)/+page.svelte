@@ -777,7 +777,7 @@
 						>Pricing</span
 					>
 					<h2 class="mt-4 text-3xl font-bold md:text-4xl">
-						Our price: <span class="text-primary">$0</span>.
+						Our price: <span class="text-primary">$0</span>
 					</h2>
 					<p class="mt-3 text-muted-foreground">
 						Cloudflarebase is open source and runs on your own Cloudflare account - there is no

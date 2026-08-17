@@ -32,7 +32,7 @@
 		<div class="mx-auto max-w-6xl space-y-8">
 			<div class="max-w-3xl">
 				<h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">
-					Our price: <span class="text-primary">$0</span>.
+					Our price: <span class="text-primary">$0</span>
 				</h1>
 				<p class="mt-3 text-muted-foreground">
 					Cloudflarebase is open source and runs on your own Cloudflare account - there is no
