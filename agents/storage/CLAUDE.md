@@ -94,13 +94,26 @@ uploads/<id>`. Five things worth holding on to:
 
 ## Hard invariants
 
-- **The shared R2 bucket must never have r2.dev enabled or a custom domain
+- **The PRODUCTION bucket must never have r2.dev enabled or a custom domain
   attached.** Either one serves EVERY tenant's keys to the public internet in
-  one click, bypassing access modes, owner checks, and the inline allowlist.
-  Serving happens exclusively through this worker, which is what enforces the
-  `p/<projectId>/<bucket>/<key>` prefix - the ONLY tenant boundary inside the
-  bucket. A dedicated serving hostname (cdn.cloudflarebase.com) is a WORKER
-  route plus `STORAGE_SERVE_DOMAIN`, never a bucket-level domain.
+  one click, bypassing access modes, owner checks, the inline allowlist (so an
+  uploaded HTML file becomes stored XSS on a host we set no headers on), and
+  the `erasing` flag. Serving happens exclusively through this worker, which is
+  what enforces the `p/<projectId>/<bucket>/<key>` prefix - the ONLY tenant
+  boundary inside the bucket. A dedicated serving hostname
+  (cdn.cloudflarebase.com) is a WORKER route plus `STORAGE_SERVE_DOMAIN`, never
+  a bucket-level domain.
+
+  **`cfbase-storage-preview` is a deliberate exception** (2026-08-17, owner's
+  call): it carries an r2.dev dev URL, on the reasoning that preview is a test
+  environment. Recorded rather than left implicit, because the rule above is
+  otherwise absolute and a future session would "fix" the account back. Two
+  consequences to keep in view: preview no longer rehearses production's
+  security shape, so a bypass that only the worker would have caught cannot be
+  caught there; and anything uploaded to a preview tenant is public to anyone
+  with the key. Do not extend this to production, and do not put real data in
+  preview buckets.
+
 - **The byte path never serves scriptable content inline.** On the managed
   service the agent path shares the console's origin, so attacker-uploaded
   HTML/SVG rendered inline is stored XSS against every operator session.

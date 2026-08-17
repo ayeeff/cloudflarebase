@@ -11,10 +11,16 @@
  * everything else in the install keep working. cloudflarebase.com's own
  * values live in env.production / env.preview.
  *
- * HARD INVARIANT: the shared bucket must never have r2.dev enabled or a
+ * HARD INVARIANT: the PRODUCTION bucket must never have r2.dev enabled or a
  * custom domain attached. Either one serves EVERY tenant's keys to the
  * public internet in one click - serving happens exclusively through this
  * worker, which is what enforces the per-project key prefix.
+ *
+ * cfbase-storage-preview is a deliberate exception (2026-08-17, owner's
+ * call): it carries an r2.dev dev URL because preview is a test
+ * environment. Written down so nobody "fixes" the account back - but it
+ * means preview does not rehearse production's security shape, so keep real
+ * data out of it. Never extend this to production.
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
