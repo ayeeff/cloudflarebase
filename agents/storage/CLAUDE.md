@@ -13,6 +13,22 @@ Also read [AGENTS.md](AGENTS.md). Published as `@cloudflarebase/storage`
 (the Supabase distribution model; `files` ships `dist`, `template`, `NOTICE`,
 and the manifest).
 
+**`./admin` is the SERVER subpath** (`src/admin.ts`,
+`docs/admin-sdk-design.md` 3): `createStorageAdmin()` over a `cfbs_` service
+key - bucket configure/drop/list plus object put/get/list/delete. It targets
+the **console origin, never an agent base** (a key is verified in the console
+guard and does not work on `/agents/*`), and object bytes ride the console's
+one STREAMING proxy, so `put` passes a stream through untouched. Three
+behaviours worth knowing: it refuses to construct in a browser
+(`typeof globalThis.document !== 'undefined'`); it computes `Content-Length`
+from the body and DEMANDS an explicit `size` for a stream, because the agent
+answers 411 without one; and it refuses FORM content types (`text/plain`,
+`multipart/form-data`, `x-www-form-urlencoded`) locally with a sentence
+explaining why, since SvelteKit's CSRF check rejects those on a request with
+no Origin - and a service key never sends one. Default content type is
+`application/octet-stream` for exactly that reason. Pinned by
+`e2e/admin-sdk.api.spec.ts`.
+
 ## Hard invariants
 
 - **The shared R2 bucket must never have r2.dev enabled or a custom domain

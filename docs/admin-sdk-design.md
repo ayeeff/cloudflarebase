@@ -22,36 +22,95 @@ three places and invisible in a fourth.
 - It cannot create, read, or update a **user** (§5.2).
 - It cannot read, write, or delete a storage **object** — the whole point of
   storage (§5.3).
-- Six admin routes it *can* use are absent from the generated OpenAPI
+- Six admin routes it _can_ use are absent from the generated OpenAPI
   document, so nothing tells a developer they exist (§6). One of them is the
   table SQL endpoint — the escape hatch that gives tables the get-by-id
   collections lack. It works today and is undiscoverable.
 
-## 2. The decision: no package
+## 2. The decision: raw HTTP is the contract, per-agent clients sit on top
 
 **The REST API is the service path.** A server holds one `cfbs_` key, points
 at one origin, and calls `/api/projects/<id>/...`:
 
 ```ts
 const cfb = (path, init) =>
-  fetch(`${process.env.CFBASE_URL}/api/projects/${process.env.CFBASE_PROJECT}${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${process.env.CFBASE_SERVICE_KEY}`, ...init?.headers }
-  });
+	fetch(`${process.env.CFBASE_URL}/api/projects/${process.env.CFBASE_PROJECT}${path}`, {
+		...init,
+		headers: { authorization: `Bearer ${process.env.CFBASE_SERVICE_KEY}`, ...init?.headers }
+	});
 
-await cfb('/db/admin/collections/posts/documents/' + id);       // db
-await cfb('/admin/users');                                       // auth
-await cfb('/storage/admin/buckets/avatars/objects/' + key);      // storage
+await cfb('/db/admin/collections/posts/documents/' + id); // db
+await cfb('/admin/users'); // auth
+await cfb('/storage/admin/buckets/avatars/objects/' + key); // storage
 ```
 
-That is the whole client. It needs no install, no version, and no
-synchronisation with four packages' DTOs.
+That path is fully supported and fully documented, and everything below rests
+on it: an admin surface with no holes in it (§5), and a generated reference
+that describes all of it (§6).
 
-What makes it a real service path rather than a shrug is the two things this
-document actually builds: an admin surface with no holes in it (§5), and a
-generated reference that describes all of it (§6).
+But a contract is not ergonomics. On top of it, each agent package ships an
+`./admin` subpath — `@cloudflarebase/db/admin`, `@cloudflarebase/auth/admin`,
+`@cloudflarebase/storage/admin` — constructed from `CLOUDFLAREBASE_SERVICE_KEY`
+and documented server-only:
 
-## 3. Why not a package (the reversal)
+```ts
+import { createDbAdmin } from '@cloudflarebase/db/admin';
+
+const db = createDbAdmin(); // url + project + key from the environment
+await db.collection('posts').patch(id, { votes: 9 });
+await db.table('orders').sql('SELECT * FROM orders WHERE id = ?', [id]);
+```
+
+## 3. Packaging, in three passes
+
+Written twice and corrected once more. Both reversals are kept, because the
+reasoning is the useful part.
+
+**Pass 1 proposed a standalone `@cloudflarebase/admin`.** Wrong — §3.1.
+
+**Pass 2 concluded no package at all.** Right about the API being the contract,
+wrong to stop there: telling a developer to hand-roll a URL builder is not a
+server story.
+
+**Pass 3, shipped: per-agent `./admin` subpaths.** The §3.1 objection was that
+such a subpath ships "a client that never calls the db worker." True, and it
+does not matter:
+
+- **`createDbClient` already does this.** The public client documents working
+  against either the direct agent base or the console proxy base, so the db
+  package already ships a client that can target the console. The admin twin
+  targeting the console _only_ is a difference of degree.
+- **The versioning argument runs the other way.** An admin client wraps the DB
+  AGENT's admin routes, so co-locating it means a route and its client ship in
+  the same version — the same drift-prevention property §3.1 credits the
+  generated reference with. The console is the transport, not the subject.
+
+A client also earns its place in a way a thin wrapper would not: it is the only
+place the **agent-too-old check** can live (§8). An older deployed agent
+answers a routing 404 indistinguishable from "no such document" to anything
+reading a status code, and treating one as the other is data-loss-shaped.
+`DbAgentTooOldError` / `AuthAgentTooOldError` inspect the body shape and say
+which it was. Raw fetch cannot do that for you, and nobody writes it by hand.
+
+Two more things the clients do that the raw path cannot:
+
+- **Refuse to construct in a browser** (`typeof globalThis.document !== 'undefined'`).
+  The guard's `Origin` refusal already fails a browser-bundled key on the first
+  call, but "401 on everything" does not tell a developer they shipped an admin
+  credential to a CDN. This says exactly that, at construction — and the error
+  names the client they should have used instead.
+- **Refuse form content types before the request leaves** (§5.3's CSRF
+  wrinkle), with the reason, rather than a bare 403 from a layer the caller has
+  never heard of.
+
+Config resolves most-explicit-first — option, then a passed `env`, then the
+ambient process — matching the CLI's rule. `CLOUDFLAREBASE_SERVICE_KEY` is
+canonical, since the sibling credential is already
+`CLOUDFLAREBASE_DEPLOY_TOKEN`; `CFBASE_SERVICE_KEY` is accepted too, because it
+matches the `cfbs_`/`cfbd_` prefixes and people write it. Inside a Worker there
+is no global `process`, so `{ env }` is passed explicitly.
+
+### 3.1 Why not a standalone package (pass 1)
 
 The argument FOR one was ergonomics: `cfb.db.collection('posts').get(id)`
 reads better than a fetch wrapper, and Firebase and Supabase both ship one.
@@ -63,7 +122,7 @@ the console guard (`isServiceKeySurface` matches only under
 `/api/projects/<id>/`), and the request reaches each agent over a service
 binding the console has already authorized. The agent workers never see a
 `cfbs_` bearer and have no notion of one. One key, one origin, every
-primitive — before any client code exists. A package would not be *creating*
+primitive — before any client code exists. A package would not be _creating_
 the unified service path; it would be re-describing one.
 
 **The reference is generated, and a hand-written SDK is not.** `src/lib/openapi/`
@@ -73,30 +132,34 @@ by Scalar at `/dashboard/<id>/api`. It cannot drift from the routes. A
 hand-written client can, and would — that is what "keep the copies
 synchronized" already costs this repo four times over.
 
-**It would have been a category error where it was first proposed.** SK2 in
-`service-keys-design.md` scoped this as `@cloudflarebase/db/admin` plus a
-storage twin. But a key does not work against `/agents/*` at all, so that
-subpath would have shipped, inside the db package, a client that never calls
-the db worker — versioned against an agent it does not talk to.
+**~~It would have been a category error where it was first proposed.~~** This
+third argument was WRONG and pass 3 reverses it. It ran: a key does not work
+against `/agents/*`, so a `@cloudflarebase/db/admin` subpath would ship, inside
+the db package, a client that never calls the db worker — versioned against an
+agent it does not talk to. See §3: the public client already targets the
+console proxy base too, and the versioning runs the other way, since the client
+wraps that agent's own routes.
 
-The *public* client is genuinely different and stays: a project JWT is
-verified by the agent itself, which is why `createDbClient` documents working
-against either the direct agent base or the console proxy base. That SDK earns
-its place with live queries, socket multiplexing, and reconnect — real
-behaviour, not a header.
+The first two arguments survive, and they are why there is no STANDALONE
+package: a unified `@cloudflarebase/admin` would re-describe a surface the
+console already unified, and it would be a fourth artifact to version. The
+generated reference remains the source of truth about the routes; the clients
+are ergonomics over it, kept thin and pinned by e2e that drives the real
+exports.
 
-If ergonomics later prove to be the thing holding adoption back, the cheap
-answer is a generated client from the OpenAPI document, not a hand-maintained
-one.
+The _public_ client is different again and stays: a project JWT is verified by
+the agent itself, which is why `createDbClient` documents working against
+either base. That SDK earns its place with live queries, socket multiplexing,
+and reconnect — real behaviour, not a header.
 
 ## 4. What a key reaches, and what describes it
 
-| Service     | Reachable                                                                                          | In the reference           |
-| ----------- | ---------------------------------------------------------------------------------------------------- | -------------------------- |
-| **db**      | query, aggregate, configure/drop collections + tables, PUT/DELETE by id, table SQL, import/export, PITR, views, replication | 31 paths; 5 missing (§6)  |
-| **auth**    | list users, list sessions, set role, delete user, delete session, roles, settings                  | all 7                      |
-| **storage** | list buckets, configure/drop bucket — **objects are unreachable** (§5.3)                           | 2 paths; objects missing   |
-| **hosting** | nothing, deliberately — deploy tokens own that blast radius                                        | n/a                        |
+| Service     | Reachable                                                                                                                   | In the reference         |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **db**      | query, aggregate, configure/drop collections + tables, PUT/DELETE by id, table SQL, import/export, PITR, views, replication | 31 paths; 5 missing (§6) |
+| **auth**    | list users, list sessions, set role, delete user, delete session, roles, settings                                           | all 7                    |
+| **storage** | list buckets, configure/drop bucket — **objects are unreachable** (§5.3)                                                    | 2 paths; objects missing |
+| **hosting** | nothing, deliberately — deploy tokens own that blast radius                                                                 | n/a                      |
 
 The proxy topology is not uniform, and that asymmetry is what produced §5.3.
 `db/admin/[...path]` is a catch-all, so any db admin route the agent adds is
@@ -230,7 +293,7 @@ Accepted and documented. `service-keys-design.md` §10.5 designs the
 alternative — admitting the key on the public shard paths — and defers it:
 that needs the AGENT to trust a header from the console's service binding, and
 that trust channel is precisely what SK1 avoided introducing. Not worth
-opening for a throughput problem nobody has yet. Where the caller *does* have
+opening for a throughput problem nobody has yet. Where the caller _does_ have
 a user context (an SSR route relaying its visitor), the public paths with a
 project JWT remain the better path, and the docs should say which is which.
 

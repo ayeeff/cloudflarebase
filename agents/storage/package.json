@@ -1,6 +1,6 @@
 {
 	"name": "@cloudflarebase/storage",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Object storage on Cloudflare R2 - buckets of files with per-bucket access modes, an object index with keyset paging, one Durable Object orchestrator per project - the storage primitive behind Cloudflarebase.",
 	"license": "Apache-2.0",
 	"type": "module",
@@ -30,6 +30,10 @@
 		".": {
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./admin": {
+			"types": "./dist/admin.d.ts",
+			"default": "./dist/admin.js"
 		},
 		"./wrangler-fragment.jsonc": "./template/wrangler-fragment.jsonc",
 		"./cloudflarebase.agent.json": "./cloudflarebase.agent.json",

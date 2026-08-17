@@ -261,10 +261,7 @@ export class DbTable extends LiveShard {
 	 *
 	 * Never creates: PUT is the upsert.
 	 */
-	async adminPatch(
-		id: string,
-		partial: unknown,
-	): Promise<DbRow | { invalid: string[] } | null> {
+	async adminPatch(id: string, partial: unknown): Promise<DbRow | { invalid: string[] } | null> {
 		const parsed = documentDataSchema.parse(partial);
 		const existing = this.rowById(id);
 		if (!existing) return null;

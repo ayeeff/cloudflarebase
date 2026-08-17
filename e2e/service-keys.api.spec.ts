@@ -174,10 +174,9 @@ test.describe('service keys', () => {
 			expect(listed.ok(), await listed.text()).toBeTruthy();
 			expect((await listed.json()).objects.map((o: { key: string }) => o.key)).toContain(objectKey);
 
-			const removed = await server.delete(
-				storageProxyObjectPath(KEY_PROJECT, bucket, objectKey),
-				{ headers: auth }
-			);
+			const removed = await server.delete(storageProxyObjectPath(KEY_PROJECT, bucket, objectKey), {
+				headers: auth
+			});
 			expect(removed.ok(), await removed.text()).toBeTruthy();
 
 			const gone = await server.get(storageProxyObjectPath(KEY_PROJECT, bucket, objectKey), {
@@ -590,16 +589,20 @@ test.describe('service keys', () => {
 			extraHTTPHeaders: { origin: base(baseURL) },
 			storageState: 'e2e/.auth/console.json'
 		});
-		let orphan = '';
-		try {
-			const minted = await operator.post(`/api/projects/${KEY_PROJECT}/keys`, {
-				data: { name: 'orphan' }
-			});
-			expect(minted.status(), await minted.text()).toBe(201);
-			orphan = (await minted.json()).key;
-		} finally {
-			await operator.dispose();
-		}
+		// Wrapped rather than assigned into a pre-declared `let`: the initial ''
+		// was never read (eslint no-useless-assignment), and returning from the
+		// try keeps disposal guaranteed without one.
+		const orphan: string = await (async () => {
+			try {
+				const minted = await operator.post(`/api/projects/${KEY_PROJECT}/keys`, {
+					data: { name: 'orphan' }
+				});
+				expect(minted.status(), await minted.text()).toBe(201);
+				return (await minted.json()).key as string;
+			} finally {
+				await operator.dispose();
+			}
+		})();
 
 		const server = await serverContext(baseURL);
 		try {
