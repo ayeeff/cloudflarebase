@@ -12,6 +12,8 @@ import {
 	objectCursorSchema,
 	projectIdSchema,
 	signedUrlRequestSchema,
+	completeUploadRequestSchema,
+	createUploadRequestSchema,
 } from './schemas';
 import {
 	SIGNED_PARAM_EXPIRES,
@@ -22,7 +24,14 @@ import {
 	resolveTtlSeconds,
 	signSubject,
 	verifySignature,
+	MAX_MULTIPART_BYTES,
+	UPLOAD_TTL_SECONDS,
+	openUpload,
+	partCount,
+	resolvePartSize,
+	sealUpload,
 	type SignedMethod,
+	type UploadEnvelope,
 } from './signing';
 
 /**
@@ -156,6 +165,30 @@ class StorageService extends WorkerEntrypoint<Env> {
 				if (key.startsWith(`${projectId}:`)) accessCache.delete(key);
 			}
 			return Response.json({ erased: true });
+		}
+
+		// /agents/storage-agent/<pid>/buckets/<b>/uploads[/<id>[/parts/<n>|
+		// /complete]] (+ admin mirror). The multipart control plane; part PUTs
+		// carry bytes and are verified statelessly from the signed envelope.
+		const uploadRoute = url.pathname.match(
+			/^\/agents\/[^/]+\/([^/]+)\/(admin\/)?buckets\/([^/]+)\/uploads(\/.*)?$/,
+		);
+		if (uploadRoute) {
+			const projectId = decodeURIComponent(uploadRoute[1]);
+			const bucket = decodeURIComponent(uploadRoute[3]);
+			if (
+				!projectIdSchema.safeParse(projectId).success ||
+				!bucketNameSchema.safeParse(bucket).success
+			) {
+				return Response.json({ error: 'invalid project or bucket name' }, { status: 400 });
+			}
+			const response = await this.handleUploads(
+				request,
+				{ projectId, bucket, key: null, admin: uploadRoute[2] === 'admin/' },
+				uploadRoute[4] ?? '',
+			);
+			await this.reportServerError(request, url, response);
+			return response;
 		}
 
 		// /agents/storage-agent/<pid>/buckets/<b>/signed-urls (+ admin mirror).
@@ -302,6 +335,398 @@ class StorageService extends WorkerEntrypoint<Env> {
 
 		const response = await this.routeObjectOp(request, url, target, answer);
 		return withCors(response, cors);
+	}
+
+	/**
+	 * The multipart control plane. A single `PUT` cannot carry more than the
+	 * Workers body cap, so anything larger escalates to parts - and the SERVER
+	 * decides the shape, because R2 requires every part but the last to be
+	 * identically sized and a client that picks its own can produce an upload
+	 * that cannot complete.
+	 *
+	 *   POST   uploads                 create - the only step that hits the DO
+	 *   PUT    uploads/<id>/parts/<n>  one part; verified from the envelope
+	 *   POST   uploads/<id>/complete   assemble, verify size, index
+	 *   DELETE uploads/<id>            abort and refund the reservation
+	 *
+	 * Part PUTs pay ZERO Durable Object hops: everything needed to authorize
+	 * one travels inside the signed envelope. That is what keeps a 5 GB upload
+	 * from being 600 round trips to a single-threaded object.
+	 */
+	private async handleUploads(
+		request: Request,
+		target: ObjectRouteTarget,
+		subPath: string,
+	): Promise<Response> {
+		if (DEMO_PROJECT_PATTERN.test(target.projectId)) {
+			return Response.json(
+				{ error: 'storage is not available on demo projects - create a real project to use it' },
+				{ status: 403 },
+			);
+		}
+		const cors = corsHeadersFor(request, this.env.TRUSTED_ORIGINS);
+		if (request.method === 'OPTIONS') {
+			return cors
+				? new Response(null, { status: 204, headers: cors })
+				: Response.json({ error: 'INVALID_ORIGIN' }, { status: 403 });
+		}
+		if (request.headers.get('origin') && !cors) {
+			return Response.json({ error: 'INVALID_ORIGIN' }, { status: 403 });
+		}
+		if (!this.env.BUCKET) return withCors(notConfigured(), cors);
+
+		if (subPath === '' && request.method === 'POST') {
+			return withCors(await this.createUpload(request, target), cors);
+		}
+		const part = subPath.match(/^\/([^/]+)\/parts\/(\d{1,5})$/);
+		if (part && request.method === 'PUT') {
+			return withCors(
+				await this.uploadPart(request, target, decodeURIComponent(part[1]), Number(part[2])),
+				cors,
+			);
+		}
+		const complete = subPath.match(/^\/([^/]+)\/complete$/);
+		if (complete && request.method === 'POST') {
+			return withCors(
+				await this.completeUpload(request, target, decodeURIComponent(complete[1])),
+				cors,
+			);
+		}
+		const abort = subPath.match(/^\/([^/]+)$/);
+		if (abort && request.method === 'DELETE') {
+			return withCors(await this.abortUpload(target, decodeURIComponent(abort[1])), cors);
+		}
+		return withCors(Response.json({ error: 'not found' }, { status: 404 }), cors);
+	}
+
+	/**
+	 * Create. The one multipart step that talks to the Durable Object, because
+	 * the quota reservation and the concurrency count are facts only the
+	 * parent holds. Every write rule runs here against DECLARED values, so a
+	 * refusal costs the client nothing but one round trip.
+	 */
+	private async createUpload(request: Request, target: ObjectRouteTarget): Promise<Response> {
+		const bucketBinding = this.env.BUCKET!;
+		const answer = await this.bucketAccess(target.projectId, target.bucket, true);
+		if (answer.status === 'erasing') return erasingResponse();
+		if (answer.status === 'missing') {
+			return Response.json({ error: 'no such bucket' }, { status: 404 });
+		}
+		const { config } = answer;
+
+		let owner = '';
+		if (!target.admin) {
+			const decision = await checkAccess(
+				request,
+				this.env,
+				target.projectId,
+				config.write,
+				config.writePermission,
+			);
+			if (!decision.ok) return decision.response;
+			owner = decision.subject ?? '';
+		}
+
+		let body: unknown;
+		try {
+			body = await request.json();
+		} catch {
+			return Response.json({ error: 'invalid JSON body' }, { status: 400 });
+		}
+		const parsed = createUploadRequestSchema.safeParse(body);
+		if (!parsed.success) {
+			return Response.json(
+				{ error: parsed.error.issues[0]?.message ?? 'invalid request body' },
+				{ status: 400 },
+			);
+		}
+		const parsedKey = parseObjectKey(parsed.data.key);
+		if (!parsedKey.ok) return Response.json({ error: parsedKey.error }, { status: 400 });
+		const key = parsedKey.key;
+		const size = parsed.data.size;
+		const contentType = parsed.data.contentType ?? 'application/octet-stream';
+
+		if (size > MAX_MULTIPART_BYTES) {
+			return Response.json(
+				{ error: `multipart uploads are limited to ${MAX_MULTIPART_BYTES} bytes` },
+				{ status: 413 },
+			);
+		}
+		// A per-bucket ceiling above the single-PUT cap only becomes meaningful
+		// here - this is the path that can actually exceed it.
+		if (config.maxObjectBytes !== null && size > config.maxObjectBytes) {
+			return Response.json(
+				{ error: `objects on this bucket are limited to ${config.maxObjectBytes} bytes` },
+				{ status: 413 },
+			);
+		}
+		if (!target.admin && config.allowedContentTypes?.length) {
+			if (!contentTypeAllowed(contentType, config.allowedContentTypes)) {
+				return Response.json(
+					{ error: 'this content type is not allowed on this bucket' },
+					{ status: 415 },
+				);
+			}
+		}
+		if (answer.stats.objectCount >= answer.maxObjects) {
+			return Response.json(
+				{ error: `buckets are limited to ${answer.maxObjects} objects` },
+				{ status: 409 },
+			);
+		}
+		// Owner mode: the same no-stealing-a-key rule single PUTs enforce,
+		// applied before any part is accepted rather than at completion.
+		const r2Key = r2ObjectKey(target.projectId, target.bucket, key);
+		if (!target.admin && config.write === 'owner') {
+			const existing = await bucketBinding.head(r2Key);
+			if (existing && (existing.customMetadata?.owner ?? '') !== owner) {
+				return Response.json({ error: 'you do not own this key' }, { status: 403 });
+			}
+		}
+
+		const partSize = resolvePartSize(size);
+		const created = await bucketBinding.createMultipartUpload(r2Key, {
+			httpMetadata: { contentType },
+			customMetadata: { owner, project: target.projectId },
+		});
+
+		const id = crypto.randomUUID();
+		const agent = await getAgentByName<Env, StorageAgentBase>(
+			this.env.StorageAgent,
+			target.projectId,
+		);
+		const reserved = await agent.createUpload({
+			id,
+			bucket: target.bucket,
+			key,
+			r2UploadId: created.uploadId,
+			partSize,
+			reservedBytes: size,
+			contentType,
+			owner,
+		});
+		if (!reserved.ok) {
+			// Refused AFTER the R2 upload exists, so clean it up now rather than
+			// leave parts billing until R2's own 7-day abort.
+			await created.abort().catch(() => undefined);
+			return Response.json({ error: reserved.error }, { status: reserved.status });
+		}
+
+		const uploadId = await sealUpload(answer.signing, {
+			projectId: target.projectId,
+			bucket: target.bucket,
+			key,
+			reservationId: id,
+			r2UploadId: created.uploadId,
+			partSize,
+			size,
+			contentType,
+			owner,
+			expires: Math.floor(Date.now() / 1000) + UPLOAD_TTL_SECONDS,
+		});
+		return Response.json(
+			{
+				uploadId,
+				key,
+				partSize,
+				parts: partCount(size, partSize),
+				// Always `proxy` today; the field ships now so presigned transport
+				// never changes the client contract.
+				mode: 'proxy',
+			},
+			{ status: 201, headers: { 'cache-control': 'private, no-store' } },
+		);
+	}
+
+	/** Open an upload token, or the refusal to send. Shared by every step
+	 * after create, so the envelope rules live in exactly one place. */
+	private async openEnvelope(
+		target: ObjectRouteTarget,
+		token: string,
+	): Promise<{ ok: true; envelope: UploadEnvelope } | { ok: false; response: Response }> {
+		const answer = await this.bucketAccess(target.projectId, target.bucket);
+		if (answer.status === 'erasing') return { ok: false, response: erasingResponse() };
+		if (answer.status === 'missing') {
+			return { ok: false, response: Response.json({ error: 'no such bucket' }, { status: 404 }) };
+		}
+		let verdict = await openUpload(answer.signing, token, Math.floor(Date.now() / 1000));
+		if (!verdict.ok && verdict.reason === 'version') {
+			const fresh = await this.bucketAccess(target.projectId, target.bucket, true);
+			if (fresh.status === 'ok') {
+				verdict = await openUpload(fresh.signing, token, Math.floor(Date.now() / 1000));
+			}
+		}
+		if (!verdict.ok) {
+			const expired = verdict.reason === 'expired';
+			return {
+				ok: false,
+				response: Response.json(
+					{ error: expired ? 'this upload has expired' : 'invalid upload id' },
+					{ status: expired ? 410 : 403 },
+				),
+			};
+		}
+		// The envelope is bound to one tenant and bucket; a token minted
+		// elsewhere cannot be steered at this route.
+		if (
+			verdict.envelope.projectId !== target.projectId ||
+			verdict.envelope.bucket !== target.bucket
+		) {
+			return {
+				ok: false,
+				response: Response.json({ error: 'invalid upload id' }, { status: 403 }),
+			};
+		}
+		return { ok: true, envelope: verdict.envelope };
+	}
+
+	/**
+	 * One part. No DO hop and no access re-check: the envelope IS the
+	 * capability, and it was issued to someone who passed the write gate for
+	 * this exact key. Sizes are enforced here rather than at completion so a
+	 * malformed client fails on its first part instead of after uploading
+	 * gigabytes.
+	 */
+	private async uploadPart(
+		request: Request,
+		target: ObjectRouteTarget,
+		token: string,
+		partNumber: number,
+	): Promise<Response> {
+		const opened = await this.openEnvelope(target, token);
+		if (!opened.ok) return opened.response;
+		const { envelope } = opened;
+
+		const total = partCount(envelope.size, envelope.partSize);
+		if (partNumber < 1 || partNumber > total) {
+			return Response.json({ error: `this upload has ${total} parts` }, { status: 400 });
+		}
+		const declared = Number(request.headers.get('content-length'));
+		if (request.headers.get('content-length') === null || !Number.isFinite(declared)) {
+			return Response.json({ error: 'Content-Length is required' }, { status: 411 });
+		}
+		// Every part but the last must be exactly partSize - R2's rule, checked
+		// here because R2 only reports it at completion, by which time the
+		// client has spent the whole upload.
+		const expected =
+			partNumber === total ? envelope.size - envelope.partSize * (total - 1) : envelope.partSize;
+		if (declared !== expected) {
+			return Response.json(
+				{ error: `part ${partNumber} must be exactly ${expected} bytes` },
+				{ status: 400 },
+			);
+		}
+
+		const uploaded = await this.env
+			.BUCKET!.resumeMultipartUpload(
+				r2ObjectKey(envelope.projectId, envelope.bucket, envelope.key),
+				envelope.r2UploadId,
+			)
+			.uploadPart(partNumber, request.body as ReadableStream);
+		return Response.json(
+			{ partNumber: uploaded.partNumber, etag: uploaded.etag },
+			{ headers: { 'cache-control': 'private, no-store' } },
+		);
+	}
+
+	/**
+	 * Assemble. The real size is verified against the reservation with a
+	 * `head()` - an invariant check while every part came through us, and the
+	 * actual enforcement once parts can go straight to R2.
+	 */
+	private async completeUpload(
+		request: Request,
+		target: ObjectRouteTarget,
+		token: string,
+	): Promise<Response> {
+		const opened = await this.openEnvelope(target, token);
+		if (!opened.ok) return opened.response;
+		const { envelope } = opened;
+
+		let body: unknown;
+		try {
+			body = await request.json();
+		} catch {
+			return Response.json({ error: 'invalid JSON body' }, { status: 400 });
+		}
+		const parsed = completeUploadRequestSchema.safeParse(body);
+		if (!parsed.success) {
+			return Response.json(
+				{ error: parsed.error.issues[0]?.message ?? 'invalid request body' },
+				{ status: 400 },
+			);
+		}
+
+		const r2Key = r2ObjectKey(envelope.projectId, envelope.bucket, envelope.key);
+		const agent = await getAgentByName<Env, StorageAgentBase>(
+			this.env.StorageAgent,
+			envelope.projectId,
+		);
+		let object: R2Object;
+		try {
+			object = await this.env
+				.BUCKET!.resumeMultipartUpload(r2Key, envelope.r2UploadId)
+				.complete(parsed.data.parts);
+		} catch (error) {
+			return Response.json(
+				{
+					error: `could not complete this upload: ${error instanceof Error ? error.message : 'unknown error'}`,
+				},
+				{ status: 400 },
+			);
+		}
+
+		// Declared vs actual. Over the reservation, the object goes away: the
+		// quota was granted for what was promised, and keeping the overage
+		// would make the reservation decorative.
+		if (object.size > envelope.size) {
+			await this.env.BUCKET!.delete(r2Key);
+			await agent.releaseUpload(envelope.reservationId);
+			return Response.json(
+				{ error: 'the completed object is larger than the size this upload reserved' },
+				{ status: 413 },
+			);
+		}
+
+		const stats = await this.bucketStub(target).recordPut(this.identity(target), {
+			key: envelope.key,
+			size: object.size,
+			etag: object.etag,
+			contentType: envelope.contentType,
+			owner: envelope.owner,
+		});
+		this.refreshCachedStats(target, stats);
+		await agent.settleUpload(envelope.reservationId, envelope.bucket, object.size);
+		return Response.json({
+			object: {
+				key: envelope.key,
+				size: object.size,
+				etag: object.etag,
+				contentType: envelope.contentType,
+				owner: envelope.owner,
+			},
+		});
+	}
+
+	/** Abort and refund. Idempotent by construction: R2 forgets the upload and
+	 * the reservation row is deleted by id. */
+	private async abortUpload(target: ObjectRouteTarget, token: string): Promise<Response> {
+		const opened = await this.openEnvelope(target, token);
+		if (!opened.ok) return opened.response;
+		const { envelope } = opened;
+		await this.env
+			.BUCKET!.resumeMultipartUpload(
+				r2ObjectKey(envelope.projectId, envelope.bucket, envelope.key),
+				envelope.r2UploadId,
+			)
+			.abort()
+			.catch(() => undefined);
+		const agent = await getAgentByName<Env, StorageAgentBase>(
+			this.env.StorageAgent,
+			envelope.projectId,
+		);
+		await agent.releaseUpload(envelope.reservationId);
+		return Response.json({ aborted: true });
 	}
 
 	/**

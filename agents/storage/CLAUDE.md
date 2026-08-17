@@ -57,6 +57,41 @@ extra hop. GET and HEAD only. Four rules that are easy to get backwards:
 Pinned by `signing.unit.test.ts` and the S2 block of `e2e/storage.api.spec.ts`,
 where every containment case proves the URL is live in the same test first.
 
+**Folder listing** (shipped 2026-08-17): `?delimiter=/` on the object listing
+returns only DIRECT children as objects and collapses the rest into
+`{ prefix, objectCount }` folders. Keys stay flat strings - a folder is derived
+at read time. Objects keep their keyset page; folders are a bounded `GROUP BY`
+(they have no stable cursor, being derived) and report `foldersTruncated`
+rather than silently dropping any. `/` is the only delimiter accepted.
+
+**Multipart uploads** (shipped 2026-08-17): `POST uploads` → `PUT
+uploads/<id>/parts/<n>` → `POST uploads/<id>/complete`, plus `DELETE
+uploads/<id>`. Five things worth holding on to:
+
+- **Part size is server-dictated.** R2 needs every part but the last to be
+  identical, so a client that picks its own can build an upload that cannot
+  complete. `resolvePartSize` floors at 8 MiB - and at the 5 GB ceiling the
+  floor always wins (640 parts), so `MAX_PART_SIZE` is defensive, not
+  reachable. Don't "simplify" the clamp away.
+- **The wire `uploadId` is our signed envelope, never R2's id.**
+  `resumeMultipartUpload()` validates NOTHING - not even that the upload
+  exists - so the raw id must not be the capability. The envelope carries
+  every fact a part PUT needs, which is what makes parts cost zero DO hops,
+  and it is bound to one project/bucket/key/partSize so it cannot be steered
+  at another tenant. Same secret as download URLs under a distinct context
+  label (`upload` vs `url`), so neither can be forged from the other.
+- **Part sizes are checked at the part, not at completion.** R2 only complains
+  when you assemble, by which point the client has spent the whole upload.
+- **Reservations are quota.** An in-flight upload has bytes in R2 that no
+  index row counts, so `uploads.reservedBytes` folds into `getBucketAccess` -
+  which is how single-shot PUTs see them too. Ten concurrent per project, or a
+  tenant could park the whole allowance and complete nothing.
+- **Create records AFTER R2, and aborts on refusal.** A refusal arriving after
+  the R2 upload exists is cleaned up immediately rather than left to R2's
+  7-day abort; the crash window is bounded by that same 7 days. The parent's
+  hourly sweep then aborts anything older than 24h **by age, not idleness** -
+  idleness would cost a parent hop per part.
+
 ## Hard invariants
 
 - **The shared R2 bucket must never have r2.dev enabled or a custom domain

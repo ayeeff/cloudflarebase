@@ -175,6 +175,163 @@ test.describe('storage client SDK', () => {
 		await expect(anonymous.download(`${run}/notes.txt`)).rejects.toMatchObject({ status: 401 });
 	});
 
+	test('uploadMultipart runs the whole part protocol', async () => {
+		const files = client().from(BUCKET);
+		const key = `${run}/multipart.bin`;
+		// Small on purpose. Part size is server-dictated at an 8 MiB floor, so
+		// anything under that is a ONE-part multipart - which still exercises
+		// create, the part PUT, the size check, complete, and the settle.
+		const body = 'x'.repeat(4096);
+		const progress: { uploadedBytes: number; totalBytes: number }[] = [];
+
+		const uploaded = await files.uploadMultipart(key, body, {
+			contentType: 'text/plain',
+			onProgress: (p) => progress.push(p)
+		});
+		expect(uploaded.key).toBe(key);
+		expect(uploaded.size).toBe(4096);
+		expect(progress).toEqual([{ uploadedBytes: 4096, totalBytes: 4096 }]);
+
+		// The bytes really landed, and the index really knows about them.
+		expect(await (await files.download(key)).text()).toBe(body);
+		const listed = await files.list({ prefix: key });
+		expect(listed.objects.map((o) => o.key)).toEqual([key]);
+
+		await files.remove([key]);
+	});
+
+	test('a multipart upload spanning several parts assembles in order', async ({ playwright }) => {
+		// Drive the protocol directly so the parts are real and distinguishable
+		// - the SDK slices a Blob, which would hide an ordering bug.
+		const context = await playwright.request.newContext({ baseURL: origin });
+		const base = `/agents/storage-agent/${CLIENT_PROJECT}/buckets/${BUCKET}/uploads`;
+		const auth = { authorization: `Bearer ${token}` };
+		const key = `${run}/ordered.bin`;
+		try {
+			const partSizeGuess = 8 * 1024 * 1024;
+			const size = partSizeGuess + 1024; // two parts: one full, one short
+			const created = await context.post(base, {
+				headers: { ...auth, 'content-type': 'application/json' },
+				data: { key, size, contentType: 'application/octet-stream' }
+			});
+			expect(created.status(), await created.text()).toBe(201);
+			const session = await created.json();
+			expect(session.parts).toBe(2);
+			expect(session.partSize).toBe(partSizeGuess);
+			expect(session.mode).toBe('proxy');
+
+			const first = 'a'.repeat(session.partSize);
+			const second = 'b'.repeat(size - session.partSize);
+			const etags = [];
+			for (const [index, chunk] of [first, second].entries()) {
+				const response = await context.put(`${base}/${session.uploadId}/parts/${index + 1}`, {
+					headers: { ...auth, 'content-type': 'application/octet-stream' },
+					data: Buffer.from(chunk)
+				});
+				expect(response.status(), await response.text()).toBe(200);
+				etags.push(await response.json());
+			}
+
+			const completed = await context.post(`${base}/${session.uploadId}/complete`, {
+				headers: { ...auth, 'content-type': 'application/json' },
+				data: { parts: etags }
+			});
+			expect(completed.status(), await completed.text()).toBe(200);
+			expect((await completed.json()).object.size).toBe(size);
+
+			const files = client().from(BUCKET);
+			const body = await (await files.download(key)).text();
+			expect(body.length).toBe(size);
+			expect(body.startsWith('aaa')).toBe(true);
+			expect(body.endsWith('bbb')).toBe(true);
+			await files.remove([key]);
+		} finally {
+			await context.dispose();
+		}
+	});
+
+	test('a wrong-sized part fails at that part, not at completion', async ({ playwright }) => {
+		const context = await playwright.request.newContext({ baseURL: origin });
+		const base = `/agents/storage-agent/${CLIENT_PROJECT}/buckets/${BUCKET}/uploads`;
+		const auth = { authorization: `Bearer ${token}` };
+		try {
+			const size = 8 * 1024 * 1024 + 1024;
+			const created = await context.post(base, {
+				headers: { ...auth, 'content-type': 'application/json' },
+				data: { key: `${run}/short-part.bin`, size }
+			});
+			const session = await created.json();
+
+			// R2 only reports this at completion, by which point the client has
+			// spent the whole upload. Catching it on the first part is the point.
+			const short = await context.put(`${base}/${session.uploadId}/parts/1`, {
+				headers: { ...auth, 'content-type': 'application/octet-stream' },
+				data: Buffer.from('too short')
+			});
+			expect(short.status(), await short.text()).toBe(400);
+			expect((await short.json()).error).toContain('exactly');
+
+			// A part number beyond the declared count is refused too.
+			const beyond = await context.put(`${base}/${session.uploadId}/parts/99`, {
+				headers: { ...auth, 'content-type': 'application/octet-stream' },
+				data: Buffer.from('x')
+			});
+			expect(beyond.status()).toBe(400);
+
+			const aborted = await context.delete(`${base}/${session.uploadId}`, { headers: auth });
+			expect(aborted.status()).toBe(200);
+		} finally {
+			await context.dispose();
+		}
+	});
+
+	test('an upload envelope cannot be steered at another bucket or tenant', async ({
+		playwright
+	}) => {
+		const context = await playwright.request.newContext({ baseURL: origin });
+		const auth = { authorization: `Bearer ${token}` };
+		const base = `/agents/storage-agent/${CLIENT_PROJECT}/buckets/${BUCKET}/uploads`;
+		try {
+			const created = await context.post(base, {
+				headers: { ...auth, 'content-type': 'application/json' },
+				data: { key: `${run}/bound.bin`, size: 1024 }
+			});
+			const session = await created.json();
+
+			// The same token, replayed against a different bucket on the same
+			// project. The envelope names its bucket, so this is not ours.
+			const elsewhere = await context.put(
+				`/agents/storage-agent/${CLIENT_PROJECT}/buckets/spec-signed/uploads/${session.uploadId}/parts/1`,
+				{
+					headers: { ...auth, 'content-type': 'application/octet-stream' },
+					data: Buffer.from('x'.repeat(1024))
+				}
+			);
+			expect([403, 404]).toContain(elsewhere.status());
+
+			// And a token whose payload has been edited fails its signature.
+			const [version, body, signature] = String(session.uploadId).split('.');
+			const decoded = JSON.parse(
+				Buffer.from(body.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()
+			);
+			decoded.key = `${run}/hijacked.bin`;
+			const forged = `${version}.${Buffer.from(JSON.stringify(decoded))
+				.toString('base64')
+				.replace(/\+/g, '-')
+				.replace(/\//g, '_')
+				.replace(/=+$/, '')}.${signature}`;
+			const tampered = await context.put(`${base}/${forged}/parts/1`, {
+				headers: { ...auth, 'content-type': 'application/octet-stream' },
+				data: Buffer.from('x'.repeat(1024))
+			});
+			expect(tampered.status()).toBe(403);
+
+			await context.delete(`${base}/${session.uploadId}`, { headers: auth });
+		} finally {
+			await context.dispose();
+		}
+	});
+
 	test('a body of unknowable length is refused locally, with the reason', async () => {
 		const files = client().from(BUCKET);
 		const stream = new ReadableStream();

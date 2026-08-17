@@ -115,6 +115,35 @@ export const signedUrlRequestSchema = z
 	);
 export type SignedUrlRequest = z.infer<typeof signedUrlRequestSchema>;
 
+/**
+ * `POST /buckets/:name/uploads` body - the multipart control plane.
+ *
+ * `size` is DECLARED, not measured, and that is deliberate: it is what lets
+ * the write rules, the quota reservation, and the part size all be settled
+ * before a single byte moves. Completion verifies the real size against it.
+ */
+export const createUploadRequestSchema = z.strictObject({
+	key: z.string().min(1).max(1024),
+	size: z.number().int().min(1),
+	contentType: z.string().max(255).optional(),
+});
+export type CreateUploadRequest = z.infer<typeof createUploadRequestSchema>;
+
+/** `POST /buckets/:name/uploads/:id/complete` body. Part numbers are R2's:
+ * 1-based, ascending, every part but the last identically sized. */
+export const completeUploadRequestSchema = z.strictObject({
+	parts: z
+		.array(
+			z.strictObject({
+				partNumber: z.number().int().min(1).max(10_000),
+				etag: z.string().min(1).max(256),
+			}),
+		)
+		.min(1)
+		.max(10_000),
+});
+export type CompleteUploadRequest = z.infer<typeof completeUploadRequestSchema>;
+
 // ---------------------------------------------------------------------------
 // Third-party responses
 

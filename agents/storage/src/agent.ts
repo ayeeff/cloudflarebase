@@ -1,12 +1,12 @@
 import * as Sentry from '@sentry/cloudflare';
 import { Agent, type AgentContext } from 'agents';
-import { asc, count, eq } from 'drizzle-orm';
+import { asc, count, eq, lt } from 'drizzle-orm';
 import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlite';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import { drainUnusedBody } from './access';
 import * as schema from './db/schema';
-import { buckets, type BucketRecord } from './db/schema';
-import { r2BucketPrefix, r2ProjectPrefix } from './keys';
+import { buckets, uploads, type BucketRecord, type UploadRecord } from './db/schema';
+import { r2BucketPrefix, r2ObjectKey, r2ProjectPrefix } from './keys';
 import migrations from './migrations';
 import {
 	DEMO_PROJECT_PATTERN,
@@ -42,6 +42,15 @@ const MAX_PROJECT_BYTES = 1024 * 1024 * 1024; // 1 GB - R2's free tier is 10
 /** Cycles of list(1000)+delete(1000) per drain wake, bounding wall time. */
 const DRAIN_CYCLES_PER_WAKE = 5;
 const DRAIN_RETRY_SECONDS = 30;
+/** Open multipart uploads per project. Reservations hold quota, so without a
+ * ceiling a tenant could park the whole allowance and complete nothing. */
+const MAX_CONCURRENT_UPLOADS = 10;
+/** Abandoned uploads are swept by AGE, not idleness: tracking idleness would
+ * cost a parent hop per part, age costs nothing, and a day covers any single
+ * file on any real link. R2 aborts its side after 7 days, but the reservation
+ * is ours to release and incomplete parts bill as storage until then. */
+const UPLOAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const UPLOAD_SWEEP_SECONDS = 60 * 60;
 
 const DO_RESET_PATTERN = /abort\(\) to reset|durable object reset/i;
 function isDurableObjectReset(error: unknown): boolean {
@@ -251,15 +260,151 @@ export class StorageAgent extends Agent<Env, StorageAgentState> {
 		const [row] = await this.db.select().from(buckets).where(eq(buckets.name, bucket)).limit(1);
 		if (!row) return { status: 'missing' };
 		const rows = await this.db.select().from(buckets);
+		// Open multipart reservations count against the quota: their bytes are
+		// landing in R2 with no index row behind them yet, so a verdict that
+		// ignored them would let ten uploads that each fit collectively blow
+		// past the ceiling. Folding them in HERE is what makes single-shot PUTs
+		// see them too, without a second hop.
+		const open = await this.db.select().from(uploads);
+		const reserved = open.reduce((total, entry) => total + entry.reservedBytes, 0);
 		return {
 			status: 'ok',
 			config: toConfig(row),
 			stats: { objectCount: row.objectCount, totalBytes: row.totalBytes },
-			projectBytes: rows.reduce((total, other) => total + other.totalBytes, 0),
+			projectBytes: rows.reduce((total, other) => total + other.totalBytes, 0) + reserved,
 			maxObjects: envInt(this.env, 'STORAGE_MAX_OBJECTS_PER_BUCKET', MAX_OBJECTS_PER_BUCKET),
 			maxProjectBytes: envInt(this.env, 'STORAGE_MAX_PROJECT_BYTES', MAX_PROJECT_BYTES),
 			signing: await this.getSigningSecret(),
 		};
+	}
+
+	// -------------------------------------------------------------------
+	// Multipart reservations
+
+	/**
+	 * Record an open multipart upload, or refuse it.
+	 *
+	 * Called by the worker AFTER it has created the upload in R2, because the
+	 * R2 id is part of what gets recorded; a refusal here is the worker's cue
+	 * to abort that upload immediately. The window in between (worker dies
+	 * mid-create) leaves an R2 upload nobody reserved, which R2 itself aborts
+	 * after 7 days - bounded, and cheaper than the extra round trip a
+	 * reserve-then-attach dance would cost on every file.
+	 *
+	 * The concurrency cap is what stops reservations being a denial-of-quota
+	 * lever: open uploads hold bytes that no index row counts yet, so without
+	 * a ceiling a tenant could reserve the whole project quota and never
+	 * complete anything.
+	 */
+	async createUpload(input: {
+		id: string;
+		bucket: string;
+		key: string;
+		r2UploadId: string;
+		partSize: number;
+		reservedBytes: number;
+		contentType: string;
+		owner: string;
+	}): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+		if (await this.isErasing()) {
+			return { ok: false, status: 503, error: 'this project is being erased' };
+		}
+		const open = await this.db.select().from(uploads);
+		const maxConcurrent = envInt(
+			this.env,
+			'STORAGE_MAX_CONCURRENT_UPLOADS',
+			MAX_CONCURRENT_UPLOADS,
+		);
+		if (open.length >= maxConcurrent) {
+			return {
+				ok: false,
+				status: 429,
+				error: `this project already has ${maxConcurrent} uploads in flight`,
+			};
+		}
+		const rows = await this.db.select().from(buckets);
+		const stored = rows.reduce((total, row) => total + row.totalBytes, 0);
+		const reserved = open.reduce((total, row) => total + row.reservedBytes, 0);
+		const maxProjectBytes = envInt(this.env, 'STORAGE_MAX_PROJECT_BYTES', MAX_PROJECT_BYTES);
+		if (stored + reserved + input.reservedBytes > maxProjectBytes) {
+			return { ok: false, status: 413, error: 'project storage quota exceeded' };
+		}
+		await this.db.insert(uploads).values({ ...input, createdAt: new Date() });
+		await this.ensureUploadSweep();
+		return { ok: true };
+	}
+
+	/** One open upload, or null. The worker reads it at complete/abort to
+	 * settle the reservation; the ENVELOPE is what authorizes the request, so
+	 * this is bookkeeping rather than a gate. */
+	async getUpload(id: string): Promise<UploadRecord | null> {
+		const [row] = await this.db.select().from(uploads).where(eq(uploads.id, id)).limit(1);
+		return row ?? null;
+	}
+
+	/** Drop a reservation - completion and abort alike. Idempotent: a swept or
+	 * already-settled upload answers the same, so a retried complete cannot
+	 * double-count. */
+	async releaseUpload(id: string): Promise<void> {
+		await this.db.delete(uploads).where(eq(uploads.id, id));
+	}
+
+	/**
+	 * Provisional counter bump at completion, so a finished big file is
+	 * visible in the project total before the child's next absolute
+	 * heartbeat - which then corrects it either way.
+	 */
+	async settleUpload(id: string, bucket: string, bytes: number): Promise<void> {
+		await this.releaseUpload(id);
+		const [row] = await this.db.select().from(buckets).where(eq(buckets.name, bucket)).limit(1);
+		if (!row) return;
+		await this.db
+			.update(buckets)
+			.set({ objectCount: row.objectCount + 1, totalBytes: row.totalBytes + bytes })
+			.where(eq(buckets.name, bucket));
+		await this.syncState();
+	}
+
+	/** Open uploads for a bucket - the console's "in flight" readout. */
+	async listUploads(bucket: string): Promise<UploadRecord[]> {
+		return this.db.select().from(uploads).where(eq(uploads.bucket, bucket));
+	}
+
+	/** Arm the sweep, idempotently: repeated wakes reuse one schedule row
+	 * rather than accumulating alarms (the demo-reaper idiom). */
+	private async ensureUploadSweep(): Promise<void> {
+		await this.schedule(UPLOAD_SWEEP_SECONDS, 'sweepUploads', undefined, { idempotent: true });
+	}
+
+	/**
+	 * Abort uploads older than a day and release their reservations. Aborting
+	 * in R2 comes FIRST: a released reservation whose parts still exist bills
+	 * for bytes nothing accounts for, which is the failure the drain loop is
+	 * also built around. A failed abort keeps the row so the next sweep
+	 * retries it.
+	 */
+	async sweepUploads(): Promise<void> {
+		const bucket = this.env.BUCKET;
+		const cutoff = new Date(Date.now() - UPLOAD_MAX_AGE_MS);
+		const stale = await this.db.select().from(uploads).where(lt(uploads.createdAt, cutoff));
+		for (const row of stale) {
+			try {
+				if (bucket) {
+					await bucket
+						.resumeMultipartUpload(r2ObjectKey(this.name, row.bucket, row.key), row.r2UploadId)
+						.abort();
+				}
+				await this.db.delete(uploads).where(eq(uploads.id, row.id));
+			} catch (error) {
+				// Keep the row: releasing it now would strand the parts, and the
+				// next sweep is an hour away.
+				Sentry.captureException(error, {
+					tags: { operation: 'storage-upload-sweep', projectId: this.name },
+				});
+			}
+		}
+		const remaining = await this.db.select({ value: count() }).from(uploads);
+		if ((remaining[0]?.value ?? 0) > 0) await this.ensureUploadSweep();
 	}
 
 	/** Child heartbeat: debounced ABSOLUTE counters (self-healing - a restore

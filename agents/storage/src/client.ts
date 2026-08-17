@@ -101,7 +101,14 @@ export interface UploadOptions {
 	 * and it is what decides inline-vs-download at serve time.
 	 */
 	contentType?: string;
+	/** Called after each part of a multipart upload. Never called for a
+	 * single-shot PUT, which has nothing to report between 0 and done. */
+	onProgress?: (progress: { uploadedBytes: number; totalBytes: number }) => void;
 }
+
+/** The single-PUT ceiling. Above it `upload()` escalates to multipart on its
+ * own - the developer never picks a transport, which is the whole point. */
+export const SINGLE_PUT_MAX_BYTES = 100 * 1024 * 1024;
 
 export interface SignedUrlOptions {
 	/** Seconds. Default 3600, capped at 7 days by the agent. */
@@ -145,6 +152,13 @@ function encodeKey(key: string): string {
 	return key.split('/').map(encodeURIComponent).join('/');
 }
 
+/** An explicit type wins; else a Blob/File already knows its own. */
+function resolveContentType(body: BodyInit_, options: UploadOptions): string {
+	if (options.contentType) return options.contentType;
+	if (typeof Blob !== 'undefined' && body instanceof Blob && body.type) return body.type;
+	return 'application/octet-stream';
+}
+
 /** Byte length of a body we are about to PUT. The agent requires an explicit
  * Content-Length (chunked is refused, not buffered), and `fetch` will not set
  * one for a stream - so anything without a knowable length is refused HERE,
@@ -181,11 +195,19 @@ export function createStorageClient(options: StorageClientOptions) {
 
 			return {
 				/**
-				 * Store an object, creating or REPLACING it. Unlike Supabase there
-				 * is no `upsert` flag: a put always overwrites, because R2 has no
-				 * cheap create-if-absent and pretending otherwise would be a lie
-				 * with a race inside it. On an `owner`-mode bucket you cannot
-				 * overwrite someone else's key (403) - that is the real guard.
+				 * Store an object, creating or REPLACING it.
+				 *
+				 * ONE call for every size: above the single-PUT ceiling this
+				 * escalates to multipart by itself. The developer never picks a
+				 * transport and the loop never branches on one - the server
+				 * decides the part size, because R2 requires every part but the
+				 * last to be identical and a client that guesses can produce an
+				 * upload that cannot complete.
+				 *
+				 * Unlike Supabase there is no `upsert` flag: a put always
+				 * overwrites, because R2 has no cheap create-if-absent and a flag
+				 * would be a lie with a race inside it. On an `owner`-mode bucket
+				 * you cannot overwrite someone else's key (403) - the real guard.
 				 */
 				async upload(
 					key: string,
@@ -200,22 +222,107 @@ export function createStorageClient(options: StorageClientOptions) {
 								'The agent refuses a chunked body rather than buffer it, so a stream cannot be sent this way.',
 						);
 					}
-					const contentType =
-						uploadOptions.contentType ??
-						(typeof Blob !== 'undefined' && body instanceof Blob && body.type
-							? body.type
-							: 'application/octet-stream');
+					if (length > SINGLE_PUT_MAX_BYTES) {
+						return this.uploadMultipart(key, body, uploadOptions);
+					}
 					const response = await fetch(objectUrl(key), {
 						method: 'PUT',
 						headers: {
 							...(await authHeaders()),
-							'content-type': contentType,
+							'content-type': resolveContentType(body, uploadOptions),
 							'content-length': String(length),
 						},
 						body: body as BodyInit,
 					});
 					if (!response.ok) await failure(response, `upload failed (${response.status})`);
 					return ((await response.json()) as { object: StorageObject }).object;
+				},
+
+				/**
+				 * Force the multipart protocol whatever the size. `upload()` calls
+				 * this for you above the ceiling; reach for it directly when you
+				 * want per-part progress on a smaller file, or to keep memory flat
+				 * by slicing a File you never materialize.
+				 *
+				 * Parts go up sequentially. Concurrency would be faster and is a
+				 * later change - doing it now would mean picking a window size
+				 * with no evidence, and a stalled part would be harder to
+				 * attribute.
+				 */
+				async uploadMultipart(
+					key: string,
+					body: BodyInit_,
+					uploadOptions: UploadOptions = {},
+				): Promise<StorageObject> {
+					const length = byteLength(body);
+					if (length === null) {
+						throw new StorageError(0, 'uploadMultipart() needs a body whose length is known.');
+					}
+					const contentType = resolveContentType(body, uploadOptions);
+					// Slicing is what keeps memory flat, and only a Blob can slice -
+					// so a non-Blob body is wrapped once rather than copied per part.
+					const blob =
+						typeof Blob !== 'undefined' && body instanceof Blob
+							? body
+							: new Blob([body as unknown as ArrayBuffer], { type: contentType });
+
+					const created = await fetch(bucketUrl(bucket, '/uploads'), {
+						method: 'POST',
+						headers: { ...(await authHeaders()), 'content-type': 'application/json' },
+						body: JSON.stringify({ key, size: length, contentType }),
+					});
+					if (!created.ok) await failure(created, `upload could not start (${created.status})`);
+					const session = (await created.json()) as {
+						uploadId: string;
+						partSize: number;
+						parts: number;
+					};
+
+					const uploaded: { partNumber: number; etag: string }[] = [];
+					try {
+						for (let index = 0; index < session.parts; index += 1) {
+							const start = index * session.partSize;
+							const chunk = blob.slice(start, Math.min(start + session.partSize, length));
+							const partNumber = index + 1;
+							const response = await fetch(
+								bucketUrl(
+									bucket,
+									`/uploads/${encodeURIComponent(session.uploadId)}/parts/${partNumber}`,
+								),
+								{
+									method: 'PUT',
+									headers: { ...(await authHeaders()), 'content-length': String(chunk.size) },
+									body: chunk,
+								},
+							);
+							if (!response.ok) await failure(response, `part ${partNumber} failed`);
+							uploaded.push((await response.json()) as { partNumber: number; etag: string });
+							uploadOptions.onProgress?.({
+								uploadedBytes: Math.min(start + session.partSize, length),
+								totalBytes: length,
+							});
+						}
+					} catch (error) {
+						// Abandoning without aborting would leave parts billing until
+						// the agent's 24h sweep. Best effort: the sweep is the backstop,
+						// not the plan.
+						await fetch(bucketUrl(bucket, `/uploads/${encodeURIComponent(session.uploadId)}`), {
+							method: 'DELETE',
+							headers: await authHeaders(),
+						}).catch(() => undefined);
+						throw error;
+					}
+
+					const completed = await fetch(
+						bucketUrl(bucket, `/uploads/${encodeURIComponent(session.uploadId)}/complete`),
+						{
+							method: 'POST',
+							headers: { ...(await authHeaders()), 'content-type': 'application/json' },
+							body: JSON.stringify({ parts: uploaded }),
+						},
+					);
+					if (!completed.ok) await failure(completed, `upload could not complete`);
+					return ((await completed.json()) as { object: StorageObject }).object;
 				},
 
 				/** Fetch an object's bytes. Returns the raw `Response` so callers

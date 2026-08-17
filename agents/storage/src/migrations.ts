@@ -15,6 +15,13 @@ const journal = {
 			tag: '0000_keen_vulture',
 			breakpoints: true,
 		},
+		{
+			idx: 1,
+			version: '6',
+			when: 1786983472279,
+			tag: '0001_handy_the_captain',
+			breakpoints: true,
+		},
 	],
 };
 
@@ -46,9 +53,25 @@ CREATE TABLE \`objects\` (
 --> statement-breakpoint
 CREATE INDEX \`objects_owner_key_idx\` ON \`objects\` (\`owner\`,\`key\`);`;
 
+const m0001 = `CREATE TABLE \`uploads\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`bucket\` text NOT NULL,
+	\`key\` text NOT NULL,
+	\`r2_upload_id\` text NOT NULL,
+	\`part_size\` integer NOT NULL,
+	\`reserved_bytes\` integer NOT NULL,
+	\`content_type\` text DEFAULT 'application/octet-stream' NOT NULL,
+	\`owner\` text DEFAULT '' NOT NULL,
+	\`created_at\` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX \`uploads_created_idx\` ON \`uploads\` (\`created_at\`);--> statement-breakpoint
+CREATE INDEX \`uploads_bucket_idx\` ON \`uploads\` (\`bucket\`);`;
+
 export default {
 	journal,
 	migrations: {
 		m0000,
+		m0001,
 	},
 };

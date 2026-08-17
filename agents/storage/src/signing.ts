@@ -76,11 +76,58 @@ export interface SignedParams {
  */
 export function signaturePayload(subject: SignatureSubject): string {
 	return [
+		// Context label. One generated secret signs both download URLs and
+		// upload envelopes, so each payload names which protocol it belongs to
+		// - without it, a value signed for one could be replayed as the other.
+		'url',
 		subject.projectId,
 		subject.bucket,
 		subject.key,
 		subject.method,
 		String(subject.expires),
+	].join('\0');
+}
+
+/**
+ * A multipart upload capability. `resumeMultipartUpload()` validates NOTHING -
+ * not even that the upload exists - so the raw R2 upload id must never be the
+ * client-visible capability. This envelope is: it carries every fact a part
+ * `PUT` needs, so parts verify statelessly with zero DO hops, and it is bound
+ * to one project, bucket, key, and part size, so it cannot be steered at
+ * another tenant's upload.
+ */
+export interface UploadEnvelope {
+	projectId: string;
+	bucket: string;
+	key: string;
+	/** OUR reservation id (the parent's `uploads` row), so complete and abort
+	 * can settle the right reservation without a lookup by key. */
+	reservationId: string;
+	/** R2's own id. Never leaves the worker except inside the sealed envelope. */
+	r2UploadId: string;
+	partSize: number;
+	/** Declared total, which is what tells the worker which part is last. */
+	size: number;
+	contentType: string;
+	owner: string;
+	/** Unix seconds. Outliving the parent's 24h sweep means a swept upload's
+	 * parts die at the signature check rather than as an R2 error to interpret. */
+	expires: number;
+}
+
+export function uploadPayload(envelope: UploadEnvelope): string {
+	return [
+		'upload',
+		envelope.projectId,
+		envelope.bucket,
+		envelope.key,
+		envelope.reservationId,
+		envelope.r2UploadId,
+		String(envelope.partSize),
+		String(envelope.size),
+		envelope.contentType,
+		envelope.owner,
+		String(envelope.expires),
 	].join('\0');
 }
 
@@ -167,6 +214,106 @@ export async function verifySignature(
 export function resolveTtlSeconds(requested: number | undefined): number {
 	if (requested === undefined) return SIGNED_URL_DEFAULT_TTL_SECONDS;
 	return Math.min(Math.max(Math.floor(requested), 1), SIGNED_URL_MAX_TTL_SECONDS);
+}
+
+/** R2 refuses parts under 5 MiB (except the last) and caps an upload at
+ * 10,000 parts. The floor keeps part counts sane above that minimum; the
+ * ceiling keeps a PROXIED part inside the Workers request-body cap. */
+export const MIN_PART_SIZE = 8 * 1024 * 1024;
+export const MAX_PART_SIZE = 95 * 1024 * 1024;
+export const MAX_PARTS = 10_000;
+/** Multipart ceiling for one object. */
+export const MAX_MULTIPART_BYTES = 5 * 1024 * 1024 * 1024;
+/** An upload capability outlives the parent's 24h sweep by an hour, so a
+ * swept upload fails its signature check rather than R2's own lookup. */
+export const UPLOAD_TTL_SECONDS = 25 * 60 * 60;
+
+/**
+ * Part size is SERVER-dictated, never client-chosen: R2 requires every part
+ * but the last to be identical, so letting a client pick invites an upload
+ * that cannot complete. Declared size over the part ceiling, rounded up to a
+ * whole MiB, clamped into the allowed window.
+ */
+export function resolvePartSize(size: number): number {
+	const needed = Math.ceil(size / MAX_PARTS);
+	const rounded = Math.ceil(needed / (1024 * 1024)) * 1024 * 1024;
+	return Math.min(Math.max(rounded, MIN_PART_SIZE), MAX_PART_SIZE);
+}
+
+/** How many parts a declared size becomes at this part size. */
+export function partCount(size: number, partSize: number): number {
+	return Math.max(Math.ceil(size / partSize), 1);
+}
+
+/**
+ * Seal an envelope into one opaque wire token: the fields, then the signature
+ * over them. The fields travel in the clear because the worker needs them
+ * WITHOUT a DO hop - the signature is what makes them trustworthy, not
+ * secrecy. Nothing in here is confidential; the R2 upload id is useless
+ * without the account's own binding.
+ */
+export async function sealUpload(held: SigningSecret, envelope: UploadEnvelope): Promise<string> {
+	const key = await hmacKey(held.secret);
+	const mac = await crypto.subtle.sign(
+		'HMAC',
+		key,
+		new TextEncoder().encode(uploadPayload(envelope)),
+	);
+	const body = btoa(JSON.stringify(envelope))
+		.replace(/\+/g, '-')
+		.replace(/\//g, '_')
+		.replace(/=+$/, '');
+	return `${held.version}.${body}.${base64url(mac)}`;
+}
+
+export type UploadVerdict =
+	| { ok: true; envelope: UploadEnvelope }
+	| { ok: false; reason: 'malformed' | 'version' | 'expired' | 'mismatch' };
+
+/** Open a sealed envelope. Same version-first ordering as a download
+ * signature, and for the same reason: a rotation is not a forgery. */
+export async function openUpload(
+	held: SigningSecret,
+	token: string,
+	nowSeconds: number,
+): Promise<UploadVerdict> {
+	const parts = token.split('.');
+	if (parts.length !== 3) return { ok: false, reason: 'malformed' };
+	const [rawVersion, body, signature] = parts;
+	if (!/^\d{1,10}$/.test(rawVersion)) return { ok: false, reason: 'malformed' };
+	if (Number(rawVersion) !== held.version) return { ok: false, reason: 'version' };
+
+	let envelope: UploadEnvelope;
+	try {
+		const padded = body.replace(/-/g, '+').replace(/_/g, '/');
+		envelope = JSON.parse(atob(padded)) as UploadEnvelope;
+	} catch {
+		return { ok: false, reason: 'malformed' };
+	}
+	if (
+		typeof envelope?.projectId !== 'string' ||
+		typeof envelope?.bucket !== 'string' ||
+		typeof envelope?.key !== 'string' ||
+		typeof envelope?.reservationId !== 'string' ||
+		typeof envelope?.r2UploadId !== 'string' ||
+		typeof envelope?.partSize !== 'number' ||
+		typeof envelope?.size !== 'number' ||
+		typeof envelope?.expires !== 'number'
+	) {
+		return { ok: false, reason: 'malformed' };
+	}
+
+	// Signature BEFORE expiry, unlike a download URL: the fields being checked
+	// against the clock are themselves attacker-supplied until verified.
+	const expected = await signSubjectRaw(held.secret, uploadPayload(envelope));
+	if (!constantTimeEqual(expected, signature)) return { ok: false, reason: 'mismatch' };
+	if (envelope.expires <= nowSeconds) return { ok: false, reason: 'expired' };
+	return { ok: true, envelope };
+}
+
+async function signSubjectRaw(secret: string, payload: string): Promise<string> {
+	const key = await hmacKey(secret);
+	return base64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
 }
 
 /**

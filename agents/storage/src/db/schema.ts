@@ -59,3 +59,41 @@ export const objects = sqliteTable(
 );
 
 export type ObjectRecord = typeof objects.$inferSelect;
+
+/**
+ * StorageAgent: open multipart uploads, which are RESERVATIONS as much as
+ * records. An in-flight upload has bytes landing in R2 that no index row
+ * counts yet, so without a reservation a project could start ten uploads that
+ * each individually fit under the quota and collectively blow past it.
+ * `getBucketAccess` folds the open total into its verdict, which is how
+ * single-shot PUTs see them too.
+ *
+ * It lives on the PARENT rather than the bucket index because create needs
+ * facts only the parent holds - the project byte total and the concurrent
+ * count - and because the sweep would otherwise need a cross-DO join. The
+ * traffic is per FILE (create/complete/abort/sweep), never per part.
+ */
+export const uploads = sqliteTable(
+	'uploads',
+	{
+		/** Our reservation id, not R2's - the R2 id travels only inside the
+		 * signed envelope, since resumeMultipartUpload() validates nothing. */
+		id: text('id').primaryKey(),
+		bucket: text('bucket').notNull(),
+		key: text('key').notNull(),
+		r2UploadId: text('r2_upload_id').notNull(),
+		partSize: integer('part_size').notNull(),
+		/** Declared size, held against the project quota until settled. */
+		reservedBytes: integer('reserved_bytes').notNull(),
+		contentType: text('content_type').notNull().default('application/octet-stream'),
+		owner: text('owner').notNull().default(''),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+	},
+	(table) => [
+		// The sweep pages by age; the console lists a bucket's open uploads.
+		index('uploads_created_idx').on(table.createdAt),
+		index('uploads_bucket_idx').on(table.bucket),
+	],
+);
+
+export type UploadRecord = typeof uploads.$inferSelect;

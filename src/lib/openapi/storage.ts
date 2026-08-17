@@ -253,6 +253,108 @@ export const storageOpenApi: AgentOpenApiModule = {
 				}
 			}
 		},
+		'/storage/admin/buckets/{bucket}/uploads': {
+			post: {
+				tags: [STORAGE_TAG],
+				summary: 'Start a multipart upload',
+				description:
+					'For objects above the 100 MB single-PUT ceiling, up to 5 GB. Declare `{ key, size, ' +
+					'contentType }` and the server answers `{ uploadId, partSize, parts, mode }`. ' +
+					'**The part size is dictated here, never chosen by the client**: R2 requires every part ' +
+					'but the last to be identical, so a client that picks its own can produce an upload that ' +
+					'cannot complete. Every write rule (content-type allowlist, per-bucket size ceiling, ' +
+					'object count, owner) runs at this step against the DECLARED values, and `size` is ' +
+					'reserved against the project quota until the upload settles - so a refusal costs one ' +
+					'round trip rather than a transfer. `mode` is always `proxy` today; the field exists so ' +
+					'a future presigned transport does not change the client contract. ' +
+					'The `uploadId` is a signed envelope, not R2 id - it is bound to this project, bucket, ' +
+					'key and part size, and it expires in 25 hours. ' +
+					'Note the counterpart to `/objects/{key}` for anything under the ceiling; the SDK ' +
+					'escalates between them on its own.',
+				security: OPERATOR_SECURITY,
+				parameters: [bucketParam],
+				responses: {
+					'201': { description: 'The upload session.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such bucket.' },
+					'409': { description: 'The bucket is at its object ceiling.' },
+					'413': { description: 'Larger than the bucket ceiling, or over the project quota.' },
+					'415': { description: 'Content type not allowed on this bucket.' },
+					'429': { description: 'Too many uploads already in flight for this project.' }
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}/uploads/{uploadId}/parts/{partNumber}': {
+			put: {
+				tags: [STORAGE_TAG],
+				summary: 'Upload one part',
+				description:
+					'The raw bytes of part `partNumber` (1-based). Requires `Content-Length`, and the part ' +
+					'must be EXACTLY `partSize` bytes except the last - checked here rather than at ' +
+					'completion, where R2 would only report it after the whole upload had been spent. ' +
+					'Keep the returned `{ partNumber, etag }` for the complete call. Authorized entirely by ' +
+					'the upload envelope, so this costs no Durable Object hop. ' +
+					'**Send part bytes to the agent path directly** - this JSON proxy buffers bodies.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{ name: 'uploadId', in: 'path', required: true, schema: { type: 'string' } },
+					{
+						name: 'partNumber',
+						in: 'path',
+						required: true,
+						schema: { type: 'integer', minimum: 1, maximum: 10000 }
+					}
+				],
+				responses: {
+					'200': { description: 'The part number and its etag.' },
+					'400': { description: 'Wrong size for this part, or a part number beyond the upload.' },
+					'403': { description: 'Invalid upload id.' },
+					'410': { description: 'This upload has expired.' },
+					'411': { description: 'Content-Length is required.' }
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}/uploads/{uploadId}/complete': {
+			post: {
+				tags: [STORAGE_TAG],
+				summary: 'Complete a multipart upload',
+				description:
+					'Assemble the parts into the object. Pass `{ parts: [{ partNumber, etag }] }`. The real ' +
+					'size is verified against what the upload reserved; an object that overran is deleted ' +
+					'and the call answers 413, because a reservation that could be exceeded would be ' +
+					'decorative. On success the index row is committed before the response returns - the ' +
+					'same read-your-write contract a single PUT gives.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{ name: 'uploadId', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				responses: {
+					'200': { description: 'The stored object.' },
+					'400': { description: 'The parts were rejected by R2.' },
+					'403': { description: 'Invalid upload id.' },
+					'410': { description: 'This upload has expired.' },
+					'413': { description: 'The object is larger than the upload reserved.' }
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}/uploads/{uploadId}': {
+			delete: {
+				tags: [STORAGE_TAG],
+				summary: 'Abort a multipart upload',
+				description:
+					'Discard the parts and release the reservation. Abandoned uploads are swept after 24 ' +
+					'hours by age anyway, but until then their parts bill as storage and their bytes hold ' +
+					'project quota - so aborting explicitly is worth doing.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{ name: 'uploadId', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				responses: { '200': { description: 'Aborted.' }, '403': { description: 'Invalid id.' } }
+			}
+		},
 		'/storage/admin/signing/rotate': {
 			post: {
 				tags: [STORAGE_TAG],

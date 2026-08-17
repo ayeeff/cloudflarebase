@@ -1,16 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+	MAX_PART_SIZE,
+	MIN_PART_SIZE,
 	SIGNED_URL_MAX_TTL_SECONDS,
 	hasSignedParams,
 	mintSecret,
+	openUpload,
 	parseSignedParams,
+	partCount,
+	resolvePartSize,
 	resolveTtlSeconds,
+	sealUpload,
 	signSubject,
 	signaturePayload,
 	verifySignature,
 	type SignatureSubject,
 	type SigningSecret,
+	type UploadEnvelope,
 } from './signing';
 
 const HELD: SigningSecret = { version: 3, secret: 'a'.repeat(64) };
@@ -144,4 +151,112 @@ test('signatures are URL-safe, so the query string survives a round trip', async
 	assert.match(signature, /^[A-Za-z0-9_-]+$/);
 	const url = new URL(`https://cdn.example.com/p/b/k?sig=${signature}`);
 	assert.equal(url.searchParams.get('sig'), signature);
+});
+
+// ---------------------------------------------------------------------------
+// Multipart upload envelopes
+
+const ENVELOPE: UploadEnvelope = {
+	projectId: 'proj-one',
+	bucket: 'uploads',
+	key: 'video/raw.mp4',
+	reservationId: 'res-1',
+	r2UploadId: 'r2-upload-abc',
+	partSize: 8 * 1024 * 1024,
+	size: 40 * 1024 * 1024,
+	contentType: 'video/mp4',
+	owner: 'user-1',
+	expires: NOW + 3600,
+};
+
+test('a sealed envelope opens to exactly what went in', async () => {
+	const token = await sealUpload(HELD, ENVELOPE);
+	const opened = await openUpload(HELD, token, NOW);
+	assert.equal(opened.ok, true);
+	assert.deepEqual(opened.ok && opened.envelope, ENVELOPE);
+});
+
+test('every envelope field is signed: editing the payload breaks the seal', async () => {
+	const token = await sealUpload(HELD, ENVELOPE);
+	const [version, body, signature] = token.split('.');
+	const decoded = JSON.parse(
+		Buffer.from(body.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString(),
+	) as UploadEnvelope;
+
+	// The interesting forgery: point a valid envelope at another tenant.
+	for (const change of [
+		{ projectId: 'proj-two' },
+		{ bucket: 'other' },
+		{ key: 'video/someone-else.mp4' },
+		{ partSize: 1024 },
+		{ size: 5 },
+		{ reservationId: 'res-2' },
+		{ r2UploadId: 'r2-upload-xyz' },
+		{ owner: 'user-2' },
+		{ expires: NOW + 999_999 },
+	]) {
+		const forged = { ...decoded, ...change };
+		const reencoded = Buffer.from(JSON.stringify(forged))
+			.toString('base64')
+			.replace(/\+/g, '-')
+			.replace(/\//g, '_')
+			.replace(/=+$/, '');
+		const verdict = await openUpload(HELD, `${version}.${reencoded}.${signature}`, NOW);
+		assert.deepEqual(verdict, { ok: false, reason: 'mismatch' }, JSON.stringify(change));
+	}
+});
+
+test('an upload envelope and a download signature cannot be swapped', async () => {
+	// One secret signs both, so each payload names its own protocol. Without
+	// the context label a value signed for one would verify as the other.
+	const download = await signSubject(HELD.secret, { ...SUBJECT, expires: NOW + 600 });
+	const verdict = await openUpload(HELD, `${HELD.version}.e30.${download}`, NOW);
+	assert.equal(verdict.ok, false);
+});
+
+test('an expired envelope is refused, and reports why', async () => {
+	const token = await sealUpload(HELD, { ...ENVELOPE, expires: NOW - 1 });
+	assert.deepEqual(await openUpload(HELD, token, NOW), { ok: false, reason: 'expired' });
+});
+
+test('a rotated secret kills in-flight uploads along with URLs', async () => {
+	const token = await sealUpload(HELD, ENVELOPE);
+	const rotated: SigningSecret = { version: HELD.version + 1, secret: mintSecret() };
+	assert.deepEqual(await openUpload(rotated, token, NOW), { ok: false, reason: 'version' });
+});
+
+test('malformed tokens are refused rather than throwing', async () => {
+	for (const token of ['', 'a', 'a.b', 'a.b.c.d', 'x.e30.sig', '1.!!!.sig']) {
+		const verdict = await openUpload(HELD, token, NOW);
+		assert.equal(verdict.ok, false, token);
+	}
+});
+
+test('part size is server-dictated, and the floor governs every legal size', () => {
+	// Small files still get the floor: parts under R2's 5 MiB minimum cannot
+	// be uploaded at all except as the last one.
+	assert.equal(resolvePartSize(1024), MIN_PART_SIZE);
+	assert.equal(resolvePartSize(100 * 1024 * 1024), MIN_PART_SIZE);
+
+	// At the 5 GB multipart ceiling the floor STILL wins - 5 GB over 10,000
+	// parts is only ~0.5 MiB each - so every legal upload runs at 8 MiB parts
+	// and lands well inside the 10,000 limit. MAX_PART_SIZE is therefore
+	// defensive rather than reachable: the size that would exceed it is ~80 GB,
+	// far above what create() accepts. Worth knowing before anyone "optimizes"
+	// the clamp away.
+	const ceiling = 5 * 1024 * 1024 * 1024;
+	assert.equal(resolvePartSize(ceiling), MIN_PART_SIZE);
+	assert.equal(partCount(ceiling, MIN_PART_SIZE), 640);
+
+	// The clamp still holds where it does apply.
+	const huge = resolvePartSize(10_000 * MAX_PART_SIZE * 2);
+	assert.equal(huge, MAX_PART_SIZE);
+	assert.equal(huge % (1024 * 1024), 0, 'whole MiB');
+});
+
+test('part counts never round down, and never reach zero', () => {
+	assert.equal(partCount(0, MIN_PART_SIZE), 1);
+	assert.equal(partCount(1, MIN_PART_SIZE), 1);
+	assert.equal(partCount(MIN_PART_SIZE, MIN_PART_SIZE), 1);
+	assert.equal(partCount(MIN_PART_SIZE + 1, MIN_PART_SIZE), 2);
 });
