@@ -123,5 +123,42 @@ export const rolesUpdateSchema = z
 	})
 	.meta({ id: 'RolesUpdateRequest' });
 
+/**
+ * Admin user management (docs/admin-sdk-design.md 5.2). Mirrors the agent's
+ * createUser/updateUser/setPassword schemas in agents/auth/src/schemas.ts -
+ * deliberate copies, kept in sync by hand like every other DTO here.
+ */
+export const createUserSchema = z
+	.object({
+		email: z.email(),
+		/** Omitted creates an account with NO credential - an invite-first or
+		 * social-only user, which a later password set gives a credential to. */
+		password: z.string().min(8).max(128).optional(),
+		name: z.string().trim().min(1).max(128).optional(),
+		/** False by default: an account is not verified merely because an admin
+		 * created it. */
+		emailVerified: z.boolean().optional()
+	})
+	.meta({ id: 'CreateUserRequest' });
+
+export const updateUserSchema = z
+	.object({
+		name: z.string().trim().min(1).max(128).optional(),
+		email: z.email().optional(),
+		emailVerified: z.boolean().optional()
+	})
+	// `role` is deliberately absent - PUT /admin/users/:id/role is the only
+	// writer, so the console's lockout guards cannot be sidestepped here.
+	.meta({ id: 'UpdateUserRequest' });
+
+export const setPasswordSchema = z
+	.object({
+		newPassword: z.string().min(8).max(128),
+		/** Sessions die by default: setting a password is how an account is
+		 * recovered and how one is stolen. */
+		revokeSessions: z.boolean().optional()
+	})
+	.meta({ id: 'SetPasswordRequest' });
+
 export type SignUpInput = z.infer<typeof signUpSchema>;
 export type SignInInput = z.infer<typeof signInSchema>;

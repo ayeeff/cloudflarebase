@@ -6,7 +6,13 @@ import {
 	storageObjectSchema,
 	storageOverviewSchema
 } from '$lib/agents';
-import { jsonBody, jsonResponse, UNAUTHORIZED, type AgentOpenApiModule } from './shared';
+import {
+	jsonBody,
+	jsonResponse,
+	OPERATOR_SECURITY,
+	UNAUTHORIZED,
+	type AgentOpenApiModule
+} from './shared';
 
 /**
  * Storage agent module (docs/storage-agent-plan.md, S1). Only the
@@ -68,7 +74,7 @@ export const storageOpenApi: AgentOpenApiModule = {
 				summary: 'Storage overview',
 				description:
 					'Buckets, totals, caps, and whether this install can store bytes (the R2 binding).',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				responses: {
 					'200': jsonResponse(storageOverviewSchema, 'The overview.'),
 					'401': UNAUTHORIZED
@@ -79,7 +85,7 @@ export const storageOpenApi: AgentOpenApiModule = {
 			get: {
 				tags: [STORAGE_TAG],
 				summary: 'List buckets',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				responses: {
 					'200': {
 						description: 'The buckets.',
@@ -106,7 +112,7 @@ export const storageOpenApi: AgentOpenApiModule = {
 			get: {
 				tags: [STORAGE_TAG],
 				summary: 'Get a bucket',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [bucketParam],
 				responses: {
 					'200': jsonResponse(storageBucketSchema, 'The bucket and its full config.'),
@@ -119,7 +125,7 @@ export const storageOpenApi: AgentOpenApiModule = {
 				summary: 'Create or update a bucket',
 				description:
 					'Creates the bucket on first PUT (defaults: `auth` read and write, listing not public). Omitted fields keep their stored value; explicit null clears.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [bucketParam],
 				requestBody: jsonBody(storageBucketConfigInputSchema, 'The config to apply.'),
 				responses: {
@@ -135,12 +141,121 @@ export const storageOpenApi: AgentOpenApiModule = {
 				tags: [STORAGE_TAG],
 				summary: 'Delete a bucket',
 				description: 'Deletes the R2 objects first, then the index, then the bucket itself.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [bucketParam],
 				responses: {
 					'200': { description: 'Deleted.' },
 					'401': UNAUTHORIZED,
 					'404': { description: 'No such bucket.' }
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}/objects': {
+			get: {
+				tags: [STORAGE_TAG],
+				summary: 'List objects',
+				description:
+					'Keyset paging by key, access modes bypassed. This is the operator mirror of the public ' +
+					'listing, and it ignores `publicListing`.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{
+						name: 'prefix',
+						in: 'query',
+						required: false,
+						schema: { type: 'string' },
+						description: 'Only keys starting with this prefix.'
+					},
+					{
+						name: 'cursor',
+						in: 'query',
+						required: false,
+						schema: { type: 'string' },
+						description: 'Continuation from the previous page.'
+					},
+					{
+						name: 'limit',
+						in: 'query',
+						required: false,
+						schema: { type: 'integer', minimum: 1, maximum: 200 },
+						description: 'Objects per page. Defaults to 50, capped at 200.'
+					}
+				],
+				responses: {
+					'200': jsonResponse(storageObjectPageSchema, 'One page of objects.'),
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such bucket.' }
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}/objects/{key}': {
+			get: {
+				tags: [STORAGE_TAG],
+				summary: 'Download an object',
+				description:
+					'Streams the bytes, access modes and owner checks bypassed. Range and conditional requests ' +
+					'reach R2. Every response carries `X-Content-Type-Options: nosniff`, and inline rendering is ' +
+					'an allowlist - HTML and SVG always download, because this path shares the console origin.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{
+						name: 'key',
+						in: 'path',
+						required: true,
+						description: 'Object key. Slashes are literal path segments.',
+						schema: { type: 'string' }
+					}
+				],
+				responses: {
+					'200': { description: 'The object bytes.' },
+					'206': { description: 'A range of the object.' },
+					'304': { description: 'Not modified.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such bucket or object.' }
+				}
+			},
+			put: {
+				tags: [STORAGE_TAG],
+				summary: 'Upload an object',
+				description:
+					'Streams the body straight to R2 - bytes never enter a Durable Object. `Content-Length` is ' +
+					'REQUIRED (411 without it): a chunked body would have to be buffered, and a 100 MB buffer in ' +
+					'a shared isolate is a memory bomb. Note that SvelteKit refuses form content types on ' +
+					'originless writes, so a service key should send `application/octet-stream` or a real media ' +
+					'type rather than `text/plain`.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{ name: 'key', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				requestBody: {
+					description: 'The object bytes.',
+					required: true,
+					content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } }
+				},
+				responses: {
+					'200': jsonResponse(storageObjectSchema, 'Stored.'),
+					'401': UNAUTHORIZED,
+					'403': { description: 'Demo projects have no storage.' },
+					'411': { description: 'Content-Length is required.' },
+					'413': { description: 'Object, bucket, or project ceiling exceeded.' }
+				}
+			},
+			delete: {
+				tags: [STORAGE_TAG],
+				summary: 'Delete an object',
+				description: 'Removes it from R2 first, then the index - a crash leaves no billed orphan.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{ name: 'key', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				responses: {
+					'200': { description: 'Deleted.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such bucket or object.' }
 				}
 			}
 		}

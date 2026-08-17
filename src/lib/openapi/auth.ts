@@ -11,13 +11,22 @@ import {
 } from '$lib/agents';
 import {
 	chatRequestSchema,
+	createUserSchema,
 	roleUpdateSchema,
 	rolesUpdateSchema,
+	setPasswordSchema,
 	settingsPayloadSchema,
 	signInSchema,
-	signUpSchema
+	signUpSchema,
+	updateUserSchema
 } from '$lib/schemas/auth';
-import { jsonBody, jsonResponse, UNAUTHORIZED, type AgentOpenApiModule } from './shared';
+import {
+	jsonBody,
+	jsonResponse,
+	OPERATOR_SECURITY,
+	UNAUTHORIZED,
+	type AgentOpenApiModule
+} from './shared';
 
 /** The auth agent's contribution to the per-project OpenAPI document. */
 
@@ -51,6 +60,9 @@ export const authOpenApi: AgentOpenApiModule = {
 		settingsPayloadSchema,
 		rolesUpdateSchema,
 		roleUpdateSchema,
+		createUserSchema,
+		updateUserSchema,
+		setPasswordSchema,
 		authOverviewSchema,
 		authAnalyticsSchema,
 		authAgentStateSchema,
@@ -151,7 +163,7 @@ export const authOpenApi: AgentOpenApiModule = {
 			get: {
 				tags: [CONSOLE_TAG],
 				summary: 'Users, sessions, and live project state',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				responses: {
 					'200': jsonResponse(authOverviewSchema, 'Current users and sessions.'),
 					'401': UNAUTHORIZED
@@ -171,7 +183,7 @@ export const authOpenApi: AgentOpenApiModule = {
 						description: 'IANA time zone used to bucket daily activity. Defaults to Etc/UTC.'
 					}
 				],
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				responses: {
 					'200': jsonResponse(authAnalyticsSchema, 'Aggregates for this project.'),
 					'400': { description: 'Invalid time zone.' },
@@ -185,6 +197,8 @@ export const authOpenApi: AgentOpenApiModule = {
 				summary: 'Ask the project agent a question',
 				description:
 					"Workers AI answer grounded in this project's live auth and database data via a console-side tool loop.",
+				// Session-only: `/chat` is not in isServiceKeySurface, so a
+				// service key gets a 401 here however admin-grade it is elsewhere.
 				security: [{ sessionCookie: [] }],
 				requestBody: jsonBody(chatRequestSchema, 'The question.'),
 				responses: {
@@ -199,7 +213,7 @@ export const authOpenApi: AgentOpenApiModule = {
 			put: {
 				tags: [CONSOLE_TAG],
 				summary: 'Update trusted origins and social credentials',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				requestBody: jsonBody(settingsPayloadSchema, 'Settings to apply.'),
 				responses: {
 					'200': { description: 'Settings applied.' },
@@ -213,7 +227,7 @@ export const authOpenApi: AgentOpenApiModule = {
 				tags: [CONSOLE_TAG],
 				summary: 'Replace the role registry',
 				description: 'The built-in `user` and `admin` roles always remain.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				requestBody: jsonBody(rolesUpdateSchema, 'The complete role registry.'),
 				responses: {
 					'200': { description: 'Registry replaced.' },
@@ -228,11 +242,32 @@ export const authOpenApi: AgentOpenApiModule = {
 				summary: 'One page of users, newest first',
 				description:
 					"Keyset pagination: pass the previous response's `nextCursor` to continue. The cursor is opaque; an absent `nextCursor` means the last page. Offset paging is deliberately not offered - sign-ups landing mid-scan would skip or repeat rows.",
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [PAGE_CURSOR, PAGE_LIMIT],
 				responses: {
 					'200': jsonResponse(userPageSchema, 'One page of users.'),
 					'401': UNAUTHORIZED
+				}
+			},
+			post: {
+				tags: [CONSOLE_TAG],
+				summary: 'Create a user, with no sign-up flow',
+				description:
+					'The Admin-SDK create: it bypasses this project’s sign-up mode and email verification, ' +
+					'which is what seeding, invite-first products, and migrations off another provider need - ' +
+					'none of which `/auth/sign-up/email` can serve, since that route obeys the mode and starts ' +
+					'a verification mail. `emailVerified` is explicit and defaults to FALSE: an account is not ' +
+					'verified merely because an admin made it. Omitting `password` creates an account with no ' +
+					'credential, which `PUT /admin/users/{userId}/password` can give one to later. Demo caps and ' +
+					'the console’s registration refusal still apply - they are database hooks, not sign-up policy.',
+				security: OPERATOR_SECURITY,
+				requestBody: jsonBody(createUserSchema, 'The account to create.'),
+				responses: {
+					'201': jsonResponse(overviewUserSchema, 'The created user.'),
+					'400': { description: 'Validation failed.' },
+					'401': UNAUTHORIZED,
+					'403': { description: 'Refused by a demo cap or the console’s registration policy.' },
+					'409': { description: 'A user with that email already exists.' }
 				}
 			}
 		},
@@ -242,7 +277,7 @@ export const authOpenApi: AgentOpenApiModule = {
 				summary: 'One page of live sessions, newest first',
 				description:
 					'Keyset pagination, same contract as `/admin/users`. Expired sessions are filtered in SQL, so a full page is always live sessions.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [PAGE_CURSOR, PAGE_LIMIT],
 				responses: {
 					'200': jsonResponse(sessionPageSchema, 'One page of live sessions.'),
@@ -255,7 +290,7 @@ export const authOpenApi: AgentOpenApiModule = {
 				tags: [CONSOLE_TAG],
 				summary: "Assign a user's role",
 				description: 'The only writer of `user.role`; sign-up cannot self-assign one.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'userId', in: 'path', required: true, schema: { type: 'string' } }],
 				requestBody: jsonBody(roleUpdateSchema, 'The role to assign.'),
 				responses: {
@@ -266,14 +301,63 @@ export const authOpenApi: AgentOpenApiModule = {
 			}
 		},
 		'/admin/users/{userId}': {
+			get: {
+				tags: [CONSOLE_TAG],
+				summary: 'Read one user',
+				security: OPERATOR_SECURITY,
+				parameters: [{ name: 'userId', in: 'path', required: true, schema: { type: 'string' } }],
+				responses: {
+					'200': jsonResponse(overviewUserSchema, 'The user.'),
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such user.' }
+				}
+			},
+			patch: {
+				tags: [CONSOLE_TAG],
+				summary: 'Update a user',
+				description:
+					'Name, email, and the verified flag. `role` is deliberately NOT accepted here - ' +
+					'`PUT /admin/users/{userId}/role` is the only writer, so the console’s self-lockout guards ' +
+					'cannot be walked around with a general-purpose update.',
+				security: OPERATOR_SECURITY,
+				parameters: [{ name: 'userId', in: 'path', required: true, schema: { type: 'string' } }],
+				requestBody: jsonBody(updateUserSchema, 'Fields to change.'),
+				responses: {
+					'200': jsonResponse(overviewUserSchema, 'The updated user.'),
+					'400': { description: 'Validation failed, or nothing to update.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such user.' },
+					'409': { description: 'Another account already uses that email.' }
+				}
+			},
 			delete: {
 				tags: [CONSOLE_TAG],
 				summary: 'Delete a user',
 				description: 'Removes the user and every session belonging to them.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'userId', in: 'path', required: true, schema: { type: 'string' } }],
 				responses: {
 					'200': { description: 'User deleted.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such user.' }
+				}
+			}
+		},
+		'/admin/users/{userId}/password': {
+			put: {
+				tags: [CONSOLE_TAG],
+				summary: "Set a user's password",
+				description:
+					'Sets a password with no emailed token - for migrations off another provider and support ' +
+					'flows, neither of which Better Auth’s `request-password-reset` can serve (it needs the ' +
+					'user’s own mailbox). An account with no credential GAINS one, so a social-only user can be ' +
+					'given a password. Existing sessions are revoked unless `revokeSessions` is false.',
+				security: OPERATOR_SECURITY,
+				parameters: [{ name: 'userId', in: 'path', required: true, schema: { type: 'string' } }],
+				requestBody: jsonBody(setPasswordSchema, 'The new password.'),
+				responses: {
+					'200': { description: 'Password set.' },
+					'400': { description: 'The password is outside 8-128 characters.' },
 					'401': UNAUTHORIZED,
 					'404': { description: 'No such user.' }
 				}
@@ -283,7 +367,7 @@ export const authOpenApi: AgentOpenApiModule = {
 			delete: {
 				tags: [CONSOLE_TAG],
 				summary: 'Revoke a session',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'sessionId', in: 'path', required: true, schema: { type: 'string' } }],
 				responses: {
 					'200': { description: 'Session revoked.' },
