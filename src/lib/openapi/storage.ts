@@ -189,6 +189,75 @@ export const storageOpenApi: AgentOpenApiModule = {
 				}
 			}
 		},
+		'/storage/admin/buckets/{bucket}/signed-urls': {
+			post: {
+				tags: [STORAGE_TAG],
+				summary: 'Mint signed download URLs',
+				description:
+					'A signed URL is a plain URL that reads one object with no credential attached - what an ' +
+					'`<img src>` or a download link can hold for a private object. It BYPASSES the bucket read ' +
+					'mode at fetch time, which is the point, so minting requires exactly what reading requires; ' +
+					'on this operator mirror that means an operator session or a service key. ' +
+					'GET and HEAD only - uploads have their own protocol. ' +
+					'`expiresIn` is seconds, defaulting to 3600 and capped at 7 days. Pass `key` for one URL or ' +
+					'`keys` for up to 100; the batch form reports per-key failures instead of failing the call. ' +
+					'Rotating the signing secret (`POST /storage/admin/signing/rotate`) invalidates every URL ' +
+					'outstanding, which is how you revoke one early.',
+				security: OPERATOR_SECURITY,
+				parameters: [bucketParam],
+				requestBody: {
+					required: true,
+					content: {
+						'application/json': {
+							schema: {
+								type: 'object',
+								properties: {
+									key: { type: 'string', description: 'One object key.' },
+									keys: {
+										type: 'array',
+										items: { type: 'string' },
+										maxItems: 100,
+										description: 'Up to 100 keys. Mutually exclusive with `key`.'
+									},
+									method: {
+										type: 'string',
+										enum: ['GET', 'HEAD'],
+										description: 'The method the URL authorizes. Defaults to GET.'
+									},
+									expiresIn: {
+										type: 'integer',
+										minimum: 1,
+										description: 'Lifetime in seconds. Defaults to 3600, capped at 604800.'
+									}
+								}
+							}
+						}
+					}
+				},
+				responses: {
+					'200': { description: 'The signed URL, or one entry per requested key.' },
+					'400': { description: 'Neither or both of `key` and `keys`, or an invalid key.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such bucket, or no such object.' }
+				}
+			}
+		},
+		'/storage/admin/signing/rotate': {
+			post: {
+				tags: [STORAGE_TAG],
+				summary: 'Rotate the signing secret',
+				description:
+					'Invalidates every outstanding signed URL for this project at once - the revocation lever. ' +
+					'Verifiers holding the old version refetch rather than refuse, so it takes effect on the ' +
+					'next request rather than at cache expiry. Refused when the deployment supplies ' +
+					'`STORAGE_SIGNING_SECRET`: that value is yours to rotate.',
+				security: OPERATOR_SECURITY,
+				responses: {
+					'200': { description: 'The new secret version, or why rotation was refused.' },
+					'401': UNAUTHORIZED
+				}
+			}
+		},
 		'/storage/admin/buckets/{bucket}/objects/{key}': {
 			get: {
 				tags: [STORAGE_TAG],

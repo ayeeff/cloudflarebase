@@ -29,6 +29,34 @@ no Origin - and a service key never sends one. Default content type is
 `application/octet-stream` for exactly that reason. Pinned by
 `e2e/admin-sdk.api.spec.ts`.
 
+**Signed download URLs** (`src/signing.ts`, shipped 2026-08-17 - S2's first
+item): `POST /buckets/<b>/signed-urls` (and the `/admin` mirror the console
+and service keys use) mints `?v=&exp=&sig=`, HMAC-SHA256 over
+`pid \0 bucket \0 key \0 method \0 exp`. Supabase's vocabulary - `key` or
+`keys[]`, `expiresIn` seconds (default 3600, capped 7 days) - because that is
+what people already have in their fingers. Verified in the worker off the
+secret carried in the cached access answer, so a private `<img src>` costs no
+extra hop. GET and HEAD only. Four rules that are easy to get backwards:
+
+- **Minting requires exactly what READING requires**, because a valid
+  signature bypasses the read mode. `owner` buckets resolve ownership at mint
+  with one `head()` per key, and serve-time skips the owner check - a signed
+  request carries no token, so there is no subject to compare.
+- **Mint reads the parent directly** (`bucketAccess(..., force)`), never the
+  isolate cache. Signing from a stale entry signs with a RETIRED secret, and a
+  seven-day URL that dies in 30 seconds is worse than no URL.
+- **Mint builds on the request's origin**, never `STORAGE_SERVE_DOMAIN` - a
+  serve domain can be set without being routed, which is true in production
+  (route commented pending DNS) and in e2e (host stand-in) right now. The host
+  is not signed, so swapping it is the caller's option.
+- **Rotation is bounded-time revocation**, converging within the access-cache
+  TTL. The version-mismatch refetch rescues NEW URLs against a stale isolate;
+  an OLD URL matches the version that isolate still holds. To kill a URL
+  instantly, delete the object.
+
+Pinned by `signing.unit.test.ts` and the S2 block of `e2e/storage.api.spec.ts`,
+where every containment case proves the URL is live in the same test first.
+
 ## Hard invariants
 
 - **The shared R2 bucket must never have r2.dev enabled or a custom domain

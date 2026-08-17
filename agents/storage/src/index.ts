@@ -11,7 +11,19 @@ import {
 	bucketNameSchema,
 	objectCursorSchema,
 	projectIdSchema,
+	signedUrlRequestSchema,
 } from './schemas';
+import {
+	SIGNED_PARAM_EXPIRES,
+	SIGNED_PARAM_SIGNATURE,
+	SIGNED_PARAM_VERSION,
+	hasSignedParams,
+	parseSignedParams,
+	resolveTtlSeconds,
+	signSubject,
+	verifySignature,
+	type SignedMethod,
+} from './signing';
 
 /**
  * storage-agent worker - the BYTE PATH lives here, not in a Durable Object.
@@ -146,6 +158,32 @@ class StorageService extends WorkerEntrypoint<Env> {
 			return Response.json({ erased: true });
 		}
 
+		// /agents/storage-agent/<pid>/buckets/<b>/signed-urls (+ admin mirror).
+		// Body-addressed, deliberately NOT objects/<key...>/signed-url: a suffix
+		// route is ambiguous against an object whose key ENDS in `/signed-url`,
+		// and route grammar must never be reachable from user data.
+		const signedUrls = url.pathname.match(
+			/^\/agents\/[^/]+\/([^/]+)\/(admin\/)?buckets\/([^/]+)\/signed-urls$/,
+		);
+		if (signedUrls) {
+			const projectId = decodeURIComponent(signedUrls[1]);
+			const bucket = decodeURIComponent(signedUrls[3]);
+			if (
+				!projectIdSchema.safeParse(projectId).success ||
+				!bucketNameSchema.safeParse(bucket).success
+			) {
+				return Response.json({ error: 'invalid project or bucket name' }, { status: 400 });
+			}
+			const response = await this.handleSignedUrls(request, url, {
+				projectId,
+				bucket,
+				key: null,
+				admin: signedUrls[2] === 'admin/',
+			});
+			await this.reportServerError(request, url, response);
+			return response;
+		}
+
 		// /agents/storage-agent/<pid>/buckets/<b>/objects[/<key...>]
 		// /agents/storage-agent/<pid>/admin/buckets/<b>/objects[/<key...>]
 		const objects = url.pathname.match(
@@ -266,6 +304,194 @@ class StorageService extends WorkerEntrypoint<Env> {
 		return withCors(response, cors);
 	}
 
+	/**
+	 * Mint signed download URLs - the thing an `<img src>` can hold for an
+	 * object nobody can send an Authorization header for.
+	 *
+	 * Minting requires exactly what READING requires, because a signed URL
+	 * bypasses the read mode at serve time; that equivalence is the whole
+	 * safety argument. `owner` mode therefore resolves ownership AT MINT with
+	 * one `head()` per key, and a key the caller does not own answers exactly
+	 * like a key that is not there.
+	 */
+	private async handleSignedUrls(
+		request: Request,
+		url: URL,
+		target: ObjectRouteTarget,
+	): Promise<Response> {
+		if (DEMO_PROJECT_PATTERN.test(target.projectId)) {
+			return Response.json(
+				{ error: 'storage is not available on demo projects - create a real project to use it' },
+				{ status: 403 },
+			);
+		}
+
+		const cors = corsHeadersFor(request, this.env.TRUSTED_ORIGINS);
+		if (request.method === 'OPTIONS') {
+			return cors
+				? new Response(null, { status: 204, headers: cors })
+				: Response.json({ error: 'INVALID_ORIGIN' }, { status: 403 });
+		}
+		if (request.headers.get('origin') && !cors) {
+			return Response.json({ error: 'INVALID_ORIGIN' }, { status: 403 });
+		}
+		if (request.method !== 'POST') {
+			return withCors(
+				Response.json({ error: 'method not allowed' }, { status: 405, headers: { allow: 'POST' } }),
+				cors,
+			);
+		}
+
+		// Minting reads the parent DIRECTLY, bypassing the isolate cache. The
+		// zero-hop rule is about VERIFYING - the hot path an `<img src>` rides -
+		// and paying one hop per mint buys correctness the cache cannot: a
+		// stale entry would sign with a RETIRED secret, so a URL minted for
+		// seven days would quietly stop working within the cache TTL, as soon
+		// as any isolate caught up with the rotation. A signature must never
+		// outlive the secret that made it.
+		const answer = await this.bucketAccess(target.projectId, target.bucket, true);
+		if (answer.status === 'erasing') return withCors(erasingResponse(), cors);
+		if (answer.status === 'missing') {
+			return withCors(Response.json({ error: 'no such bucket' }, { status: 404 }), cors);
+		}
+		const { config } = answer;
+
+		let subject: string | null = null;
+		if (!target.admin) {
+			const decision = await checkAccess(
+				request,
+				this.env,
+				target.projectId,
+				config.read,
+				config.readPermission,
+			);
+			if (!decision.ok) return withCors(decision.response, cors);
+			subject = decision.owner;
+		}
+
+		let body: unknown;
+		try {
+			body = await request.json();
+		} catch {
+			return withCors(Response.json({ error: 'invalid JSON body' }, { status: 400 }), cors);
+		}
+		const parsedBody = signedUrlRequestSchema.safeParse(body);
+		if (!parsedBody.success) {
+			return withCors(
+				Response.json(
+					{ error: parsedBody.error.issues[0]?.message ?? 'invalid request body' },
+					{ status: 400 },
+				),
+				cors,
+			);
+		}
+		const input = parsedBody.data;
+		const method: SignedMethod = input.method ?? 'GET';
+		const expiresIn = resolveTtlSeconds(input.expiresIn);
+		const expires = Math.floor(Date.now() / 1000) + expiresIn;
+		const expiresAt = new Date(expires * 1000).toISOString();
+		const requested = input.keys ?? [input.key as string];
+
+		// `owner` mode needs the stored object to answer who owns it. Only that
+		// mode pays the head() - public and auth buckets mint with no R2 call.
+		const ownerScoped = !target.admin && config.read === 'owner' && subject !== null;
+		const bucketBinding = this.env.BUCKET;
+		if (ownerScoped && !bucketBinding) return withCors(notConfigured(), cors);
+
+		const results: Array<Record<string, unknown>> = [];
+		for (const raw of requested) {
+			const parsed = parseObjectKey(raw);
+			if (!parsed.ok) {
+				results.push({ key: raw, signedUrl: null, error: parsed.error });
+				continue;
+			}
+			if (ownerScoped) {
+				const stored = await bucketBinding!.head(
+					r2ObjectKey(target.projectId, target.bucket, parsed.key),
+				);
+				// Not-yours reads exactly like not-there: a distinct answer would
+				// confirm the key exists for another owner.
+				if (!stored || stored.customMetadata?.owner !== subject) {
+					results.push({ key: parsed.key, signedUrl: null, error: 'no such object' });
+					continue;
+				}
+			}
+			const signature = await signSubject(answer.signing.secret, {
+				projectId: target.projectId,
+				bucket: target.bucket,
+				key: parsed.key,
+				method,
+				expires,
+			});
+			results.push({
+				key: parsed.key,
+				signedUrl: this.signedUrlFor(url, target, parsed.key, {
+					version: answer.signing.version,
+					expires,
+					signature,
+				}),
+				error: null,
+			});
+		}
+
+		// Single-key calls answer in the singular, Supabase-style, so the common
+		// case is `const { signedUrl } = await res.json()` with no unwrapping.
+		if (input.key) {
+			const [only] = results;
+			if (only.error) {
+				return withCors(Response.json({ error: only.error }, { status: 404 }), cors);
+			}
+			return withCors(
+				Response.json(
+					{ key: only.key, signedUrl: only.signedUrl, method, expiresAt, expiresIn },
+					{ headers: { 'cache-control': 'private, no-store' } },
+				),
+				cors,
+			);
+		}
+		return withCors(
+			Response.json(
+				{ signedUrls: results, method, expiresAt, expiresIn },
+				{ headers: { 'cache-control': 'private, no-store' } },
+			),
+			cors,
+		);
+	}
+
+	/**
+	 * Where a signed URL points: the ORIGIN THE REQUEST ARRIVED ON, always.
+	 *
+	 * The plan had this build on `STORAGE_SERVE_DOMAIN` when one is
+	 * configured, and that is wrong for a reason neither environment made
+	 * obvious until a signed URL was actually fetched: a serve domain being
+	 * SET does not mean it is ROUTED. Production carries
+	 * `cdn.cloudflarebase.com` with its worker route still commented out
+	 * pending DNS, and the e2e stack points at a host that resolves nowhere
+	 * and is reached only through the `x-cfbase-host` stand-in. Minting on it
+	 * would hand out URLs that resolve to nothing, in both.
+	 *
+	 * The request's own origin has no such failure mode - the caller just
+	 * reached us on it. And because the signature covers project, bucket, key,
+	 * method and expiry but NEVER the host, a deployment that has routed its
+	 * serving domain can swap the hostname on the returned URL and the same
+	 * query string still verifies. One mint, both spellings.
+	 */
+	private signedUrlFor(
+		url: URL,
+		target: ObjectRouteTarget,
+		key: string,
+		signed: { version: number; expires: number; signature: string },
+	): string {
+		const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+		const signedUrl = new URL(
+			`${url.origin}/agents/storage-agent/${encodeURIComponent(target.projectId)}/buckets/${encodeURIComponent(target.bucket)}/objects/${encodedKey}`,
+		);
+		signedUrl.searchParams.set(SIGNED_PARAM_VERSION, String(signed.version));
+		signedUrl.searchParams.set(SIGNED_PARAM_EXPIRES, String(signed.expires));
+		signedUrl.searchParams.set(SIGNED_PARAM_SIGNATURE, signed.signature);
+		return signedUrl.toString();
+	}
+
 	private async routeObjectOp(
 		request: Request,
 		url: URL,
@@ -347,8 +573,16 @@ class StorageService extends WorkerEntrypoint<Env> {
 		if (!bucket) return notConfigured();
 		const { config } = answer;
 
+		// A valid signature stands in for the read gate - that IS the point of
+		// a signed URL. Checked before the mode so a signed request never needs
+		// a token, and STRICTLY: a signature that is present must verify, even
+		// on a public bucket, so a tampered or expired one can never appear to
+		// work just because the bucket happens to be open.
+		const signed = await this.checkSignature(url, target, answer, request.method, key);
+		if (signed instanceof Response) return signed;
+
 		let subject: string | null = null;
-		if (!target.admin && config.read !== 'public') {
+		if (!signed && !target.admin && config.read !== 'public') {
 			const decision = await checkAccess(
 				request,
 				this.env,
@@ -363,9 +597,13 @@ class StorageService extends WorkerEntrypoint<Env> {
 		// The shared cache serves only the plain public GET. Range and
 		// conditional requests go to R2: the cache key is a bare URL, so a
 		// match would answer a full 200 where the conditionals deserve 304/206.
-		const publicRead = target.admin ? false : config.read === 'public';
+		// A signed read is never cacheable and never `public`: the cache key is
+		// path-only, so one cached signed response would serve every later
+		// caller of that path, signature or not.
+		const publicRead = target.admin || signed ? false : config.read === 'public';
 		const cacheable =
 			publicRead &&
+			!signed &&
 			request.method === 'GET' &&
 			!request.headers.has('authorization') &&
 			!request.headers.has('range') &&
@@ -412,7 +650,10 @@ class StorageService extends WorkerEntrypoint<Env> {
 
 		// Owner-mode reads authorize off custom metadata already in hand - one
 		// R2 op, zero DO hops. Not-yours answers exactly like not-there.
-		if (!target.admin && config.read === 'owner') {
+		// Ownership was resolved AT MINT for a signed read, with a head() on this
+		// same key - re-checking here would refuse it, because a signed request
+		// carries no token and so has no subject to compare against.
+		if (!signed && !target.admin && config.read === 'owner') {
 			const owner = object.customMetadata?.owner ?? '';
 			if (!owner || owner !== subject) {
 				return Response.json({ error: 'no such object' }, { status: 404 });
@@ -692,10 +933,75 @@ class StorageService extends WorkerEntrypoint<Env> {
 		}
 	}
 
-	private async bucketAccess(projectId: string, bucket: string): Promise<BucketAccessAnswer> {
+	/**
+	 * Verify a signed URL, if the request carries one.
+	 *
+	 * Returns `false` when there is no signature (carry on with the ordinary
+	 * gate), `true` when one verified, or the refusal to send. Costs zero
+	 * Durable Object hops: the secret arrives inside the access answer this
+	 * request already paid for.
+	 *
+	 * The one exception is a VERSION mismatch, which means the secret moved
+	 * since this isolate cached it. That is not a forgery, so it refetches
+	 * once and re-checks - which is what lets a URL minted from a rotated
+	 * secret work immediately against an isolate still holding the old one.
+	 *
+	 * Note the asymmetry, because it bounds revocation: this rescues NEW URLs
+	 * against a stale cache, not old URLs against one. An already-issued URL
+	 * names the version the stale isolate still holds, so it keeps verifying
+	 * until that entry expires (ACCESS_CACHE_TTL_MS) or any request carrying
+	 * the newer version pulls the isolate forward. Rotation is bounded-time
+	 * revocation, the same bargain a restrictive access flip makes.
+	 */
+	private async checkSignature(
+		url: URL,
+		target: ObjectRouteTarget,
+		answer: Extract<BucketAccessAnswer, { status: 'ok' }>,
+		method: string,
+		key: string,
+	): Promise<boolean | Response> {
+		if (!hasSignedParams(url)) return false;
+		const refuse = (error: string) => Response.json({ error }, { status: 403 });
+
+		const params = parseSignedParams(url);
+		if (!params) return refuse('invalid signed URL');
+		if (method !== 'GET' && method !== 'HEAD') {
+			// Only reads are signable; a signature on a write is meaningless and
+			// must never read as authorization for one.
+			return refuse('signed URLs authorize GET and HEAD only');
+		}
+
+		const subject = {
+			projectId: target.projectId,
+			bucket: target.bucket,
+			key,
+			method: method as SignedMethod,
+		};
+		const now = Math.floor(Date.now() / 1000);
+		let verdict = await verifySignature(answer.signing, params, subject, now);
+
+		if (!verdict.ok && verdict.reason === 'version') {
+			const fresh = await this.bucketAccess(target.projectId, target.bucket, true);
+			if (fresh.status !== 'ok') return refuse('invalid signed URL');
+			verdict = await verifySignature(fresh.signing, params, subject, now);
+		}
+
+		if (verdict.ok) return true;
+		if (verdict.reason === 'expired') return refuse('this signed URL has expired');
+		// A rotated-away version and a forgery are the same answer to the
+		// caller: the URL is no longer good, and which it was is not their
+		// business.
+		return refuse('invalid signed URL');
+	}
+
+	private async bucketAccess(
+		projectId: string,
+		bucket: string,
+		force = false,
+	): Promise<BucketAccessAnswer> {
 		const cacheId = `${projectId}:${bucket}`;
 		const cached = accessCache.get(cacheId);
-		if (cached && cached.expires > Date.now()) return cached.answer;
+		if (!force && cached && cached.expires > Date.now()) return cached.answer;
 
 		const agent = await getAgentByName<Env, StorageAgentBase>(this.env.StorageAgent, projectId);
 		const answer = await agent.getBucketAccess(bucket);

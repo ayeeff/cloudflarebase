@@ -93,6 +93,28 @@ export type BucketConfig = z.infer<typeof bucketConfigSchema>;
 /** Keyset cursor for object listings: the last key of the previous page. */
 export const objectCursorSchema = z.string().max(1024).optional().catch(undefined);
 
+/**
+ * `POST /buckets/:name/signed-urls` body. Supabase's storage vocabulary on
+ * purpose - `createSignedUrl(path, expiresIn)` and its batch sibling are what
+ * people already have in their fingers - so `expiresIn` is seconds and one
+ * call takes either `key` or `keys`.
+ *
+ * GET and HEAD only: a signed URL bypasses the bucket's read mode, and write
+ * capabilities have a protocol of their own (docs/storage-agent-plan.md).
+ */
+export const signedUrlRequestSchema = z
+	.strictObject({
+		key: z.string().min(1).max(1024).optional(),
+		keys: z.array(z.string().min(1).max(1024)).min(1).max(100).optional(),
+		method: z.enum(['GET', 'HEAD']).optional(),
+		expiresIn: z.number().int().min(1).optional(),
+	})
+	.refine(
+		(value) => Boolean(value.key) !== Boolean(value.keys),
+		'provide exactly one of `key` or `keys`',
+	);
+export type SignedUrlRequest = z.infer<typeof signedUrlRequestSchema>;
+
 // ---------------------------------------------------------------------------
 // Third-party responses
 

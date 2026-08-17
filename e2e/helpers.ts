@@ -300,6 +300,20 @@ export function storageObjectPath(projectId: string, bucket: string, key: string
 	return `${storageObjectsPath(projectId, bucket)}/${key.split('/').map(encodeURIComponent).join('/')}`;
 }
 
+/** Signed-URL minting: the PUBLIC door (needs whatever reading needs) and the
+ * operator/service-key mirror over the console proxy. */
+export function storageSignedUrlsPath(projectId: string, bucket: string): string {
+	return `/agents/storage-agent/${projectId}/buckets/${bucket}/signed-urls`;
+}
+
+export function storageAdminSignedUrlsPath(projectId: string, bucket: string): string {
+	return `/api/projects/${projectId}/storage/admin/buckets/${encodeURIComponent(bucket)}/signed-urls`;
+}
+
+export function storageSigningRotatePath(projectId: string): string {
+	return `/api/projects/${projectId}/storage/admin/signing/rotate`;
+}
+
 /** The OPERATOR object surface (console-guard gated, modes bypassed). */
 export function storageAdminObjectsPath(projectId: string, bucket: string): string {
 	return `/agents/storage-agent/${projectId}/admin/buckets/${bucket}/objects`;

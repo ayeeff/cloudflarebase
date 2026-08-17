@@ -15,7 +15,7 @@
 		"r2": [{ "binding": "BUCKET", "optional": true }],
 		"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent", "optional": true }]
 	},
-	"secrets": { "generated": [], "optional": [] },
+	"secrets": { "generated": ["STORAGE_SIGNING_SECRET"], "optional": [] },
 	"vars": {
 		"TRUSTED_ORIGINS": { "default": "", "hint": "Extra origins beyond the deployment's own." },
 		"SENTRY_DSN": {

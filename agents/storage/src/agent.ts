@@ -17,6 +17,7 @@ import {
 	type BucketConfigInput,
 } from './schemas';
 import type { BucketStats, StorageBucket } from './bucket';
+import { mintSecret, type SigningSecret } from './signing';
 
 /**
  * StorageAgent - one Durable Object per project: the bucket registry and
@@ -91,6 +92,10 @@ export type BucketAccessAnswer =
 			 * the two sides can never disagree on a ceiling. */
 			maxObjects: number;
 			maxProjectBytes: number;
+			/** The signed-URL secret, delivered INSIDE this answer on purpose:
+			 * verification then costs zero hops beyond the access check the
+			 * request already pays (docs/storage-agent-plan.md). */
+			signing: SigningSecret;
 	  };
 
 function toConfig(row: BucketRecord): BucketConfig {
@@ -133,6 +138,9 @@ export class StorageAgent extends Agent<Env, StorageAgentState> {
 
 	db: DrizzleSqliteDODatabase<typeof schema>;
 
+	/** Per-instance memo; the durable copy is the authority. */
+	private signing: SigningSecret | null = null;
+
 	constructor(ctx: AgentContext, env: Env) {
 		super(ctx, env);
 		this.db = drizzle(ctx.storage, { schema });
@@ -160,6 +168,58 @@ export class StorageAgent extends Agent<Env, StorageAgentState> {
 
 	private async isErasing(): Promise<boolean> {
 		return (await this.ctx.storage.get<boolean>('erasing')) === true;
+	}
+
+	/**
+	 * The signed-URL signing secret - a manifest `secrets.generated` value, so
+	 * an install needs nothing set by hand. Minted on first use and kept in
+	 * this object's own storage.
+	 *
+	 * An operator-supplied `STORAGE_SIGNING_SECRET` takes ownership and is
+	 * pinned to version 0, which is reserved for exactly that: generated
+	 * secrets start at 1 and climb, so an env value and a generated one can
+	 * never collide on a version and be silently interchanged.
+	 */
+	private async getSigningSecret(): Promise<SigningSecret> {
+		const fromEnv = this.env.STORAGE_SIGNING_SECRET;
+		if (fromEnv) return { version: 0, secret: fromEnv };
+		if (this.signing) return this.signing;
+		const stored = await this.ctx.storage.get<SigningSecret>('signing');
+		if (stored && typeof stored.secret === 'string' && typeof stored.version === 'number') {
+			this.signing = stored;
+			return stored;
+		}
+		const minted: SigningSecret = { version: 1, secret: mintSecret() };
+		await this.ctx.storage.put('signing', minted);
+		this.signing = minted;
+		return minted;
+	}
+
+	/**
+	 * Rotation IS the revocation mechanism for signed URLs: a signature
+	 * carries no identity, so there is nothing to revoke individually and
+	 * bumping the version invalidates every outstanding URL at once.
+	 *
+	 * It converges within the worker's access-cache TTL, not instantly - an
+	 * isolate still holding the old secret still matches URLs signed by it.
+	 * Bounded and stated (see `checkSignature`); when a URL must die THIS
+	 * second, delete the object. Refused when the secret comes from the
+	 * environment: that value is the operator's to rotate.
+	 */
+	async rotateSigningSecret(): Promise<{ rotated: boolean; version: number; reason?: string }> {
+		if (this.env.STORAGE_SIGNING_SECRET) {
+			const held = await this.getSigningSecret();
+			return {
+				rotated: false,
+				version: held.version,
+				reason: 'this deployment supplies STORAGE_SIGNING_SECRET; rotate that value instead',
+			};
+		}
+		const current = await this.getSigningSecret();
+		const next: SigningSecret = { version: current.version + 1, secret: mintSecret() };
+		await this.ctx.storage.put('signing', next);
+		this.signing = next;
+		return { rotated: true, version: next.version };
 	}
 
 	private async syncState(): Promise<void> {
@@ -198,6 +258,7 @@ export class StorageAgent extends Agent<Env, StorageAgentState> {
 			projectBytes: rows.reduce((total, other) => total + other.totalBytes, 0),
 			maxObjects: envInt(this.env, 'STORAGE_MAX_OBJECTS_PER_BUCKET', MAX_OBJECTS_PER_BUCKET),
 			maxProjectBytes: envInt(this.env, 'STORAGE_MAX_PROJECT_BYTES', MAX_PROJECT_BYTES),
+			signing: await this.getSigningSecret(),
 		};
 	}
 
@@ -305,6 +366,12 @@ export class StorageAgent extends Agent<Env, StorageAgentState> {
 	private async finishErase(): Promise<void> {
 		await this.db.delete(buckets);
 		await this.ctx.storage.delete('erasing');
+		// A re-minted project id revives THIS Durable Object, so a surviving
+		// secret would let a signed URL minted by the old tenant verify against
+		// the new tenant's bytes at the same key. Drop it; the next mint makes
+		// a fresh one.
+		await this.ctx.storage.delete('signing');
+		this.signing = null;
 		this.setState({
 			...this.initialState,
 			projectId: this.name,
@@ -353,6 +420,10 @@ export class StorageAgent extends Agent<Env, StorageAgentState> {
 			const rows = await this.db.select().from(buckets).orderBy(asc(buckets.createdAt));
 			return Response.json({ buckets: rows.map(toSummary) });
 		}
+		if (subPath === '/admin/signing/rotate' && request.method === 'POST') {
+			return Response.json(await this.rotateSigningSecret());
+		}
+
 		const bucketRoute = subPath.match(/^\/admin\/buckets\/([^/]+)$/);
 		if (bucketRoute) {
 			const name = decodeURIComponent(bucketRoute[1]);

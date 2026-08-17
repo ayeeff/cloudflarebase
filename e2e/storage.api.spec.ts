@@ -11,11 +11,14 @@ import {
 	STORAGE_PROJECT,
 	storageAdminObjectPath,
 	storageAdminObjectsPath,
+	storageAdminSignedUrlsPath,
 	storageBucketPath,
 	storageBucketsPath,
 	storageObjectPath,
 	storageObjectsPath,
 	storageOverviewPath,
+	storageSignedUrlsPath,
+	storageSigningRotatePath,
 	uniqueEmail
 } from './helpers';
 
@@ -686,6 +689,217 @@ test.describe('storage agent (S1)', () => {
 			expect(write.status()).toBe(405);
 		} finally {
 			await cdn.dispose();
+		}
+	});
+});
+
+/**
+ * Signed download URLs (docs/storage-agent-plan.md, S2's first item).
+ *
+ * The claim under test is narrow and load-bearing: a URL minted by someone who
+ * could read the object lets someone holding NO credential read exactly that
+ * object, and nothing else. So every containment case below first proves the
+ * signed URL is LIVE in the same context - a suite whose assertions all expect
+ * a refusal is green on nothing (the service-key spec's lesson).
+ */
+test.describe('storage signed URLs (S2)', () => {
+	const SIGN_PROJECT = 'e2e-storage-sign';
+	const BUCKET = 'spec-signed';
+	const KEY = 'reports/q3.txt';
+	const BODY = 'signed bytes';
+
+	/** No cookies, no bearer: a stranger holding nothing but a link. */
+	async function stranger(baseURL: string | undefined): Promise<APIRequestContext> {
+		const base = baseURL ?? process.env.BASE_URL ?? 'http://localhost:8797';
+		return playwrightRequest.newContext({ baseURL: base });
+	}
+
+	async function mint(
+		request: APIRequestContext,
+		data: Record<string, unknown>
+	): Promise<Record<string, string>> {
+		const response = await request.post(storageAdminSignedUrlsPath(SIGN_PROJECT, BUCKET), { data });
+		expect(response.status(), await response.text()).toBe(200);
+		return response.json();
+	}
+
+	test.beforeAll(async ({ request }) => {
+		await ensureProject(request, SIGN_PROJECT);
+		// `auth` read mode: unreachable without a project JWT, which is exactly
+		// the case a signed URL exists to serve.
+		const bucket = await request.put(storageBucketPath(SIGN_PROJECT, BUCKET), {
+			data: { read: 'auth', write: 'auth' }
+		});
+		expect([200, 201]).toContain(bucket.status());
+		const put = await request.put(storageAdminObjectPath(SIGN_PROJECT, BUCKET, KEY), {
+			data: BODY,
+			headers: { 'content-type': 'text/plain' }
+		});
+		expect(put.ok(), await put.text()).toBeTruthy();
+	});
+
+	test('a signed URL reads a private object with no credential at all', async ({
+		request,
+		baseURL
+	}) => {
+		const minted = await mint(request, { key: KEY });
+		expect(minted.signedUrl).toContain('sig=');
+		expect(minted.method).toBe('GET');
+
+		const anon = await stranger(baseURL);
+		try {
+			// The control: unsigned, this object is simply refused.
+			const bare = await anon.get(storageObjectPath(SIGN_PROJECT, BUCKET, KEY));
+			expect(bare.status(), 'the bucket must really be private').toBe(401);
+
+			const signed = await anon.get(minted.signedUrl);
+			expect(signed.status(), await signed.text()).toBe(200);
+			expect(await signed.text()).toBe(BODY);
+			// Never shared-cacheable: the cache key is path-only, so one cached
+			// signed response would serve every later caller of that path.
+			expect(signed.headers()['cache-control']).toContain('private');
+			expect(signed.headers()['x-content-type-options']).toBe('nosniff');
+		} finally {
+			await anon.dispose();
+		}
+	});
+
+	test('the signature covers the key, the project, and the expiry', async ({
+		request,
+		baseURL
+	}) => {
+		const minted = await mint(request, { key: KEY });
+		const anon = await stranger(baseURL);
+		try {
+			expect((await anon.get(minted.signedUrl)).status(), 'live before tampering').toBe(200);
+			const query = new URL(minted.signedUrl).search;
+
+			// The same signature against a different key in the same bucket.
+			const otherKey = storageObjectPath(SIGN_PROJECT, BUCKET, 'reports/q4.txt') + query;
+			expect((await anon.get(otherKey)).status()).toBe(403);
+
+			// And against another project's identically-named object.
+			const otherProject = storageObjectPath('e2e-storage-sign-b', BUCKET, KEY) + query;
+			expect([403, 404]).toContain((await anon.get(otherProject)).status());
+
+			// A stretched expiry is not what was signed.
+			const stretched = new URL(minted.signedUrl);
+			stretched.searchParams.set('exp', String(Number(stretched.searchParams.get('exp')) + 86400));
+			expect((await anon.get(stretched.toString())).status()).toBe(403);
+
+			// A flipped signature character.
+			const tampered = new URL(minted.signedUrl);
+			const sig = String(tampered.searchParams.get('sig'));
+			tampered.searchParams.set('sig', sig.slice(0, -1) + (sig.endsWith('A') ? 'B' : 'A'));
+			expect((await anon.get(tampered.toString())).status()).toBe(403);
+		} finally {
+			await anon.dispose();
+		}
+	});
+
+	test('a signed URL expires', async ({ request, baseURL }) => {
+		const minted = await mint(request, { key: KEY, expiresIn: 1 });
+		const anon = await stranger(baseURL);
+		try {
+			expect((await anon.get(minted.signedUrl)).status(), 'live before expiry').toBe(200);
+			await new Promise((resolve) => setTimeout(resolve, 1500));
+			const expired = await anon.get(minted.signedUrl);
+			expect(expired.status()).toBe(403);
+			expect((await expired.json()).error).toContain('expired');
+		} finally {
+			await anon.dispose();
+		}
+	});
+
+	test('a signed URL authorizes reads only, never writes', async ({ request, baseURL }) => {
+		const minted = await mint(request, { key: KEY });
+		const anon = await stranger(baseURL);
+		try {
+			expect((await anon.get(minted.signedUrl)).status(), 'live for reading').toBe(200);
+
+			// The same URL used to write. A read signature must never read as
+			// write authorization - uploads have their own protocol.
+			const write = await anon.put(minted.signedUrl, {
+				data: 'overwritten',
+				headers: { 'content-type': 'text/plain' }
+			});
+			expect([401, 403]).toContain(write.status());
+			expect([401, 403]).toContain((await anon.delete(minted.signedUrl)).status());
+
+			// And the bytes are untouched.
+			expect(await (await anon.get(minted.signedUrl)).text()).toBe(BODY);
+		} finally {
+			await anon.dispose();
+		}
+	});
+
+	test('rotating the signing secret invalidates every outstanding URL', async ({
+		request,
+		baseURL
+	}) => {
+		const minted = await mint(request, { key: KEY });
+		const anon = await stranger(baseURL);
+		try {
+			expect((await anon.get(minted.signedUrl)).status(), 'live before rotation').toBe(200);
+
+			const rotate = await request.post(storageSigningRotatePath(SIGN_PROJECT));
+			expect(rotate.status(), await rotate.text()).toBe(200);
+			expect((await rotate.json()).rotated).toBe(true);
+
+			// A URL minted from the NEW secret works at once, even though the
+			// worker isolate is still caching the old one: the version it does
+			// not hold is what makes it refetch.
+			const fresh = await mint(request, { key: KEY });
+			expect((await anon.get(fresh.signedUrl)).status(), await rotate.text()).toBe(200);
+
+			// And that refetch is what retires the old URL. Revocation is bounded
+			// by the isolate's access-cache TTL rather than instant - without the
+			// fetch above, the pre-rotation URL keeps verifying against the stale
+			// secret until that entry expires. Asserted the deterministic way
+			// round, because sleeping out the TTL would be a flaky 30s.
+			expect((await anon.get(minted.signedUrl)).status()).toBe(403);
+		} finally {
+			await anon.dispose();
+		}
+	});
+
+	test('the batch form reports per-key outcomes instead of failing the call', async ({
+		request
+	}) => {
+		const response = await request.post(storageAdminSignedUrlsPath(SIGN_PROJECT, BUCKET), {
+			data: { keys: [KEY, 'reports/../escape.txt'] }
+		});
+		expect(response.status(), await response.text()).toBe(200);
+		const { signedUrls } = await response.json();
+		expect(signedUrls).toHaveLength(2);
+		expect(signedUrls[0].signedUrl).toContain('sig=');
+		expect(signedUrls[0].error).toBeNull();
+		// Keys are validated, never repaired into something valid.
+		expect(signedUrls[1].signedUrl).toBeNull();
+		expect(signedUrls[1].error).toBeTruthy();
+	});
+
+	test('exactly one of key and keys is required', async ({ request }) => {
+		for (const data of [{}, { key: KEY, keys: [KEY] }]) {
+			const response = await request.post(storageAdminSignedUrlsPath(SIGN_PROJECT, BUCKET), {
+				data
+			});
+			expect(response.status(), JSON.stringify(data)).toBe(400);
+		}
+	});
+
+	test('minting requires what reading requires', async ({ baseURL }) => {
+		const anon = await stranger(baseURL);
+		try {
+			// The public door on a private bucket: no token, no mint. Otherwise
+			// anyone could mint their way straight past the read mode.
+			const response = await anon.post(storageSignedUrlsPath(SIGN_PROJECT, BUCKET), {
+				data: { key: KEY },
+				headers: { 'content-type': 'application/json' }
+			});
+			expect(response.status(), await response.text()).toBe(401);
+		} finally {
+			await anon.dispose();
 		}
 	});
 });
