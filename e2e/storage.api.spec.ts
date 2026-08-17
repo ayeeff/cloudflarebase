@@ -630,17 +630,56 @@ test.describe('storage agent (S1)', () => {
 		}
 	});
 
-	test('demo projects have no storage', async ({ baseURL }) => {
+	test('demo projects get a read-only sample bucket, never a write surface', async ({
+		baseURL
+	}) => {
 		const anon = await anonymousContext(baseURL);
 		try {
 			const demoId = 'demo-aaaaaaaaaaaa';
-			const put = await anon.put(storageObjectPath(demoId, 'files', 'x.txt'), {
+
+			// It reads, anonymously, with no project ever provisioned - the whole
+			// answer is generated in the worker from bundled bytes.
+			const overview = await anon.get(storageOverviewPath(demoId));
+			expect(overview.status(), await overview.text()).toBe(200);
+			const body = await overview.json();
+			expect(body.demo).toBe(true);
+			expect(body.buckets.map((bucket: { name: string }) => bucket.name)).toEqual(['samples']);
+
+			const listed = await anon.get(
+				`${storageObjectsPath(demoId, 'samples')}?delimiter=/&limit=50`
+			);
+			expect(listed.status()).toBe(200);
+			const page = await listed.json();
+			expect(page.objects.map((o: { key: string }) => o.key)).toContain('readme.txt');
+			expect(page.folders.map((f: { prefix: string }) => f.prefix)).toEqual(['docs/', 'images/']);
+
+			const file = await anon.get(storageObjectPath(demoId, 'samples', 'readme.txt'));
+			expect(file.status()).toBe(200);
+			expect(await file.text()).toContain('read-only sample bucket');
+			// The real serve policy, not a shortcut around it.
+			expect(file.headers()['x-content-type-options']).toBe('nosniff');
+			expect(file.headers()['content-disposition']).toBe('inline');
+
+			// But nothing can be written, minted, or configured.
+			const put = await anon.put(storageObjectPath(demoId, 'samples', 'x.txt'), {
 				data: 'x',
 				headers: { 'content-type': 'text/plain' }
 			});
 			expect(put.status()).toBe(403);
-			const overview = await anon.get(storageOverviewPath(demoId));
-			expect(overview.status()).toBe(403);
+			expect((await put.json()).demo).toBe(true);
+
+			const del = await anon.delete(storageObjectPath(demoId, 'samples', 'readme.txt'));
+			expect(del.status()).toBe(403);
+
+			const signed = await anon.post(storageSignedUrlsPath(demoId, 'samples'), {
+				data: { key: 'readme.txt' },
+				headers: { 'content-type': 'application/json' }
+			});
+			expect(signed.status()).toBe(403);
+
+			// And a bucket that is not the sample one does not exist.
+			const other = await anon.get(storageObjectsPath(demoId, 'private'));
+			expect(other.status()).toBe(404);
 		} finally {
 			await anon.dispose();
 		}
@@ -988,5 +1027,24 @@ test.describe('storage folder listing (S2)', () => {
 	test('only / is accepted as a delimiter', async ({ request }) => {
 		const response = await list(request, { delimiter: '|' });
 		expect(response.status(), await response.text()).toBe(400);
+	});
+
+	test('reconcile rebuilds the index from a walk of R2', async ({ request }) => {
+		// The escape hatch made concrete: the walk is what lets rows be dropped
+		// and regenerated, which is how an index schema change or a reshard
+		// would ever be survivable. Also the crash backstop.
+		const response = await request.post(
+			`/agents/storage-agent/${FOLDER_PROJECT}/admin/buckets/${BUCKET}/reconcile`
+		);
+		expect(response.status(), await response.text()).toBe(200);
+		const result = await response.json();
+		// Everything here was written through the normal path minutes ago, so a
+		// healthy bucket reconciles to a no-op - and freshly-written objects sit
+		// inside the grace window regardless.
+		expect(result).toEqual({ adopted: 0, pruned: 0 });
+
+		// The listing is unchanged by the walk.
+		const listed = await list(request, { delimiter: '/' });
+		expect((await listed.json()).objects.map((o: { key: string }) => o.key)).toEqual(['root.txt']);
 	});
 });

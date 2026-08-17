@@ -5,6 +5,15 @@ import { checkAccess, corsHeadersFor, drainUnusedBody, withCors } from './access
 import { StorageAgent as StorageAgentBase, type BucketAccessAnswer } from './agent';
 import { StorageBucket as StorageBucketBase, type BucketIdentity } from './bucket';
 import { parseObjectKey, r2ObjectKey } from './keys';
+import {
+	DEMO_BUCKET,
+	demoBucketSummary,
+	demoList,
+	demoObject,
+	demoOverview,
+	demoRefusal,
+	type DemoObjectSummary,
+} from './demo';
 import { gateOperatorRoutes } from './route-access';
 import {
 	DEMO_PROJECT_PATTERN,
@@ -152,6 +161,13 @@ class StorageService extends WorkerEntrypoint<Env> {
 		const gated = gateOperatorRoutes(url, this.env);
 		if (gated) return gated;
 
+		// Demo projects answer entirely from this worker, BEFORE any stub is
+		// dialled: S1 refused them inside StorageAgent.onRequest, which meant
+		// addressing the route provisioned a Durable Object the request only
+		// ever got a 403 from. A demo visit now costs storage nothing at all.
+		const demo = await this.demoRoute(request, url);
+		if (demo) return demo;
+
 		const erase = url.pathname.match(/^\/internal\/projects\/([^/]+)$/);
 		if (erase && request.method === 'DELETE') {
 			const projectId = decodeURIComponent(erase[1]);
@@ -165,6 +181,29 @@ class StorageService extends WorkerEntrypoint<Env> {
 				if (key.startsWith(`${projectId}:`)) accessCache.delete(key);
 			}
 			return Response.json({ erased: true });
+		}
+
+		// Operator-only: rebuild/repair one bucket's index from a walk of R2.
+		const reconcile = url.pathname.match(
+			/^\/agents\/[^/]+\/([^/]+)\/admin\/buckets\/([^/]+)\/reconcile$/,
+		);
+		if (reconcile && request.method === 'POST') {
+			const projectId = decodeURIComponent(reconcile[1]);
+			const bucket = decodeURIComponent(reconcile[2]);
+			if (
+				!projectIdSchema.safeParse(projectId).success ||
+				!bucketNameSchema.safeParse(bucket).success
+			) {
+				return Response.json({ error: 'invalid project or bucket name' }, { status: 400 });
+			}
+			const target: ObjectRouteTarget = { projectId, bucket, key: null, admin: true };
+			const answer = await this.bucketAccess(projectId, bucket);
+			if (answer.status === 'erasing') return erasingResponse();
+			if (answer.status === 'missing') {
+				return Response.json({ error: 'no such bucket' }, { status: 404 });
+			}
+			const result = await this.bucketStub(target).reconcile(this.identity(target));
+			return Response.json(result);
 		}
 
 		// /agents/storage-agent/<pid>/buckets/<b>/uploads[/<id>[/parts/<n>|
@@ -302,6 +341,96 @@ class StorageService extends WorkerEntrypoint<Env> {
 
 	// -----------------------------------------------------------------
 	// The object paths
+
+	/**
+	 * The whole demo answer: a read-only sample bucket served from the module
+	 * bundle. Returns null for every non-demo request, so the cost to real
+	 * projects is one regex.
+	 */
+	private async demoRoute(request: Request, url: URL): Promise<Response | null> {
+		const match = url.pathname.match(/^\/agents\/[^/]+\/([^/]+)(\/.*)?$/);
+		if (!match) return null;
+		const projectId = decodeURIComponent(match[1]);
+		if (!DEMO_PROJECT_PATTERN.test(projectId)) return null;
+		const subPath = match[2] ?? '/';
+
+		const cors = corsHeadersFor(request, this.env.TRUSTED_ORIGINS);
+		if (request.method === 'OPTIONS') {
+			return cors
+				? new Response(null, { status: 204, headers: cors })
+				: Response.json({ error: 'INVALID_ORIGIN' }, { status: 403 });
+		}
+		if (request.headers.get('origin') && !cors) {
+			return Response.json({ error: 'INVALID_ORIGIN' }, { status: 403 });
+		}
+		const answer = (response: Response) => withCors(response, cors);
+
+		if (subPath === '/overview') return answer(Response.json(demoOverview(projectId)));
+		if (subPath === '/admin/buckets') {
+			return answer(Response.json({ buckets: [demoBucketSummary()] }));
+		}
+
+		const objects = subPath.match(/^\/(?:admin\/)?buckets\/([^/]+)\/objects(\/.*)?$/);
+		if (objects) {
+			if (decodeURIComponent(objects[1]) !== DEMO_BUCKET) {
+				return answer(Response.json({ error: 'no such bucket' }, { status: 404 }));
+			}
+			const rawKey = objects[2]?.replace(/^\//, '') ?? '';
+			// Reads only. Everything that would change something answers with the
+			// upsell rather than a technical error.
+			if (request.method !== 'GET' && request.method !== 'HEAD') {
+				return answer(demoRefusal());
+			}
+			if (!rawKey) {
+				const rawDelimiter = url.searchParams.get('delimiter');
+				if (rawDelimiter !== null && rawDelimiter !== '/') {
+					return answer(
+						Response.json({ error: 'the only supported delimiter is /' }, { status: 400 }),
+					);
+				}
+				return answer(
+					Response.json(
+						demoList({
+							prefix: url.searchParams.get('prefix') ?? undefined,
+							delimiter: rawDelimiter === '/' ? '/' : undefined,
+							cursor: url.searchParams.get('cursor') ?? undefined,
+							limit: Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200),
+						}),
+						{ headers: { 'cache-control': 'private, no-store' } },
+					),
+				);
+			}
+			const key = decodePathKey(rawKey);
+			const found = key === null ? null : demoObject(key);
+			if (!found) return answer(Response.json({ error: 'no such object' }, { status: 404 }));
+			return answer(this.demoBytes(request, found.summary, found.body));
+		}
+
+		// Bucket admin, signed URLs, uploads, reconcile - every remaining
+		// surface is a mutation or a capability a demo must not mint.
+		return answer(demoRefusal());
+	}
+
+	/** Module bytes through the SAME response policy real objects get: nosniff
+	 * and the inline allowlist, so the demo exercises the real path. */
+	private demoBytes(request: Request, summary: DemoObjectSummary, body: Uint8Array): Response {
+		const headers = new Headers({
+			'content-type': summary.contentType,
+			etag: summary.etag,
+			'accept-ranges': 'bytes',
+			'x-content-type-options': 'nosniff',
+			'content-disposition': INLINE_CONTENT_TYPES.test(summary.contentType)
+				? 'inline'
+				: 'attachment',
+			'cache-control': DEFAULT_PUBLIC_CACHE_CONTROL,
+			'content-length': String(summary.size),
+		});
+		if (request.headers.get('if-none-match') === summary.etag) {
+			return new Response(null, { status: 304, headers });
+		}
+		if (request.method === 'HEAD') return new Response(null, { status: 200, headers });
+		return new Response(body as unknown as BodyInit, { status: 200, headers });
+	}
 
 	private async handleObjects(
 		request: Request,

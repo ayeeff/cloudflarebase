@@ -5,6 +5,8 @@ import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import * as schema from './db/schema';
 import { objects, type ObjectRecord } from './db/schema';
 import migrations from './migrations';
+import { r2BucketPrefix } from './keys';
+import { reconcileActions, type ReconcileEntry } from './reconcile';
 import type { StorageAgent } from './agent';
 
 /**
@@ -29,6 +31,9 @@ import type { StorageAgent } from './agent';
  * not a change notification - in-memory debounce, so the first write after a
  * hibernation wake always reports. */
 const STATS_REPORT_INTERVAL_MS = 5_000;
+
+/** Daily reconcile walk. Armed lazily on the first write, re-armed on fire. */
+const RECONCILE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export interface BucketIdentity {
 	projectId: string;
@@ -161,6 +166,7 @@ export class StorageBucket extends DurableObject<Env> {
 					updatedAt: now,
 				},
 			});
+		await this.armReconcile();
 		return this.statsAndReport();
 	}
 
@@ -256,6 +262,118 @@ export class StorageBucket extends DurableObject<Env> {
 	async getStats(): Promise<BucketStats> {
 		await this.ensureMigrated();
 		return this.stats();
+	}
+
+	/**
+	 * Reconcile the index against R2 - the crash backstop, run daily by alarm
+	 * and on demand from `POST /admin/buckets/:name/reconcile`.
+	 *
+	 * A streaming merge join, so memory stays one R2 page deep whatever the
+	 * bucket holds. Adoption is also what makes the index REBUILDABLE: drop
+	 * the rows and this regenerates them from the walk, which is the escape
+	 * hatch for an index schema change or any future resharding.
+	 */
+	async reconcile(identity: BucketIdentity): Promise<{ adopted: number; pruned: number }> {
+		await this.ensureMigrated();
+		await this.ensureIdentity(identity);
+		const bucket = this.env.BUCKET;
+		if (!bucket) return { adopted: 0, pruned: 0 };
+
+		const prefix = r2BucketPrefix(identity.projectId, identity.bucket);
+		const now = Date.now();
+		let adopted = 0;
+		let pruned = 0;
+
+		const actions = reconcileActions(this.streamR2(bucket, prefix), this.streamIndex(), now);
+		for await (const action of actions) {
+			if (action.kind === 'adopt') {
+				const at = new Date(action.entry.at);
+				await this.db
+					.insert(objects)
+					.values({
+						key: action.entry.key,
+						size: action.entry.size,
+						etag: action.entry.etag,
+						contentType: action.entry.contentType,
+						owner: action.entry.owner,
+						createdAt: at,
+						updatedAt: at,
+					})
+					.onConflictDoNothing();
+				adopted += 1;
+			} else {
+				await this.db.delete(objects).where(eq(objects.key, action.key));
+				pruned += 1;
+			}
+		}
+
+		await this.statsAndReport();
+		await this.armReconcile();
+		return { adopted, pruned };
+	}
+
+	/** R2's listing as a key-ordered stream, one page in memory at a time. */
+	private async *streamR2(bucket: R2Bucket, prefix: string): AsyncGenerator<ReconcileEntry> {
+		let cursor: string | undefined;
+		do {
+			const page = await bucket.list({
+				prefix,
+				limit: 1000,
+				cursor,
+				include: ['httpMetadata', 'customMetadata'],
+			});
+			for (const object of page.objects) {
+				yield {
+					key: object.key.slice(prefix.length),
+					size: object.size,
+					etag: object.etag,
+					contentType: object.httpMetadata?.contentType ?? 'application/octet-stream',
+					owner: object.customMetadata?.owner ?? '',
+					at: object.uploaded.getTime(),
+				};
+			}
+			cursor = page.truncated ? page.cursor : undefined;
+		} while (cursor);
+	}
+
+	/** The index in key order, paged by keyset for the same memory reason. */
+	private async *streamIndex(): AsyncGenerator<ReconcileEntry> {
+		let after: string | null = null;
+		for (;;) {
+			const rows: ObjectRecord[] = await this.db
+				.select()
+				.from(objects)
+				.where(after === null ? undefined : gt(objects.key, after))
+				.orderBy(asc(objects.key))
+				.limit(500);
+			if (!rows.length) return;
+			for (const row of rows) {
+				yield {
+					key: row.key,
+					size: row.size,
+					etag: row.etag,
+					contentType: row.contentType,
+					owner: row.owner,
+					at: row.updatedAt.getTime(),
+				};
+			}
+			after = rows[rows.length - 1].key;
+		}
+	}
+
+	/** Armed lazily on the first write and re-armed on each fire, so an idle
+	 * bucket costs nothing and a busy one is always covered. */
+	private async armReconcile(): Promise<void> {
+		if (await this.ctx.storage.getAlarm()) return;
+		await this.ctx.storage.setAlarm(Date.now() + RECONCILE_INTERVAL_MS);
+	}
+
+	async alarm(): Promise<void> {
+		const meta = await this.ctx.storage.get<BucketIdentity>('bucket-meta');
+		// Nothing to walk without an identity: the prefix is not derivable here
+		// (a plain DO cannot read its own name).
+		if (!meta) return;
+		await this.reconcile(meta);
 	}
 
 	/** Erase fan-in target: the parent already drained (or will drain) R2;
