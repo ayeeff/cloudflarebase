@@ -168,6 +168,17 @@ export const storageOpenApi: AgentOpenApiModule = {
 						description: 'Only keys starting with this prefix.'
 					},
 					{
+						name: 'delimiter',
+						in: 'query',
+						required: false,
+						schema: { type: 'string', enum: ['/'] },
+						description:
+							'Pass `/` for a folder view: only direct children are returned as objects, and ' +
+							'everything deeper is collapsed into a `folders` array of `{ prefix, objectCount }` ' +
+							'(the prefix keeps its trailing slash, and the count includes every depth beneath it). ' +
+							'Omit it to list the whole subtree flat. `/` is the only delimiter accepted.'
+					},
+					{
 						name: 'cursor',
 						in: 'query',
 						required: false,

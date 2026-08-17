@@ -555,10 +555,25 @@ class StorageService extends WorkerEntrypoint<Env> {
 		if (prefix !== undefined && prefix.length > 1024) {
 			return Response.json({ error: 'prefix too long' }, { status: 400 });
 		}
+		// Only `/` collapses folders. Keys use it as their one path separator
+		// (keys.ts validates around it), so any other delimiter would describe
+		// a hierarchy the rest of the agent does not believe in - refuse rather
+		// than serve a second, inconsistent notion of a folder.
+		const rawDelimiter = url.searchParams.get('delimiter');
+		if (rawDelimiter !== null && rawDelimiter !== '/') {
+			return Response.json({ error: 'the only supported delimiter is /' }, { status: 400 });
+		}
+		const delimiter = rawDelimiter === '/' ? '/' : undefined;
 		const cursor = objectCursorSchema.parse(url.searchParams.get('cursor') ?? undefined);
 		const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
 
-		const result = await this.bucketStub(target).listObjects({ prefix, cursor, limit, owner });
+		const result = await this.bucketStub(target).listObjects({
+			prefix,
+			cursor,
+			limit,
+			owner,
+			delimiter,
+		});
 		return Response.json(result, { headers: { 'cache-control': 'private, no-store' } });
 	}
 

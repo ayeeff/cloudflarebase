@@ -903,3 +903,96 @@ test.describe('storage signed URLs (S2)', () => {
 		}
 	});
 });
+
+/**
+ * Folder listing (`delimiter=/`) - the shape a file browser and the client
+ * SDK's `list()` both sit on. Object keys are flat strings; a "folder" is
+ * derived at read time by collapsing everything below the next separator,
+ * which is SQL arithmetic over `instr`/`substr` and therefore worth running
+ * rather than reasoning about.
+ */
+test.describe('storage folder listing (S2)', () => {
+	const FOLDER_PROJECT = 'e2e-storage-folders';
+	const BUCKET = 'spec-folders';
+	const KEYS = [
+		'root.txt',
+		'docs/one.txt',
+		'docs/two.txt',
+		'docs/deep/three.txt',
+		'img/logo.png'
+	];
+
+	function list(
+		request: APIRequestContext,
+		query: Record<string, string> = {}
+	): Promise<import('@playwright/test').APIResponse> {
+		const search = new URLSearchParams(query).toString();
+		const base = storageAdminObjectsPath(FOLDER_PROJECT, BUCKET);
+		return request.get(search ? `${base}?${search}` : base);
+	}
+
+	test.beforeAll(async ({ request }) => {
+		await ensureProject(request, FOLDER_PROJECT);
+		const bucket = await request.put(storageBucketPath(FOLDER_PROJECT, BUCKET), { data: {} });
+		expect([200, 201]).toContain(bucket.status());
+		for (const key of KEYS) {
+			const put = await request.put(storageAdminObjectPath(FOLDER_PROJECT, BUCKET, key), {
+				data: `bytes for ${key}`,
+				headers: { 'content-type': 'text/plain' }
+			});
+			expect(put.ok(), `${key}: ${await put.text()}`).toBeTruthy();
+		}
+	});
+
+	test('no delimiter lists the whole subtree flat', async ({ request }) => {
+		const response = await list(request);
+		expect(response.ok(), await response.text()).toBeTruthy();
+		const body = await response.json();
+		expect(body.objects.map((o: { key: string }) => o.key).sort()).toEqual([...KEYS].sort());
+		// Flat listings have no notion of a folder at all.
+		expect(body.folders).toBeUndefined();
+	});
+
+	test('delimiter=/ collapses everything below the next separator', async ({ request }) => {
+		const response = await list(request, { delimiter: '/' });
+		expect(response.ok(), await response.text()).toBeTruthy();
+		const body = await response.json();
+
+		// Direct children only.
+		expect(body.objects.map((o: { key: string }) => o.key)).toEqual(['root.txt']);
+		expect(body.total).toBe(1);
+
+		// Folders carry their trailing separator and count everything beneath
+		// them at ANY depth - docs/ holds three, including docs/deep/three.txt.
+		expect(body.folders).toEqual([
+			{ prefix: 'docs/', objectCount: 3 },
+			{ prefix: 'img/', objectCount: 1 }
+		]);
+		expect(body.foldersTruncated).toBe(false);
+	});
+
+	test('descending a folder re-collapses at the next level', async ({ request }) => {
+		const response = await list(request, { prefix: 'docs/', delimiter: '/' });
+		expect(response.ok(), await response.text()).toBeTruthy();
+		const body = await response.json();
+		expect(body.objects.map((o: { key: string }) => o.key)).toEqual([
+			'docs/one.txt',
+			'docs/two.txt'
+		]);
+		expect(body.folders).toEqual([{ prefix: 'docs/deep/', objectCount: 1 }]);
+	});
+
+	test('a prefix that is not a folder boundary still works', async ({ request }) => {
+		// `do` is a legitimate prefix even though no folder is named it.
+		const response = await list(request, { prefix: 'do', delimiter: '/' });
+		expect(response.ok(), await response.text()).toBeTruthy();
+		const body = await response.json();
+		expect(body.objects).toEqual([]);
+		expect(body.folders).toEqual([{ prefix: 'docs/', objectCount: 3 }]);
+	});
+
+	test('only / is accepted as a delimiter', async ({ request }) => {
+		const response = await list(request, { delimiter: '|' });
+		expect(response.status(), await response.text()).toBe(400);
+	});
+});

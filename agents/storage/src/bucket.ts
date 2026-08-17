@@ -59,12 +59,28 @@ export interface ListObjectsInput {
 	limit?: number;
 	/** Restrict to one owner's rows (`owner` access mode listings). */
 	owner?: string;
+	/** `/` collapses everything below the next separator into folders. Absent
+	 * lists the whole subtree flat, which is what the SDK's default does. */
+	delimiter?: '/';
+}
+
+/** One collapsed folder: the prefix INCLUDING its trailing separator, plus how
+ * many indexed objects live under it (at any depth). */
+export interface FolderSummary {
+	prefix: string;
+	objectCount: number;
 }
 
 export interface ListObjectsResult {
 	objects: ObjectSummary[];
 	total: number;
 	cursor: string | null;
+	/** Only present for a delimited listing. */
+	folders?: FolderSummary[];
+	/** True when more folders exist than were returned - said out loud rather
+	 * than silently truncated, because a browser that quietly drops folders
+	 * looks like data loss. */
+	foldersTruncated?: boolean;
 }
 
 export interface BucketStats {
@@ -174,11 +190,23 @@ export class StorageBucket extends DurableObject<Env> {
 		await this.ensureMigrated();
 		const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
 
+		const prefix = input.prefix ?? '';
 		const filters = [];
-		if (input.prefix) {
-			filters.push(sql`${objects.key} LIKE ${prefixPattern(input.prefix)} ESCAPE '\\'`);
+		if (prefix) {
+			filters.push(sql`${objects.key} LIKE ${prefixPattern(prefix)} ESCAPE '\\'`);
 		}
 		if (input.owner !== undefined) filters.push(eq(objects.owner, input.owner));
+
+		// A delimited listing shows only DIRECT children; everything deeper is
+		// represented by its folder. `instr` is 1-based and returns 0 for "not
+		// found", so "no separator in the remainder after the prefix" is
+		// exactly `= 0`. The prefix length is measured in the same units SQLite
+		// counts (characters), so `length()` and `substr()` agree even when a
+		// key holds astral characters.
+		const remainder = sql`substr(${objects.key}, length(${prefix}) + 1)`;
+		if (input.delimiter) {
+			filters.push(sql`instr(${remainder}, '/') = 0`);
+		}
 		const scope = filters.length ? and(...filters) : undefined;
 
 		const pageFilters = input.cursor ? and(scope, gt(objects.key, input.cursor)) : scope;
@@ -192,11 +220,37 @@ export class StorageBucket extends DurableObject<Env> {
 		const next = rows.length > limit ? page[page.length - 1] : null;
 
 		const [total] = await this.db.select({ value: count() }).from(objects).where(scope);
-		return {
+		const result: ListObjectsResult = {
 			objects: page.map(toSummary),
 			total: total?.value ?? 0,
 			cursor: next ? next.key : null,
 		};
+		if (!input.delimiter) return result;
+
+		// Folders are a GROUPED scan rather than a keyset page: a bucket caps at
+		// 10k objects, so one grouped pass is bounded, and folders have no
+		// stable cursor of their own (they are derived, not stored).
+		const folderScope = [];
+		if (prefix) {
+			folderScope.push(sql`${objects.key} LIKE ${prefixPattern(prefix)} ESCAPE '\\'`);
+		}
+		if (input.owner !== undefined) folderScope.push(eq(objects.owner, input.owner));
+		folderScope.push(sql`instr(${remainder}, '/') > 0`);
+		const folderExpr = sql<string>`substr(${objects.key}, 1, length(${prefix}) + instr(${remainder}, '/'))`;
+		const folderRows = await this.db
+			.select({ prefix: folderExpr, objectCount: count() })
+			.from(objects)
+			.where(and(...folderScope))
+			.groupBy(folderExpr)
+			.orderBy(asc(folderExpr))
+			.limit(limit + 1);
+
+		result.folders = folderRows.slice(0, limit).map((row) => ({
+			prefix: row.prefix,
+			objectCount: row.objectCount,
+		}));
+		result.foldersTruncated = folderRows.length > limit;
+		return result;
 	}
 
 	async getStats(): Promise<BucketStats> {
