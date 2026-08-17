@@ -619,10 +619,65 @@ const cloudflareSentryHandle: Handle = async (input) => {
 	})(input);
 };
 
+/**
+ * CSRF, credential-aware - replacing SvelteKit's blanket check, which is
+ * disabled in svelte.config.js (`csrf.checkOrigin: false`) precisely so this
+ * can run instead. Never delete one without the other.
+ *
+ * THE ATTACK: a page on evil.com submits a form to this origin. The browser
+ * attaches the visitor's session cookie automatically, so the request runs as
+ * them. Browsers can only do this without asking permission for three content
+ * types - the ones a plain HTML form can produce - so refusing those on a
+ * cross-origin write is the defence, and it is exactly SvelteKit's rule.
+ *
+ * WHY IT NEEDED REPLACING: SvelteKit treats a MISSING Origin as cross-site.
+ * A service-key request has no Origin BY CONSTRUCTION - the guard refuses the
+ * key outright if one is present - and `fetch` defaults a string body to
+ * `text/plain;charset=UTF-8`, `JSON.stringify(...)` included. So the most
+ * natural call a server can write was refused 403 before the key was ever
+ * read, on the primary documented server path rather than some edge.
+ *
+ * WHY SKIPPING ON `Authorization` IS SOUND: CSRF works only because the
+ * browser supplies the credential by itself. It never adds an Authorization
+ * header on its own, and a cross-origin fetch that sets one triggers a CORS
+ * preflight this app does not answer for untrusted origins. So a request
+ * carrying one cannot have been forged by a victim's browser - and an
+ * attacker who already knows the bearer does not need CSRF at all. Cookie
+ * requests keep the full check.
+ *
+ * SvelteKit applies this before ANY hook, so the replacement sits first in the
+ * sequence - ahead of the rate limiter and the guard - to keep the same
+ * ordering guarantee.
+ */
+const FORM_CONTENT_TYPES = [
+	'application/x-www-form-urlencoded',
+	'multipart/form-data',
+	'text/plain'
+];
+
+const csrfHandle: Handle = async ({ event, resolve }) => {
+	const { request, url } = event;
+	const method = request.method;
+	if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
+		// A bearer is not ambient - see above. This is the only relaxation.
+		if (!request.headers.get('authorization')) {
+			const type = (request.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+			const origin = request.headers.get('origin');
+			if (FORM_CONTENT_TYPES.includes(type) && origin !== url.origin) {
+				return new Response('Cross-site form submissions are forbidden', { status: 403 });
+			}
+		}
+	}
+	return resolve(event);
+};
+
 export const handle = sequence(
 	platformHandle,
 	cloudflareSentryHandle,
 	sentryHandle(),
+	// Before everything: SvelteKit's own version of this ran ahead of every
+	// hook, and the ordering guarantee is part of the protection.
+	csrfHandle,
 	// Outside the guard: its redirects and 401s are responses a crawler sees
 	// too, and they need the header as much as a rendered page does.
 	noindexHandle,

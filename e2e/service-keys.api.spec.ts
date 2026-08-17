@@ -442,6 +442,71 @@ test.describe('service keys', () => {
 		}
 	});
 
+	/**
+	 * CSRF, credential-aware (`csrfHandle` in src/hooks.server.ts).
+	 *
+	 * `fetch` defaults a string body - `JSON.stringify(...)` included - to
+	 * `text/plain;charset=UTF-8`, one of the three FORM content types the CSRF
+	 * rule refuses on a write with no Origin. A service key never sends an
+	 * Origin, so SvelteKit's blanket version refused the most natural raw-HTTP
+	 * call a server can write, before the key was ever read, on the PRIMARY
+	 * documented path rather than some edge.
+	 *
+	 * The replacement skips the check only when an `Authorization` header is
+	 * present, which a browser cannot attach cross-origin without a preflight
+	 * this app does not answer. The cookie case keeps the full check - pinned
+	 * in `security.api.spec.ts`, because relaxing this wrongly would make the
+	 * whole console API CSRF-able, sign-in included.
+	 */
+	test('a bearer write is not treated as a cross-site form submission', async ({ baseURL }) => {
+		const server = await serverContext(baseURL);
+		try {
+			// Self-contained: this test must not depend on a collection another
+			// test happened to create, or running it alone fails on its own setup.
+			const collection = `csrf-${run}`;
+			const declare = await server.put(
+				`/api/projects/${KEY_PROJECT}/db/admin/collections/${collection}`,
+				{ headers: { authorization: `Bearer ${key}` }, data: {} }
+			);
+			expect(declare.ok(), await declare.text()).toBeTruthy();
+
+			// Control: the explicit-JSON spelling, which always worked.
+			const asJson = await server.fetch(`/api/projects/${KEY_PROJECT}/db/admin/query`, {
+				method: 'POST',
+				headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+				data: JSON.stringify({ collection, query: { limit: 1 } })
+			});
+			expect(asJson.ok(), await asJson.text()).toBeTruthy();
+
+			// And the spelling `body: JSON.stringify(...)` actually produces. This
+			// answered 403 before csrfHandle existed.
+			const asTextPlain = await server.fetch(`/api/projects/${KEY_PROJECT}/db/admin/query`, {
+				method: 'POST',
+				headers: { authorization: `Bearer ${key}`, 'content-type': 'text/plain;charset=UTF-8' },
+				data: JSON.stringify({ collection, query: { limit: 1 } })
+			});
+			expect(asTextPlain.ok(), await asTextPlain.text()).toBeTruthy();
+
+			// Storage was the other casualty: a .txt upload is legitimate content,
+			// not a mistake, and it could not be uploaded at all.
+			const bucket = 'svc-objects';
+			await server.put(`/api/projects/${KEY_PROJECT}/storage/admin/buckets/${bucket}`, {
+				headers: { authorization: `Bearer ${key}` },
+				data: {}
+			});
+			const upload = await server.put(
+				storageProxyObjectPath(KEY_PROJECT, bucket, `notes-${run}.txt`),
+				{
+					headers: { authorization: `Bearer ${key}`, 'content-type': 'text/plain' },
+					data: 'a plain text file, which is a normal thing to store'
+				}
+			);
+			expect(upload.ok(), await upload.text()).toBeTruthy();
+		} finally {
+			await server.dispose();
+		}
+	});
+
 	test('is refused from a browser - any Origin at all', async ({ baseURL }) => {
 		// The single highest-value guard: a key pasted into frontend code fails
 		// at the developer's desk instead of shipping inside a JS bundle.

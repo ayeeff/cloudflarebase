@@ -165,9 +165,28 @@ posts.subscribe(
 
 **On a server**, your users' own tokens are still the credential — an SSR route
 relays the session the user already sent it. For a cron, queue consumer, or
-webhook with no user to relay, mint a **service key** under Settings: scoped to
-one project, admin-grade on its data, and refused outright from any request
-carrying an `Origin`, so it cannot work in frontend code even by accident.
+webhook with no user to relay, mint a **service key** (`cloudflarebase key
+create ci --env-file`, or the project's Settings page). Each agent ships an
+`./admin` entry point over it:
+
+```ts
+import { createDbAdmin } from '@cloudflarebase/db/admin';
+import { createAuthAdmin } from '@cloudflarebase/auth/admin';
+
+const db = createDbAdmin(); // url, project, and key from the environment
+const post = await db.collection('posts').get(id);
+await db.collection('posts').patch(id, { votes: post.data.votes + 1 });
+
+// Seed or migrate accounts with no sign-up flow
+await createAuthAdmin().createUser({ email, password, name });
+```
+
+Scoped to one project — never a root and its branches, because for data the
+branch is the isolation boundary — and admin-grade on that project's data, so
+it bypasses access modes and validators the way an operator does. Two things
+keep it off the front end: any request carrying an `Origin` is refused
+outright, and these clients throw if constructed in a browser. Raw HTTP against
+the same routes works identically and is what the OpenAPI document describes.
 
 Reads serve from a replica in the reader's region (session bookmarks keep
 read-your-writes), and every collection and table can be exported, imported, or

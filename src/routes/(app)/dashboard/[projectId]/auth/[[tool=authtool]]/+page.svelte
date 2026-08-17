@@ -335,7 +335,10 @@
 
 	const integrationExamples = $derived(
 		buildIntegrationExamples(
-			`${typeof window === 'undefined' ? '' : window.location.origin}/api/projects/${data.projectId}/auth`
+			`${typeof window === 'undefined' ? '' : window.location.origin}/api/projects/${data.projectId}/auth`,
+			// The console shows the server story; the landing page's demo cannot
+			// (the guard refuses service keys on demo project ids).
+			{ serviceKey: true }
 		)
 	);
 

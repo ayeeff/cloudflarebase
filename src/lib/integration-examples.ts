@@ -10,7 +10,16 @@ export interface CodeExample {
  * `https://host/api/projects/<id>/auth`). Shared by the dashboard's
  * Integration tab and the landing page's API section.
  */
-export function buildIntegrationExamples(url: string): CodeExample[] {
+export function buildIntegrationExamples(
+	url: string,
+	options: { serviceKey?: boolean } = {}
+): CodeExample[] {
+	// `url` is `<origin>/api/projects/<id>/auth`; the admin client is
+	// constructed from the two parts, not the auth base.
+	const parts = url.match(/^(.*)\/api\/projects\/([^/]+)\/auth$/);
+	const origin = parts?.[1] ?? '';
+	const projectId = parts?.[2] ?? '<project-id>';
+
 	return [
 		{
 			id: 'js',
@@ -113,7 +122,57 @@ curl -i -X POST ${url}/sign-up/email \\
 
 curl ${url}/get-session \\
   -H 'authorization: Bearer <token>'`
-		}
+		},
+		// Opt-in: the landing page renders these for a DEMO project, and the
+		// guard refuses service keys on demo ids outright - advertising a
+		// credential that cannot work there would be worse than silence.
+		...(options.serviceKey
+			? [
+					{
+						id: 'service-key',
+						label: 'Service key',
+						lang: 'typescript',
+						code: `import { createAuthAdmin } from '@cloudflarebase/auth/admin';
+
+// SERVER ONLY. A service key can read, create, re-role, and delete every
+// account in this project. Mint one under Settings - it is shown once and is
+// scoped to THIS project, not to sibling branches.
+//
+// Two guards make a leak fail loudly rather than silently: this client
+// refuses to construct in a browser, and the API refuses ANY request carrying
+// an Origin header. A key pasted into frontend code breaks at your desk
+// instead of shipping inside a JS bundle.
+const auth = createAuthAdmin({
+	url: '${origin}',
+	projectId: '${projectId}',
+	key: process.env.CLOUDFLAREBASE_SERVICE_KEY
+});
+
+// Seed accounts, or migrate them off another provider: this bypasses the
+// project's sign-up mode AND email verification, which the public
+// sign-up route cannot do. emailVerified defaults to false - an account is
+// not verified merely because an admin created it.
+const user = await auth.createUser({
+	email: 'jane@example.com',
+	password: 'correct-horse-battery',
+	name: 'Jane'
+});
+await auth.setRole(user.id, 'admin');
+
+// Support flows and migrations: set a password with no emailed token. An
+// account with no credential (social-only) gains one. Existing sessions are
+// revoked unless you pass revokeSessions: false.
+await auth.setPassword(user.id, 'a-new-password');
+
+const { users } = await auth.listUsers({ limit: 50 });
+
+// url, projectId, and key fall back to CLOUDFLAREBASE_URL /
+// CLOUDFLAREBASE_PROJECT / CLOUDFLAREBASE_SERVICE_KEY, so on a server that
+// already has them this is just createAuthAdmin(). Inside a Worker there is
+// no global process - secrets arrive on env: createAuthAdmin({ env }).`
+					}
+				]
+			: [])
 	];
 }
 

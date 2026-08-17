@@ -949,7 +949,42 @@ export async function load({ request }) {
 
 // NO USER AT ALL - a cron, a queue consumer, a Stripe webhook, a seed
 // script? There is nobody to relay, so none of the above applies. That is
-// what a project service key is for; mint one under Settings.`
+// what a project service key is for: see the Service key tab.`
+		},
+		{
+			id: 'service-key',
+			label: 'Service key',
+			lang: 'typescript',
+			code: `import { createDbAdmin } from '@cloudflarebase/db/admin';
+
+// SERVER ONLY. A service key is admin-grade over this project's whole data
+// plane: it bypasses access modes, validators, and permission keys, exactly
+// like the operator session it stands in for. Mint one under Settings - it
+// is shown once, and it is scoped to THIS project, not to sibling branches.
+//
+// Two guards make a leak fail loudly instead of silently: this client
+// refuses to construct in a browser, and the API refuses ANY request
+// carrying an Origin header. A key pasted into frontend code breaks at your
+// desk rather than shipping inside a JS bundle on a CDN.
+const db = createDbAdmin({
+	url: '${origin}',
+	projectId: '${data.projectId}',
+	key: process.env.CLOUDFLAREBASE_SERVICE_KEY
+});
+
+// No user, no session, no token to relay.
+const post = await db.collection('posts').get(id);
+await db.collection('posts').patch(id, { votes: post.data.votes + 1 });
+
+const { docs } = await db.collection('posts').query({ limit: 25 });
+await db.table('orders').sql('SELECT * FROM orders WHERE id = ?', [id]);
+
+// url, projectId, and key all fall back to CLOUDFLAREBASE_URL /
+// CLOUDFLAREBASE_PROJECT / CLOUDFLAREBASE_SERVICE_KEY, so on a server that
+// already has them this is just createDbAdmin().
+//
+// Inside a Worker there is no global process - secrets arrive on env:
+//   createDbAdmin({ env });`
 		},
 		{
 			id: 'tables',

@@ -487,4 +487,77 @@ test.describe('security boundaries', () => {
 			await operator.dispose();
 		}
 	});
+
+	/**
+	 * CSRF still bites where it must.
+	 *
+	 * SvelteKit's blanket `csrf.checkOrigin` is OFF (svelte.config.js) and
+	 * re-implemented credential-aware in `csrfHandle`, because it refused
+	 * service-key writes: a key sends no Origin by construction, and `fetch`
+	 * defaults a string body - `JSON.stringify(...)` included - to
+	 * `text/plain`, so the primary documented server path answered 403 before
+	 * the key was read.
+	 *
+	 * The relaxation is narrow: skip ONLY when an `Authorization` header is
+	 * present, which a browser cannot attach cross-origin without a preflight
+	 * this app never answers. Everything cookie-shaped keeps the full check.
+	 * These assertions are the half that matters - get the relaxation wrong and
+	 * the whole console API becomes CSRF-able, sign-in included.
+	 */
+	test('cross-site form writes are still refused without a bearer', async ({ playwright }) => {
+		const base = process.env.BASE_URL ?? 'http://localhost:8797';
+
+		// A cookie-bearing context, exactly what a victim's browser is.
+		const victim = await playwright.request.newContext({
+			baseURL: base,
+			storageState: CONSOLE_STORAGE_STATE
+		});
+		try {
+			for (const contentType of [
+				'text/plain',
+				'multipart/form-data',
+				'application/x-www-form-urlencoded'
+			]) {
+				// A foreign Origin - the classic form post from evil.com.
+				const foreign = await victim.fetch(dbAdminQueryPath(SEED_PROJECT), {
+					method: 'POST',
+					headers: { origin: 'https://evil.example', 'content-type': contentType },
+					data: 'collection=posts'
+				});
+				expect(foreign.status(), `foreign origin, ${contentType}`).toBe(403);
+
+				// And with NO Origin at all - the riskiest case, and the one that
+				// forced this rewrite. The blank spelling is load-bearing: the
+				// `api` project injects `origin: baseURL` into every context it
+				// makes, so omitting the header here would silently test the
+				// SAME-origin case and pass on nothing.
+				const bare = await victim.fetch(dbAdminQueryPath(SEED_PROJECT), {
+					method: 'POST',
+					headers: { origin: '', 'content-type': contentType },
+					data: 'collection=posts'
+				});
+				expect(bare.status(), `no origin, ${contentType}`).toBe(403);
+			}
+
+			// Sign-in is the highest-value CSRF target on this deployment: it is
+			// public-by-exception, so the guard never gates it.
+			const signIn = await victim.fetch(authPath(SEED_PROJECT, 'sign-in/email'), {
+				method: 'POST',
+				headers: { origin: 'https://evil.example', 'content-type': 'text/plain' },
+				data: JSON.stringify({ email: 'x@example.com', password: 'whatever' })
+			});
+			expect(signIn.status()).toBe(403);
+
+			// The control: same-origin form writes are NOT refused, or the check
+			// would be passing by breaking the console's own forms.
+			const sameOrigin = await victim.fetch(dbAdminQueryPath(SEED_PROJECT), {
+				method: 'POST',
+				headers: { origin: base, 'content-type': 'text/plain' },
+				data: JSON.stringify({ collection: 'nope', query: {} })
+			});
+			expect(sameOrigin.status()).not.toBe(403);
+		} finally {
+			await victim.dispose();
+		}
+	});
 });

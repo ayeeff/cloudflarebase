@@ -1,17 +1,20 @@
 # The server-side service path
 
-> **Drafted 2026-08-16, and reversed the same day.** The first draft of this
-> document proposed a new `@cloudflarebase/admin` npm package — Firebase's
-> `admin.firestore()/.auth()/.storage()`, Supabase's
-> `createClient(url, serviceRoleKey)`. That was wrong, and the reasoning is
-> worth keeping (§3): **the unified server surface already exists**, at the
-> console, because that is where the key is verified. A package would have
-> wrapped HTTP calls that are already unified and already generated into a
-> reference, at the cost of a fourth artifact to version and keep in sync with
-> copied DTOs.
+> **Drafted 2026-08-16; packaging settled over three passes (§3), all kept.**
+> The first draft proposed a standalone `@cloudflarebase/admin`. The second
+> concluded no package at all. What shipped is neither: **raw HTTP is the
+> contract, and each agent package ships an `./admin` subpath over it.**
 >
-> What is actually missing is smaller and more useful: three holes in the
-> surface, and six routes missing from the generated reference.
+> The load-bearing fact behind all three is that a service key is verified in
+> the CONSOLE guard, not by any agent — so the unified server surface already
+> exists before a line of client code, and a standalone package would only
+> re-describe it. What co-location adds is that a route and its client version
+> together.
+>
+> Four holes were closed, not the three first counted: db read-by-id, auth user
+> management, storage objects, and — found last and worst — **CSRF refusing the
+> primary server path** (§5.4), plus six routes missing from the generated
+> reference.
 
 ## 1. The gap
 
@@ -34,15 +37,24 @@ at one origin, and calls `/api/projects/<id>/...`:
 
 ```ts
 const cfb = (path, init) =>
-	fetch(`${process.env.CFBASE_URL}/api/projects/${process.env.CFBASE_PROJECT}${path}`, {
-		...init,
-		headers: { authorization: `Bearer ${process.env.CFBASE_SERVICE_KEY}`, ...init?.headers }
-	});
+	fetch(
+		`${process.env.CLOUDFLAREBASE_URL}/api/projects/${process.env.CLOUDFLAREBASE_PROJECT}${path}`,
+		{
+			...init,
+			headers: {
+				authorization: `Bearer ${process.env.CLOUDFLAREBASE_SERVICE_KEY}`,
+				'content-type': 'application/json',
+				...init?.headers
+			}
+		}
+	);
 
 await cfb('/db/admin/collections/posts/documents/' + id); // db
 await cfb('/admin/users'); // auth
 await cfb('/storage/admin/buckets/avatars/objects/' + key); // storage
 ```
+
+The explicit `content-type` in that helper is not decoration — see §5.4.
 
 That path is fully supported and fully documented, and everything below rests
 on it: an admin surface with no holes in it (§5), and a generated reference
@@ -99,9 +111,9 @@ Two more things the clients do that the raw path cannot:
   call, but "401 on everything" does not tell a developer they shipped an admin
   credential to a CDN. This says exactly that, at construction — and the error
   names the client they should have used instead.
-- **Refuse form content types before the request leaves** (§5.3's CSRF
-  wrinkle), with the reason, rather than a bare 403 from a layer the caller has
-  never heard of.
+- **Always set `content-type: application/json`**, which sounds trivial until
+  §5.4: `fetch` defaults a string body to `text/plain`, and that used to be a 403. The storage client additionally refuses form content types before the
+  request leaves, with the reason.
 
 Config resolves most-explicit-first — option, then a passed `env`, then the
 ambient process — matching the CLI's rule. `CLOUDFLAREBASE_SERVICE_KEY` is
@@ -235,38 +247,59 @@ proxy that buffers a 100 MB PUT reintroduces exactly the memory bomb the
 against the live e2e stack**: PUT streamed, bytes read back byte-identical,
 listing indexed, DELETE, then 404.
 
-#### The CSRF wrinkle, still open
+### 5.4 CSRF refused the primary server path
+
+Found while verifying §5.3, and initially mis-scoped as a storage-only wart.
+It was not.
 
 SvelteKit's CSRF check runs at the top of `internal_respond`, **before any
-hook**, so the console guard never sees the request. It forbids
+hook**, so the console guard never saw the request. It forbids
 POST/PUT/PATCH/DELETE whenever the content type is form-shaped —
 `text/plain`, `multipart/form-data`, `application/x-www-form-urlencoded` — and
 a MISSING origin counts as cross-site (`!request_origin` forbids outright, so
 no trusted-origins list can admit it).
 
-A service key sends no Origin by design. So uploading `text/plain` — a `.txt`,
-a `.csv`, a `.md` — answers 403 with `Cross-site PUT form submissions are
-forbidden`, before the key is ever examined. Every other content type works;
-`application/octet-stream` is the storage agent's own default.
+A service key sends no Origin by construction: the guard refuses the key if one
+is present. And **`fetch` defaults a string body to `text/plain;charset=UTF-8`
+— `JSON.stringify(...)` included**. So this, the most natural call a server can
+write and the one this document's own §2 example showed, answered 403 before
+the key was read:
+
+```ts
+await fetch(url, { method: 'POST', headers: { authorization }, body: JSON.stringify(body) });
+```
+
+Not an edge case, then — the primary documented path, failing with a message
+about form submissions that names nothing a caller would recognise. Storage was
+the more visible half only because there `text/plain` is legitimate CONTENT
+rather than a forgotten header.
 
 It is also invisible in development: the whole block sits behind
-`if (!__SVELTEKIT_DEV__)`, so `vite dev` never applies it. Only the built
-worker does, which is why this surfaced in e2e and would not have surfaced by
-hand.
+`if (!__SVELTEKIT_DEV__)`, so `vite dev` never applies it. Only the built worker
+does, which is why e2e caught it and hand-testing would not have.
 
-Two ways out, and the choice is a security decision rather than a technical
-one:
+**Fix (shipped): `csrf.checkOrigin` is off and re-implemented credential-aware
+as `csrfHandle` in `src/hooks.server.ts`**, first in the sequence to keep
+SvelteKit's ordering guarantee. It applies SvelteKit's exact rule and skips it
+in exactly one case: the request carries an `Authorization` header.
 
-1. **Leave it, document it.** Servers send a real content type or
-   `application/octet-stream`. Zero risk, but a wart on "just use fetch", and
-   S2's proxied multipart uploads would hit the same wall.
-2. **Turn `csrf.checkOrigin` off and re-implement the check in the guard**,
-   where it can be credential-aware: apply SvelteKit's exact rule to ambient
-   credentials (session cookies) and skip it for credentials a browser cannot
-   attach cross-origin (`cfbs_`, `cfbd_`, OIDC bearers — `Authorization` is not
-   CORS-safelisted, so those are structurally immune to CSRF). Correct, and
-   app-wide blast radius: get it wrong and the console's whole API is CSRF-able,
-   sign-in included. Not to be done casually or in passing.
+That relaxation is sound because CSRF depends on the browser supplying the
+credential BY ITSELF. Cookies do; `Authorization` does not — a browser never
+adds it, and a cross-origin fetch that sets one triggers a CORS preflight this
+app does not answer for untrusted origins. A request carrying a bearer cannot
+have been forged by a victim's browser, and an attacker who already knows the
+bearer has no use for CSRF.
+
+The two halves are pinned separately, because the relaxation is the dangerous
+one: `service-keys.api.spec.ts` proves a bearer write with `text/plain` now
+works (and that a `.txt` uploads), while `security.api.spec.ts` proves the
+cookie case is untouched — foreign-origin AND origin-less form writes still
+403 across all three content types, sign-in included, with a same-origin
+control so the check cannot pass by breaking the console's own forms.
+
+The origin-blanking in that spec is load-bearing, the same trap SK1 hit: the
+`api` project injects `origin: baseURL` into every context, so omitting the
+header tests the same-origin case and passes on nothing.
 
 ## 6. The reference gaps
 
