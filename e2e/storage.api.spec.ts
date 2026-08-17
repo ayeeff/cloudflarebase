@@ -914,13 +914,7 @@ test.describe('storage signed URLs (S2)', () => {
 test.describe('storage folder listing (S2)', () => {
 	const FOLDER_PROJECT = 'e2e-storage-folders';
 	const BUCKET = 'spec-folders';
-	const KEYS = [
-		'root.txt',
-		'docs/one.txt',
-		'docs/two.txt',
-		'docs/deep/three.txt',
-		'img/logo.png'
-	];
+	const KEYS = ['root.txt', 'docs/one.txt', 'docs/two.txt', 'docs/deep/three.txt', 'img/logo.png'];
 
 	function list(
 		request: APIRequestContext,
