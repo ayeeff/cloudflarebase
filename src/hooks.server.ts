@@ -133,6 +133,47 @@ const noindexHandle: Handle = async ({ event, resolve }) => {
 	return response;
 };
 
+/**
+ * The document is the pointer to the module graph, so it must never outlive a
+ * deploy.
+ *
+ * SvelteKit sets no cache headers on a rendered page and neither did this app,
+ * which left every HTML response with no freshness information AND no validator
+ * - the exact shape RFC 9111 lets any cache assign a lifetime it invented
+ * (heuristic freshness), with nothing to revalidate against. A browser that
+ * takes that license serves the same stale HTML back on an ordinary reload, and
+ * that HTML names hashed chunks the deploy already removed (why:
+ * `$lib/stale-build`) - which is why the failure survived reloading and only a
+ * wiped cache cleared it, the one thing no visitor thinks to do.
+ *
+ * The DOCUMENT was the only thing left bare: SvelteKit already answers its own
+ * `__data.json` payloads with `private, no-store`, and hashed assets are served
+ * by the asset binding without ever reaching this Worker - their immutable
+ * year-long max-age being correct precisely BECAUSE their URL changes whenever
+ * their content does. Redirects need nothing either: 302/303/307 are not in the
+ * set RFC 9111 allows a heuristic on, which 200 and 404 are.
+ *
+ * `no-cache` rather than `no-store`: the document must be REVALIDATED, not
+ * forbidden from being stored, and no-store would cost the back/forward cache
+ * too. `private` because every page here varies by session - the landing page
+ * swaps its CTA once signed in, console pages render the operator's own data -
+ * so no shared cache may ever hold one. Anything that already claimed the
+ * header keeps it.
+ */
+const documentCacheHandle: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+	const isDocument = (response.headers.get('content-type') ?? '').startsWith('text/html');
+
+	if (isDocument && !response.headers.has('cache-control')) {
+		try {
+			response.headers.set('cache-control', 'private, no-cache');
+		} catch {
+			// Nothing to do - an unmodifiable response is agent traffic, not a page.
+		}
+	}
+	return response;
+};
+
 const apiRateLimitHandle: Handle = async ({ event, resolve }) => {
 	const limited = event.url.pathname === '/api' || event.url.pathname.startsWith('/api/');
 	if (limited) {
@@ -681,6 +722,9 @@ export const handle = sequence(
 	// Outside the guard: its redirects and 401s are responses a crawler sees
 	// too, and they need the header as much as a rendered page does.
 	noindexHandle,
+	// Beside noindexHandle and for the same reason: a redirect or an error page
+	// is a document too, and a cached one keeps pointing at a dead module graph.
+	documentCacheHandle,
 	apiRateLimitHandle,
 	// Must precede applicationHandle: that one forwards /agents/* straight to
 	// the agent worker, so the guard is the last chance to reject.

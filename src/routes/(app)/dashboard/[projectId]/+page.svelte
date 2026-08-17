@@ -6,14 +6,11 @@
 	import {
 		ArrowRight,
 		Bot,
-		Clock,
 		CodeXml,
 		Database,
 		HardDrive,
 		KeyRound,
-		Radio,
-		ShieldCheck,
-		Zap
+		ShieldCheck
 	} from '@lucide/svelte';
 
 	let { data } = $props();
@@ -29,12 +26,11 @@
 		resolve('/(app)/dashboard/[projectId]/db', { projectId: data.projectId })
 	);
 
-	const comingSoon = [
-		{ label: 'Storage', icon: HardDrive, desc: 'R2 object storage with zero egress fees.' },
-		{ label: 'Functions', icon: Zap, desc: 'Workers with microsecond cold starts.' },
-		{ label: 'Realtime', icon: Radio, desc: 'WebSocket channels backed by Durable Objects.' },
-		{ label: 'Cron & Queues', icon: Clock, desc: 'Scheduled jobs and background work.' }
-	];
+	// Empty: everything this roadmap advertised has shipped. Functions and
+	// Storage are live primitives now, and Realtime shipped with the db
+	// gateway - a card promising a shipped feature is worse than no card. The
+	// section renders only when there is something to promise.
+	const comingSoon: { label: string; icon: typeof HardDrive; desc: string }[] = [];
 </script>
 
 <svelte:head>
@@ -192,28 +188,30 @@
 		</Card.Root>
 	</div>
 
-	<div>
-		<h2 class="text-sm font-semibold">Roadmap</h2>
-		<p class="text-xs text-muted-foreground">
-			Next primitives will follow the same one-agent-per-project architecture.
-		</p>
-	</div>
-	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-		{#each comingSoon as product (product.label)}
-			<Card.Root class="opacity-70">
-				<Card.Header>
-					<div class="flex items-center justify-between">
-						<div
-							class="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground"
-						>
-							<product.icon class="h-4.5 w-4.5" strokeWidth={1.8} />
+	{#if comingSoon.length}
+		<div>
+			<h2 class="text-sm font-semibold">Roadmap</h2>
+			<p class="text-xs text-muted-foreground">
+				Next primitives will follow the same one-agent-per-project architecture.
+			</p>
+		</div>
+		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+			{#each comingSoon as product (product.label)}
+				<Card.Root class="opacity-70">
+					<Card.Header>
+						<div class="flex items-center justify-between">
+							<div
+								class="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground"
+							>
+								<product.icon class="h-4.5 w-4.5" strokeWidth={1.8} />
+							</div>
+							<Badge variant="outline" class="text-muted-foreground/60">soon</Badge>
 						</div>
-						<Badge variant="outline" class="text-muted-foreground/60">soon</Badge>
-					</div>
-					<Card.Title class="pt-2">{product.label}</Card.Title>
-					<Card.Description>{product.desc}</Card.Description>
-				</Card.Header>
-			</Card.Root>
-		{/each}
-	</div>
+						<Card.Title class="pt-2">{product.label}</Card.Title>
+						<Card.Description>{product.desc}</Card.Description>
+					</Card.Header>
+				</Card.Root>
+			{/each}
+		</div>
+	{/if}
 </div>

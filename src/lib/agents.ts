@@ -822,11 +822,29 @@ export const storageObjectSchema = z
 	})
 	.meta({ id: 'StorageObject' });
 
+export const storageFolderSchema = z
+	.object({
+		prefix: z.string().describe('The folder prefix, INCLUDING its trailing slash.'),
+		objectCount: z.number().int().describe('Objects beneath it at any depth.')
+	})
+	.meta({ id: 'StorageFolder' });
+
 export const storageObjectPageSchema = z
 	.object({
 		objects: z.array(storageObjectSchema),
 		total: z.number().int(),
-		cursor: z.string().nullable().describe('Keyset cursor for the next page; null on the last one.')
+		cursor: z
+			.string()
+			.nullable()
+			.describe('Keyset cursor for the next page; null on the last one.'),
+		folders: z
+			.array(storageFolderSchema)
+			.optional()
+			.describe('Only present for a delimited (folder-view) listing.'),
+		foldersTruncated: z
+			.boolean()
+			.optional()
+			.describe('More folders exist than were returned - never silently dropped.')
 	})
 	.meta({ id: 'StorageObjectPage' });
 
