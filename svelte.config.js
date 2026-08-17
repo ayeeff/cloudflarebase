@@ -31,6 +31,16 @@ const config = {
 			// preflight we never answer. Turning this off without that handle
 			// would make the whole console API CSRF-able, sign-in included.
 			checkOrigin: false
+		},
+		version: {
+			// Deploys replace this Worker's asset manifest wholesale, so an open
+			// tab's hashed chunks 404 the moment a build changes them. Polling
+			// `_app/version.json` is what lets the tab NOTICE a deploy on its own,
+			// which flips `updated` and makes the root layout's guard hand the next
+			// navigation to the browser - before an import can fail rather than
+			// after. Five minutes: the request is a static asset the size of a
+			// tweet, and a console tab already polls its agents every five seconds.
+			pollInterval: 300_000
 		}
 	}
 };

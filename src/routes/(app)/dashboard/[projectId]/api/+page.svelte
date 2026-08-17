@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
+	import { page, updated } from '$app/state';
 	import { mode } from 'mode-watcher';
 	import { onMount } from 'svelte';
+	import { isStaleModuleError } from '$lib/stale-build';
 
 	/**
 	 * Live API reference for this project, rendered by Scalar from the OpenAPI
@@ -60,7 +61,18 @@
 					disabled: true
 				}
 			});
-		})();
+		})().catch(async (error: unknown) => {
+			// This page IS a dynamic import, so a tab that outlived a deploy renders
+			// nothing here at all (why: $lib/stale-build). A reference page holds no
+			// unsaved state, which makes reloading a free recovery - gated, like
+			// everywhere else, on a newer version actually being live, so a bundle
+			// that is genuinely broken reports instead of reloading forever.
+			if (!cancelled && isStaleModuleError(error) && (updated.current || (await updated.check()))) {
+				location.reload();
+				return;
+			}
+			throw error;
+		});
 
 		return () => {
 			cancelled = true;

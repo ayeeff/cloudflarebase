@@ -1,8 +1,8 @@
 <script lang="ts">
 	import './layout.css';
 	import { ModeWatcher } from 'mode-watcher';
-	import { onNavigate } from '$app/navigation';
-	import { page } from '$app/state';
+	import { beforeNavigate, onNavigate } from '$app/navigation';
+	import { page, updated } from '$app/state';
 
 	let { children } = $props();
 	const canonicalUrl = $derived(`https://cloudflarebase.com${page.url.pathname}`);
@@ -15,6 +15,17 @@
 	// login, entering or leaving the dashboard).
 	const inDashboard = (routeId: string | null | undefined): boolean =>
 		routeId?.startsWith('/(app)/dashboard') ?? false;
+
+	// A deploy replaces this Worker's whole asset manifest, so the hashed chunks
+	// an open tab still points at stop existing (docs in $lib/stale-build). Once
+	// the version poll notices a newer build, hand the next navigation to the
+	// browser instead of routing it client-side: a full page load fetches the
+	// new module graph, where a client navigation would import a 404.
+	beforeNavigate(({ willUnload, to }) => {
+		if (updated.current && !willUnload && to?.url) {
+			location.href = to.url.href;
+		}
+	});
 
 	onNavigate((navigation) => {
 		if (
