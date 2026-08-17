@@ -249,15 +249,20 @@ Deploy order stays auth → db → storage → hosting → web.
 Ordered cheapest-and-largest-effect first: §5.3 is console-only and restores a
 whole primitive, so it leads.
 
-- **A1 — storage objects.** The missing `[...key]` proxy (§5.3). No agent
-  change, no redeploy of anything but the web worker.
-- **A2 — db collection get/patch.** `adminGet`/`adminPatch` on `DbCollection`
-  and `DbTable`; GET/PATCH on the two item routes. Reachable through the
-  existing catch-all with no console change.
-- **A3 — auth user CRUD.** create/get/update/set-password admin routes, plus
-  a proxy file each.
-- **B — the reference.** Close the six gaps in §6, and add whatever A1–A3
-  introduce.
+- **A1 — storage objects. DONE.** The missing `[...key]` proxy (§5.3),
+  streaming. No agent change.
+- **A2 — db collection get/patch. DONE.** `adminGet`/`adminPatch` on
+  `DbCollection` and `DbTable`; GET/PATCH on the two item routes. Reachable
+  through the existing catch-all, which needed only a `PATCH` export —
+  SvelteKit routes by exported method, so an unexported verb 405s before the
+  agent is reached.
+- **A3 — auth user CRUD. DONE.** create/get/update/set-password over
+  `internalAdapter`, plus a proxy file each. `writePassword` is shared with the
+  local-dev reset hatch so the social-only (link) branch cannot drift.
+- **B — the reference. DONE.** The six gaps in §6, the verbs A1–A3 added, and
+  the thing that turned out to matter most: a `serviceKey` security scheme.
+  There was none, so the generated document — the artifact §3 leans the whole
+  no-package decision on — never mentioned that server-side access exists.
 - **C — the edges.** e2e driving the real flows against the live stack
   (positive controls first — the SK1 lesson), a Server tab snippet per agent
   showing the key in use, README, and the CLI's `key create --env-file`.
