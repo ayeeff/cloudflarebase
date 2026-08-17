@@ -619,9 +619,11 @@ and two additions the plan lacked: the operator admin mirror
 `STORAGE_SERVE_DOMAIN` worker route. `agents/storage/CLAUDE.md` records the
 as-built shape.
 
-**S2 — Product.** The generated signing secret + signed download URLs, the
-first item, **shipped 2026-08-17** (the section above records what the build
-corrected). What remains, in build order: **proxied multipart** (the
+**S2 — Product. SHIPPED 2026-08-17.** Signed download URLs, folder listing,
+the client SDK, proxied multipart, and the console pages all landed; the
+signed-URL section above records what the build corrected. What remains of the
+original S2 scope: **reconcile** and the **synthetic demo bucket**. The old
+build order read: **proxied multipart** (the
 credential-free transport, which is what pins the upload protocol);
 reconcile; folder listing; the console pages; the synthetic demo bucket
 (moving the demo refusal out of the DO); `storage.ui.spec.ts`. Exit gates: a
