@@ -1,5 +1,5 @@
 import { Agent, type AgentContext } from 'agents';
-import { and, asc, count, desc, eq, gt, lt, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, lt, or, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/durable-sqlite';
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import * as Sentry from '@sentry/cloudflare';
@@ -1847,16 +1847,19 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			.limit(limit + 1);
 
 		const page = rows.slice(0, limit);
-		// One provider lookup per page, not per user.
-		const ids = new Set(page.map((row) => row.id));
-		const accounts = ids.size
+		// One provider lookup per page, SCOPED to the page's ids - unscoped,
+		// this read the whole account table (which grows with every real
+		// user) into memory on every dashboard poll. Keep the narrow column
+		// projection: account.password holds credential hashes.
+		const ids = page.map((row) => row.id);
+		const accounts = ids.length
 			? await this.db
 					.select({ userId: schema.account.userId, providerId: schema.account.providerId })
 					.from(schema.account)
+					.where(inArray(schema.account.userId, ids))
 			: [];
 		const providersByUser = new Map<string, string[]>();
 		for (const row of accounts) {
-			if (!ids.has(row.userId)) continue;
 			providersByUser.set(row.userId, [...(providersByUser.get(row.userId) ?? []), row.providerId]);
 		}
 
