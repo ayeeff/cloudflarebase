@@ -3,6 +3,7 @@ import { authOpenApi } from './auth';
 import { consoleOpenApi } from './console';
 import { dbOpenApi } from './db';
 import { hostingOpenApi } from './hosting';
+import { storageOpenApi } from './storage';
 import type { AgentOpenApiModule } from './shared';
 
 /**
@@ -20,7 +21,13 @@ import type { AgentOpenApiModule } from './shared';
  * what z.toJSONSchema emits, so the component schemas need no translation.
  */
 
-const MODULES: AgentOpenApiModule[] = [authOpenApi, dbOpenApi, hostingOpenApi, consoleOpenApi];
+const MODULES: AgentOpenApiModule[] = [
+	authOpenApi,
+	dbOpenApi,
+	hostingOpenApi,
+	storageOpenApi,
+	consoleOpenApi
+];
 
 /** Named schemas that become components.schemas entries. */
 const registry = z.registry<{ id: string }>();
@@ -89,6 +96,23 @@ export function buildOpenApiDocument({ projectId, origin }: OpenApiOptions) {
 					in: 'cookie',
 					name: `cfb-${projectId}.session_token`,
 					description: 'Set automatically for same-origin browser clients.'
+				},
+				serviceKey: {
+					type: 'http',
+					scheme: 'bearer',
+					description:
+						'A project service key (`cfbs_...`), minted on the project Settings page and shown once. ' +
+						'The credential a SERVER holds when there is no signed-in user to relay - a cron, a queue ' +
+						'consumer, a webhook handler, a seed script. Admin-grade on this project’s data plane: ' +
+						'it bypasses access modes, document validators, and permission keys exactly as an operator ' +
+						'session does, and it is scoped to THIS project only - not to sibling branches, because for ' +
+						'data the branch is the isolation boundary. It cannot mint credentials, re-role operators, ' +
+						'deploy, or delete its own project. ' +
+						'**Any request carrying an `Origin` header is refused, whatever the key**, so a key pasted ' +
+						'into frontend code fails at your desk instead of shipping in a JS bundle; server HTTP ' +
+						'clients send no Origin. Note that SvelteKit refuses form content types (`text/plain`, ' +
+						'`multipart/form-data`, `application/x-www-form-urlencoded`) on originless writes - send ' +
+						'`application/json` or `application/octet-stream`.'
 				}
 			}
 		},

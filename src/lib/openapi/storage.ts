@@ -1,0 +1,445 @@
+import {
+	storageBucketConfigInputSchema,
+	storageBucketSchema,
+	storageBucketSummarySchema,
+	storageObjectPageSchema,
+	storageObjectSchema,
+	storageOverviewSchema
+} from '$lib/agents';
+import {
+	jsonBody,
+	jsonResponse,
+	OPERATOR_SECURITY,
+	UNAUTHORIZED,
+	type AgentOpenApiModule
+} from './shared';
+
+/**
+ * Storage agent module (docs/storage-agent-plan.md, S1). Only the
+ * operator-plane endpoints are path items: the OBJECT paths live on the
+ * direct agent base (`/agents/storage-agent/<pid>/buckets/...`, because
+ * bytes must not transit the JSON proxy, whose handlers buffer bodies) -
+ * outside this document's server URL, so they are described in the tag text
+ * rather than mis-addressed as path items.
+ */
+
+const STORAGE_TAG = 'Storage';
+
+const bucketParam = {
+	name: 'bucket',
+	in: 'path',
+	required: true,
+	description: 'Bucket name (2-63 lowercase letters, digits, dashes).',
+	schema: { type: 'string' }
+};
+
+export const storageOpenApi: AgentOpenApiModule = {
+	tags: [
+		{
+			name: STORAGE_TAG,
+			description: [
+				'Object storage on R2: buckets of files with per-bucket access modes',
+				'(`public` / `auth` / `owner`), verified against this project’s JWTs.',
+				'',
+				'**Object bytes do not travel through this API base.** Uploads,',
+				'downloads, and listings live on the direct agent path (the JSON proxy',
+				'buffers bodies, and 100 MB bodies must stream):',
+				'',
+				'- `GET|PUT|DELETE <origin>/agents/storage-agent/<projectId>/buckets/<bucket>/objects/<key>`',
+				'- `GET  <origin>/agents/storage-agent/<projectId>/buckets/<bucket>/objects?prefix=&cursor=&limit=`',
+				'',
+				'Uploads are single-shot up to 100 MB (`Content-Length` required;',
+				'multipart for larger files arrives with S2). `auth`/`owner` buckets',
+				'take the project JWT as a bearer token; on `owner` buckets the',
+				'writer’s subject is stamped on the object and scopes reads, deletes,',
+				'and overwrites. Every object response carries',
+				'`X-Content-Type-Options: nosniff`, and only raster images, audio,',
+				'video, `text/plain`, and PDF render inline; everything else downloads',
+				'as an attachment (HTML and SVG deliberately included - stored XSS).'
+			].join('\n')
+		}
+	],
+	schemas: [
+		storageOverviewSchema,
+		storageBucketSummarySchema,
+		storageBucketSchema,
+		storageBucketConfigInputSchema,
+		storageObjectSchema,
+		storageObjectPageSchema
+	],
+	paths: {
+		'/storage/overview': {
+			get: {
+				tags: [STORAGE_TAG],
+				summary: 'Storage overview',
+				description:
+					'Buckets, totals, caps, and whether this install can store bytes (the R2 binding).',
+				security: OPERATOR_SECURITY,
+				responses: {
+					'200': jsonResponse(storageOverviewSchema, 'The overview.'),
+					'401': UNAUTHORIZED
+				}
+			}
+		},
+		'/storage/admin/buckets': {
+			get: {
+				tags: [STORAGE_TAG],
+				summary: 'List buckets',
+				security: OPERATOR_SECURITY,
+				responses: {
+					'200': {
+						description: 'The buckets.',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										buckets: {
+											type: 'array',
+											items: { $ref: '#/components/schemas/StorageBucketSummary' }
+										}
+									},
+									required: ['buckets']
+								}
+							}
+						}
+					},
+					'401': UNAUTHORIZED
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}': {
+			get: {
+				tags: [STORAGE_TAG],
+				summary: 'Get a bucket',
+				security: OPERATOR_SECURITY,
+				parameters: [bucketParam],
+				responses: {
+					'200': jsonResponse(storageBucketSchema, 'The bucket and its full config.'),
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such bucket.' }
+				}
+			},
+			put: {
+				tags: [STORAGE_TAG],
+				summary: 'Create or update a bucket',
+				description:
+					'Creates the bucket on first PUT (defaults: `auth` read and write, listing not public). Omitted fields keep their stored value; explicit null clears.',
+				security: OPERATOR_SECURITY,
+				parameters: [bucketParam],
+				requestBody: jsonBody(storageBucketConfigInputSchema, 'The config to apply.'),
+				responses: {
+					'200': jsonResponse(storageBucketSchema, 'Updated.'),
+					'201': jsonResponse(storageBucketSchema, 'Created.'),
+					'400': { description: 'Invalid name or config.' },
+					'401': UNAUTHORIZED,
+					'403': { description: 'Demo projects have no storage.' },
+					'409': { description: 'Bucket limit reached.' }
+				}
+			},
+			delete: {
+				tags: [STORAGE_TAG],
+				summary: 'Delete a bucket',
+				description: 'Deletes the R2 objects first, then the index, then the bucket itself.',
+				security: OPERATOR_SECURITY,
+				parameters: [bucketParam],
+				responses: {
+					'200': { description: 'Deleted.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such bucket.' }
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}/objects': {
+			get: {
+				tags: [STORAGE_TAG],
+				summary: 'List objects',
+				description:
+					'Keyset paging by key, access modes bypassed. This is the operator mirror of the public ' +
+					'listing, and it ignores `publicListing`.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{
+						name: 'prefix',
+						in: 'query',
+						required: false,
+						schema: { type: 'string' },
+						description: 'Only keys starting with this prefix.'
+					},
+					{
+						name: 'delimiter',
+						in: 'query',
+						required: false,
+						schema: { type: 'string', enum: ['/'] },
+						description:
+							'Pass `/` for a folder view: only direct children are returned as objects, and ' +
+							'everything deeper is collapsed into a `folders` array of `{ prefix, objectCount }` ' +
+							'(the prefix keeps its trailing slash, and the count includes every depth beneath it). ' +
+							'Omit it to list the whole subtree flat. `/` is the only delimiter accepted.'
+					},
+					{
+						name: 'cursor',
+						in: 'query',
+						required: false,
+						schema: { type: 'string' },
+						description: 'Continuation from the previous page.'
+					},
+					{
+						name: 'limit',
+						in: 'query',
+						required: false,
+						schema: { type: 'integer', minimum: 1, maximum: 200 },
+						description: 'Objects per page. Defaults to 50, capped at 200.'
+					}
+				],
+				responses: {
+					'200': jsonResponse(storageObjectPageSchema, 'One page of objects.'),
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such bucket.' }
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}/signed-urls': {
+			post: {
+				tags: [STORAGE_TAG],
+				summary: 'Mint signed download URLs',
+				description:
+					'A signed URL is a plain URL that reads one object with no credential attached - what an ' +
+					'`<img src>` or a download link can hold for a private object. It BYPASSES the bucket read ' +
+					'mode at fetch time, which is the point, so minting requires exactly what reading requires; ' +
+					'on this operator mirror that means an operator session or a service key. ' +
+					'GET and HEAD only - uploads have their own protocol. ' +
+					'`expiresIn` is seconds, defaulting to 3600 and capped at 7 days. Pass `key` for one URL or ' +
+					'`keys` for up to 100; the batch form reports per-key failures instead of failing the call. ' +
+					'Rotating the signing secret (`POST /storage/admin/signing/rotate`) invalidates every URL ' +
+					'outstanding, which is how you revoke one early.',
+				security: OPERATOR_SECURITY,
+				parameters: [bucketParam],
+				requestBody: {
+					required: true,
+					content: {
+						'application/json': {
+							schema: {
+								type: 'object',
+								properties: {
+									key: { type: 'string', description: 'One object key.' },
+									keys: {
+										type: 'array',
+										items: { type: 'string' },
+										maxItems: 100,
+										description: 'Up to 100 keys. Mutually exclusive with `key`.'
+									},
+									method: {
+										type: 'string',
+										enum: ['GET', 'HEAD'],
+										description: 'The method the URL authorizes. Defaults to GET.'
+									},
+									expiresIn: {
+										type: 'integer',
+										minimum: 1,
+										description: 'Lifetime in seconds. Defaults to 3600, capped at 604800.'
+									}
+								}
+							}
+						}
+					}
+				},
+				responses: {
+					'200': { description: 'The signed URL, or one entry per requested key.' },
+					'400': { description: 'Neither or both of `key` and `keys`, or an invalid key.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such bucket, or no such object.' }
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}/uploads': {
+			post: {
+				tags: [STORAGE_TAG],
+				summary: 'Start a multipart upload',
+				description:
+					'For objects above the 100 MB single-PUT ceiling, up to 5 GB. Declare `{ key, size, ' +
+					'contentType }` and the server answers `{ uploadId, partSize, parts, mode }`. ' +
+					'**The part size is dictated here, never chosen by the client**: R2 requires every part ' +
+					'but the last to be identical, so a client that picks its own can produce an upload that ' +
+					'cannot complete. Every write rule (content-type allowlist, per-bucket size ceiling, ' +
+					'object count, owner) runs at this step against the DECLARED values, and `size` is ' +
+					'reserved against the project quota until the upload settles - so a refusal costs one ' +
+					'round trip rather than a transfer. `mode` is always `proxy` today; the field exists so ' +
+					'a future presigned transport does not change the client contract. ' +
+					'The `uploadId` is a signed envelope, not R2 id - it is bound to this project, bucket, ' +
+					'key and part size, and it expires in 25 hours. ' +
+					'Note the counterpart to `/objects/{key}` for anything under the ceiling; the SDK ' +
+					'escalates between them on its own.',
+				security: OPERATOR_SECURITY,
+				parameters: [bucketParam],
+				responses: {
+					'201': { description: 'The upload session.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such bucket.' },
+					'409': { description: 'The bucket is at its object ceiling.' },
+					'413': { description: 'Larger than the bucket ceiling, or over the project quota.' },
+					'415': { description: 'Content type not allowed on this bucket.' },
+					'429': { description: 'Too many uploads already in flight for this project.' }
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}/uploads/{uploadId}/parts/{partNumber}': {
+			put: {
+				tags: [STORAGE_TAG],
+				summary: 'Upload one part',
+				description:
+					'The raw bytes of part `partNumber` (1-based). Requires `Content-Length`, and the part ' +
+					'must be EXACTLY `partSize` bytes except the last - checked here rather than at ' +
+					'completion, where R2 would only report it after the whole upload had been spent. ' +
+					'Keep the returned `{ partNumber, etag }` for the complete call. Authorized entirely by ' +
+					'the upload envelope, so this costs no Durable Object hop. ' +
+					'**Send part bytes to the agent path directly** - this JSON proxy buffers bodies.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{ name: 'uploadId', in: 'path', required: true, schema: { type: 'string' } },
+					{
+						name: 'partNumber',
+						in: 'path',
+						required: true,
+						schema: { type: 'integer', minimum: 1, maximum: 10000 }
+					}
+				],
+				responses: {
+					'200': { description: 'The part number and its etag.' },
+					'400': { description: 'Wrong size for this part, or a part number beyond the upload.' },
+					'403': { description: 'Invalid upload id.' },
+					'410': { description: 'This upload has expired.' },
+					'411': { description: 'Content-Length is required.' }
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}/uploads/{uploadId}/complete': {
+			post: {
+				tags: [STORAGE_TAG],
+				summary: 'Complete a multipart upload',
+				description:
+					'Assemble the parts into the object. Pass `{ parts: [{ partNumber, etag }] }`. The real ' +
+					'size is verified against what the upload reserved; an object that overran is deleted ' +
+					'and the call answers 413, because a reservation that could be exceeded would be ' +
+					'decorative. On success the index row is committed before the response returns - the ' +
+					'same read-your-write contract a single PUT gives.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{ name: 'uploadId', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				responses: {
+					'200': { description: 'The stored object.' },
+					'400': { description: 'The parts were rejected by R2.' },
+					'403': { description: 'Invalid upload id.' },
+					'410': { description: 'This upload has expired.' },
+					'413': { description: 'The object is larger than the upload reserved.' }
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}/uploads/{uploadId}': {
+			delete: {
+				tags: [STORAGE_TAG],
+				summary: 'Abort a multipart upload',
+				description:
+					'Discard the parts and release the reservation. Abandoned uploads are swept after 24 ' +
+					'hours by age anyway, but until then their parts bill as storage and their bytes hold ' +
+					'project quota - so aborting explicitly is worth doing.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{ name: 'uploadId', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				responses: { '200': { description: 'Aborted.' }, '403': { description: 'Invalid id.' } }
+			}
+		},
+		'/storage/admin/signing/rotate': {
+			post: {
+				tags: [STORAGE_TAG],
+				summary: 'Rotate the signing secret',
+				description:
+					'Invalidates every outstanding signed URL for this project at once - the revocation lever. ' +
+					'Verifiers holding the old version refetch rather than refuse, so it takes effect on the ' +
+					'next request rather than at cache expiry. Refused when the deployment supplies ' +
+					'`STORAGE_SIGNING_SECRET`: that value is yours to rotate.',
+				security: OPERATOR_SECURITY,
+				responses: {
+					'200': { description: 'The new secret version, or why rotation was refused.' },
+					'401': UNAUTHORIZED
+				}
+			}
+		},
+		'/storage/admin/buckets/{bucket}/objects/{key}': {
+			get: {
+				tags: [STORAGE_TAG],
+				summary: 'Download an object',
+				description:
+					'Streams the bytes, access modes and owner checks bypassed. Range and conditional requests ' +
+					'reach R2. Every response carries `X-Content-Type-Options: nosniff`, and inline rendering is ' +
+					'an allowlist - HTML and SVG always download, because this path shares the console origin.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{
+						name: 'key',
+						in: 'path',
+						required: true,
+						description: 'Object key. Slashes are literal path segments.',
+						schema: { type: 'string' }
+					}
+				],
+				responses: {
+					'200': { description: 'The object bytes.' },
+					'206': { description: 'A range of the object.' },
+					'304': { description: 'Not modified.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such bucket or object.' }
+				}
+			},
+			put: {
+				tags: [STORAGE_TAG],
+				summary: 'Upload an object',
+				description:
+					'Streams the body straight to R2 - bytes never enter a Durable Object. `Content-Length` is ' +
+					'REQUIRED (411 without it): a chunked body would have to be buffered, and a 100 MB buffer in ' +
+					'a shared isolate is a memory bomb. Note that SvelteKit refuses form content types on ' +
+					'originless writes, so a service key should send `application/octet-stream` or a real media ' +
+					'type rather than `text/plain`.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{ name: 'key', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				requestBody: {
+					description: 'The object bytes.',
+					required: true,
+					content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } }
+				},
+				responses: {
+					'200': jsonResponse(storageObjectSchema, 'Stored.'),
+					'401': UNAUTHORIZED,
+					'403': { description: 'Demo projects have no storage.' },
+					'411': { description: 'Content-Length is required.' },
+					'413': { description: 'Object, bucket, or project ceiling exceeded.' }
+				}
+			},
+			delete: {
+				tags: [STORAGE_TAG],
+				summary: 'Delete an object',
+				description: 'Removes it from R2 first, then the index - a crash leaves no billed orphan.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					bucketParam,
+					{ name: 'key', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				responses: {
+					'200': { description: 'Deleted.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such bucket or object.' }
+				}
+			}
+		}
+	}
+};

@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: ${{ vars.NODE_VERSION }}
 
-      # Root postinstall also installs agents/auth dependencies.
+      # Root postinstall also installs every agent's dependencies.
       - name: Install dependencies
         run: npm ci
 

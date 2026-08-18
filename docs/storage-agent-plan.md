@@ -145,31 +145,57 @@ that anonymity.
   not by R2: keyset paging in key order with a `range of total` readout, the
   convention every other operator list in the console follows. `delimiter=/`
   collapses folders ("Folder listing" below).
-- **`POST signed-urls`** `{ key, method, ttl }` → a URL carrying
-  `?v=&exp=&sig=`, HMAC over `pid \0 bucket \0 key \0 method \0 exp`. Minting
-  is body-addressed, deliberately not `objects/<key...>/signed-url`: a suffix
-  route is ambiguous against an object whose key ends in `/signed-url`, and
-  route grammar must never be reachable from user data. Verified in the worker
-  with **zero DO hops**, which is what makes a private image work in a plain
-  `<img src>`. **S2 signs GET and HEAD only**: a signed URL BYPASSES the
-  bucket's read mode at serve time — that is its purpose — so minting requires
-  exactly what reading requires, and `owner` mode verifies ownership AT MINT
-  with one `head()`. Write capabilities stay out (Non-goals): uploads have a
-  protocol, and S2.5's presigning is the direct-to-R2 path. The admin mirror
-  mints too — the console's preview pane needs URLs for private buckets. The
-  signature covers project, bucket, key, method, and expiry but NOT the host,
-  so one URL verifies on the agent path and the serving domain alike; mint
-  builds on `STORAGE_SERVE_DOMAIN` when configured. The signing secret is a
-  manifest `secrets.generated` value — minted by `StorageAgent` on first
-  start, overridable by env var — versioned, and delivered to the worker
-  INSIDE the same cached parent answer the access check reads: one cache,
-  zero extra hops. `v=` names the version that signed, and a verifier holding
-  a different one refetches once before refusing, so rotation bites on the
-  next request rather than at cache expiry. Rotating invalidates every
-  outstanding URL — the intended revocation mechanism — and `ttl` is capped
-  at 7 days so no URL outlives the decision to mint it by much. Signed
+- **`POST signed-urls`** — **shipped 2026-08-17.** Body `{ key | keys[],
+method?, expiresIn? }` → a URL carrying `?v=&exp=&sig=`, HMAC over
+  `pid \0 bucket \0 key \0 method \0 exp`. Supabase's vocabulary on purpose
+  (`createSignedUrl(path, expiresIn)` and its batch sibling), so `expiresIn`
+  is seconds and the batch form reports per-key failures instead of failing
+  the call; a single-key request answers in the singular so the common case
+  needs no unwrapping. Minting is body-addressed, deliberately not
+  `objects/<key...>/signed-url`: a suffix route is ambiguous against an object
+  whose key ends in `/signed-url`, and route grammar must never be reachable
+  from user data. Verified in the worker with **zero DO hops**, which is what
+  makes a private image work in a plain `<img src>`. **GET and HEAD only**: a
+  signed URL BYPASSES the bucket's read mode at serve time — that is its
+  purpose — so minting requires exactly what reading requires, and `owner`
+  mode verifies ownership AT MINT with one `head()` per key. Write
+  capabilities stay out (Non-goals): uploads have a protocol, and S2.5's
+  presigning is the direct-to-R2 path. The admin mirror mints too — the
+  console's preview pane needs URLs for private buckets, and a service key
+  reaches it. A signature that is PRESENT must verify even on a public bucket,
+  so a tampered or expired one can never appear to work because the bucket
+  happened to be open. The signing secret is a manifest `secrets.generated`
+  value — minted by `StorageAgent` on first use, overridable by env var (which
+  pins it to reserved version 0) — versioned, and delivered to the worker
+  INSIDE the same cached parent answer the access check reads. Signed
   responses go out `Cache-Control: private, no-store` and never enter the
-  shared cache.
+  shared cache, whose key is path-only and would otherwise serve one signed
+  response to everyone.
+
+  Three things the build corrected in this design, each caught by running it
+  rather than reading it:
+
+  - **The URL is built on the origin the mint request arrived on, NOT on
+    `STORAGE_SERVE_DOMAIN`.** A serve domain being SET does not mean it is
+    ROUTED: production carries `cdn.cloudflarebase.com` with its worker route
+    commented out pending DNS, and the e2e stack points at a host reachable
+    only through the `x-cfbase-host` stand-in. Minting on it produced URLs
+    that resolved nowhere in both. The request's own origin cannot have that
+    failure mode, and since the host is not signed, a deployment that HAS
+    routed its serving domain can swap the hostname and the same query string
+    still verifies.
+  - **Minting bypasses the isolate cache and reads the parent directly.** The
+    zero-hop rule is about verifying, not minting. Signing from a cached
+    answer meant signing with a RETIRED secret for up to the cache TTL after
+    a rotation — so a URL minted for seven days would quietly stop working
+    within 30 seconds. A signature must never outlive the secret that made it.
+  - **Rotation is bounded-time revocation, not instant.** The refetch-on-
+    version-mismatch rescues a NEW URL against a stale isolate; it does
+    nothing for an OLD URL, which names the version that isolate still holds
+    and is served until the entry expires. That is the same bargain every
+    restrictive change here makes, and it is stated rather than hidden: when a
+    URL must die this second, delete the object. `expiresIn` is capped at 7
+    days so nothing outlives its minting decision by much.
 
 Public objects are cached in `caches.default` keyed by URL. Signed URLs are
 `Cache-Control: private` and never enter the shared cache. Writes and deletes
@@ -593,9 +619,12 @@ and two additions the plan lacked: the operator admin mirror
 `STORAGE_SERVE_DOMAIN` worker route. `agents/storage/CLAUDE.md` records the
 as-built shape.
 
-**S2 — Product.** What remains after the pull-forwards, in build order: the
-generated signing secret + signed download URLs first (smallest, and the
-multipart envelope wants the secret in place); **proxied multipart** (the
+**S2 — Product. SHIPPED IN FULL 2026-08-17.** Signed download URLs, folder
+listing, the client SDK, proxied multipart, the console pages, reconcile, and
+the synthetic demo bucket all landed; the signed-URL section above records the
+three things the build corrected in this plan. S2.5 (presigned transport) is
+the only storage work still outstanding. The old build order read:
+**proxied multipart** (the
 credential-free transport, which is what pins the upload protocol);
 reconcile; folder listing; the console pages; the synthetic demo bucket
 (moving the demo refusal out of the DO); `storage.ui.spec.ts`. Exit gates: a

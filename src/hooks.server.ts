@@ -11,6 +11,7 @@ import {
 	isDeployTokenSurface,
 	verifyDeployToken
 } from '$lib/server/hosting';
+import { isServiceKeySurface, verifyServiceKey } from '$lib/server/service-keys';
 import { getProjectOwnership, projectExists, type ProjectOwnership } from '$lib/server/registry';
 import { handleErrorWithSentry, initCloudflareSentryHandle, sentryHandle } from '@sentry/sveltekit';
 import { redirect } from '@sveltejs/kit';
@@ -125,6 +126,47 @@ const noindexHandle: Handle = async ({ event, resolve }) => {
 		// pages this actually targets do not, and a crawler never reaches those.
 		try {
 			response.headers.set('x-robots-tag', 'noindex, nofollow');
+		} catch {
+			// Nothing to do - an unmodifiable response is agent traffic, not a page.
+		}
+	}
+	return response;
+};
+
+/**
+ * The document is the pointer to the module graph, so it must never outlive a
+ * deploy.
+ *
+ * SvelteKit sets no cache headers on a rendered page and neither did this app,
+ * which left every HTML response with no freshness information AND no validator
+ * - the exact shape RFC 9111 lets any cache assign a lifetime it invented
+ * (heuristic freshness), with nothing to revalidate against. A browser that
+ * takes that license serves the same stale HTML back on an ordinary reload, and
+ * that HTML names hashed chunks the deploy already removed (why:
+ * `$lib/stale-build`) - which is why the failure survived reloading and only a
+ * wiped cache cleared it, the one thing no visitor thinks to do.
+ *
+ * The DOCUMENT was the only thing left bare: SvelteKit already answers its own
+ * `__data.json` payloads with `private, no-store`, and hashed assets are served
+ * by the asset binding without ever reaching this Worker - their immutable
+ * year-long max-age being correct precisely BECAUSE their URL changes whenever
+ * their content does. Redirects need nothing either: 302/303/307 are not in the
+ * set RFC 9111 allows a heuristic on, which 200 and 404 are.
+ *
+ * `no-cache` rather than `no-store`: the document must be REVALIDATED, not
+ * forbidden from being stored, and no-store would cost the back/forward cache
+ * too. `private` because every page here varies by session - the landing page
+ * swaps its CTA once signed in, console pages render the operator's own data -
+ * so no shared cache may ever hold one. Anything that already claimed the
+ * header keeps it.
+ */
+const documentCacheHandle: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+	const isDocument = (response.headers.get('content-type') ?? '').startsWith('text/html');
+
+	if (isDocument && !response.headers.has('cache-control')) {
+		try {
+			response.headers.set('cache-control', 'private, no-cache');
 		} catch {
 			// Nothing to do - an unmodifiable response is agent traffic, not a page.
 		}
@@ -349,6 +391,7 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 	event.locals.consoleIdentity = null;
 	event.locals.deployToken = null;
 	event.locals.githubDeploy = null;
+	event.locals.serviceKey = null;
 
 	const access = classifyAccess(event.url.pathname);
 	if (access.scope === 'open') {
@@ -407,6 +450,60 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 			}
 		}
 		return Response.json({ error: 'invalid deploy token' }, { status: 401 });
+	}
+
+	// Service keys (docs/service-keys-design.md, SK1): a `cfbs_` bearer is the
+	// credential a SERVER holds for the cases with no user to relay - crons,
+	// queue consumers, webhook handlers, seed scripts. It reaches the DATA
+	// plane of its own project and nothing else (isServiceKeySurface), so it
+	// can never mint another credential, re-role an operator, or delete the
+	// project it belongs to.
+	//
+	// It is ADMIN-GRADE on that surface, exactly like the operator session it
+	// stands in for: those agent routes already bypass access modes, validators,
+	// and permission keys, which is why this is an authentication change and not
+	// an authorization one.
+	//
+	// A REQUEST CARRYING AN `Origin` IS REFUSED, whatever the key. Server
+	// fetches send no Origin and browsers always do, so a key pasted into
+	// frontend code fails immediately at the developer's desk instead of
+	// shipping inside a JS bundle on a CDN. Same all-or-nothing contract as a
+	// deploy token: never a fall-through to session resolution.
+	const serviceBearer = event.request.headers
+		.get('authorization')
+		?.match(/^Bearer\s+(cfbs_[0-9a-f]{64})$/i)?.[1];
+	if (serviceBearer) {
+		// A PRESENT-but-empty Origin counts as absent, and only that: browsers
+		// cannot produce one (they send a real origin or the literal `null`,
+		// which is a non-empty string and stays refused), while HTTP clients
+		// that blank the header out can. `Origin` is a forbidden header name in
+		// browsers, so no page can strip its own.
+		const origin = event.request.headers.get('origin');
+		if (
+			access.projectId &&
+			!origin &&
+			isServiceKeySurface(event.url.pathname, access.projectId) &&
+			!isDemoProjectId(access.projectId)
+		) {
+			const grant = await verifyServiceKey(event.platform, serviceBearer.toLowerCase());
+			// Exact project, never a family: for data the branch IS the isolation
+			// boundary, and that is most of what branches are for.
+			//
+			// The registry row is checked too, even though the key already proves
+			// its project: keys are dropped with their project, so a key for a
+			// missing row means a delete fan-out that half-failed - and reaching
+			// an unregistered id is what mints a Durable Object by URL. Nearly
+			// free (projectExists memoizes positives per isolate), and `null` -
+			// the control plane being unreachable - proceeds, because the key was
+			// just verified against that same D1 a line ago.
+			if (grant && grant.projectId === access.projectId) {
+				if ((await projectExists(event.platform, access.projectId)) !== false) {
+					event.locals.serviceKey = grant;
+					return resolve(event);
+				}
+			}
+		}
+		return Response.json({ error: 'invalid service key' }, { status: 401 });
 	}
 
 	// GitHub Actions OIDC (docs/managed-service-design.md, Phase B): a
@@ -563,13 +660,71 @@ const cloudflareSentryHandle: Handle = async (input) => {
 	})(input);
 };
 
+/**
+ * CSRF, credential-aware - replacing SvelteKit's blanket check, which is
+ * disabled in svelte.config.js (`csrf.checkOrigin: false`) precisely so this
+ * can run instead. Never delete one without the other.
+ *
+ * THE ATTACK: a page on evil.com submits a form to this origin. The browser
+ * attaches the visitor's session cookie automatically, so the request runs as
+ * them. Browsers can only do this without asking permission for three content
+ * types - the ones a plain HTML form can produce - so refusing those on a
+ * cross-origin write is the defence, and it is exactly SvelteKit's rule.
+ *
+ * WHY IT NEEDED REPLACING: SvelteKit treats a MISSING Origin as cross-site.
+ * A service-key request has no Origin BY CONSTRUCTION - the guard refuses the
+ * key outright if one is present - and `fetch` defaults a string body to
+ * `text/plain;charset=UTF-8`, `JSON.stringify(...)` included. So the most
+ * natural call a server can write was refused 403 before the key was ever
+ * read, on the primary documented server path rather than some edge.
+ *
+ * WHY SKIPPING ON `Authorization` IS SOUND: CSRF works only because the
+ * browser supplies the credential by itself. It never adds an Authorization
+ * header on its own, and a cross-origin fetch that sets one triggers a CORS
+ * preflight this app does not answer for untrusted origins. So a request
+ * carrying one cannot have been forged by a victim's browser - and an
+ * attacker who already knows the bearer does not need CSRF at all. Cookie
+ * requests keep the full check.
+ *
+ * SvelteKit applies this before ANY hook, so the replacement sits first in the
+ * sequence - ahead of the rate limiter and the guard - to keep the same
+ * ordering guarantee.
+ */
+const FORM_CONTENT_TYPES = [
+	'application/x-www-form-urlencoded',
+	'multipart/form-data',
+	'text/plain'
+];
+
+const csrfHandle: Handle = async ({ event, resolve }) => {
+	const { request, url } = event;
+	const method = request.method;
+	if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
+		// A bearer is not ambient - see above. This is the only relaxation.
+		if (!request.headers.get('authorization')) {
+			const type = (request.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+			const origin = request.headers.get('origin');
+			if (FORM_CONTENT_TYPES.includes(type) && origin !== url.origin) {
+				return new Response('Cross-site form submissions are forbidden', { status: 403 });
+			}
+		}
+	}
+	return resolve(event);
+};
+
 export const handle = sequence(
 	platformHandle,
 	cloudflareSentryHandle,
 	sentryHandle(),
+	// Before everything: SvelteKit's own version of this ran ahead of every
+	// hook, and the ordering guarantee is part of the protection.
+	csrfHandle,
 	// Outside the guard: its redirects and 401s are responses a crawler sees
 	// too, and they need the header as much as a rendered page does.
 	noindexHandle,
+	// Beside noindexHandle and for the same reason: a redirect or an error page
+	// is a document too, and a cached one keeps pointing at a dead module graph.
+	documentCacheHandle,
 	apiRateLimitHandle,
 	// Must precede applicationHandle: that one forwards /agents/* straight to
 	// the agent worker, so the guard is the last chance to reject.

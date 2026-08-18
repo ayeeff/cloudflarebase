@@ -22,3 +22,21 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const response = await agent.fetch(agentUrl(url.origin, projectId, `/admin/users${suffix}`));
 	return toNativeResponse(response as unknown as Response);
 };
+
+/**
+ * Create an account with no sign-up flow (docs/admin-sdk-design.md 5.2) - the
+ * Admin-SDK operation this surface never had. Seeding, invite-first products,
+ * and migrations off another provider all need it, and none of them can use
+ * the end-user sign-up route, which obeys the project's sign-up mode and
+ * starts a verification mail. The agent validates the body.
+ */
+export const POST: RequestHandler = async ({ params, request, url, platform }) => {
+	const projectId = assertProjectId(params.projectId);
+	const agent = requireAuthAgent(platform);
+	const response = await agent.fetch(agentUrl(url.origin, projectId, '/admin/users'), {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: await request.arrayBuffer()
+	});
+	return toNativeResponse(response as unknown as Response);
+};

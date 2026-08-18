@@ -1,0 +1,70 @@
+/**
+ * Wrangler fragment for the Cloudflarebase storage agent.
+ *
+ * `cloudflarebase add storage` merges these keys into your wrangler.jsonc:
+ * comments survive, your existing values are never overwritten, and Durable
+ * Object migrations append under your next free tag.
+ *
+ * The `migrations` block below is a FRESH v1 declaring the StorageAgent and
+ * StorageBucket classes. Do not copy the tag history from the Cloudflarebase
+ * repository.
+ *
+ * R2 is an account-level opt-in behind a dashboard checkout, and this
+ * fragment deliberately does not assume you have it: with only these keys
+ * the agent deploys, bucket metadata works, and object requests answer 503
+ * pointing at the setup steps. To actually store bytes:
+ *
+ *   1. Enable R2 on your Cloudflare account (dashboard, one click + billing).
+ *   2. Add the binding here - wrangler provisions the bucket on deploy:
+ *        "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "<name>" }]
+ *
+ * NEVER enable r2.dev on that bucket and never attach a custom domain to it.
+ * Objects are served exclusively through this worker, which is what enforces
+ * the per-project key prefix and the per-bucket access modes - a bucket-level
+ * domain would serve every key raw. To serve objects on a dedicated hostname,
+ * route the DOMAIN AT THIS WORKER and set STORAGE_SERVE_DOMAIN instead.
+ */
+{
+	"migrations": [{ "new_sqlite_classes": ["StorageAgent", "StorageBucket"], "tag": "v1" }],
+	"durable_objects": {
+		"bindings": [
+			{ "class_name": "StorageAgent", "name": "StorageAgent" },
+			{ "class_name": "StorageBucket", "name": "StorageBucket" },
+		],
+	},
+	"vars": {
+		// Extra origins the object paths trust for CORS, comma-separated.
+		// Your deployment's own origin is always trusted.
+		"TRUSTED_ORIGINS": "",
+		/**
+		 * DELIBERATELY ABSENT: "EXPOSE_OPERATOR_API": "true".
+		 *
+		 * The agent's /admin and /overview routes read and write every bucket
+		 * whatever its access mode, and none of them authenticate a caller -
+		 * they are meant to sit behind a console that already has. On this
+		 * Worker, which serves your application on a public hostname, they
+		 * answer 404. The public /buckets/* object paths are unaffected: they
+		 * carry their own per-bucket access modes and JWT gate.
+		 *
+		 * Your own code is unaffected too: reach the agent through the
+		 * StorageAgent / StorageBucket Durable Object namespace bindings,
+		 * which no HTTP caller can.
+		 *
+		 * Set it ONLY on a Worker that has no public hostname of its own and
+		 * is fronted by something that authenticates operators.
+		 */
+		/**
+		 * OPTIONAL. Empty disables error reporting, which is the default and a
+		 * perfectly good place to stay - nothing else about the agent changes.
+		 *
+		 * To turn it on, put your DSN on the line below. It belongs here as a
+		 * var and not in `wrangler secret put`: a Sentry DSN is public by
+		 * design, and this line is uploaded as a plain_text binding of the same
+		 * name, so it would override a secret you set under it.
+		 */
+		"SENTRY_DSN": "",
+	},
+	"secrets": {
+		"required": [],
+	},
+}

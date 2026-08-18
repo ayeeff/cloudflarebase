@@ -1,0 +1,206 @@
+/**
+ * Synthetic demo storage (docs/storage-agent-plan.md, "Demo storage").
+ *
+ * Demo projects get ONE read-only bucket that never touches R2 at all: the
+ * bytes are in this module, the index rows are generated, and the timestamps
+ * are FIXED so listings are deterministic across every demo.
+ *
+ * Three things fall out of that shape, and they are why it won:
+ *
+ * - **No anonymous write surface**, so nobody parks phishing images on a
+ *   cfbase origin - which is what "no demo storage" was protecting against in
+ *   S1, at the cost of showing demo visitors a 403 where the product should be.
+ * - **No per-demo cost and no cleanup**: the TTL reaper has nothing to get
+ *   wrong, because nothing was ever stored.
+ * - **It works on an install with no R2 subscription at all**, so a fresh
+ *   self-hosted clone can open the Storage page and see the product rather
+ *   than a setup card.
+ *
+ * Mechanically this is a WORKER concern and never a Durable Object. S1 refused
+ * demo ids INSIDE `StorageAgent.onRequest`, which meant addressing the route
+ * provisioned the object first - a demo visit paid for a DO it only ever got a
+ * 403 from. Everything here answers before any stub is dialled, so a demo
+ * visit costs storage nothing: the console guard's zero-cost demo rule,
+ * extended down the stack.
+ *
+ * Every sample is inside the serve-time inline allowlist on purpose, so the
+ * demo exercises the real rendering path rather than a download-only corner.
+ */
+
+export const DEMO_BUCKET = 'samples';
+
+/** Fixed so two demos never disagree about a listing. */
+const DEMO_TIMESTAMP = '2026-01-15T09:00:00.000Z';
+
+interface DemoAsset {
+	key: string;
+	contentType: string;
+	body: Uint8Array;
+}
+
+/** A 1x1 PNG - the smallest thing that is genuinely an image to a browser. */
+const PNG = Uint8Array.from(
+	atob(
+		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+	),
+	(character) => character.charCodeAt(0),
+);
+
+function text(value: string): Uint8Array {
+	return new TextEncoder().encode(value);
+}
+
+/** A minimal but genuinely openable PDF. */
+const PDF = text(
+	'%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n' +
+		'2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n' +
+		'3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n' +
+		'trailer<</Root 1 0 R>>\n%%EOF\n',
+);
+
+const ASSETS: DemoAsset[] = [
+	{
+		key: 'readme.txt',
+		contentType: 'text/plain',
+		body: text(
+			'This is a read-only sample bucket.\n\n' +
+				'Nothing here touches R2 - the bytes ship inside the storage worker, so a\n' +
+				'demo project costs no storage and can never be written to. Create a real\n' +
+				'project to upload your own files.\n',
+		),
+	},
+	{ key: 'images/logo.png', contentType: 'image/png', body: PNG },
+	{ key: 'images/avatar.png', contentType: 'image/png', body: PNG },
+	{ key: 'images/thumbnails/small.png', contentType: 'image/png', body: PNG },
+	{ key: 'docs/guide.pdf', contentType: 'application/pdf', body: PDF },
+	{
+		key: 'docs/notes.txt',
+		contentType: 'text/plain',
+		body: text('Folders are virtual: a key is a flat string and the slashes are ours.\n'),
+	},
+];
+
+const BY_KEY = new Map(ASSETS.map((asset) => [asset.key, asset]));
+
+export interface DemoObjectSummary {
+	key: string;
+	size: number;
+	etag: string;
+	contentType: string;
+	owner: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+function summarize(asset: DemoAsset): DemoObjectSummary {
+	return {
+		key: asset.key,
+		size: asset.body.byteLength,
+		// Stable and derived, so conditional requests behave like real ones.
+		etag: `"demo-${asset.key.replace(/[^a-z0-9]/gi, '')}-${asset.body.byteLength}"`,
+		contentType: asset.contentType,
+		owner: '',
+		createdAt: DEMO_TIMESTAMP,
+		updatedAt: DEMO_TIMESTAMP,
+	};
+}
+
+export function demoBucketSummary() {
+	return {
+		name: DEMO_BUCKET,
+		read: 'public' as const,
+		write: 'auth' as const,
+		publicListing: true,
+		objectCount: ASSETS.length,
+		totalBytes: ASSETS.reduce((total, asset) => total + asset.body.byteLength, 0),
+		createdAt: DEMO_TIMESTAMP,
+	};
+}
+
+export function demoOverview(projectId: string) {
+	const bucket = demoBucketSummary();
+	return {
+		projectId,
+		provisionedAt: DEMO_TIMESTAMP,
+		buckets: [bucket],
+		totalObjects: bucket.objectCount,
+		totalBytes: bucket.totalBytes,
+		// True in the sense the page cares about: this project can serve bytes.
+		configured: true,
+		erasing: false,
+		demo: true,
+		caps: { maxBuckets: 1, maxObjectsPerBucket: ASSETS.length, maxProjectBytes: bucket.totalBytes },
+	};
+}
+
+export function demoObject(key: string): { summary: DemoObjectSummary; body: Uint8Array } | null {
+	const asset = BY_KEY.get(key);
+	return asset ? { summary: summarize(asset), body: asset.body } : null;
+}
+
+/**
+ * The same listing contract real buckets answer, generated from the manifest -
+ * flat by default, collapsed into folders with a delimiter. Paged too, so the
+ * console's Prev/Next behaves identically on a demo.
+ */
+export function demoList(options: {
+	prefix?: string;
+	delimiter?: '/';
+	cursor?: string;
+	limit: number;
+}): {
+	objects: DemoObjectSummary[];
+	total: number;
+	cursor: string | null;
+	folders?: { prefix: string; objectCount: number }[];
+	foldersTruncated?: boolean;
+} {
+	const prefix = options.prefix ?? '';
+	const matching = ASSETS.filter((asset) => asset.key.startsWith(prefix)).sort((a, b) =>
+		a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
+	);
+
+	if (!options.delimiter) {
+		const page = matching.filter((asset) => !options.cursor || asset.key > options.cursor);
+		const sliced = page.slice(0, options.limit);
+		return {
+			objects: sliced.map(summarize),
+			total: matching.length,
+			cursor: page.length > sliced.length ? sliced[sliced.length - 1].key : null,
+		};
+	}
+
+	const direct = matching.filter((asset) => !asset.key.slice(prefix.length).includes('/'));
+	const folders = new Map<string, number>();
+	for (const asset of matching) {
+		const rest = asset.key.slice(prefix.length);
+		const slash = rest.indexOf('/');
+		if (slash < 0) continue;
+		const folder = `${prefix}${rest.slice(0, slash + 1)}`;
+		folders.set(folder, (folders.get(folder) ?? 0) + 1);
+	}
+	const page = direct.filter((asset) => !options.cursor || asset.key > options.cursor);
+	const sliced = page.slice(0, options.limit);
+	return {
+		objects: sliced.map(summarize),
+		total: direct.length,
+		cursor: page.length > sliced.length ? sliced[sliced.length - 1].key : null,
+		folders: [...folders.entries()]
+			.sort(([a], [b]) => (a < b ? -1 : 1))
+			.map(([folderPrefix, objectCount]) => ({ prefix: folderPrefix, objectCount })),
+		foldersTruncated: false,
+	};
+}
+
+/** Every mutating surface on a demo answers the same way: the upsell, not a
+ * technical error. The hosting agent's precedent. */
+export function demoRefusal(): Response {
+	return Response.json(
+		{
+			error:
+				'demo projects get a read-only sample bucket - create a real project to upload your own files',
+			demo: true,
+		},
+		{ status: 403 },
+	);
+}

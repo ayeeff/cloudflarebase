@@ -42,3 +42,15 @@ export function jsonResponse(schema: NamedSchema, description: string) {
 export const UNAUTHORIZED = {
 	description: 'No operator session. The console guard rejects the request.'
 };
+
+/**
+ * Operator surfaces a SERVICE KEY also opens: an operator session or a
+ * `cfbs_` bearer, either one.
+ *
+ * Apply this only where `isServiceKeySurface` actually admits a key - the db
+ * and storage prefixes, the auth agent's `/admin/*`, `/overview`, and
+ * `/analytics`. Everything else (hosting, the registry, `/chat`) stays
+ * session-only, and saying otherwise in the reference would send people to
+ * write code against a 401.
+ */
+export const OPERATOR_SECURITY = [{ sessionCookie: [] }, { serviceKey: [] }];

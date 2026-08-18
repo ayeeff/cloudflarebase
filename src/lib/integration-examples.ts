@@ -10,7 +10,16 @@ export interface CodeExample {
  * `https://host/api/projects/<id>/auth`). Shared by the dashboard's
  * Integration tab and the landing page's API section.
  */
-export function buildIntegrationExamples(url: string): CodeExample[] {
+export function buildIntegrationExamples(
+	url: string,
+	options: { serviceKey?: boolean } = {}
+): CodeExample[] {
+	// `url` is `<origin>/api/projects/<id>/auth`; the admin client is
+	// constructed from the two parts, not the auth base.
+	const parts = url.match(/^(.*)\/api\/projects\/([^/]+)\/auth$/);
+	const origin = parts?.[1] ?? '';
+	const projectId = parts?.[2] ?? '<project-id>';
+
 	return [
 		{
 			id: 'js',
@@ -113,7 +122,57 @@ curl -i -X POST ${url}/sign-up/email \\
 
 curl ${url}/get-session \\
   -H 'authorization: Bearer <token>'`
-		}
+		},
+		// Opt-in: the landing page renders these for a DEMO project, and the
+		// guard refuses service keys on demo ids outright - advertising a
+		// credential that cannot work there would be worse than silence.
+		...(options.serviceKey
+			? [
+					{
+						id: 'service-key',
+						label: 'Admin service key',
+						lang: 'typescript',
+						code: `import { createAuthAdmin } from '@cloudflarebase/auth/admin';
+
+// SERVER ONLY. An admin service key can read, create, re-role, and delete
+// every account in this project. Mint one under Settings - it is shown once
+// and is scoped to THIS project, not to sibling branches.
+//
+// Two guards make a leak fail loudly rather than silently: this client
+// refuses to construct in a browser, and the API refuses ANY request carrying
+// an Origin header. A key pasted into frontend code breaks at your desk
+// instead of shipping inside a JS bundle.
+const auth = createAuthAdmin({
+	url: '${origin}',
+	projectId: '${projectId}',
+	key: process.env.CLOUDFLAREBASE_SERVICE_KEY
+});
+
+// Seed accounts, or migrate them off another provider: this bypasses the
+// project's sign-up mode AND email verification, which the public
+// sign-up route cannot do. emailVerified defaults to false - an account is
+// not verified merely because an admin created it.
+const user = await auth.createUser({
+	email: 'jane@example.com',
+	password: 'correct-horse-battery',
+	name: 'Jane'
+});
+await auth.setRole(user.id, 'admin');
+
+// Support flows and migrations: set a password with no emailed token. An
+// account with no credential (social-only) gains one. Existing sessions are
+// revoked unless you pass revokeSessions: false.
+await auth.setPassword(user.id, 'a-new-password');
+
+const { users } = await auth.listUsers({ limit: 50 });
+
+// url, projectId, and key fall back to CLOUDFLAREBASE_URL /
+// CLOUDFLAREBASE_PROJECT / CLOUDFLAREBASE_SERVICE_KEY, so on a server that
+// already has them this is just createAuthAdmin(). Inside a Worker there is
+// no global process - secrets arrive on env: createAuthAdmin({ env }).`
+					}
+				]
+			: [])
 	];
 }
 
@@ -218,6 +277,122 @@ ws.onopen = () => ws.send(JSON.stringify({
 ws.onmessage = (event) => console.log(JSON.parse(event.data));
 // -> { type: 'snapshot', ... } once, then
 // -> { type: 'change', kind: 'added' | 'modified' | 'removed', ... }`
+		}
+	];
+}
+
+/**
+ * Ready-to-paste storage snippets. `agentBase` is the project's storage AGENT
+ * base (`<origin>/agents/storage-agent/<projectId>`) - the public object paths
+ * live there, not under the console proxy, which mirrors the operator surface
+ * only. `bucket` is whichever bucket the operator is looking at, so the snippet
+ * is about their data rather than a placeholder they have to rename.
+ */
+export function buildStorageIntegrationExamples(
+	agentBase: string,
+	bucket: string,
+	options: { origin?: string; projectId?: string } = {}
+): CodeExample[] {
+	const parts = agentBase.match(/^(.*)\/agents\/storage-agent\/([^/]+)$/);
+	const origin = options.origin ?? parts?.[1] ?? '';
+	const projectId = options.projectId ?? parts?.[2] ?? '<project-id>';
+
+	return [
+		{
+			id: 'storage-sdk',
+			label: 'Client SDK',
+			lang: 'typescript',
+			code: `import { createStorageClient } from '@cloudflarebase/storage/client';
+
+const storage = createStorageClient({
+  baseUrl: '${agentBase}',
+  // auth/owner buckets: mint a project JWT from the auth agent.
+  // Public buckets need no token at all - return null.
+  getToken: async () =>
+    (await (await fetch('${origin}/api/projects/${projectId}/auth/token')).json()).token
+});
+
+const files = storage.from('${bucket}');
+
+// ONE call at every size: above 100 MB this escalates to multipart itself,
+// and the server dictates the part size, so no upload can fail at assembly.
+await files.upload('avatars/me.png', file, { contentType: file.type });
+
+// A private object your browser can just hold: a URL, not a fetch with a
+// bearer header, so it drops straight into <img src>.
+const { signedUrl } = await files.createSignedUrl('avatars/me.png', { expiresIn: 3600 });
+
+// Folders are virtual - derived from the flat keys at read time.
+const { objects, folders } = await files.list({ prefix: 'avatars/', folders: true });`
+		},
+		{
+			id: 'storage-signed',
+			label: 'Signed URLs',
+			lang: 'typescript',
+			code: `// A private object your browser can just hold: a URL, not a fetch with
+// a bearer header - so it drops straight into <img src> or <a href>.
+const { signedUrl } = await files.createSignedUrl('avatars/me.png', {
+  expiresIn: 3600 // seconds, 7 days max
+});
+
+// Many at once, one round trip:
+const urls = await files.createSignedUrls(
+  ['avatars/me.png', 'avatars/you.png'],
+  { expiresIn: 3600 }
+);
+
+// GET and HEAD only, and it dies with the object: rotation is bounded-time
+// revocation, so to kill a live URL immediately, delete what it points at.
+await files.remove(['avatars/me.png']);`
+		},
+		{
+			id: 'storage-rest',
+			label: 'REST',
+			lang: 'javascript',
+			code: `// No SDK. Content-Length is required (chunked bodies are refused with
+// 411): a proxy that buffers a 100 MB PUT is a memory bomb.
+await fetch('${agentBase}/buckets/${bucket}/objects/avatars/me.png', {
+  method: 'PUT',
+  headers: {
+    'content-type': 'image/png',
+    authorization: \`Bearer \${token}\` // omit on a public-write bucket
+  },
+  body: file
+});
+
+// Read it back - same URL, no body.
+const response = await fetch(
+  '${agentBase}/buckets/${bucket}/objects/avatars/me.png',
+  { headers: { authorization: \`Bearer \${token}\` } }
+);
+const blob = await response.blob();`
+		},
+		{
+			id: 'storage-server',
+			label: 'Admin service key',
+			lang: 'typescript',
+			code: `import { createStorageAdmin } from '@cloudflarebase/storage/admin';
+
+// SERVER ONLY. An admin service key is admin-grade over this project's
+// storage: it bypasses bucket access modes, exactly like the operator session
+// it stands in for. Mint one under Settings - it is shown once, and it is
+// scoped to THIS project, not to sibling branches.
+//
+// Two guards make a leak fail loudly instead of silently: this client refuses
+// to construct in a browser, and the API refuses ANY request carrying an
+// Origin header. A key pasted into frontend code breaks at your desk rather
+// than shipping inside a JS bundle.
+const storage = createStorageAdmin({
+  url: '${origin}',
+  projectId: '${projectId}',
+  key: process.env.CLOUDFLAREBASE_SERVICE_KEY // { env } inside a Worker
+});
+
+const files = storage.bucket('${bucket}');
+
+// Access modes and validators are bypassed - the Admin-SDK contract.
+await files.put('reports/2026-08.csv', csv, { contentType: 'text/csv' });
+const { objects } = await files.list({ prefix: 'reports/' });`
 		}
 	];
 }

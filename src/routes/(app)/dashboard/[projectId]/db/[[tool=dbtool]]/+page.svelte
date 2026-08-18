@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser, dev } from '$app/environment';
 	import { replaceState } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type {
 		DbAccessMode,
@@ -156,6 +157,15 @@
 	let docPage = $state(0);
 	let docPageCursors = $state<(string | undefined)[]>([undefined]);
 	let docsNextCursor = $state<string | null>(null);
+	// Loads can overlap: the 5s poll re-reads while a Prev/Next click fetches
+	// another page. Two rules keep them straight: only the NEWEST read may
+	// land (docsLoadSeq - a stale response resolving late would yank the
+	// operator off their page), and a poll re-reads the page the operator is
+	// heading FOR (docDesiredPage, set by navigation before its fetch lands),
+	// not the page last rendered - or a poll fired mid-navigation would
+	// supersede the click with a re-read of the page being left.
+	let docsLoadSeq = 0;
+	let docDesiredPage = 0;
 	const openCollectionDocs = $derived(
 		agentState.collections.find((entry) => entry.name === selected)?.docs ?? 0
 	);
@@ -164,6 +174,7 @@
 
 	function resetDocPaging() {
 		docPage = 0;
+		docDesiredPage = 0;
 		docPageCursors = [undefined];
 		docsNextCursor = null;
 	}
@@ -260,7 +271,9 @@
 		if (selected) void loadDocuments(selected);
 	}
 
-	async function loadDocuments(collection: string, page = docPage) {
+	async function loadDocuments(collection: string, page = docDesiredPage) {
+		docDesiredPage = page;
+		const seq = ++docsLoadSeq;
 		const cursor = docPageCursors[page];
 		try {
 			const response = await fetch(`/api/projects/${data.projectId}/db/admin/query`, {
@@ -273,9 +286,10 @@
 					query: { limit: DOC_PAGE_SIZE, ...(cursor ? { cursor } : {}) }
 				})
 			});
-			if (selected !== collection) return;
+			if (selected !== collection || seq !== docsLoadSeq) return;
 			const result = (await response.json().catch(() => null)) as
 				(DbQueryResult & { error?: string }) | null;
+			if (selected !== collection || seq !== docsLoadSeq) return;
 			if (!response.ok || !result) {
 				throw new Error(result?.error ?? `request failed (HTTP ${response.status})`);
 			}
@@ -300,10 +314,10 @@
 			}
 			docsError = null;
 		} catch (error) {
-			if (selected !== collection) return;
+			if (selected !== collection || seq !== docsLoadSeq) return;
 			docsError = error instanceof Error ? error.message : String(error);
 		} finally {
-			if (selected === collection) docsLoaded = true;
+			if (selected === collection && seq === docsLoadSeq) docsLoaded = true;
 		}
 	}
 
@@ -863,8 +877,11 @@
 			id: 'rest',
 			label: 'REST',
 			lang: 'bash',
-			code: `# A project JWT for the signed-in user (session cookie or bearer token)
-curl ${origin}/api/projects/${data.projectId}/auth/token
+			code: `# A project JWT for the SIGNED-IN USER. There is no ambient API key:
+# the caller's own session is what mints it - a cookie in a browser, or a
+# bearer session token anywhere else (what a server relays; see Server tab).
+curl ${origin}/api/projects/${data.projectId}/auth/token \\
+  -H 'authorization: Bearer <session-token>'
 
 # Create a document (owner comes from the token subject)
 curl -X POST ${dbBase}/collections/posts/documents \\
@@ -878,6 +895,10 @@ curl -X POST ${dbBase}/collections/posts/documents \\
 			lang: 'typescript',
 			code: `import { createDbClient } from '@cloudflarebase/db/client';
 
+// IN THE BROWSER. This fetch sends no Authorization header - it works
+// because the browser attaches the signed-in user's session cookie, so the
+// token you get back is THAT USER's. On a server there is no cookie jar and
+// no signed-in user, so this same call answers 401: see the Server tab.
 const db = createDbClient({
 	baseUrl: '${dbBase}',
 	getToken: async () => {
@@ -901,6 +922,70 @@ const unsubscribe = posts.subscribe(
 		onChange: (change, docs) => render(docs)
 	}
 );`
+		},
+		{
+			id: 'ssr',
+			label: 'Server (SSR)',
+			lang: 'typescript',
+			code: `import { createDbClient } from '@cloudflarebase/db/client';
+
+// ON A SERVER there is no ambient session, so you RELAY the identity the
+// user already sent you: /auth/token accepts the session cookie or a bearer
+// session token. You are not authenticating your server - you are acting as
+// that signed-in user, with exactly their access.
+export async function load({ request }) {
+	const db = createDbClient({
+		baseUrl: '${dbBase}',
+		getToken: async () => {
+			const response = await fetch('${origin}/api/projects/${data.projectId}/auth/token', {
+				headers: { cookie: request.headers.get('cookie') ?? '' }
+			});
+			if (!response.ok) return null; // not signed in - public data still reads
+			return (await response.json()).token;
+		}
+	});
+
+	return { posts: await db.collection('posts').query({ limit: 25 }) };
+}
+
+// NO USER AT ALL - a cron, a queue consumer, a Stripe webhook, a seed
+// script? There is nobody to relay, so none of the above applies. That is
+// what an admin service key is for: see the Admin service key tab.`
+		},
+		{
+			id: 'service-key',
+			label: 'Admin service key',
+			lang: 'typescript',
+			code: `import { createDbAdmin } from '@cloudflarebase/db/admin';
+
+// SERVER ONLY. An admin service key is admin-grade over this project's whole
+// data plane: it bypasses access modes, validators, and permission keys, exactly
+// like the operator session it stands in for. Mint one under Settings - it
+// is shown once, and it is scoped to THIS project, not to sibling branches.
+//
+// Two guards make a leak fail loudly instead of silently: this client
+// refuses to construct in a browser, and the API refuses ANY request
+// carrying an Origin header. A key pasted into frontend code breaks at your
+// desk rather than shipping inside a JS bundle on a CDN.
+const db = createDbAdmin({
+	url: '${origin}',
+	projectId: '${data.projectId}',
+	key: process.env.CLOUDFLAREBASE_SERVICE_KEY
+});
+
+// No user, no session, no token to relay.
+const post = await db.collection('posts').get(id);
+await db.collection('posts').patch(id, { votes: post.data.votes + 1 });
+
+const { docs } = await db.collection('posts').query({ limit: 25 });
+await db.table('orders').sql('SELECT * FROM orders WHERE id = ?', [id]);
+
+// url, projectId, and key all fall back to CLOUDFLAREBASE_URL /
+// CLOUDFLAREBASE_PROJECT / CLOUDFLAREBASE_SERVICE_KEY, so on a server that
+// already has them this is just createDbAdmin().
+//
+// Inside a Worker there is no global process - secrets arrive on env:
+//   createDbAdmin({ env });`
 		},
 		{
 			id: 'tables',
@@ -1880,7 +1965,13 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 						<CodeExamples examples={snippets} />
 						<p class="text-xs text-muted-foreground">
 							auth and owner collections need a project JWT from the auth agent; external browser
-							applications must be listed under the project's allowed origins.
+							applications must be listed under the project's allowed origins. An
+							<a
+								href={resolve('/(app)/dashboard/[projectId]/settings', {
+									projectId: data.projectId
+								})}
+								class="underline underline-offset-2 hover:text-foreground">admin service key</a
+							> is the server-side credential, minted under Settings - never shipped to a browser.
 						</p>
 					</Card.Content>
 				</Card.Root>

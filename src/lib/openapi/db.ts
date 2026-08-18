@@ -23,7 +23,13 @@ import {
 	dbValidatorSchema,
 	dbWriteRequestSchema
 } from '$lib/agents';
-import { jsonBody, jsonResponse, UNAUTHORIZED, type AgentOpenApiModule } from './shared';
+import {
+	jsonBody,
+	jsonResponse,
+	OPERATOR_SECURITY,
+	UNAUTHORIZED,
+	type AgentOpenApiModule
+} from './shared';
 
 /** The db agent's contribution to the per-project OpenAPI document. */
 
@@ -44,6 +50,14 @@ const tableParam = {
 	schema: { type: 'string', pattern: '^[a-z][a-z0-9_-]{0,63}$' },
 	description:
 		'Table name. Tables are schema-first: declare columns via the admin surface before writing.'
+};
+const viewParam = {
+	name: 'view',
+	in: 'path',
+	required: true,
+	schema: { type: 'string', pattern: '^[a-z][a-z0-9_-]{0,63}$' },
+	description:
+		'View name. Views are declared through the admin surface over 2-5 member tables; none of them may be owner-scoped.'
 };
 const docIdParam = { name: 'docId', in: 'path', required: true, schema: { type: 'string' } };
 const rowIdParam = { name: 'rowId', in: 'path', required: true, schema: { type: 'string' } };
@@ -360,11 +374,62 @@ export const dbOpenApi: AgentOpenApiModule = {
 				}
 			}
 		},
+		'/db/views/{view}/sql': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'Query a join view (SELECT across tables)',
+				description:
+					'A view is a read-only Durable Object that follows several tables’ change logs into one SQLite, so a plain SELECT can JOIN them - what single-table SQL cannot express. SELECT only (or a `batch` of them): there is no write surface, and writes go to the member table. ALWAYS requires a project JWT, and the token must additionally carry every member table’s read permission - a view can never launder access to a table you could not read directly. Reads are eventually consistent: a view may be up to ~3s behind its members, so two members read at different instants can show a join that was never a committed state. Use views for reporting reads, not for invariants.',
+				parameters: [viewParam],
+				security: PUBLIC_SECURITY,
+				requestBody: {
+					description: '`{ sql, params? }` or `{ batch: [{ sql, params? }, ...] }`.',
+					required: true,
+					content: {
+						'application/json': {
+							schema: {
+								type: 'object',
+								properties: {
+									sql: { type: 'string' },
+									params: { type: 'array', items: {} },
+									batch: {
+										type: 'array',
+										items: {
+											type: 'object',
+											required: ['sql'],
+											properties: { sql: { type: 'string' }, params: { type: 'array', items: {} } }
+										}
+									}
+								}
+							}
+						}
+					}
+				},
+				responses: {
+					'200': {
+						description:
+							'`{ success, result }` (or `batch: [...]`), each with `results`, `columns`, `raw`, and D1-style `meta`.'
+					},
+					'400': {
+						description: 'Statement refused by the gate (anything that writes), or a SQL error.'
+					},
+					'401': { description: 'A view requires a project token.' },
+					'403': {
+						description:
+							'Missing the view’s permission key, or a member table’s - including a member that has become owner-scoped.'
+					},
+					'404': { description: 'No such view - views are declared, never auto-created.' },
+					'503': {
+						description: 'A member has not finished replicating into the view yet; retry shortly.'
+					}
+				}
+			}
+		},
 		'/db/overview': {
 			get: {
 				tags: [DB_TAG],
 				summary: 'Collections, counts, and live state',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				responses: {
 					'200': jsonResponse(dbOverviewSchema, 'The project database overview.'),
 					'401': UNAUTHORIZED
@@ -375,7 +440,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 			put: {
 				tags: [DB_TAG],
 				summary: 'Create or configure a collection',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				requestBody: jsonBody(
 					dbCollectionConfigSchema,
@@ -390,7 +455,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 			delete: {
 				tags: [DB_TAG],
 				summary: 'Delete a collection and every document in it',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				responses: {
 					'200': { description: 'Collection erased.' },
@@ -404,7 +469,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				tags: [DB_TAG],
 				summary: 'Operator NDJSON export',
 				description: 'Streams every document regardless of access modes.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				responses: {
 					'200': { description: 'An application/x-ndjson stream of DbDocument lines.' },
@@ -419,7 +484,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				summary: 'Operator NDJSON import',
 				description:
 					'Upserts one document per NDJSON line (up to 1000 per request); exported lines round-trip with id, owner, and timestamps preserved. Validator rules do not apply - this is an operator surface.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				requestBody: {
 					description: 'application/x-ndjson document lines.',
@@ -441,7 +506,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				summary: 'Roll the collection back in time',
 				description:
 					'Point-in-time recovery over Durable Object SQLite bookmarks (30-day window). Live subscribers are disconnected and reconnect against the restored data; the response carries the bookmark that undoes the rollback. Unavailable in local development (501).',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				requestBody: jsonBody(dbRestoreRequestSchema, 'A timestamp or an exact bookmark.'),
 				responses: {
@@ -459,7 +524,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				summary: 'Replication status for one shard',
 				description:
 					'Replication defaults to auto: reads route to per-region replicas, writes answer with a `cfb-lsn` session bookmark, and sending it back as `cfb-min-lsn` guarantees read-your-writes. Replicas materialize in a region the first time it reads, so an empty list on an enabled shard just means no region has read yet.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				responses: {
 					'200': jsonResponse(dbReplicationStatusSchema, 'Change-log head and replica map.'),
@@ -474,7 +539,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				summary: 'List captured restore points',
 				description:
 					'Named PITR markers plus whether this environment supports recovery at all. Markers are conveniences - restore-by-timestamp reaches any moment in the 30-day window.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				responses: {
 					'200': jsonResponse(dbRestorePointsSchema, 'Support flag and captured points.'),
@@ -487,7 +552,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 			post: {
 				tags: [DB_TAG],
 				summary: 'Capture a restore point now',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				requestBody: {
 					description: 'Optional reason label.',
@@ -511,7 +576,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				tags: [DB_TAG],
 				summary: 'Resolve a time to its closest bookmark',
 				description: 'D1-restore-style: pass ?at=<ISO time> within the past 30 days.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [
 					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
 					{
@@ -536,7 +601,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				summary: 'Declare or alter a table',
 				description:
 					'The full desired schema in. Additive changes (new columns, index toggles) apply as DDL; destructive changes are refused with 400. Uniquifying a column holding duplicate data fails with 409.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				requestBody: jsonBody(dbTableConfigSchema, 'Access modes and the declared columns.'),
 				responses: {
@@ -550,7 +615,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 			delete: {
 				tags: [DB_TAG],
 				summary: 'Delete a table and every row in it',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				responses: {
 					'200': { description: 'Table erased.' },
@@ -559,13 +624,166 @@ export const dbOpenApi: AgentOpenApiModule = {
 				}
 			}
 		},
+		'/db/admin/collections/{name}/documents/{docId}': {
+			get: {
+				tags: [DB_TAG],
+				summary: 'Operator document read',
+				description:
+					'Reads one document regardless of access modes. `/db/admin/query` cannot stand in for this: ' +
+					'its `where.field` clauses compile to JSON paths into the document body, and `id` is a system ' +
+					'column no query can reach.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+					{ name: 'docId', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				responses: {
+					'200': jsonResponse(dbDocumentSchema, 'The document.'),
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such collection or document.' }
+				}
+			},
+			put: {
+				tags: [DB_TAG],
+				summary: 'Operator document upsert',
+				description:
+					'Replaces the document, bypassing access modes and validators (the Admin-SDK contract). ' +
+					'`?ifAbsent=1` refuses taken ids with 409.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+					{ name: 'docId', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				requestBody: jsonBody(dbWriteRequestSchema, 'The document data, wrapped as { data }.'),
+				responses: {
+					'200': jsonResponse(dbDocumentSchema, 'The written document.'),
+					'400': { description: 'Invalid document body.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such collection.' },
+					'409': { description: 'That id already exists (with ?ifAbsent=1).' }
+				}
+			},
+			patch: {
+				tags: [DB_TAG],
+				summary: 'Operator document merge',
+				description:
+					'Shallow-merges into the document body. Never CREATES - PUT is the upsert, and a PATCH that ' +
+					'invented a document from a partial body would write one missing every field the caller ' +
+					'assumed was already there.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+					{ name: 'docId', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				requestBody: jsonBody(dbWriteRequestSchema, 'The fields to merge, wrapped as { data }.'),
+				responses: {
+					'200': jsonResponse(dbDocumentSchema, 'The merged document.'),
+					'400': { description: 'Invalid document body.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such collection or document.' }
+				}
+			},
+			delete: {
+				tags: [DB_TAG],
+				summary: 'Operator document delete',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+					{ name: 'docId', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				responses: {
+					'200': { description: 'Deleted.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such collection or document.' }
+				}
+			}
+		},
+		'/db/admin/tables/{name}/sql': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'Operator single-table SQL',
+				description:
+					'The operator mirror of `/db/tables/{table}/sql`, and the one meaningful difference is the ' +
+					'credential: this one takes NO project JWT, so a service key reaches it where the public ' +
+					'route would refuse. Same statement gate - one SELECT/INSERT/UPDATE/DELETE or an atomic ' +
+					'`batch`, this table only, no DDL, no transactions - and owner-mode indifference.',
+				security: OPERATOR_SECURITY,
+				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
+				requestBody: {
+					description: '`{ sql, params? }` or `{ batch: [{ sql, params? }, ...] }`.',
+					required: true,
+					content: {
+						'application/json': {
+							schema: {
+								type: 'object',
+								properties: {
+									sql: { type: 'string' },
+									params: { type: 'array', items: {} },
+									batch: {
+										type: 'array',
+										items: {
+											type: 'object',
+											required: ['sql'],
+											properties: { sql: { type: 'string' }, params: { type: 'array', items: {} } }
+										}
+									}
+								}
+							}
+						}
+					}
+				},
+				responses: {
+					'200': { description: 'Statement results, with `columns` order and `raw` value arrays.' },
+					'400': { description: 'The statement gate refused it.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such table.' }
+				}
+			}
+		},
 		'/db/admin/tables/{name}/rows/{rowId}': {
+			get: {
+				tags: [DB_TAG],
+				summary: 'Operator row read',
+				description:
+					'The collection twin. Reachable through admin SQL too, but raw SQL is not an API for a ' +
+					'single-row read, and both kinds should need the same idiom.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+					{ name: 'rowId', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				responses: {
+					'200': jsonResponse(dbDocumentSchema, 'The row.'),
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such table or row.' }
+				}
+			},
+			patch: {
+				tags: [DB_TAG],
+				summary: 'Operator row merge',
+				description:
+					'Shallow-merges the named columns. Structure always validates (the schema IS the storage); ' +
+					'policy bounds are bypassed like document validators. Never creates.',
+				security: OPERATOR_SECURITY,
+				parameters: [
+					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
+					{ name: 'rowId', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				requestBody: jsonBody(dbWriteRequestSchema, 'The columns to merge, wrapped as { data }.'),
+				responses: {
+					'200': jsonResponse(dbDocumentSchema, 'The merged row.'),
+					'400': { description: 'The row failed the declared schema.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such table or row.' },
+					'409': { description: 'Unique-column conflict.' }
+				}
+			},
 			put: {
 				tags: [DB_TAG],
 				summary: 'Operator row upsert',
 				description:
 					'Structure (types, NOT NULL) always validates; policy rules (bounds, enum) are bypassed like document validators. `?ifAbsent=1` refuses taken ids with 409.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [
 					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
 					{ name: 'rowId', in: 'path', required: true, schema: { type: 'string' } }
@@ -582,7 +800,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 			delete: {
 				tags: [DB_TAG],
 				summary: 'Operator row delete',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [
 					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
 					{ name: 'rowId', in: 'path', required: true, schema: { type: 'string' } }
@@ -599,7 +817,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				tags: [DB_TAG],
 				summary: 'Operator NDJSON export (table)',
 				description: 'Streams every row regardless of access modes.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				responses: {
 					'200': { description: 'An application/x-ndjson stream of row lines.' },
@@ -614,7 +832,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				summary: 'Operator NDJSON import (table)',
 				description:
 					'Upserts one row per NDJSON line (up to 1000 per request); exported lines round-trip with id, owner, and timestamps preserved. Structure (types, NOT NULL) always validates; policy bounds do not apply - this is an operator surface.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				requestBody: {
 					description: 'application/x-ndjson row lines.',
@@ -636,7 +854,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				summary: 'Roll the table back in time',
 				description:
 					'Point-in-time recovery over Durable Object SQLite bookmarks (30-day window) - the collection contract on tables. Unavailable in local development (501).',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				requestBody: jsonBody(dbRestoreRequestSchema, 'A timestamp or an exact bookmark.'),
 				responses: {
@@ -652,7 +870,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 			get: {
 				tags: [DB_TAG],
 				summary: 'List captured restore points (table)',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				responses: {
 					'200': jsonResponse(dbRestorePointsSchema, 'Support flag and captured points.'),
@@ -665,7 +883,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 			post: {
 				tags: [DB_TAG],
 				summary: 'Capture a restore point now (table)',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }],
 				requestBody: {
 					description: 'Optional reason label.',
@@ -689,7 +907,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				tags: [DB_TAG],
 				summary: 'Resolve a time to its closest bookmark (table)',
 				description: 'D1-restore-style: pass ?at=<ISO time> within the past 30 days.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				parameters: [
 					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } },
 					{
@@ -713,7 +931,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				tags: [DB_TAG],
 				summary: 'Operator aggregate over any collection',
 				description: 'count/sum/avg regardless of access modes.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				requestBody: {
 					description: 'The collection and aggregate request.',
 					required: true,
@@ -743,7 +961,7 @@ export const dbOpenApi: AgentOpenApiModule = {
 				summary: 'Operator query over any collection or table',
 				description:
 					'Drives the dashboard browser; bypasses access modes. Name exactly one of `collection` or `table`.',
-				security: [{ sessionCookie: [] }],
+				security: OPERATOR_SECURITY,
 				requestBody: {
 					description: 'The collection or table, and the query.',
 					required: true,

@@ -6,12 +6,15 @@ import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import migrations from './migrations';
 import * as schema from './db/schema';
 import { collections, gateways, restorePoints } from './db/schema';
-import { pickSubscribeSibling } from './replication';
+import { pickSubscribeSibling, viewInstanceName } from './replication';
 import {
 	aggregateRequestSchema,
 	checkpointRequestSchema,
 	collectionModesSchema,
 	collectionNameSchema,
+	viewModesSchema,
+	viewNameSchema,
+	MAX_VIEWS_PER_PROJECT,
 	RESERVED_SHARD_TABLES,
 	demoTtlHoursSchema,
 	importLineSchema,
@@ -41,6 +44,8 @@ import {
 	type RestoreRequest,
 	type TableColumn,
 	type TableConfig,
+	type ViewConfig,
+	type ViewStatus,
 } from './schemas';
 import { drainUnusedBody } from './access';
 import { primaryLocation, type PrimaryLocation } from './colo';
@@ -59,6 +64,19 @@ import { planDdl, uniqueViolationColumn } from './table-schema';
 import type { DbCollection } from './collection';
 import type { DbGateway } from './gateway';
 import type { DbTable } from './table';
+import type { DbView } from './view';
+
+/**
+ * JOIN1 materializes ONE instance per view, not one per region.
+ *
+ * A view already stores a second copy of every member; per-region views would
+ * multiply that by the number of regions reading, and regional placement is a
+ * latency optimization for a feature whose first job is being correct. The
+ * NAME grammar still carries the region slot (`<pid>:v:<view>:<region>:<n>`),
+ * so adding real regions later is a routing change - not a data migration and
+ * not a new id shape on every member's feed.
+ */
+const VIEW_REGION = 'global';
 
 /**
  * The per-project coordinator: owns the authoritative collection registry
@@ -100,6 +118,44 @@ function parseStoredValidator(raw: string | null): CollectionValidator | null {
 	} catch {
 		return null;
 	}
+}
+
+/** View rows store their member names as JSON text; unreadable = []. */
+function parseStoredMembers(raw: string | null): string[] {
+	if (!raw) return [];
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		return Array.isArray(parsed) ? parsed.filter((entry) => typeof entry === 'string') : [];
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * Why a table may not sit in a view - checked when the view is declared AND
+ * whenever a member is reconfigured, since either side can break the pairing.
+ *
+ * `owner` mode is the one that matters. Row ownership does not survive a
+ * join: `todos JOIN users` over owner-scoped todos returns the `users` rows
+ * selected by OTHER owners' todos, and the general fix is a row-level
+ * security engine, which this is not. Refusing at both edges is the whole
+ * mitigation, so the message has to say why rather than just say no.
+ */
+function viewMemberRefusal(
+	member: string,
+	readAccess: string,
+	replication: 'off' | 'auto',
+): string | null {
+	if (readAccess === 'owner') {
+		return (
+			`"${member}" is owner-scoped, so it cannot be a view member - row ownership ` +
+			`does not survive a join, and the join would expose other owners' rows`
+		);
+	}
+	if (replication !== 'auto') {
+		return `"${member}" has replication off - a view follows its members' change logs`;
+	}
+	return null;
 }
 
 /** Table rows store the declared columns as JSON text; unreadable = []. */
@@ -145,7 +201,10 @@ export interface DbActivityEvent {
 		| 'table.deleted'
 		| 'table.restored'
 		| 'rows.changed'
-		| 'rows.imported';
+		| 'rows.imported'
+		| 'view.created'
+		| 'view.configured'
+		| 'view.deleted';
 	message: string;
 	at: string;
 }
@@ -172,12 +231,21 @@ export interface DbTableSummary {
 	rows: number;
 }
 
+export interface DbViewSummary {
+	name: string;
+	members: string[];
+	readPermission: string | null;
+}
+
 export interface DbAgentState {
 	projectId: string;
 	provisionedAt: string | null;
 	allowedOrigins: string[];
 	collections: DbCollectionSummary[];
 	tables: DbTableSummary[];
+	/** Optional: state persisted before JOIN1 has no views key, and a stored
+	 * state must never fail to parse because a later version added a field. */
+	views?: DbViewSummary[];
 	totalDocs: number;
 	totalRows: number;
 	/** Bumped on any reported change; dashboards refetch when it moves. */
@@ -454,7 +522,13 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	 */
 	async destroy(): Promise<void> {
 		const rows = await this.db.select().from(collections).orderBy(asc(collections.name));
-		for (const row of rows) {
+		// VIEWS FIRST. A view holds copies of its members' rows, so a member
+		// erased ahead of it would leave those rows readable through the view
+		// until the view's own erase landed - and if that erase failed, forever.
+		for (const row of rows.filter((entry) => entry.kind === 'view')) {
+			await this.destroyChild('view', row.name);
+		}
+		for (const row of rows.filter((entry) => entry.kind !== 'view')) {
 			await this.destroyChild(row.kind === 'table' ? 'table' : 'collection', row.name);
 		}
 		// Gateways hold only routing rows, but they are project-derived state:
@@ -606,6 +680,14 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		}
 		if (table && request.method === 'DELETE') {
 			return this.deleteTable(decodeURIComponent(table[1]));
+		}
+
+		const view = subPath.match(/^\/admin\/views\/([^/]+)$/);
+		if (view) {
+			const name = decodeURIComponent(view[1]);
+			if (request.method === 'PUT') return this.configureView(request, name);
+			if (request.method === 'DELETE') return this.deleteView(name);
+			if (request.method === 'GET') return this.adminViewStatus(name);
 		}
 
 		return Response.json({ error: 'not found' }, { status: 404 });
@@ -1242,6 +1324,28 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			}
 			return Response.json(result);
 		}
+		// GET and PATCH landed with the server-side service path
+		// (docs/admin-sdk-design.md 5.1): until then this route was PUT and
+		// DELETE only, so a service key could write a document and never read it
+		// back - /admin/query cannot filter on `id` at all.
+		if (request.method === 'GET') {
+			const found = (await child.adminGet(docId)) as unknown as Awaited<
+				ReturnType<DbCollection['adminGet']>
+			>;
+			if (!found) return Response.json({ error: 'no such document' }, { status: 404 });
+			return Response.json(found);
+		}
+		if (request.method === 'PATCH') {
+			const data = (await request.json().catch(() => null)) as { data?: unknown } | null;
+			if (!data || typeof data.data !== 'object' || data.data === null) {
+				return Response.json({ error: 'invalid document body' }, { status: 400 });
+			}
+			const merged = (await child.adminPatch(docId, data.data)) as unknown as Awaited<
+				ReturnType<DbCollection['adminPatch']>
+			>;
+			if (!merged) return Response.json({ error: 'no such document' }, { status: 404 });
+			return Response.json(merged);
+		}
 		if (request.method === 'DELETE') {
 			const deleted = await child.adminDelete(docId);
 			if (!deleted) return Response.json({ error: 'no such document' }, { status: 404 });
@@ -1399,6 +1503,30 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			if (!plan.ok) return Response.json({ error: plan.reason }, { status: 400 });
 		}
 
+		// A member can break its own pairing with a view - turning owner-scoped
+		// or switching replication off would leave a view reading rows it must
+		// not, or following a feed that no longer exists. Refuse the CHANGE
+		// rather than silently breaking the view (the view re-checks at read
+		// time too, since a config it holds always comes from the member's feed).
+		const covering = await this.viewsCovering(name);
+		if (covering.length) {
+			const denied = viewMemberRefusal(
+				name,
+				modes.data.readAccess,
+				modes.data.replication ?? this.shardReplication(existing ?? { replication: 'auto' }),
+			);
+			if (denied) {
+				return Response.json(
+					{
+						error:
+							`${denied} (member of view ` +
+							`${covering.map((view) => `"${view.name}"`).join(', ')})`,
+					},
+					{ status: 409 },
+				);
+			}
+		}
+
 		const patch: Partial<typeof collections.$inferInsert> = {
 			readAccess: modes.data.readAccess,
 			writeAccess: modes.data.writeAccess,
@@ -1468,9 +1596,142 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		});
 	}
 
+	/**
+	 * `PUT /admin/views/:name` - declare a join view (JOIN1).
+	 *
+	 * Every constraint here is checked BEFORE the row is written, because a
+	 * view that cannot legally exist must never be pushed to a child: the
+	 * child would bootstrap from members it should not be reading.
+	 */
+	private async configureView(request: Request, name: string): Promise<Response> {
+		if (!viewNameSchema.safeParse(name).success || RESERVED_SHARD_TABLES.has(name)) {
+			return Response.json(
+				{ error: 'view names are lowercase letters, digits, _ and - (max 64 chars)' },
+				{ status: 400 },
+			);
+		}
+		// A view is derived reporting state; a demo project is throwaway state
+		// with a 200-row ceiling per table. Copying it for joins is pure cost.
+		if (this.isEphemeral) {
+			return Response.json({ error: 'demo projects have no views' }, { status: 403 });
+		}
+		const body = viewModesSchema.safeParse(await request.json().catch(() => ({})));
+		if (!body.success) {
+			return Response.json({ error: 'invalid view', issues: body.error.issues }, { status: 400 });
+		}
+		const members = body.data.members;
+		if (new Set(members).size !== members.length) {
+			return Response.json({ error: 'a table can only be listed once' }, { status: 400 });
+		}
+		if (members.includes(name)) {
+			return Response.json({ error: 'a view cannot be its own member' }, { status: 400 });
+		}
+
+		const existing = await this.viewRow(name);
+		if (!existing) {
+			const [clash] = await this.db
+				.select()
+				.from(collections)
+				.where(eq(collections.name, name))
+				.limit(1);
+			if (clash) {
+				return Response.json({ error: `"${name}" is already a ${clash.kind}` }, { status: 409 });
+			}
+			const views = await this.db.select().from(collections).where(eq(collections.kind, 'view'));
+			if (views.length >= MAX_VIEWS_PER_PROJECT) {
+				return Response.json(
+					{ error: `projects are capped at ${MAX_VIEWS_PER_PROJECT} views` },
+					{ status: 429 },
+				);
+			}
+		}
+
+		for (const member of members) {
+			const row = await this.tableRow(member);
+			if (!row) {
+				return Response.json({ error: `"${member}" is not a declared table` }, { status: 400 });
+			}
+			const denied = viewMemberRefusal(member, row.readAccess, this.shardReplication(row));
+			if (denied) return Response.json({ error: denied }, { status: 400 });
+		}
+
+		const patch: Partial<typeof collections.$inferInsert> = {
+			members: JSON.stringify(members),
+		};
+		if (body.data.readPermission !== undefined) patch.readPermission = body.data.readPermission;
+
+		const [row] = await this.db
+			.insert(collections)
+			.values({
+				name,
+				kind: 'view',
+				readAccess: 'auth',
+				writeAccess: 'auth',
+				readPermission: null,
+				writePermission: null,
+				validator: null,
+				columns: null,
+				replication: 'off',
+				...patch,
+				createdAt: new Date(),
+			})
+			.onConflictDoUpdate({ target: collections.name, set: patch })
+			.returning();
+
+		await this.viewStub(name).configure(await this.buildViewConfig(row));
+		this.writeDbEvent(existing ? 'view.configured' : 'view.created');
+		this.recordEvent(
+			existing ? 'view.configured' : 'view.created',
+			`view "${name}" ${existing ? 'reconfigured' : 'created'} over ${members.join(', ')}`,
+		);
+		await this.syncCollectionsState();
+		return Response.json(
+			{ name, members, readPermission: row.readPermission },
+			{
+				status: existing ? 200 : 201,
+			},
+		);
+	}
+
+	private async deleteView(name: string): Promise<Response> {
+		const row = await this.viewRow(name);
+		if (!row) return Response.json({ error: 'no such view' }, { status: 404 });
+
+		await this.destroyChild('view', name);
+		await this.db.delete(collections).where(eq(collections.name, name));
+
+		this.writeDbEvent('view.deleted');
+		this.recordEvent('view.deleted', `view "${name}" deleted`);
+		await this.syncCollectionsState();
+		return Response.json({ deleted: true });
+	}
+
+	/** `GET /admin/views/:name` - per-member follow state, the multi-source
+	 * answer to the replica map. */
+	private async adminViewStatus(name: string): Promise<Response> {
+		const row = await this.viewRow(name);
+		if (!row) return Response.json({ error: 'no such view' }, { status: 404 });
+		const status = (await this.viewStub(name).viewStatus()) as unknown as ViewStatus;
+		return Response.json(status);
+	}
+
 	private async deleteTable(name: string): Promise<Response> {
 		const row = await this.tableRow(name);
 		if (!row) return Response.json({ error: 'no such table' }, { status: 404 });
+		// A view missing a member is not degraded, it is invalid - and leaving
+		// one serving joins over a table the operator just deleted is the wrong
+		// failure. Naming the view makes the fix obvious.
+		const covering = await this.viewsCovering(name);
+		if (covering.length) {
+			return Response.json(
+				{
+					error:
+						`"${name}" is a member of view ${covering.map((view) => `"${view.name}"`).join(', ')}` +
+						` - delete the view first`,
+				},
+				{ status: 409 },
+			);
+		}
 
 		// Child first, registry second - the collection erase discipline.
 		await this.destroyChild('table', name);
@@ -1535,6 +1796,44 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			}
 			return Response.json(result);
 		}
+		// The collection twin's GET/PATCH, so both kinds read and merge through
+		// the same idiom (docs/admin-sdk-design.md 5.1). Tables could already do
+		// this via /admin/tables/:name/sql; raw SQL is not an API for a
+		// single-row read.
+		if (request.method === 'GET') {
+			const found = (await child.adminGet(rowId)) as unknown as Awaited<
+				ReturnType<DbTable['adminGet']>
+			>;
+			if (!found) return Response.json({ error: 'no such row' }, { status: 404 });
+			return Response.json(found);
+		}
+		if (request.method === 'PATCH') {
+			const data = (await request.json().catch(() => null)) as { data?: unknown } | null;
+			if (!data || typeof data.data !== 'object' || data.data === null) {
+				return Response.json({ error: 'invalid row body' }, { status: 400 });
+			}
+			let merged: Awaited<ReturnType<DbTable['adminPatch']>>;
+			try {
+				merged = (await child.adminPatch(rowId, data.data)) as unknown as Awaited<
+					ReturnType<DbTable['adminPatch']>
+				>;
+			} catch (error) {
+				const column = uniqueViolationColumn(error);
+				if (!column) throw error;
+				return Response.json(
+					{ error: `a row with that ${column} already exists (unique column)` },
+					{ status: 409 },
+				);
+			}
+			if (!merged) return Response.json({ error: 'no such row' }, { status: 404 });
+			if (typeof merged === 'object' && 'invalid' in merged) {
+				return Response.json(
+					{ error: 'row failed validation', issues: merged.invalid },
+					{ status: 400 },
+				);
+			}
+			return Response.json(merged);
+		}
 		if (request.method === 'DELETE') {
 			const deleted = await child.adminDelete(rowId);
 			if (!deleted) return Response.json({ error: 'no such row' }, { status: 404 });
@@ -1586,6 +1885,43 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		return namespace.get(namespace.idFromName(`${this.name}:${name}`));
 	}
 
+	private viewStub(name: string) {
+		const namespace = this.env.DbView as unknown as DurableObjectNamespace<DbView>;
+		return namespace.get(namespace.idFromName(viewInstanceName(this.name, name, VIEW_REGION, 1)));
+	}
+
+	private async viewRow(name: string) {
+		const [row] = await this.db
+			.select()
+			.from(collections)
+			.where(and(eq(collections.name, name), eq(collections.kind, 'view')))
+			.limit(1);
+		return row ?? null;
+	}
+
+	/** Every view that lists `table` as a member. Membership lives on the
+	 * registry, so this is the parent's alone to answer - which is exactly why
+	 * the parent, not a member primary, owns a view's lifecycle. */
+	private async viewsCovering(table: string) {
+		const rows = await this.db.select().from(collections).where(eq(collections.kind, 'view'));
+		return rows.filter((row) => parseStoredMembers(row.members).includes(table));
+	}
+
+	private async buildViewConfig(row: typeof collections.$inferSelect): Promise<ViewConfig> {
+		const version = ((await this.ctx.storage.get<number>('config-version')) ?? 0) + 1;
+		await this.ctx.storage.put('config-version', version);
+		return {
+			kind: 'view',
+			projectId: this.name,
+			view: row.name,
+			members: parseStoredMembers(row.members),
+			readPermission: row.readPermission,
+			allowedOrigins: this.state.allowedOrigins,
+			demo: this.isEphemeral,
+			configVersion: version,
+		};
+	}
+
 	/**
 	 * Destroy one child of either kind, tolerating the abort-vs-reply race:
 	 * an abort-reset error is verified against a fresh instance instead of
@@ -1593,7 +1929,18 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	 * genuine failure rethrows, and the registry row survives so the operator
 	 * can retry; nothing may orphan a Durable Object holding data.
 	 */
-	private async destroyChild(kind: 'collection' | 'table', name: string): Promise<void> {
+	private async destroyChild(kind: 'collection' | 'table' | 'view', name: string): Promise<void> {
+		// A view holds only DERIVED copies, so there is nothing to verify after
+		// an abort-reset: the members still hold the authoritative rows, and a
+		// half-erased view is re-bootstrapped from scratch by the next one.
+		if (kind === 'view') {
+			try {
+				await this.viewStub(name).destroy();
+			} catch (error) {
+				if (!isDurableObjectReset(error)) throw error;
+			}
+			return;
+		}
 		try {
 			if (kind === 'table') await this.tableStub(name).destroy();
 			else await this.childStub(name).destroy();
@@ -1699,10 +2046,18 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				replication: this.shardReplication(row),
 				rows: row.docs,
 			}));
+		const views: DbViewSummary[] = rows
+			.filter((row) => row.kind === 'view')
+			.map((row) => ({
+				name: row.name,
+				members: parseStoredMembers(row.members),
+				readPermission: row.readPermission,
+			}));
 		this.setState({
 			...this.state,
 			collections: summaries,
 			tables,
+			views,
 			totalDocs: summaries.reduce((sum, entry) => sum + entry.docs, 0),
 			totalRows: tables.reduce((sum, entry) => sum + entry.rows, 0),
 			rev: this.state.rev + 1,

@@ -1,6 +1,6 @@
 {
 	"name": "@cloudflarebase/db",
-	"version": "0.5.0",
+	"version": "0.6.0",
 	"description": "Documents with live queries and schema-first SQL tables on Cloudflare Durable Objects, one isolated instance per collection or table - the database primitive behind Cloudflarebase.",
 	"license": "Apache-2.0",
 	"type": "module",
@@ -34,6 +34,10 @@
 		"./client": {
 			"types": "./dist/client.d.ts",
 			"default": "./dist/client.js"
+		},
+		"./admin": {
+			"types": "./dist/admin.d.ts",
+			"default": "./dist/admin.js"
 		},
 		"./drizzle": {
 			"types": "./dist/drizzle.d.ts",

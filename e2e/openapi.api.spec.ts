@@ -93,6 +93,64 @@ test.describe('openapi document', () => {
 		expect(doc.components.schemas.DbTableConfig).toBeTruthy();
 	});
 
+	/**
+	 * The SERVER path (docs/admin-sdk-design.md).
+	 *
+	 * There is no server SDK by design - the decision was to complete the API
+	 * and let the generated reference describe it, rather than hand-maintain a
+	 * client that can drift from the routes. That makes this document the
+	 * deliverable, so a missing entry here is a missing feature as far as any
+	 * user can tell. Six admin routes were absent when this was written, and
+	 * one of them (admin table SQL) was the only way to read a table row by id.
+	 */
+	test('documents the surface a service key opens, and says keys exist', async ({ request }) => {
+		const doc = await (await request.get(`/api/projects/${SEED_PROJECT}/openapi.json`)).json();
+
+		// The credential itself. Without a scheme, nothing in the reference tells
+		// a reader that server-side access exists at all.
+		const serviceKey = doc.components.securitySchemes.serviceKey;
+		expect(serviceKey, 'the serviceKey security scheme should be declared').toBeTruthy();
+		expect(serviceKey.scheme).toBe('bearer');
+		expect(serviceKey.description).toContain('Origin');
+
+		for (const path of [
+			// Reading and merging ONE record - absent until the service path work.
+			'/db/admin/collections/{name}/documents/{docId}',
+			'/db/admin/tables/{name}/sql',
+			// Objects: the agent always served these; the console had no route,
+			// so a key could configure a bucket and never put a byte in it.
+			'/storage/admin/buckets/{bucket}/objects',
+			'/storage/admin/buckets/{bucket}/objects/{key}',
+			// User management: create/read/update/set-password.
+			'/admin/users/{userId}/password'
+		]) {
+			expect(doc.paths[path], `${path} should be documented`).toBeTruthy();
+		}
+
+		// Verbs, not just paths: the item routes existed as write-only before.
+		expect(doc.paths['/db/admin/collections/{name}/documents/{docId}'].get).toBeTruthy();
+		expect(doc.paths['/db/admin/collections/{name}/documents/{docId}'].patch).toBeTruthy();
+		expect(doc.paths['/db/admin/tables/{name}/rows/{rowId}'].get).toBeTruthy();
+		expect(doc.paths['/db/admin/tables/{name}/rows/{rowId}'].patch).toBeTruthy();
+		expect(doc.paths['/admin/users'].post).toBeTruthy();
+		expect(doc.paths['/admin/users/{userId}'].get).toBeTruthy();
+		expect(doc.paths['/admin/users/{userId}'].patch).toBeTruthy();
+
+		// Operator routes a key opens must ADVERTISE it, or a reader writes code
+		// against a 401 they were never warned about.
+		const names = (operation: { security?: Record<string, unknown>[] }) =>
+			(operation.security ?? []).flatMap((entry) => Object.keys(entry));
+		expect(names(doc.paths['/admin/users'].post)).toContain('serviceKey');
+		expect(names(doc.paths['/db/admin/query'].post)).toContain('serviceKey');
+		expect(names(doc.paths['/storage/admin/buckets/{bucket}/objects/{key}'].put)).toContain(
+			'serviceKey'
+		);
+
+		// And routes a key does NOT open must not claim otherwise. /chat is an
+		// operator surface that isServiceKeySurface deliberately excludes.
+		expect(names(doc.paths['/chat'].post)).not.toContain('serviceKey');
+	});
+
 	test('resolves every schema reference it emits', async ({ request }) => {
 		const doc = await (await request.get(`/api/projects/${SEED_PROJECT}/openapi.json`)).json();
 		const components = doc.components.schemas;

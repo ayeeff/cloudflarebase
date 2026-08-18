@@ -26,7 +26,7 @@ jobs:
           # repository variable being set for them, still run.
           node-version: ${{ vars.NODE_VERSION || '22' }}
 
-      # Root postinstall also installs agents/auth dependencies.
+      # Root postinstall also installs every agent's dependencies.
       - name: Install dependencies
         run: npm ci
 
@@ -38,7 +38,7 @@ jobs:
 
       # The agents are separate TypeScript projects with their own generated
       # Env types, so they are not covered by the check above. Root
-      # postinstall installs both projects' dependencies.
+      # postinstall installs all four projects' dependencies.
       - name: Typecheck the auth agent
         run: npx tsc --noEmit
         working-directory: agents/auth
@@ -51,11 +51,23 @@ jobs:
         run: npm run test:unit
         working-directory: agents/db
 
+      - name: Typecheck the storage agent
+        run: npx tsc --noEmit
+        working-directory: agents/storage
+
+      - name: Unit-test the storage agent
+        run: npm run test:unit
+        working-directory: agents/storage
+
       - name: Typecheck the hosting agent
         run: npx tsc --noEmit
         working-directory: agents/hosting
 
-      # The CLI is a fourth npm project; the root install does not cover it.
+      - name: Unit-test the hosting agent
+        run: npm run test:unit
+        working-directory: agents/hosting
+
+      # The CLI is a fifth npm project; the root install does not cover it.
       - name: Install CLI dependencies
         run: npm ci
         working-directory: cli

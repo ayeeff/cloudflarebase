@@ -10,6 +10,7 @@ import type { DbAgent } from './agent';
 import type { DbCollection } from './collection';
 import type { DbGateway } from './gateway';
 import type { DbTable } from './table';
+import type { DbView } from './view';
 
 /** This repository's own generated Env is a consumer too. */
 export type _SelfCheck = AssertDbAgentEnv<Env>;
@@ -19,6 +20,7 @@ interface ConsumerMinimal {
 	DbCollection: DurableObjectNamespace<DbCollection>;
 	DbTable: DurableObjectNamespace<DbTable>;
 	DbGateway: DurableObjectNamespace<DbGateway>;
+	DbView: DurableObjectNamespace<DbView>;
 	DB_EVENTS: AnalyticsEngineDataset;
 }
 export type _Minimal = AssertDbAgentEnv<ConsumerMinimal>;
@@ -36,6 +38,7 @@ interface ConsumerMissingCollection {
 	DbAgent: DurableObjectNamespace<DbAgent>;
 	DbTable: DurableObjectNamespace<DbTable>;
 	DbGateway: DurableObjectNamespace<DbGateway>;
+	DbView: DurableObjectNamespace<DbView>;
 	DB_EVENTS: AnalyticsEngineDataset;
 }
 // @ts-expect-error DbCollection is required and must be named in the error.
@@ -45,6 +48,7 @@ interface ConsumerMissingTable {
 	DbAgent: DurableObjectNamespace<DbAgent>;
 	DbCollection: DurableObjectNamespace<DbCollection>;
 	DbGateway: DurableObjectNamespace<DbGateway>;
+	DbView: DurableObjectNamespace<DbView>;
 	DB_EVENTS: AnalyticsEngineDataset;
 }
 // @ts-expect-error DbTable is required and must be named in the error.
@@ -54,16 +58,28 @@ interface ConsumerMissingGateway {
 	DbAgent: DurableObjectNamespace<DbAgent>;
 	DbCollection: DurableObjectNamespace<DbCollection>;
 	DbTable: DurableObjectNamespace<DbTable>;
+	DbView: DurableObjectNamespace<DbView>;
 	DB_EVENTS: AnalyticsEngineDataset;
 }
 // @ts-expect-error DbGateway is required and must be named in the error.
 export type _MissingGateway = AssertDbAgentEnv<ConsumerMissingGateway>;
+
+interface ConsumerMissingView {
+	DbAgent: DurableObjectNamespace<DbAgent>;
+	DbCollection: DurableObjectNamespace<DbCollection>;
+	DbTable: DurableObjectNamespace<DbTable>;
+	DbGateway: DurableObjectNamespace<DbGateway>;
+	DB_EVENTS: AnalyticsEngineDataset;
+}
+// @ts-expect-error DbView is required and must be named in the error.
+export type _MissingView = AssertDbAgentEnv<ConsumerMissingView>;
 
 interface ConsumerWrongType {
 	DbAgent: DurableObjectNamespace<DbAgent>;
 	DbCollection: DurableObjectNamespace<DbCollection>;
 	DbTable: DurableObjectNamespace<DbTable>;
 	DbGateway: DurableObjectNamespace<DbGateway>;
+	DbView: DurableObjectNamespace<DbView>;
 	DB_EVENTS: D1Database;
 }
 // @ts-expect-error DB_EVENTS must be an AnalyticsEngineDataset.

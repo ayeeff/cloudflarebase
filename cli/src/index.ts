@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { addCommand } from './commands/add.js';
 import { deployCommand } from './commands/deploy.js';
 import { initCommand } from './commands/init.js';
+import { keyCommand } from './commands/key.js';
 import { loginCommand } from './commands/login.js';
 import { logoutCommand } from './commands/logout.js';
 import { schemaCommand } from './commands/schema.js';
@@ -26,6 +27,7 @@ const usage = (): void => {
 	info(
 		`  cloudflarebase secret put <N> ${dim('set a secret on the deployed app (kept across deploys)')}`
 	);
+	info(`  cloudflarebase key <cmd>      ${dim('create | list | revoke a project service key')}`);
 	info(
 		`  cloudflarebase login <url>    ${dim('authenticate against a console (browser approval)')}`
 	);
@@ -59,6 +61,9 @@ async function main(): Promise<void> {
 			return;
 		case 'secret':
 			await secretCommand(cwd, rest);
+			return;
+		case 'key':
+			await keyCommand(cwd, rest);
 			return;
 		case 'login':
 			await loginCommand(rest);

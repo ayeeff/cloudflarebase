@@ -5,15 +5,22 @@ test.describe('landing page (frontend)', () => {
 	// an operator session, /dashboard lists real projects instead of minting
 	// a demo, so these tests must not carry the console storage state.
 	test.use({ storageState: { cookies: [], origins: [] } });
-	test('renders the hero and the roadmap', async ({ page }) => {
+	test('renders the hero and the primitives', async ({ page }) => {
 		await page.goto('/');
 
 		await expect(page.getByRole('heading', { level: 1 })).toContainText(
 			'The open-source Firebase for Cloudflare'
 		);
 		await expect(
-			page.getByRole('heading', { name: 'Every Firebase primitive. One agent at a time.' })
+			page.getByRole('heading', { name: 'Every Firebase primitive. All of them shipped.' })
 		).toBeVisible();
+
+		// Nothing on this page may advertise something unbuilt: an unshipped
+		// card is a signup someone regrets. Every primitive listed is live.
+		const primitives = page.locator('#roadmap');
+		await expect(primitives.getByText('Planned')).toHaveCount(0);
+		await expect(primitives.getByText('Live')).toHaveCount(5);
+		await expect(primitives).toContainText('Storage');
 
 		// The hero visual opens on the db agent and the tabs are real controls.
 		const heroTabs = page.getByRole('tablist', { name: 'Agent' });

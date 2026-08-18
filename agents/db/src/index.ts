@@ -7,6 +7,8 @@ import { isDurableObjectReset, DbAgent as DbAgentBase } from './agent';
 import { DbCollection as DbCollectionBase } from './collection';
 import { DbGateway as DbGatewayBase, gatewayName } from './gateway';
 import { DbTable as DbTableBase } from './table';
+import { DbView as DbViewBase } from './view';
+import { viewInstanceName } from './replication';
 import { regionHint, REGION_HINTS } from './region';
 import { replicaName } from './replication';
 import { collectionNameSchema, projectIdSchema } from './schemas';
@@ -151,6 +153,7 @@ export const DbCollection = Sentry.instrumentDurableObjectWithSentry(
 );
 export const DbTable = Sentry.instrumentDurableObjectWithSentry(sentryOptions, DbTableBase);
 export const DbGateway = Sentry.instrumentDurableObjectWithSentry(sentryOptions, DbGatewayBase);
+export const DbView = Sentry.instrumentDurableObjectWithSentry(sentryOptions, DbViewBase);
 
 /**
  * Worker entrypoint. Routing:
@@ -249,6 +252,29 @@ class DbService extends WorkerEntrypoint<Env> {
 			const gatewayResponse = (await stub.fetch(request)) as unknown as Response;
 			await this.reportServerError(request, url, gatewayResponse);
 			return gatewayResponse;
+		}
+
+		// Join views (JOIN1): one instance per view, resolved with no parent
+		// hop - the same one-hop shape as the shard paths. The instance name
+		// carries a region slot that JOIN1 always fills with `global`; making
+		// views regional later is a change here and nowhere else.
+		const view = url.pathname.match(/^\/agents\/db-agent\/([^/]+)\/views\/([^/]+)(\/.*)?$/);
+		if (view) {
+			const projectId = decodeURIComponent(view[1]);
+			const name = decodeURIComponent(view[2]);
+			if (
+				!projectIdSchema.safeParse(projectId).success ||
+				!collectionNameSchema.safeParse(name).success
+			) {
+				return Response.json({ error: 'invalid project or view name' }, { status: 400 });
+			}
+			const namespace = this.env.DbView;
+			const stub = namespace.get(
+				namespace.idFromName(viewInstanceName(projectId, name, 'global', 1)),
+			);
+			const viewResponse = (await stub.fetch(request)) as unknown as Response;
+			await this.reportServerError(request, url, viewResponse);
+			return viewResponse;
 		}
 
 		const hot = url.pathname.match(

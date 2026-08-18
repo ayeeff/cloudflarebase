@@ -11,6 +11,7 @@ import { getDb } from '$lib/server/db';
 import { project, projectAgent } from '$lib/server/db/schema';
 import { releaseGithubRows } from '$lib/server/github-connect';
 import { releaseHostingRows } from '$lib/server/hosting';
+import { deleteProjectServiceKeys } from '$lib/server/service-keys';
 import { requireAgent } from '$lib/server/agents';
 import { projectIdSchema } from '$lib/schemas/auth';
 import type { Cookies } from '@sveltejs/kit';
@@ -621,6 +622,9 @@ export async function deleteProject(
 	const family = [projectId, ...branches.map((branch) => branch.id)];
 	await releaseHostingRows(db, family);
 	await releaseGithubRows(db, family);
+	// Service keys die with their project - per member of the family, since a
+	// key is scoped to exactly one registry row rather than to a root.
+	for (const member of family) await deleteProjectServiceKeys(platform, member);
 
 	failures.push(...(await eraseProjectData(platform, projectId)));
 	if (failures.length) {

@@ -105,6 +105,47 @@ export const localResetPasswordSchema = z.strictObject({
 	newPassword: z.string().min(8).max(128),
 });
 
+/**
+ * Admin user management (docs/admin-sdk-design.md 5.2) - the Firebase
+ * Admin-SDK operations this surface never had. It could list, re-role, and
+ * delete; it could not CREATE, read one, or update one, and the end-user
+ * sign-up route is not a substitute (it obeys the project's sign-up mode and
+ * starts email verification).
+ *
+ * Password bounds mirror Better Auth's emailAndPassword min/max, like the
+ * local reset above.
+ */
+export const createUserRequestSchema = z.strictObject({
+	email: z.email(),
+	/** Omitted creates an account with no credential - a social-only or
+	 * invite-first user, which Better Auth's own reset flow can later give a
+	 * password to. */
+	password: z.string().min(8).max(128).optional(),
+	name: z.string().trim().min(1).max(128).optional(),
+	/** Explicit, and false by default: an admin-created account is not
+	 * verified merely because an admin made it. Firebase's createUser takes
+	 * exactly this flag for exactly this reason. */
+	emailVerified: z.boolean().default(false),
+});
+
+export const updateUserRequestSchema = z
+	.strictObject({
+		name: z.string().trim().min(1).max(128).optional(),
+		email: z.email().optional(),
+		emailVerified: z.boolean().optional(),
+	})
+	// `role` is deliberately absent: PUT /admin/users/:id/role is the only
+	// writer, so the console's lockout guards cannot be sidestepped by a
+	// general-purpose update.
+	.refine((value) => Object.keys(value).length > 0, 'nothing to update');
+
+export const setPasswordRequestSchema = z.strictObject({
+	newPassword: z.string().min(8).max(128),
+	/** Setting a password is how an account is recovered AND how one is stolen,
+	 * so existing sessions die by default; pass false to keep them. */
+	revokeSessions: z.boolean().default(true),
+});
+
 const allowedOriginSchema = z
 	.string()
 	.max(2048)

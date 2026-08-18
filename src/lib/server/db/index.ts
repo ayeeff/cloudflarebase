@@ -61,6 +61,17 @@ const SCHEMA_STATEMENTS = [
 	)`,
 	`CREATE INDEX IF NOT EXISTS deploy_token_project ON deploy_token (project_id)`,
 	`CREATE INDEX IF NOT EXISTS deploy_token_hash ON deploy_token (token_hash)`,
+	`CREATE TABLE IF NOT EXISTS service_key (
+		id text PRIMARY KEY NOT NULL,
+		project_id text NOT NULL,
+		name text NOT NULL,
+		key_hash text NOT NULL,
+		created_by text,
+		created_at integer DEFAULT (unixepoch() * 1000) NOT NULL,
+		last_used_at integer
+	)`,
+	`CREATE INDEX IF NOT EXISTS service_key_project ON service_key (project_id)`,
+	`CREATE INDEX IF NOT EXISTS service_key_hash ON service_key (key_hash)`,
 	`CREATE TABLE IF NOT EXISTS github_installation (
 		id integer PRIMARY KEY NOT NULL,
 		org_id text,

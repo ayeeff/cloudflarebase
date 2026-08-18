@@ -17,6 +17,7 @@ import {
 	analyticsApiResponseSchema,
 	authPolicySchema,
 	chatRequestSchema,
+	createUserRequestSchema,
 	DEMO_PROJECT_PATTERN,
 	demoTtlHoursSchema,
 	localResetPasswordSchema,
@@ -25,9 +26,11 @@ import {
 	roleRequestSchema,
 	rolesRequestSchema,
 	sessionActivityResponseSchema,
+	setPasswordRequestSchema,
 	settingsRequestSchema,
 	socialCredentialsSchema,
 	timeZoneSchema,
+	updateUserRequestSchema,
 	workersAiResponseSchema,
 	type AuthPolicy,
 	type ProviderUpdates,
@@ -1073,14 +1076,30 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			);
 		}
 
+		// Admin user management (docs/admin-sdk-design.md 5.2). Until this landed
+		// the surface could list, re-role, and delete - never create, read one,
+		// or update one - so seeding accounts, migrating from another provider,
+		// and provisioning a service account were all impossible from a server.
+		if (subPath === '/admin/users' && request.method === 'POST') {
+			return this.createUserAsAdmin(request);
+		}
+
 		const roleUpdate = subPath.match(/^\/admin\/users\/([^/]+)\/role$/);
 		if (roleUpdate && request.method === 'PUT') {
 			return this.setUserRole(this.decodeResourceId(roleUpdate[1]), request);
 		}
 
-		const userDelete = subPath.match(/^\/admin\/users\/([^/]+)$/);
-		if (userDelete && request.method === 'DELETE') {
-			return this.deleteUser(this.decodeResourceId(userDelete[1]));
+		const passwordSet = subPath.match(/^\/admin\/users\/([^/]+)\/password$/);
+		if (passwordSet && request.method === 'PUT') {
+			return this.setUserPassword(this.decodeResourceId(passwordSet[1]), request);
+		}
+
+		const userRoute = subPath.match(/^\/admin\/users\/([^/]+)$/);
+		if (userRoute) {
+			const userId = this.decodeResourceId(userRoute[1]);
+			if (request.method === 'GET') return this.getUserById(userId);
+			if (request.method === 'PATCH') return this.updateUserAsAdmin(userId, request);
+			if (request.method === 'DELETE') return this.deleteUser(userId);
 		}
 
 		const sessionDelete = subPath.match(/^\/admin\/sessions\/([^/]+)$/);
@@ -1113,25 +1132,13 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 				);
 			}
 			const ctx = await this.auth.$context;
-			const found = await ctx.internalAdapter.findUserByEmail(body.data.email.toLowerCase(), {
-				includeAccounts: true,
-			});
+			const found = await ctx.internalAdapter.findUserByEmail(body.data.email.toLowerCase());
 			if (found) {
-				const hash = await ctx.password.hash(body.data.newPassword);
-				const credential = found.accounts.find((account) => account.providerId === 'credential');
-				if (credential) {
-					await ctx.internalAdapter.updatePassword(found.user.id, hash);
-				} else {
-					// Social-only accounts gain a credential, mirroring Better Auth's
-					// own reset-password behaviour.
-					await ctx.internalAdapter.linkAccount({
-						userId: found.user.id,
-						providerId: 'credential',
-						accountId: found.user.id,
-						password: hash,
-					});
-				}
-				await ctx.internalAdapter.deleteSessions([found.user.id]);
+				// Shared with the operator route and admin creation - including the
+				// social-only case, where the account GAINS a credential.
+				await this.writePassword(found.user.id, body.data.newPassword, {
+					revokeSessions: true,
+				});
 			}
 			// Uniform answer - even local dev keeps account existence unguessable.
 			return Response.json({ status: true });
@@ -1233,6 +1240,215 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		} catch {
 			return '';
 		}
+	}
+
+	/**
+	 * One user in exactly the shape `listUsers` pages, so an admin READ and the
+	 * admin LIST can never describe the same account differently.
+	 */
+	private async userDto(userId: string): Promise<OverviewUser | null> {
+		const [row] = await this.db
+			.select({
+				id: schema.user.id,
+				name: schema.user.name,
+				email: schema.user.email,
+				emailVerified: schema.user.emailVerified,
+				isAnonymous: schema.user.isAnonymous,
+				role: schema.user.role,
+				createdAt: schema.user.createdAt,
+			})
+			.from(schema.user)
+			.where(eq(schema.user.id, userId))
+			.limit(1);
+		if (!row) return null;
+
+		const accounts = await this.db
+			.select({ providerId: schema.account.providerId })
+			.from(schema.account)
+			.where(eq(schema.account.userId, userId));
+		return {
+			...row,
+			isAnonymous: !!row.isAnonymous,
+			providers: accounts.length
+				? accounts.map((account) => account.providerId)
+				: row.isAnonymous
+					? ['anonymous']
+					: [],
+			createdAt: row.createdAt.toISOString(),
+		};
+	}
+
+	/**
+	 * `POST /admin/users` - an account with no sign-up flow.
+	 *
+	 * Deliberately bypasses the project's sign-up MODE and email verification.
+	 * That is the Admin-SDK contract (Firebase's createUser has the same shape,
+	 * down to the explicit emailVerified flag), and it is what seeding, an
+	 * invite-first product, and a migration off another provider all need - none
+	 * of which the end-user sign-up route can serve, since it obeys the mode and
+	 * starts a verification mail.
+	 *
+	 * What it does NOT bypass is the user-creation DATABASE hook, because that
+	 * is where demo caps and the console's registration refusal live. Those are
+	 * not sign-up policy - they are what keeps a throwaway project throwaway and
+	 * an operator console closed - so they still apply, and the hook's own
+	 * message is the useful answer.
+	 */
+	private async createUserAsAdmin(request: Request): Promise<Response> {
+		const body = createUserRequestSchema.safeParse(await request.json().catch(() => null));
+		if (!body.success) {
+			return Response.json({ error: 'invalid user', issues: body.error.issues }, { status: 400 });
+		}
+
+		const email = body.data.email.toLowerCase();
+		const ctx = await this.auth.$context;
+		if (await ctx.internalAdapter.findUserByEmail(email)) {
+			return Response.json({ error: 'a user with that email already exists' }, { status: 409 });
+		}
+
+		let created: { id: string };
+		try {
+			created = await ctx.internalAdapter.createUser({
+				email,
+				name: body.data.name ?? email.split('@')[0],
+				emailVerified: body.data.emailVerified,
+			});
+		} catch (error) {
+			// The create.before hook vetoes with an APIError; anything else is a
+			// real failure and must not be flattened into a 403.
+			const status = (error as { statusCode?: number; status?: unknown })?.statusCode;
+			if (status === undefined) throw error;
+			return Response.json(
+				{ error: error instanceof Error ? error.message : 'user creation refused' },
+				{ status: 403 },
+			);
+		}
+
+		if (body.data.password) {
+			await this.writePassword(created.id, body.data.password, { revokeSessions: false });
+		}
+
+		this.writeAuthEvent('user.created', {
+			subjectId: created.id,
+			provider: body.data.password ? 'credential' : 'none',
+			emailDomain: email.split('@')[1] ?? null,
+		});
+		await this.recordEvent('user.created', 'user created by project administrator');
+		return Response.json(await this.userDto(created.id), { status: 201 });
+	}
+
+	/** `GET /admin/users/:id`. 404 rather than an empty body - an id that is
+	 * not there is not a user with no fields. */
+	private async getUserById(userId: string): Promise<Response> {
+		if (!userId || userId.length > 128) {
+			return Response.json({ error: 'invalid user id' }, { status: 400 });
+		}
+		const user = await this.userDto(userId);
+		if (!user) return Response.json({ error: 'user not found' }, { status: 404 });
+		return Response.json(user);
+	}
+
+	/**
+	 * `PATCH /admin/users/:id` - name, email, verified flag.
+	 *
+	 * `role` is NOT accepted here on purpose: `PUT /admin/users/:id/role` stays
+	 * the only writer, so the console's self-lockout guards cannot be walked
+	 * around with a general-purpose update.
+	 */
+	private async updateUserAsAdmin(userId: string, request: Request): Promise<Response> {
+		if (!userId || userId.length > 128) {
+			return Response.json({ error: 'invalid user id' }, { status: 400 });
+		}
+		const body = updateUserRequestSchema.safeParse(await request.json().catch(() => null));
+		if (!body.success) {
+			return Response.json({ error: 'invalid update', issues: body.error.issues }, { status: 400 });
+		}
+		if (!(await this.userDto(userId))) {
+			return Response.json({ error: 'user not found' }, { status: 404 });
+		}
+
+		const email = body.data.email?.toLowerCase();
+		if (email) {
+			const clash = await this.auth.$context.then((ctx) =>
+				ctx.internalAdapter.findUserByEmail(email),
+			);
+			// Email is the identity here; letting two accounts share one is how a
+			// sign-in silently resolves to the wrong person.
+			if (clash && clash.user.id !== userId) {
+				return Response.json({ error: 'a user with that email already exists' }, { status: 409 });
+			}
+		}
+
+		await this.db
+			.update(schema.user)
+			.set({
+				...(body.data.name !== undefined ? { name: body.data.name } : {}),
+				...(email !== undefined ? { email } : {}),
+				...(body.data.emailVerified !== undefined
+					? { emailVerified: body.data.emailVerified }
+					: {}),
+				updatedAt: new Date(),
+			})
+			.where(eq(schema.user.id, userId));
+
+		return Response.json(await this.userDto(userId));
+	}
+
+	/** `PUT /admin/users/:id/password` - the credential a server can reset
+	 * without an emailed token, for migrations and support flows. */
+	private async setUserPassword(userId: string, request: Request): Promise<Response> {
+		if (!userId || userId.length > 128) {
+			return Response.json({ error: 'invalid user id' }, { status: 400 });
+		}
+		const body = setPasswordRequestSchema.safeParse(await request.json().catch(() => null));
+		if (!body.success) {
+			return Response.json(
+				{ error: 'newPassword must be 8-128 characters', issues: body.error.issues },
+				{ status: 400 },
+			);
+		}
+		if (!(await this.userDto(userId))) {
+			return Response.json({ error: 'user not found' }, { status: 404 });
+		}
+
+		await this.writePassword(userId, body.data.newPassword, {
+			revokeSessions: body.data.revokeSessions,
+		});
+		return Response.json({ status: true });
+	}
+
+	/**
+	 * Set or replace an account's password.
+	 *
+	 * Shared by the operator route, admin creation, and the local-dev reset
+	 * hatch so the three cannot drift on the social-only case: an account with
+	 * no credential GAINS one, mirroring Better Auth's own reset-password
+	 * behaviour rather than failing on a user who signed up with Google.
+	 */
+	private async writePassword(
+		userId: string,
+		newPassword: string,
+		options: { revokeSessions: boolean },
+	): Promise<void> {
+		const ctx = await this.auth.$context;
+		const hash = await ctx.password.hash(newPassword);
+		const [credential] = await this.db
+			.select({ id: schema.account.id })
+			.from(schema.account)
+			.where(and(eq(schema.account.userId, userId), eq(schema.account.providerId, 'credential')))
+			.limit(1);
+
+		if (credential) {
+			await ctx.internalAdapter.updatePassword(userId, hash);
+		} else {
+			await ctx.internalAdapter.linkAccount({
+				userId,
+				providerId: 'credential',
+				accountId: userId,
+				password: hash,
+			});
+		}
+		if (options.revokeSessions) await ctx.internalAdapter.deleteSessions([userId]);
 	}
 
 	private async deleteUser(userId: string): Promise<Response> {

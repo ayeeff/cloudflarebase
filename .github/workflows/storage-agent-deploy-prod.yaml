@@ -1,0 +1,49 @@
+name: Storage Agent Prod
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'agents/storage/**'
+      - 'src/lib/**'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    name: Deploy Prod
+    # Cloudflare credentials live in this GitHub environment, not repository
+    # secrets, so only jobs that declare it - running refs its protection
+    # rules allow - can read them.
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ vars.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy Prod
+        uses: cloudflare/wrangler-action@v3
+        with:
+          wranglerVersion: ${{ vars.WRANGLER_VERSION }}
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID}}
+          workingDirectory: 'agents/storage'
+          packageManager: npm
+          # The top level of wrangler.jsonc is the self-hosted default (no
+          # BUCKET binding at all); cloudflarebase.com's own configuration
+          # lives in env.production, which pins the Worker name back to
+          # `storage-agent` and declares the shared R2 bucket. This deploy
+          # needs the auth worker to exist first for its AUTH_AGENT service
+          # binding - true of every environment since auth deploys from main
+          # on the same push, and already true of the live account.
+          environment: production

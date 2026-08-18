@@ -8,6 +8,7 @@
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import {
 		Activity,
+		Combine,
 		FileText,
 		FolderPlus,
 		History,
@@ -33,7 +34,10 @@
 		'table.deleted': Trash2,
 		'table.restored': History,
 		'rows.changed': FileText,
-		'rows.imported': Upload
+		'rows.imported': Upload,
+		'view.created': Combine,
+		'view.configured': ShieldCheck,
+		'view.deleted': Trash2
 	} as const;
 
 	function timeAgo(iso: string): string {

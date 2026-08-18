@@ -26,10 +26,10 @@
 		Check,
 		ChevronDown,
 		ChevronsUpDown,
-		Clock,
 		Database,
 		Ellipsis,
 		FlaskConical,
+		FolderOpen,
 		FolderTree,
 		GitBranch,
 		Globe,
@@ -41,7 +41,6 @@
 		Menu,
 		Plug,
 		Plus,
-		Radio,
 		Rocket,
 		SendHorizontal,
 		Settings,
@@ -92,7 +91,9 @@
 		'key-round': KeyRound,
 		database: Database,
 		'flask-conical': FlaskConical,
+		'folder-open': FolderOpen,
 		'folder-tree': FolderTree,
+		'hard-drive': HardDrive,
 		globe: Globe,
 		history: History,
 		plug: Plug,
@@ -133,13 +134,14 @@
 	// what is coming, and the peek is what makes the roadmap visible.
 	let comingSoonOpen = $state(true);
 
-	// Functions left this list when the hosting agent shipped - apps and
-	// functions are the same artifact there (Phase B).
-	const comingSoon = [
-		{ label: 'Storage', icon: HardDrive },
-		{ label: 'Realtime', icon: Radio },
-		{ label: 'Cron & Queues', icon: Clock }
-	];
+	// Empty, and that is the point: every primitive this list ever advertised
+	// has shipped. Functions left when the hosting agent did (apps and
+	// functions are one artifact there), Realtime when the db gateway did, and
+	// Storage when its console pages did - the registry emits that section
+	// itself the moment `console.pages` is non-empty, so leaving it here would
+	// list it twice. Cron & Queues was never scheduled work, only a card.
+	// The section renders only when there is something to say.
+	const comingSoon: { label: string; icon: typeof HardDrive }[] = [];
 
 	// Grounded in what the copilot's tools can actually read: auth overview and
 	// analytics, database collections, and real documents.
@@ -761,42 +763,44 @@
 				</div>
 			{/each}
 
-			<div>
-				<button
-					type="button"
-					class="group flex w-full items-center justify-between rounded-md px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase transition-colors hover:text-foreground"
-					data-testid="nav-section-coming-soon"
-					data-state={comingSoonOpen ? 'open' : 'closed'}
-					aria-expanded={comingSoonOpen}
-					onclick={() => (comingSoonOpen = !comingSoonOpen)}
-				>
-					Coming soon
-					<ChevronDown
-						class={['h-3.5 w-3.5 transition-transform', !comingSoonOpen && '-rotate-90']}
-					/>
-				</button>
-				<div class="space-y-0.5 pl-2">
-					{#each comingSoonOpen ? comingSoon : comingSoon.slice(0, 1) as item (item.label)}
-						<span
-							class="flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
-						>
-							<item.icon class="h-4 w-4" />
-							{item.label}
-							<Badge variant="outline" class="ml-auto text-[10px] text-muted-foreground/60"
-								>soon</Badge
+			{#if comingSoon.length}
+				<div>
+					<button
+						type="button"
+						class="group flex w-full items-center justify-between rounded-md px-3 pb-2 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase transition-colors hover:text-foreground"
+						data-testid="nav-section-coming-soon"
+						data-state={comingSoonOpen ? 'open' : 'closed'}
+						aria-expanded={comingSoonOpen}
+						onclick={() => (comingSoonOpen = !comingSoonOpen)}
+					>
+						Coming soon
+						<ChevronDown
+							class={['h-3.5 w-3.5 transition-transform', !comingSoonOpen && '-rotate-90']}
+						/>
+					</button>
+					<div class="space-y-0.5 pl-2">
+						{#each comingSoonOpen ? comingSoon : comingSoon.slice(0, 1) as item (item.label)}
+							<span
+								class="flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
 							>
-						</span>
-					{/each}
-					{#if !comingSoonOpen}
-						{@render moreRow(
-							comingSoon.length - 1,
-							'Coming soon',
-							'nav-more-coming-soon',
-							() => (comingSoonOpen = true)
-						)}
-					{/if}
+								<item.icon class="h-4 w-4" />
+								{item.label}
+								<Badge variant="outline" class="ml-auto text-[10px] text-muted-foreground/60"
+									>soon</Badge
+								>
+							</span>
+						{/each}
+						{#if !comingSoonOpen}
+							{@render moreRow(
+								comingSoon.length - 1,
+								'Coming soon',
+								'nav-more-coming-soon',
+								() => (comingSoonOpen = true)
+							)}
+						{/if}
+					</div>
 				</div>
-			</div>
+			{/if}
 
 			<div>
 				<p
