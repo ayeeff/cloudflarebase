@@ -6,7 +6,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { GitBranch, KeyRound, TriangleAlert } from '@lucide/svelte';
+	import { Check, Copy, GitBranch, KeyRound, TriangleAlert } from '@lucide/svelte';
 
 	let { data } = $props();
 
@@ -51,6 +51,25 @@
 	let keyBusy = $state(false);
 	let keyError = $state<string | null>(null);
 	let mintedKey = $state<string | null>(null);
+	let keyCopied = $state(false);
+	let keyCopyTimer: ReturnType<typeof setTimeout> | undefined;
+
+	// The one moment this value exists: copying it is the whole point of the
+	// reveal, and a select-all code block still leaves the operator to get it
+	// right by hand.
+	async function copyMintedKey() {
+		if (!mintedKey) return;
+		try {
+			await navigator.clipboard.writeText(mintedKey);
+			keyCopied = true;
+			clearTimeout(keyCopyTimer);
+			keyCopyTimer = setTimeout(() => (keyCopied = false), 2000);
+		} catch {
+			// clipboard unavailable (an insecure origin, a denied permission) -
+			// the key stays selectable, which is why it is not the only path.
+			keyError = 'Could not copy - select the key and copy it by hand.';
+		}
+	}
 
 	async function mintKey(event: SubmitEvent) {
 		event.preventDefault();
@@ -248,10 +267,25 @@
 				{#if mintedKey}
 					<div class="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3">
 						<p class="text-sm font-medium">Copy it now — it is never shown again.</p>
-						<code
-							class="block font-mono text-xs break-all select-all"
-							data-testid="service-key-secret">{mintedKey}</code
-						>
+						<div class="flex items-start gap-2">
+							<code
+								class="min-w-0 flex-1 font-mono text-xs break-all select-all"
+								data-testid="service-key-secret">{mintedKey}</code
+							>
+							<Button
+								variant="outline"
+								size="sm"
+								class="shrink-0 gap-1.5"
+								onclick={copyMintedKey}
+								data-testid="copy-service-key"
+							>
+								{#if keyCopied}
+									<Check class="h-3.5 w-3.5" /> Copied
+								{:else}
+									<Copy class="h-3.5 w-3.5" /> Copy
+								{/if}
+							</Button>
+						</div>
 					</div>
 				{/if}
 

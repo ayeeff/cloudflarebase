@@ -280,3 +280,114 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 		}
 	];
 }
+
+/**
+ * Ready-to-paste storage snippets. `agentBase` is the project's storage AGENT
+ * base (`<origin>/agents/storage-agent/<projectId>`) - the public object paths
+ * live there, not under the console proxy, which mirrors the operator surface
+ * only. `bucket` is whichever bucket the operator is looking at, so the snippet
+ * is about their data rather than a placeholder they have to rename.
+ */
+export function buildStorageIntegrationExamples(
+	agentBase: string,
+	bucket: string,
+	options: { origin?: string; projectId?: string } = {}
+): CodeExample[] {
+	const parts = agentBase.match(/^(.*)\/agents\/storage-agent\/([^/]+)$/);
+	const origin = options.origin ?? parts?.[1] ?? '';
+	const projectId = options.projectId ?? parts?.[2] ?? '<project-id>';
+
+	return [
+		{
+			id: 'storage-sdk',
+			label: 'Client SDK',
+			lang: 'typescript',
+			code: `import { createStorageClient } from '@cloudflarebase/storage/client';
+
+const storage = createStorageClient({
+  baseUrl: '${agentBase}',
+  // auth/owner buckets: mint a project JWT from the auth agent.
+  // Public buckets need no token at all - return null.
+  getToken: async () =>
+    (await (await fetch('${origin}/api/projects/${projectId}/auth/token')).json()).token
+});
+
+const files = storage.from('${bucket}');
+
+// ONE call at every size: above 100 MB this escalates to multipart itself,
+// and the server dictates the part size, so no upload can fail at assembly.
+await files.upload('avatars/me.png', file, { contentType: file.type });
+
+// A private object your browser can just hold: a URL, not a fetch with a
+// bearer header, so it drops straight into <img src>.
+const { signedUrl } = await files.createSignedUrl('avatars/me.png', { expiresIn: 3600 });
+
+// Folders are virtual - derived from the flat keys at read time.
+const { objects, folders } = await files.list({ prefix: 'avatars/', folders: true });`
+		},
+		{
+			id: 'storage-signed',
+			label: 'Signed URLs',
+			lang: 'typescript',
+			code: `// A private object your browser can just hold: a URL, not a fetch with
+// a bearer header - so it drops straight into <img src> or <a href>.
+const { signedUrl } = await files.createSignedUrl('avatars/me.png', {
+  expiresIn: 3600 // seconds, 7 days max
+});
+
+// Many at once, one round trip:
+const urls = await files.createSignedUrls(
+  ['avatars/me.png', 'avatars/you.png'],
+  { expiresIn: 3600 }
+);
+
+// GET and HEAD only, and it dies with the object: rotation is bounded-time
+// revocation, so to kill a live URL immediately, delete what it points at.
+await files.remove(['avatars/me.png']);`
+		},
+		{
+			id: 'storage-rest',
+			label: 'REST',
+			lang: 'javascript',
+			code: `// No SDK. Content-Length is required (chunked bodies are refused with
+// 411): a proxy that buffers a 100 MB PUT is a memory bomb.
+await fetch('${agentBase}/buckets/${bucket}/objects/avatars/me.png', {
+  method: 'PUT',
+  headers: {
+    'content-type': 'image/png',
+    authorization: \`Bearer \${token}\` // omit on a public-write bucket
+  },
+  body: file
+});
+
+// Read it back - same URL, no body.
+const response = await fetch(
+  '${agentBase}/buckets/${bucket}/objects/avatars/me.png',
+  { headers: { authorization: \`Bearer \${token}\` } }
+);
+const blob = await response.blob();`
+		},
+		{
+			id: 'storage-server',
+			label: 'Server',
+			lang: 'typescript',
+			code: `import { createStorageAdmin } from '@cloudflarebase/storage/admin';
+
+// For a cron, a queue consumer, a webhook handler, a seed script - anything
+// with no signed-in user to speak for. Mint the key under Settings.
+// It is REFUSED from any request carrying an Origin, so it cannot ship in
+// frontend code by accident.
+const storage = createStorageAdmin({
+  url: '${origin}',
+  projectId: '${projectId}',
+  key: process.env.CLOUDFLAREBASE_SERVICE_KEY // { env } inside a Worker
+});
+
+const files = storage.bucket('${bucket}');
+
+// Access modes and validators are bypassed - the Admin-SDK contract.
+await files.put('reports/2026-08.csv', csv, { contentType: 'text/csv' });
+const { objects } = await files.list({ prefix: 'reports/' });`
+		}
+	];
+}

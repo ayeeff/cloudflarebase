@@ -857,6 +857,12 @@ export const storageOverviewSchema = z
 		totalBytes: z.number().int(),
 		configured: z.boolean().describe('Whether this install can store bytes (the R2 binding).'),
 		erasing: z.boolean(),
+		demo: z
+			.boolean()
+			.optional()
+			.describe(
+				'The synthetic read-only sample bucket, not a provisioned project. Every mutating surface answers 403, so the console renders no affordance that would.'
+			),
 		caps: z.object({
 			maxBuckets: z.number().int(),
 			maxObjectsPerBucket: z.number().int(),

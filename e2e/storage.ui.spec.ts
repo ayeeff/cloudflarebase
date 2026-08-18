@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { Buffer } from 'node:buffer';
 import { ensureProject, storageAdminObjectPath, storageBucketPath } from './helpers';
 
 /**
@@ -106,6 +107,28 @@ test.describe('storage console', () => {
 		await expect(page.getByTestId('file-rows')).not.toContainText(key);
 	});
 
+	test('uploading through the browser puts the file in the bucket', async ({ page, request }) => {
+		const key = 'uploaded-by-ui.txt';
+		await page.goto(`/dashboard/${UI_PROJECT}/storage`);
+
+		// The primary action of the page, driven the way an operator drives it -
+		// the console rides the same admin mirror customers' SDKs ride, so this
+		// is also the check that no console-only upload path has grown.
+		await page.getByTestId('upload-input').setInputFiles({
+			name: key,
+			mimeType: 'text/plain',
+			buffer: Buffer.from('uploaded from the console')
+		});
+		await expect(page.getByTestId('file-rows')).toContainText(key);
+
+		// And it is really in R2, not just in the table.
+		const stored = await request.get(storageAdminObjectPath(UI_PROJECT, BUCKET, key));
+		expect(stored.ok(), await stored.text()).toBeTruthy();
+		expect(await stored.text()).toBe('uploaded from the console');
+
+		await request.delete(storageAdminObjectPath(UI_PROJECT, BUCKET, key));
+	});
+
 	test('the Access page states each bucket config in plain words', async ({ page }) => {
 		await page.goto(`/dashboard/${UI_PROJECT}/storage/access`);
 		const card = page.getByTestId(`access-card-${BUCKET}`);
@@ -116,11 +139,102 @@ test.describe('storage console', () => {
 		await expect(card).toContainText('not public');
 	});
 
+	test('the Access page EDITS access, and the change reaches the agent', async ({
+		page,
+		request,
+		baseURL
+	}) => {
+		// A bucket of its own: the shared one is read by the listing tests, and a
+		// mode flip mid-suite is exactly the kind of cross-test coupling that
+		// makes a failure unreadable.
+		const bucket = 'spec-access';
+		const created = await request.put(storageBucketPath(UI_PROJECT, bucket), {
+			data: {},
+			headers: { origin: baseURL ?? 'http://localhost:8797' }
+		});
+		expect([200, 201], await created.text()).toContain(created.status());
+
+		await page.goto(`/dashboard/${UI_PROJECT}/storage/access`);
+		const card = page.getByTestId(`access-card-${bucket}`);
+		await expect(card).toBeVisible();
+
+		// Nothing to save until something changes.
+		await expect(card.getByTestId(`access-save-${bucket}`)).toBeDisabled();
+
+		// Read: auth -> public. The sentence is rendered from the PENDING value,
+		// so it answers "what will this become" before the save lands.
+		await card.getByTestId(`access-read-${bucket}`).click();
+		await page.getByRole('option', { name: 'public', exact: true }).click();
+		await expect(card.getByTestId(`access-sentence-${bucket}`)).toContainText('Anyone can read');
+
+		await card.getByTestId(`access-listing-${bucket}`).click();
+		await card.getByTestId(`access-save-${bucket}`).click();
+		await expect(card.getByTestId(`access-feedback-${bucket}`)).toContainText('Saved');
+
+		// The agent is the authority on whether it saved, not the page.
+		const config = await request.get(storageBucketPath(UI_PROJECT, bucket));
+		const body = (await config.json()) as { bucket: { read: string; publicListing: boolean } };
+		expect(body.bucket.read).toBe('public');
+		expect(body.bucket.publicListing).toBe(true);
+
+		// And it survives a reload rather than living in component state.
+		await page.reload();
+		await expect(page.getByTestId(`access-sentence-${bucket}`)).toContainText('Anyone can read');
+
+		await request.delete(storageBucketPath(UI_PROJECT, bucket));
+	});
+
+	test('a bucket can be deleted, behind a typed-name confirm', async ({
+		page,
+		request,
+		baseURL
+	}) => {
+		const bucket = 'spec-drop';
+		await request.put(storageBucketPath(UI_PROJECT, bucket), {
+			data: {},
+			headers: { origin: baseURL ?? 'http://localhost:8797' }
+		});
+		const put = await request.put(storageAdminObjectPath(UI_PROJECT, bucket, 'doomed.txt'), {
+			data: 'bytes that go with it',
+			headers: seedHeaders(baseURL)
+		});
+		expect(put.ok(), await put.text()).toBeTruthy();
+
+		await page.goto(`/dashboard/${UI_PROJECT}/storage`);
+		await expect(page.getByTestId(`bucket-${bucket}`)).toBeVisible();
+
+		await page.getByTestId(`bucket-menu-${bucket}`).click();
+		await page.getByTestId(`delete-bucket-${bucket}`).click();
+
+		// The dialog says what goes with it, and the button stays dead until the
+		// name is typed - a bucket delete takes every object in it.
+		const dialog = page.getByTestId('delete-bucket-dialog');
+		await expect(dialog).toContainText('1 object');
+		await expect(page.getByTestId('confirm-delete-bucket')).toBeDisabled();
+		await page.getByTestId('delete-bucket-input').fill('wrong-name');
+		await expect(page.getByTestId('confirm-delete-bucket')).toBeDisabled();
+		await page.getByTestId('delete-bucket-input').fill(bucket);
+		await page.getByTestId('confirm-delete-bucket').click();
+
+		await expect(page.getByTestId(`bucket-${bucket}`)).toHaveCount(0);
+
+		// Gone in the agent too, objects and all.
+		const after = await request.get(storageBucketPath(UI_PROJECT, bucket));
+		expect(after.status()).toBe(404);
+		const object = await request.get(storageAdminObjectPath(UI_PROJECT, bucket, 'doomed.txt'));
+		expect(object.ok()).toBeFalsy();
+	});
+
 	test('the Integration page shows the client snippet', async ({ page }) => {
 		await page.goto(`/dashboard/${UI_PROJECT}/storage/integration`);
 		const panel = page.getByTestId('storage-integration');
 		await expect(panel).toContainText('@cloudflarebase/storage/client');
 		await expect(panel).toContainText('createSignedUrl');
+		// The shared code-sample component, so the snippets get the same tabs,
+		// copy button, and syntax highlighting every other Integration tab has.
+		await expect(panel.getByTestId('copy-integration')).toBeVisible();
+		await panel.getByRole('tab', { name: 'Server' }).click();
+		await expect(panel).toContainText('@cloudflarebase/storage/admin');
 	});
 
 	test('an unknown tool page is a 404, never an empty workspace', async ({ page }) => {
