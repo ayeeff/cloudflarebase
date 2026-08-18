@@ -41,8 +41,12 @@ export class AuthAdminError extends Error {
 	}
 }
 
-/** A 404 from a route the DEPLOYED agent lacks, told apart from "no such user".
- * Conflating them is data-loss-shaped - see docs/admin-sdk-design.md 8. */
+/** A 404 from a route the DEPLOYED agent lacks, told apart from the agent's
+ * own entity misses (`user not found`, `session not found`, the guard's
+ * `no such project`). Conflating them is data-loss-shaped - see
+ * docs/admin-sdk-design.md 8. The agent's ROUTING fallback body is a bare
+ * `not found`, which is exactly what an older agent answers on these routes -
+ * so a bare `not found` must map HERE, never to "missing record". */
 export class AuthAgentTooOldError extends Error {
 	constructor(path: string) {
 		super(
@@ -132,7 +136,13 @@ export function createAuthAdmin(options: AuthAdminOptions = {}) {
 
 		const payload = (await response.json().catch(() => null)) as (R & { error?: string }) | null;
 		if (!response.ok) {
-			if (response.status === 404 && !/not found|no such /i.test(payload?.error ?? '')) {
+			// Entity misses name their entity; an old agent's routing fallback is a
+			// bare `not found` and must NOT read as one (it matched here once, which
+			// made this guard unreachable).
+			if (
+				response.status === 404 &&
+				!/^(?:user|session) not found$|^no such /i.test(payload?.error ?? '')
+			) {
 				throw new AuthAgentTooOldError(path);
 			}
 			throw new AuthAdminError(
