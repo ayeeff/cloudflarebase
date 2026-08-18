@@ -29,7 +29,6 @@
 		Boxes,
 		Zap,
 		HardDrive,
-		Clock,
 		Minus
 	} from '@lucide/svelte';
 
@@ -43,7 +42,7 @@
 		{ name: 'Compare', href: '#compare' },
 		{ name: 'API', href: '#api' },
 		{ name: 'Architecture', href: '#architecture' },
-		{ name: 'Roadmap', href: '#roadmap' },
+		{ name: 'Primitives', href: '#roadmap' },
 		{ name: 'FAQ', href: '#faq' }
 	];
 
@@ -146,13 +145,15 @@
 		}
 	];
 
+	// Every primitive here has shipped: Functions is hosting on Workers for
+	// Platforms, Realtime is the db gateway. Nothing on this page is a promise -
+	// an unbuilt card is a liability the moment someone signs up for it.
 	const roadmap = [
 		{ icon: KeyRound, name: 'Auth', live: true },
 		{ icon: Database, name: 'Database', live: true },
-		{ icon: HardDrive, name: 'Storage', live: false },
-		{ icon: Zap, name: 'Functions', live: false },
-		{ icon: Radio, name: 'Realtime', live: false },
-		{ icon: Clock, name: 'Cron & Queues', live: false }
+		{ icon: HardDrive, name: 'Storage', live: true },
+		{ icon: Zap, name: 'Functions', live: true },
+		{ icon: Radio, name: 'Realtime', live: true }
 	];
 
 	const faqs = [
@@ -991,17 +992,17 @@
 				<div class="mb-14 max-w-xl">
 					<span
 						class="inline-flex items-center rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-medium tracking-wide text-primary uppercase"
-						>Roadmap</span
+						>Primitives</span
 					>
 					<h2 class="mt-4 text-3xl font-bold md:text-4xl">
-						Every Firebase primitive. One agent at a time.
+						Every Firebase primitive. All of them shipped.
 					</h2>
 					<p class="mt-3 text-muted-foreground">
-						We ship primitives in order, and every one lands the same way: its own agent, one
+						We shipped them one at a time, and every one landed the same way: its own agent, one
 						Durable Object per client project, and a same-origin dashboard proxy.
 					</p>
 				</div>
-				<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+				<div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
 					{#each roadmap as item (item.name)}
 						<div
 							class={cn(
@@ -1129,7 +1130,7 @@
 						>
 						<a
 							href="#roadmap"
-							class="mb-2.5 block text-sm text-muted-foreground hover:text-foreground">Roadmap</a
+							class="mb-2.5 block text-sm text-muted-foreground hover:text-foreground">Primitives</a
 						>
 					</div>
 					<div>

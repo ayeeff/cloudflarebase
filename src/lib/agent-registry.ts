@@ -184,9 +184,10 @@ export interface ConsoleNavSection {
 export function buildConsoleNav(projectId: string): ConsoleNavSection[] {
 	const sections = new Map<string, ConsoleNavSection>();
 	for (const { manifest } of Object.values(AGENT_REGISTRY)) {
-		// An agent whose console pages have not shipped yet (storage until S2)
-		// contributes no section - a bare header with nothing under it reads
-		// as broken, and the Coming-soon card already advertises it.
+		// An agent whose console pages have not shipped yet contributes no
+		// section - a bare header with nothing under it reads as broken. Every
+		// shipped agent has pages today, which is why nothing advertises a
+		// primitive as coming soon any more, here or on the landing page.
 		if (!manifest.console.pages.length) continue;
 		const section = sections.get(manifest.console.section) ?? {
 			section: manifest.console.section,
