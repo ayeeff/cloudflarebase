@@ -131,6 +131,8 @@ test.describe('storage console', () => {
 
 	test('the Access page states each bucket config in plain words', async ({ page }) => {
 		await page.goto(`/dashboard/${UI_PROJECT}/storage/access`);
+		// One editor at a time behind a bucket rail: select before asserting.
+		await page.getByTestId(`access-bucket-${BUCKET}`).click();
 		const card = page.getByTestId(`access-card-${BUCKET}`);
 		await expect(card).toBeVisible();
 		// The default is auth/auth, and the sentence has to say so - the whole
@@ -155,6 +157,8 @@ test.describe('storage console', () => {
 		expect([200, 201], await created.text()).toContain(created.status());
 
 		await page.goto(`/dashboard/${UI_PROJECT}/storage/access`);
+		// The rail lists every bucket; the editor renders the SELECTED one.
+		await page.getByTestId(`access-bucket-${bucket}`).click();
 		const card = page.getByTestId(`access-card-${bucket}`);
 		await expect(card).toBeVisible();
 
@@ -177,8 +181,10 @@ test.describe('storage console', () => {
 		expect(body.bucket.read).toBe('public');
 		expect(body.bucket.publicListing).toBe(true);
 
-		// And it survives a reload rather than living in component state.
+		// And it survives a reload rather than living in component state. The
+		// selection resets to the first bucket, so re-select before reading.
 		await page.reload();
+		await page.getByTestId(`access-bucket-${bucket}`).click();
 		await expect(page.getByTestId(`access-sentence-${bucket}`)).toContainText('Anyone can read');
 
 		await request.delete(storageBucketPath(UI_PROJECT, bucket));
