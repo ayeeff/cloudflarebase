@@ -176,7 +176,10 @@ test.describe('admin clients', () => {
 
 			// The exact key is indexed - not a truncation of it.
 			const { objects } = await bucket.list({ prefix: 'odd/' });
-			expect(objects.map((object) => object.key), objectKey).toContain(objectKey);
+			expect(
+				objects.map((object) => object.key),
+				objectKey
+			).toContain(objectKey);
 
 			await bucket.delete(objectKey);
 			expect(await bucket.get(objectKey), objectKey).toBeNull();
