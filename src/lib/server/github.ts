@@ -162,17 +162,26 @@ export async function appJwt(config: GithubAppConfig): Promise<string> {
 
 const installationTokens = new Map<number, { token: string; expiresAt: number }>();
 
+export type InstallationTokenResult = { token: string } | { token: null; status: number };
+
 /**
  * An installation access token (1 hour, scoped to the repos the operator
  * selected at install time). Cached per isolate until a minute before expiry.
+ *
+ * A failed mint keeps GitHub's status, because it distinguishes three answers
+ * the callers must not conflate: 404 is authoritative "this installation no
+ * longer exists" (the App JWT authenticated, or it would be 401 - so the row
+ * is safe to prune), 403 is suspended (reversible, never prune), and anything
+ * else is GitHub being unreachable - a fact about the network, not about the
+ * installation, so it must never read as "reinstall the app".
  */
-export async function installationToken(
+export async function mintInstallationToken(
 	config: GithubAppConfig,
 	installationId: number
-): Promise<string | null> {
+): Promise<InstallationTokenResult> {
 	const now = Date.now();
 	const cached = installationTokens.get(installationId);
-	if (cached && cached.expiresAt > now + 60_000) return cached.token;
+	if (cached && cached.expiresAt > now + 60_000) return { token: cached.token };
 
 	const response = await githubFetch(
 		await appJwt(config),
@@ -181,15 +190,21 @@ export async function installationToken(
 	);
 	const body = response.body as { token?: string; expires_at?: string } | null;
 	if (!response.ok || !body?.token) {
-		// A revoked or suspended installation is ordinary, not exceptional - the
-		// caller turns null into "reconnect this repository".
-		return null;
+		return { token: null, status: response.status };
 	}
 	installationTokens.set(installationId, {
 		token: body.token,
 		expiresAt: body.expires_at ? Date.parse(body.expires_at) : now + 3_000_000
 	});
-	return body.token;
+	return { token: body.token };
+}
+
+/** The mint without the diagnosis, for callers that only degrade on failure. */
+export async function installationToken(
+	config: GithubAppConfig,
+	installationId: number
+): Promise<string | null> {
+	return (await mintInstallationToken(config, installationId)).token;
 }
 
 /** Drops a cached installation token - used when GitHub reports it revoked. */

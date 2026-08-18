@@ -1,4 +1,10 @@
-import { githubFetch, installationToken, type GithubAppConfig } from '$lib/server/github';
+import {
+	forgetInstallationToken,
+	githubFetch,
+	installationToken,
+	mintInstallationToken,
+	type GithubAppConfig
+} from '$lib/server/github';
 import { WORKFLOW_FILENAME } from '$lib/hosting-workflow';
 import type { ConnectionMode } from '$lib/server/github-connect';
 import {
@@ -26,24 +32,52 @@ export interface RepoSummary {
 	updatedAt: string | null;
 }
 
-/** The repositories an installation can see, newest activity first. */
+export type InstallationReposResult =
+	{ repos: RepoSummary[] } | { repos: null; gone: boolean; status: number };
+
+/**
+ * The repositories an installation can see, newest activity first.
+ *
+ * Failure keeps its cause: `gone` means GitHub authoritatively answered that
+ * the installation no longer exists (mint 404), which licenses pruning the
+ * stored row; anything else is suspension or unreachability and must not.
+ */
 export async function listInstallationRepos(
 	config: GithubAppConfig,
 	installationId: number
-): Promise<RepoSummary[] | null> {
-	const token = await installationToken(config, installationId);
-	if (!token) return null;
+): Promise<InstallationReposResult> {
+	let minted = await mintInstallationToken(config, installationId);
+	if (minted.token === null) {
+		return { repos: null, gone: minted.status === 404, status: minted.status };
+	}
 
 	const repos: RepoSummary[] = [];
 	// Installations can hold hundreds of repos; page until GitHub runs out or
 	// we hit a sane ceiling for a picker.
 	for (let page = 1; page <= 5; page += 1) {
-		const response = await githubFetch(
-			token,
+		let response = await githubFetch(
+			minted.token,
 			'GET',
 			`/installation/repositories?per_page=100&page=${page}`
 		);
-		if (!response.ok) return repos.length ? repos : null;
+		if (response.status === 401 && page === 1) {
+			// A cached token can outlive its installation (revoked since it was
+			// minted). Re-mint once - the mint's own answer then classifies.
+			forgetInstallationToken(installationId);
+			minted = await mintInstallationToken(config, installationId);
+			if (minted.token === null) {
+				return { repos: null, gone: minted.status === 404, status: minted.status };
+			}
+			response = await githubFetch(
+				minted.token,
+				'GET',
+				`/installation/repositories?per_page=100&page=${page}`
+			);
+		}
+		if (!response.ok) {
+			if (repos.length) break;
+			return { repos: null, gone: false, status: response.status };
+		}
 		const body = response.body as { repositories?: Record<string, unknown>[] } | null;
 		const batch = body?.repositories ?? [];
 		for (const repo of batch) {
@@ -59,7 +93,7 @@ export async function listInstallationRepos(
 		if (batch.length < 100) break;
 	}
 	repos.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
-	return repos;
+	return { repos };
 }
 
 function decodeContent(body: unknown): string | null {

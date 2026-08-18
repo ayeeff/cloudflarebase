@@ -15,7 +15,7 @@ import {
 import { wranglerConfigJsonc, WRANGLER_TEMPLATES } from '$lib/server/frameworks';
 import { appNameSchema, deployTokenCoversProject, resolveAppClaim } from '$lib/server/hosting';
 import { projectIdSchema } from '$lib/schemas/auth';
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
@@ -257,8 +257,54 @@ export async function listInstallationsForOrg(
 	const rows = await db
 		.select()
 		.from(githubInstallation)
-		.where(orgId === null ? isNull(githubInstallation.orgId) : eq(githubInstallation.orgId, orgId));
+		.where(orgId === null ? isNull(githubInstallation.orgId) : eq(githubInstallation.orgId, orgId))
+		// Newest first: the connect dialog auto-picks the FIRST entry, and after
+		// an uninstall/reinstall cycle the fresh installation must win over any
+		// dead row a missed webhook left behind.
+		.orderBy(desc(githubInstallation.createdAt));
 	return rows.map((row) => ({ id: row.id, accountLogin: row.accountLogin }));
+}
+
+/**
+ * Turns a failed repository listing into the operator's answer, and performs
+ * the cleanup it licenses. A mint 404 is GitHub's authoritative "this
+ * installation no longer exists", so the stale row (and the connections that
+ * could never mint a token again) are forgotten - the same cleanup the
+ * `installation.deleted` webhook does, for the deployments that webhook never
+ * reached. `gone: true` tells the dialog it may re-read the installation list
+ * and pick a surviving one. Suspension and unreachability prune nothing.
+ */
+export async function reportInstallationFailure(
+	platform: App.Platform | undefined,
+	installationId: number,
+	failure: { gone: boolean; status: number }
+): Promise<{ status: number; body: { error: string; gone?: boolean } }> {
+	if (failure.gone) {
+		await forgetInstallation(platform, installationId);
+		return {
+			status: 409,
+			body: {
+				error:
+					'that GitHub installation no longer exists on GitHub - pick another account or reinstall the app',
+				gone: true
+			}
+		};
+	}
+	if (failure.status === 403) {
+		return {
+			status: 409,
+			body: {
+				error:
+					"the GitHub installation is suspended - unsuspend it in the account's GitHub settings"
+			}
+		};
+	}
+	return {
+		status: 502,
+		body: {
+			error: `GitHub did not answer while listing repositories (HTTP ${failure.status}) - try again`
+		}
+	};
 }
 
 // --- Connecting ------------------------------------------------------------
@@ -357,15 +403,12 @@ export async function connectRepository(
 
 	// Never trust the caller's view of the repository: re-read it from the
 	// installation, which is also what proves the installation can see it.
-	const repos = await listInstallationRepos(config, installationId);
-	if (!repos) {
-		return {
-			ok: false,
-			status: 409,
-			error: 'the GitHub installation is no longer valid - reinstall the app'
-		};
+	const listed = await listInstallationRepos(config, installationId);
+	if (listed.repos === null) {
+		const answer = await reportInstallationFailure(platform, installationId, listed);
+		return { ok: false, status: answer.status, error: answer.body.error };
 	}
-	const repo = repos.find((candidate) => candidate.fullName === repoFullName);
+	const repo = listed.repos.find((candidate) => candidate.fullName === repoFullName);
 	if (!repo) {
 		return { ok: false, status: 404, error: 'that repository is not in this installation' };
 	}
