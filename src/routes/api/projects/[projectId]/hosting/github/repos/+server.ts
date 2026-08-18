@@ -1,6 +1,6 @@
 import { assertProjectId } from '$lib/server/agents';
 import { githubAppConfig } from '$lib/server/github';
-import { installationCoversProject } from '$lib/server/github-connect';
+import { installationCoversProject, reportInstallationFailure } from '$lib/server/github-connect';
 import { inspectRepo, listInstallationRepos } from '$lib/server/github-repo';
 import type { RequestHandler } from './$types';
 
@@ -28,13 +28,12 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 		return Response.json({ error: covers.error }, { status: 403 });
 	}
 
-	const repos = await listInstallationRepos(config, installationId);
-	if (!repos) {
-		return Response.json(
-			{ error: 'the GitHub installation is no longer valid - reinstall the app' },
-			{ status: 409 }
-		);
+	const listed = await listInstallationRepos(config, installationId);
+	if (listed.repos === null) {
+		const answer = await reportInstallationFailure(platform, installationId, listed);
+		return Response.json(answer.body, { status: answer.status });
 	}
+	const repos = listed.repos;
 
 	const wanted = url.searchParams.get('repo');
 	if (!wanted) return Response.json({ repos });

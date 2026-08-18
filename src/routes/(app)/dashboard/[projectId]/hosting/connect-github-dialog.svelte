@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
@@ -60,6 +61,10 @@
 	} = $props();
 
 	let installationId = $state<number | null>(null);
+	// Installations the server reported gone (uninstalled on GitHub, row
+	// pruned). Never auto-picked again, so the self-heal below cannot loop
+	// while the refreshed page data is still in flight.
+	const goneInstallations = new SvelteSet<number>();
 	let repos = $state<Repo[]>([]);
 	let reposLoading = $state(false);
 	let query = $state('');
@@ -111,10 +116,20 @@
 			const body = (await response.json().catch(() => null)) as {
 				repos?: Repo[];
 				error?: string;
+				gone?: boolean;
 			} | null;
 			if (!response.ok) {
 				error = body?.error ?? 'Could not list repositories.';
 				repos = [];
+				if (body?.gone) {
+					// The server just forgot a stale installation. Re-read the page
+					// data and let the effect re-pick a surviving one - which is
+					// what heals the dialog instead of leaving it wedged on a dead
+					// entry until a full reload.
+					goneInstallations.add(installation);
+					installationId = null;
+					await invalidateAll();
+				}
 				return;
 			}
 			repos = body?.repos ?? [];
@@ -127,14 +142,15 @@
 	// accounts reloads them and drops a selection that is no longer in the list.
 	$effect(() => {
 		if (!open) return;
+		const live = installations.filter((entry) => !goneInstallations.has(entry.id));
 		const installation =
 			installationId ??
 			// Only honour the hint if it actually landed in the list; a stale one
 			// would leave the picker pointing at an account that is not there.
-			(preferInstallation && installations.some((entry) => entry.id === preferInstallation)
+			(preferInstallation && live.some((entry) => entry.id === preferInstallation)
 				? preferInstallation
 				: null) ??
-			installations[0]?.id ??
+			live[0]?.id ??
 			null;
 		if (installation === null) return;
 		installationId = installation;
