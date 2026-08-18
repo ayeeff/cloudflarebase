@@ -1,11 +1,19 @@
-import { expect, test } from '@playwright/test';
 import {
+	expect,
+	request as playwrightRequest,
+	test,
+	type APIRequestContext
+} from '@playwright/test';
+import {
+	authPath,
 	DB_PROJECT,
 	dbAdminCollectionPath,
 	dbAdminTablePath,
 	dbDocumentPath,
 	dbDocumentsPath,
-	dbRowsPath
+	dbRowPath,
+	dbRowsPath,
+	uniqueEmail
 } from './helpers';
 import { LiveSocket, WEB_WS } from './live-socket';
 
@@ -26,6 +34,38 @@ function replicaSubscribeUrl(kind: 'collections' | 'tables', name: string, regio
 
 function replicationStatusPath(name: string): string {
 	return `/api/projects/${DB_PROJECT}/db/admin/replication/${encodeURIComponent(name)}`;
+}
+
+function sqlPath(table: string): string {
+	return `/api/projects/${DB_PROJECT}/db/tables/${table}/sql`;
+}
+
+async function anonymousContext(baseURL: string | undefined): Promise<APIRequestContext> {
+	const base = baseURL ?? process.env.BASE_URL ?? 'http://localhost:8797';
+	return playwrightRequest.newContext({ baseURL: base, extraHTTPHeaders: { origin: base } });
+}
+
+/** Sign up a fresh user on the db project and exchange for a project JWT. */
+async function projectUserToken(baseURL: string | undefined, prefix: string): Promise<string> {
+	const anon = await anonymousContext(baseURL);
+	try {
+		const signUp = await anon.post(authPath(DB_PROJECT, 'sign-up/email'), {
+			data: {
+				name: 'Rollback Spec User',
+				email: uniqueEmail(prefix),
+				password: 'db-spec-password-1'
+			}
+		});
+		expect(signUp.ok(), await signUp.text()).toBeTruthy();
+		const sessionToken = signUp.headers()['set-auth-token'];
+		const token = await anon.get(authPath(DB_PROJECT, 'token'), {
+			headers: { authorization: `Bearer ${sessionToken}` }
+		});
+		expect(token.ok(), await token.text()).toBeTruthy();
+		return (await token.json()).token as string;
+	} finally {
+		await anon.dispose();
+	}
 }
 
 test.describe('db agent (live queries on replicas)', () => {
@@ -157,6 +197,118 @@ test.describe('db agent (live queries on replicas)', () => {
 			expect(removed.doc?.id).toBe('r20');
 		} finally {
 			socket.close();
+		}
+	});
+
+	// A failing batch rolls back on the primary - and NOTHING about it may
+	// escape to replicas. The push used to be scheduled from inside the
+	// transaction, so replicas applied phantom rows; worse, sqlite_sequence
+	// rolls back too, so the next committed write REUSED the phantom's LSN
+	// and the replica dropped it as a duplicate - permanent divergence that
+	// defeated the cfb-min-lsn bookmark (the replica believed it was caught
+	// up). The old atomicity spec ran replication: off, which is why none of
+	// this was ever pinned.
+	test('a rolled-back batch statement never reaches replica subscribers', async ({
+		request,
+		baseURL
+	}) => {
+		const table = `rollb-${run}`;
+		const declare = await request.put(dbAdminTablePath(DB_PROJECT, table), {
+			data: {
+				readAccess: 'public',
+				writeAccess: 'public',
+				replication: 'auto',
+				columns: [{ name: 'title', type: 'text', nullable: false }]
+			}
+		});
+		expect(declare.ok(), await declare.text()).toBeTruthy();
+
+		const token = await projectUserToken(baseURL, 'sql-rollback');
+		const anon = await anonymousContext(baseURL);
+		const asUser = { authorization: `Bearer ${token}` };
+		const socket = await LiveSocket.connect(replicaSubscribeUrl('tables', table, 'weur'));
+		try {
+			socket.send({ type: 'subscribe', id: 'w', query: {} });
+			const snapshot = await socket.next((frame) => frame.type === 'snapshot', 'the snapshot');
+			expect(snapshot.docs).toEqual([]);
+
+			await expect
+				.poll(async () => {
+					const status = (await (await request.get(replicationStatusPath(table))).json()) as {
+						replicas: { id: string; push: boolean }[];
+					};
+					return status.replicas.find((replica) => replica.id === 'r:weur:1')?.push ?? false;
+				})
+				.toBe(true);
+
+			// Prove the push chain delivers BEFORE asserting silence on it.
+			const live = await anon.post(sqlPath(table), {
+				headers: asUser,
+				data: { sql: `INSERT INTO "${table}" (id, title) VALUES (?, ?)`, params: ['live', 'ok'] }
+			});
+			expect(live.ok(), await live.text()).toBeTruthy();
+			expect(Number(live.headers()['cfb-lsn'])).toBeGreaterThan(0);
+			await socket.next(
+				(frame) => frame.type === 'change' && frame.kind === 'added' && frame.doc?.id === 'live',
+				'the live-proof added frame'
+			);
+
+			// Statement 1 writes, statement 2 hits NOT NULL: rollback whole.
+			const failing = await anon.post(sqlPath(table), {
+				headers: asUser,
+				data: {
+					batch: [
+						{ sql: `INSERT INTO "${table}" (id, title) VALUES (?, ?)`, params: ['ghost', 'boo'] },
+						{ sql: `INSERT INTO "${table}" (id, title) VALUES (?, ?)`, params: ['g2', null] }
+					]
+				}
+			});
+			expect(failing.status(), await failing.text()).toBe(400);
+			expect(failing.headers()['cfb-lsn']).toBeUndefined();
+
+			// The rolled-back LSN must not linger as a later response's
+			// bookmark: a SELECT never logs, so any header here is the leak.
+			const selected = await anon.post(sqlPath(table), {
+				headers: asUser,
+				data: { sql: `SELECT "id" FROM "${table}"` }
+			});
+			expect(selected.ok(), await selected.text()).toBeTruthy();
+			expect(selected.headers()['cfb-lsn']).toBeUndefined();
+
+			// The next committed write reuses the rolled-back LSN. The replica
+			// must apply it (not drop it as a duplicate) and push its frame.
+			const reissued = await anon.post(sqlPath(table), {
+				headers: asUser,
+				data: { sql: `INSERT INTO "${table}" (id, title) VALUES (?, ?)`, params: ['after', 'real'] }
+			});
+			expect(reissued.ok(), await reissued.text()).toBeTruthy();
+			const lsn = Number(reissued.headers()['cfb-lsn']);
+			expect(lsn).toBeGreaterThan(0);
+			await socket.next(
+				(frame) => frame.type === 'change' && frame.kind === 'added' && frame.doc?.id === 'after',
+				'the post-rollback added frame'
+			);
+
+			// No frame for the phantom ever arrived on the replica subscriber.
+			expect(socket.peek((frame) => frame.doc?.id === 'ghost')).toBeUndefined();
+
+			// Read-your-writes THROUGH the replica: the write's own bookmark
+			// must find the row (a diverged replica claims the LSN is applied
+			// and serves a local copy missing it)...
+			const routed = await request.get(dbRowPath(DB_PROJECT, table, 'after'), {
+				headers: { 'x-cfb-region': 'weur', 'cfb-min-lsn': String(lsn) }
+			});
+			expect(routed.ok(), await routed.text()).toBeTruthy();
+			expect((await routed.json()).data.title).toBe('real');
+
+			// ...and the phantom is absent on BOTH sides.
+			for (const headers of [{}, { 'x-cfb-region': 'weur' }]) {
+				const gone = await request.get(dbRowPath(DB_PROJECT, table, 'ghost'), { headers });
+				expect(gone.status(), `ghost row with ${JSON.stringify(headers)}`).toBe(404);
+			}
+		} finally {
+			socket.close();
+			await anon.dispose();
 		}
 	});
 });
