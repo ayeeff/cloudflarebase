@@ -291,11 +291,14 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 export function buildStorageIntegrationExamples(
 	agentBase: string,
 	bucket: string,
-	options: { origin?: string; projectId?: string } = {}
+	options: { origin?: string; projectId?: string; serveOrigin?: string | null } = {}
 ): CodeExample[] {
 	const parts = agentBase.match(/^(.*)\/agents\/storage-agent\/([^/]+)$/);
 	const origin = options.origin ?? parts?.[1] ?? '';
 	const projectId = options.projectId ?? parts?.[2] ?? '<project-id>';
+	// Only printed when the deployment really has one - the snippet has to be
+	// pasteable, and an unrouted serving domain would paste a dead link.
+	const serveOrigin = options.serveOrigin ?? null;
 
 	return [
 		{
@@ -305,7 +308,15 @@ export function buildStorageIntegrationExamples(
 			code: `import { createStorageClient } from '@cloudflarebase/storage/client';
 
 const storage = createStorageClient({
-  baseUrl: '${agentBase}',
+  baseUrl: '${agentBase}',${
+		serveOrigin
+			? `
+  // Objects also serve on this deployment's dedicated domain, off the
+  // console origin. getPublicUrl() builds on it; every request still
+  // goes to baseUrl, since the serving domain is GET/HEAD only.
+  publicBaseUrl: '${serveOrigin}',`
+			: ''
+	}
   // auth/owner buckets: mint a project JWT from the auth agent.
   // Public buckets need no token at all - return null.
   getToken: async () =>
@@ -343,7 +354,16 @@ const urls = await files.createSignedUrls(
 
 // GET and HEAD only, and it dies with the object: rotation is bounded-time
 // revocation, so to kill a live URL immediately, delete what it points at.
-await files.remove(['avatars/me.png']);`
+await files.remove(['avatars/me.png']);
+
+// A PUBLIC bucket needs no signature at all. String building only, so on a
+// private bucket this URL is real but answers 401 - sign those instead.
+const url = files.getPublicUrl('avatars/me.png');
+${
+	serveOrigin
+		? `// -> ${serveOrigin}/${projectId}/${bucket}/avatars/me.png`
+		: '// -> the agent base; a routed serving domain would shorten this'
+}`
 		},
 		{
 			id: 'storage-rest',

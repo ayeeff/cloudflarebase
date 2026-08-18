@@ -685,6 +685,41 @@ test.describe('storage agent (S1)', () => {
 		}
 	});
 
+	/**
+	 * The stack SERVES on cdn.cfbase.test (via the x-cfbase-host stand-in) but
+	 * that host resolves nowhere, so it must never appear in anything handed to
+	 * a caller. This is the e2e half of the routed-vs-set rule; the unit tests
+	 * cover the routed branch, which no environment here can honestly stand up.
+	 */
+	test('an unrouted serving domain is served on but never advertised', async ({ request }) => {
+		const overview = await request.get(storageOverviewPath(STORAGE_PROJECT));
+		expect(overview.ok(), await overview.text()).toBeTruthy();
+		const body = (await overview.json()) as { serveOrigin?: string | null };
+		expect(body.serveOrigin ?? null).toBeNull();
+
+		// And a minted URL falls back to the origin the request arrived on,
+		// which is reachable by definition - the caller just used it.
+		await ensureBucket(request, 'spec-public', { read: 'public', write: 'public' });
+		const key = `${run}/advert.txt`;
+		const seeded = await request.put(storageAdminObjectPath(STORAGE_PROJECT, 'spec-public', key), {
+			data: 'bytes',
+			headers: { 'content-type': 'text/plain' }
+		});
+		expect(seeded.status(), await seeded.text()).toBe(200);
+
+		const minted = await request.post(storageAdminSignedUrlsPath(STORAGE_PROJECT, 'spec-public'), {
+			data: { key, expiresIn: 300 }
+		});
+		expect(minted.ok(), await minted.text()).toBeTruthy();
+		const { signedUrl } = (await minted.json()) as { signedUrl: string };
+		expect(signedUrl).not.toContain('cdn.cfbase.test');
+
+		// The proof that matters: the URL actually resolves and serves.
+		const fetched = await request.get(signedUrl);
+		expect(fetched.status(), await fetched.text()).toBe(200);
+		expect(await fetched.text()).toBe('bytes');
+	});
+
 	test('the serving domain answers reads with the same enforcement', async ({ request }) => {
 		test.skip(!!process.env.BASE_URL, 'direct agent access only exists on the local stack');
 		await ensureBucket(request, 'spec-public', { read: 'public', write: 'public' });
@@ -837,11 +872,17 @@ test.describe('storage signed URLs (S2)', () => {
 	});
 
 	test('a signed URL expires', async ({ request, baseURL }) => {
-		const minted = await mint(request, { key: KEY, expiresIn: 1 });
+		// 3s, not 1s: the pre-expiry assertion has to fit a mint round trip, a
+		// context creation, and a GET inside the TTL, and at 1s a loaded runner
+		// (or a worker reload) spends the whole budget before the first fetch -
+		// which fails as "live before expiry", looking like a signing bug rather
+		// than the timing artifact it is. The property is unchanged: live now,
+		// refused after the expiry passes.
+		const minted = await mint(request, { key: KEY, expiresIn: 3 });
 		const anon = await stranger(baseURL);
 		try {
 			expect((await anon.get(minted.signedUrl)).status(), 'live before expiry').toBe(200);
-			await new Promise((resolve) => setTimeout(resolve, 1500));
+			await new Promise((resolve) => setTimeout(resolve, 3500));
 			const expired = await anon.get(minted.signedUrl);
 			expect(expired.status()).toBe(403);
 			expect((await expired.json()).error).toContain('expired');

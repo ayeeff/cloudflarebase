@@ -33,6 +33,9 @@ import {
 	resolveTtlSeconds,
 	signSubject,
 	verifySignature,
+	agentObjectUrl,
+	publicServeOrigin,
+	serveObjectPath,
 	MAX_MULTIPART_BYTES,
 	UPLOAD_TTL_SECONDS,
 	openUpload,
@@ -1036,9 +1039,17 @@ class StorageService extends WorkerEntrypoint<Env> {
 		key: string,
 		signed: { version: number; expires: number; signature: string },
 	): string {
-		const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+		// A ROUTED serving domain wins, for two reasons beyond tidiness: the
+		// bytes leave the console's origin, so an object can no longer be
+		// reached on the host that holds operator cookies, and the URL is one
+		// a customer can put in front of their own cache rules. Falls back to
+		// the request's origin, which is always reachable by definition - the
+		// caller just arrived on it.
+		const serveOrigin = publicServeOrigin(this.env);
 		const signedUrl = new URL(
-			`${url.origin}/agents/storage-agent/${encodeURIComponent(target.projectId)}/buckets/${encodeURIComponent(target.bucket)}/objects/${encodedKey}`,
+			serveOrigin
+				? `${serveOrigin}${serveObjectPath(target.projectId, target.bucket, key)}`
+				: agentObjectUrl(url.origin, target.projectId, target.bucket, key),
 		);
 		signedUrl.searchParams.set(SIGNED_PARAM_VERSION, String(signed.version));
 		signedUrl.searchParams.set(SIGNED_PARAM_EXPIRES, String(signed.expires));

@@ -42,6 +42,19 @@ export interface StorageAgentBindings {
 	 * carry a custom domain (see BUCKET above). Empty disables the path.
 	 */
 	STORAGE_SERVE_DOMAIN?: string;
+	/**
+	 * `"true"` when `STORAGE_SERVE_DOMAIN` is genuinely REACHABLE - routed at
+	 * this Worker with DNS behind it - and may therefore be handed out in URLs.
+	 *
+	 * Deliberately a second fact, not folded into the first. A domain can be
+	 * SET without being routed, which is what local dev and the e2e stack do:
+	 * they name a host that resolves nowhere and reach the serving path through
+	 * the `x-cfbase-host` stand-in. Advertising that host would mint URLs that
+	 * resolve to nothing - the exact bug that made signed URLs build on the
+	 * request's origin in the first place. Unset means "serve on it if a
+	 * request somehow arrives, but never speak its name".
+	 */
+	STORAGE_SERVE_DOMAIN_ROUTED?: string;
 	SENTRY_DSN?: string;
 	SENTRY_ENV?: string;
 

@@ -856,6 +856,13 @@ export const storageOverviewSchema = z
 		totalObjects: z.number().int(),
 		totalBytes: z.number().int(),
 		configured: z.boolean().describe('Whether this install can store bytes (the R2 binding).'),
+		serveOrigin: z
+			.string()
+			.nullable()
+			.optional()
+			.describe(
+				'The dedicated object-serving origin, when one is routed at the storage worker. Null when objects are only reachable on this console origin. Optional so a pre-2026-08-18 agent still parses.'
+			),
 		erasing: z.boolean(),
 		demo: z
 			.boolean()

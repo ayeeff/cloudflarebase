@@ -17,7 +17,7 @@ import {
 	type BucketConfigInput,
 } from './schemas';
 import type { BucketStats, StorageBucket } from './bucket';
-import { mintSecret, type SigningSecret } from './signing';
+import { mintSecret, publicServeOrigin, type SigningSecret } from './signing';
 
 /**
  * StorageAgent - one Durable Object per project: the bucket registry and
@@ -597,6 +597,9 @@ export class StorageAgent extends Agent<Env, StorageAgentState> {
 			// Honest config report, so the dashboard can explain instead of 502:
 			// R2 is a dashboard checkout away, never a deploy-time requirement.
 			configured: Boolean(this.env.BUCKET),
+			// Only ever the ROUTED domain: a serving host that is merely SET is
+			// unreachable, and a console that renders it hands out dead links.
+			serveOrigin: publicServeOrigin(this.env),
 			erasing: await this.isErasing(),
 			caps: {
 				maxBuckets: envInt(this.env, 'STORAGE_MAX_BUCKETS', MAX_BUCKETS_PER_PROJECT),

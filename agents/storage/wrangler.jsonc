@@ -70,9 +70,14 @@
 		// deployment's own (comma-separated). Same contract as the db agent.
 		"TRUSTED_ORIGINS": "",
 		// Hostname to serve objects on (GET/HEAD, /<pid>/<bucket>/<key>) when a
-		// route on your zone points that domain AT THIS WORKER. Never attach a
+		// custom domain points that hostname AT THIS WORKER. Never attach a
 		// domain to the R2 bucket itself - see the header invariant.
 		"STORAGE_SERVE_DOMAIN": "",
+		// Set to "true" only once that hostname really resolves. It is what
+		// licenses handing the domain out in signed and public URLs; serving on
+		// it works either way. Two facts, because a domain can be set without
+		// being routed - and a URL minted on an unrouted host is a dead link.
+		"STORAGE_SERVE_DOMAIN_ROUTED": "",
 		// Empty on purpose: a committed DSN would collect every fork's errors.
 		// A var, not a secret - a DSN is public by design, and this plain_text
 		// binding would override a same-named secret on the next deploy.
@@ -146,12 +151,19 @@
 			// header invariant.
 			"r2_buckets": [{ "binding": "BUCKET", "bucket_name": "cfbase-storage" }],
 			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent" }],
-			// The serving hostname is routed AT THIS WORKER, which is what
-			// enforces the tenant prefix, the access modes, and the inline
-			// allowlist. The same hostname attached to the BUCKET as an R2
-			// custom domain would serve `p/<pid>/<bucket>/<key>` raw to anyone
-			// - every tenant, no code in the path. Never both, never that.
-			"routes": [{ "pattern": "cdn.cloudflarebase.com/*", "zone_name": "cloudflarebase.com" }],
+			// The serving hostname belongs to THIS WORKER, which is what enforces
+			// the tenant prefix, the access modes, and the inline allowlist. The
+			// same hostname attached to the BUCKET as an R2 custom domain would
+			// serve `p/<pid>/<bucket>/<key>` raw to anyone - every tenant, no code
+			// in the path. Never both, never that.
+			//
+			// `custom_domain`, not a zone route: a route binds a URL PATTERN and
+			// creates no DNS, so it needs a placeholder record to be reachable at
+			// all, and declaring one for a hostname that is already a Worker
+			// custom domain conflicts on deploy. A custom domain owns the record
+			// and the hostname outright, which is what a dedicated serving
+			// hostname wants.
+			"routes": [{ "pattern": "cdn.cloudflarebase.com", "custom_domain": true }],
 			"vars": {
 				"EXPOSE_OPERATOR_API": "true",
 				"TRUSTED_ORIGINS": "",
@@ -160,6 +172,11 @@
 				// shape differs from the raw R2 key, which carries the `p/` prefix
 				// this worker composes itself.
 				"STORAGE_SERVE_DOMAIN": "cdn.cloudflarebase.com",
+				// ...and it is genuinely reachable, so URLs may be handed out on it.
+				// Set ONLY where the custom domain above really exists: local and
+				// test name a host that resolves nowhere, so they leave this unset
+				// and keep minting on the request's origin.
+				"STORAGE_SERVE_DOMAIN_ROUTED": "true",
 				// No DSN minted for this worker yet; add one alongside launch.
 				"SENTRY_DSN": "",
 				"SENTRY_ENV": "production",
