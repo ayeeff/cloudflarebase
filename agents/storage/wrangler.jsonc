@@ -146,14 +146,19 @@
 			// header invariant.
 			"r2_buckets": [{ "binding": "BUCKET", "bucket_name": "cfbase-storage" }],
 			"services": [{ "binding": "AUTH_AGENT", "service": "auth-agent" }],
+			// The serving hostname is routed AT THIS WORKER, which is what
+			// enforces the tenant prefix, the access modes, and the inline
+			// allowlist. The same hostname attached to the BUCKET as an R2
+			// custom domain would serve `p/<pid>/<bucket>/<key>` raw to anyone
+			// - every tenant, no code in the path. Never both, never that.
+			"routes": [{ "pattern": "cdn.cloudflarebase.com/*", "zone_name": "cloudflarebase.com" }],
 			"vars": {
 				"EXPOSE_OPERATOR_API": "true",
 				"TRUSTED_ORIGINS": "",
-				// cloudflarebase.com's dedicated object-serving hostname. Inert
-				// until the route below is enabled - add, when DNS is ready:
-				//   "routes": [{ "pattern": "cdn.cloudflarebase.com/*", "zone_name": "cloudflarebase.com" }]
-				// The domain points at the WORKER; the R2 bucket itself must never
-				// carry r2.dev or a custom domain (header invariant).
+				// cloudflarebase.com's dedicated object-serving hostname, routed
+				// above. GET/HEAD only, at /<projectId>/<bucket>/<key> - note the
+				// shape differs from the raw R2 key, which carries the `p/` prefix
+				// this worker composes itself.
 				"STORAGE_SERVE_DOMAIN": "cdn.cloudflarebase.com",
 				// No DSN minted for this worker yet; add one alongside launch.
 				"SENTRY_DSN": "",
