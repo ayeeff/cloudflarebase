@@ -209,6 +209,38 @@ test('every envelope field is signed: editing the payload breaks the seal', asyn
 	}
 });
 
+test('a NUL inside a field cannot re-slice the signed payload', async () => {
+	// The signature covers the NUL-JOINED fields, so the join is only injective
+	// while no field may contain the separator. A NUL smuggled into one field
+	// makes the same signed bytes decode as different field values - here the
+	// same payload re-sliced so `owner` becomes someone else. Both spellings
+	// must be refused outright, not verified.
+	const smuggled = { ...ENVELOPE, contentType: 'video/mp4\0forged-owner\0x', owner: 'y' };
+	const resliced = { ...ENVELOPE, contentType: 'video/mp4', owner: 'forged-owner\0x\0y' };
+	for (const envelope of [smuggled, resliced]) {
+		const token = await sealUpload(HELD, envelope);
+		const verdict = await openUpload(HELD, token, NOW);
+		assert.deepEqual(verdict, { ok: false, reason: 'malformed' });
+	}
+});
+
+test('an envelope with a missing or mistyped field is refused', async () => {
+	const token = await sealUpload(HELD, ENVELOPE);
+	const [version, , signature] = token.split('.');
+	for (const broken of [
+		{ ...ENVELOPE, contentType: 7 as unknown as string },
+		{ ...ENVELOPE, owner: undefined as unknown as string },
+	]) {
+		const reencoded = Buffer.from(JSON.stringify(broken))
+			.toString('base64')
+			.replace(/\+/g, '-')
+			.replace(/\//g, '_')
+			.replace(/=+$/, '');
+		const verdict = await openUpload(HELD, `${version}.${reencoded}.${signature}`, NOW);
+		assert.deepEqual(verdict, { ok: false, reason: 'malformed' });
+	}
+});
+
 test('an upload envelope and a download signature cannot be swapped', async () => {
 	// One secret signs both, so each payload names its own protocol. Without
 	// the context label a value signed for one would verify as the other.
