@@ -282,7 +282,7 @@
 		// actually changes is the bindings - AUTH_AGENT targets the preview
 		// agent - and versions carry their own bindings.
 		"preview": {
-			"name": "cloudflarebase-com",
+			"name": "cloudflarebase-com-preview",
 			"workers_dev": false,
 			"routes": [],
 			"vars": {
