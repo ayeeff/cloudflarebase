@@ -236,6 +236,8 @@
 		"production": {
 			"name": "cloudflarebase-com",
 			"workers_dev": false,
+			// Version preview URLs live on the preview Worker, not here.
+			"preview_urls": false,
 			"routes": [
 				{
 					"pattern": "cloudflarebase.com",
@@ -275,15 +277,24 @@
 			]
 		},
 
-		// Preview is a version-level environment of the SAME Worker, not a
-		// second Worker: Workers Builds is connected to cloudflarebase-com and
-		// uploads non-production branches as preview versions, so the name here
-		// must match or CI overrides it and threatens a rename PR. What preview
-		// actually changes is the bindings - AUTH_AGENT targets the preview
-		// agent - and versions carry their own bindings.
+		// Preview is its OWN Worker (2026-08-18; it used to be preview versions
+		// of cloudflarebase-com): Workers Builds is connected to
+		// cloudflarebase-com-preview and deploys the preview branch with
+		// `--env preview`, so the name here must match that connection or CI
+		// warns "Failed to match Worker name" and threatens a rename PR. It
+		// serves on workers.dev (no custom domain) at
+		// https://cloudflarebase-com-preview.cloudflarebase.workers.dev - the
+		// origin the preview agents' TRUSTED_ORIGINS must name - and keeps
+		// preview_urls on for per-version URLs of other branches. The bindings
+		// are the point: AUTH_AGENT targets the preview agent and DB binds the
+		// preview control plane. A separate Worker is also a separate SECRET
+		// STORE - preview inherits nothing from production, so optional secrets
+		// (the GitHub App four, CONSOLE_SETUP_TOKEN) exist here only if put
+		// here.
 		"preview": {
 			"name": "cloudflarebase-com-preview",
-			"workers_dev": false,
+			"workers_dev": true,
+			"preview_urls": true,
 			"routes": [],
 			"vars": {
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",

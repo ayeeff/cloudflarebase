@@ -605,16 +605,17 @@ control-plane D1 keeps its claims from colliding with production's.
 Independent of the list above - hosting works without it, and an install
 that skips it keeps the manual deploy-token flow.
 
-**ONE App for cloudflarebase.com, not one per environment.** The web
-`env.production` and `env.preview` are the SAME Worker
-(`cloudflarebase-com`; preview ships as versions of it) and Cloudflare
-secrets are per SCRIPT, so both share one secret store - a second App
-could never be reached by preview versions. Point the App at the
-production origin; preview versions inherit the same credentials, so a
-connect started from a preview URL redirects back to production, which is
-the honest behaviour for an ephemeral version. A genuinely separate App
-only makes sense for a genuinely separate deployment (another
-self-hosted install).
+**ONE App for cloudflarebase.com, registered against production.**
+(Until 2026-08-18 preview shipped as versions of the production Worker
+and shared its per-SCRIPT secret store, which made a second App
+impossible. Preview is now its own Worker, `cloudflarebase-com-preview`,
+with its own secret store - and therefore NO GitHub App secrets unless
+someone puts them there.) Point the App at the production origin;
+unconfigured is the ordinary self-hosted default, so preview keeps the
+manual deploy-token flow. A second App for preview is now possible but
+only worth registering when preview's GitHub-connect path is itself
+under test; a genuinely separate App otherwise belongs to a genuinely
+separate deployment (another self-hosted install).
 
 1. **Register the App** at
    `https://github.com/settings/apps/new` (or under an org):
