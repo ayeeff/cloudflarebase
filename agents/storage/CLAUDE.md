@@ -18,16 +18,21 @@ and the manifest).
 key - bucket configure/drop/list plus object put/get/list/delete. It targets
 the **console origin, never an agent base** (a key is verified in the console
 guard and does not work on `/agents/*`), and object bytes ride the console's
-one STREAMING proxy, so `put` passes a stream through untouched. Three
+one STREAMING proxy, so `put` passes a stream through untouched. Four
 behaviours worth knowing: it refuses to construct in a browser
 (`typeof globalThis.document !== 'undefined'`); it computes `Content-Length`
 from the body and DEMANDS an explicit `size` for a stream, because the agent
-answers 411 without one; and it refuses FORM content types (`text/plain`,
+answers 411 without one; it refuses FORM content types (`text/plain`,
 `multipart/form-data`, `x-www-form-urlencoded`) locally with a sentence
 explaining why, since SvelteKit's CSRF check rejects those on a request with
-no Origin - and a service key never sends one. Default content type is
-`application/octet-stream` for exactly that reason. Pinned by
-`e2e/admin-sdk.api.spec.ts`.
+no Origin - and a service key never sends one (default content type is
+`application/octet-stream` for exactly that reason); and it discriminates
+404s the way its db/auth siblings do (2026-08-18): only the agent's own
+`no such object` answers `get() → null`, `no such bucket`/`no such project`
+throw with that message (a typo'd bucket must never read as an empty
+dataset), and any OTHER 404 - a pre-S2 console with no object proxy at all -
+throws `StorageAgentTooOldError` instead of impersonating a missing object.
+Pinned by `e2e/admin-sdk.api.spec.ts`.
 
 **Signed download URLs** (`src/signing.ts`, shipped 2026-08-17 - S2's first
 item): `POST /buckets/<b>/signed-urls` (and the `/admin` mirror the console
@@ -204,9 +209,15 @@ uploads/<id>`. Five things worth holding on to:
   S2). Per-bucket `maxObjectBytes` can only lower the PUT ceiling.
   `Content-Length` is required (411) - a chunked body would have to be
   buffered, and a 100 MB buffer in a shared isolate is a memory bomb.
-- **No demo storage in v1**: every surface refuses demo-shaped ids with 403
-  (anonymous object hosting is a phishing machine). The synthetic read-only
-  demo bucket is the planned S2 replacement.
+- **Demo projects get a READ-ONLY sample bucket, answered entirely by the
+  worker** (S2, 2026-08-17): `demoRoute` in `src/index.ts` intercepts every
+  demo-shaped id BEFORE any DO is dialled (bytes bundled in the worker, rows
+  generated, timestamps fixed), serving overview/listing/object reads and
+  answering every write or capability mint with `demoRefusal()` - anonymous
+  object HOSTING is still a phishing machine, only curated reads are open.
+  The per-handler demo checks further down are unreachable belts kept so a
+  dispatch reorder cannot quietly open demo writes; they answer
+  `demoRefusal()` too, so the copy cannot drift.
 - **The self-hosted default has NO `BUCKET` binding** - R2 is an
   account-level opt-in behind a dashboard checkout (the AUTH_EVENTS lesson:
   a binding the account lacks fails the whole deploy). The agent reports
@@ -227,7 +238,7 @@ uploads/<id>`. Five things worth holding on to:
 | Command              | Purpose                                                           |
 | -------------------- | ----------------------------------------------------------------- |
 | `npx tsc --noEmit`   | Typecheck (also runs the `bindings.test-d.ts` contract negatives) |
-| `npm run test:unit`  | Route gate + key normalization under node:test                    |
+| `npm run test:unit`  | Route gate, keys, signing/envelope, reconcile under node:test     |
 | `npm run migrations` | Generate migrations after `src/db/schema.ts` edits, then inline   |
 | `npx wrangler types` | Regenerate Worker types after binding changes                     |
 | `npm run dev`        | env.local on :8791 (miniflare R2 simulator)                       |
