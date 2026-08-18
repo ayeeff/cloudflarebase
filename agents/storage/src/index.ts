@@ -441,12 +441,11 @@ class StorageService extends WorkerEntrypoint<Env> {
 		target: ObjectRouteTarget,
 	): Promise<Response> {
 		if (DEMO_PROJECT_PATTERN.test(target.projectId)) {
-			// No demo storage in v1: anonymous object hosting on a real origin
-			// is a phishing machine. Belt to the console's braces.
-			return Response.json(
-				{ error: 'storage is not available on demo projects - create a real project to use it' },
-				{ status: 403 },
-			);
+			// Unreachable through fetch() - demoRoute answers every demo-shaped id
+			// first, serving the read-only sample bucket - but kept as the belt to
+			// that braces: anonymous object WRITES on a real origin are a phishing
+			// machine, and a dispatch reorder must not quietly reopen them.
+			return demoRefusal();
 		}
 
 		const cors = corsHeadersFor(request, this.env.TRUSTED_ORIGINS);
@@ -491,10 +490,9 @@ class StorageService extends WorkerEntrypoint<Env> {
 		subPath: string,
 	): Promise<Response> {
 		if (DEMO_PROJECT_PATTERN.test(target.projectId)) {
-			return Response.json(
-				{ error: 'storage is not available on demo projects - create a real project to use it' },
-				{ status: 403 },
-			);
+			// Unreachable through fetch() - demoRoute answers demo ids first - but
+			// kept so a dispatch reorder cannot quietly open demo uploads.
+			return demoRefusal();
 		}
 		const cors = corsHeadersFor(request, this.env.TRUSTED_ORIGINS);
 		if (request.method === 'OPTIONS') {
@@ -877,10 +875,9 @@ class StorageService extends WorkerEntrypoint<Env> {
 		target: ObjectRouteTarget,
 	): Promise<Response> {
 		if (DEMO_PROJECT_PATTERN.test(target.projectId)) {
-			return Response.json(
-				{ error: 'storage is not available on demo projects - create a real project to use it' },
-				{ status: 403 },
-			);
+			// Unreachable through fetch() - demoRoute answers demo ids first - but
+			// kept so a dispatch reorder cannot quietly mint demo capabilities.
+			return demoRefusal();
 		}
 
 		const cors = corsHeadersFor(request, this.env.TRUSTED_ORIGINS);
@@ -1503,9 +1500,11 @@ class StorageService extends WorkerEntrypoint<Env> {
 			await caches.default.delete(this.cacheKey(url));
 			const domain = this.env.STORAGE_SERVE_DOMAIN;
 			if (domain) {
-				const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+				// serveObjectPath, not a hand-built string: the purge spelling must
+				// be byte-identical to the spelling serve requests are cached under,
+				// or an overwrite keeps serving the old bytes until TTL.
 				await caches.default.delete(
-					`https://${domain}/${target.projectId}/${target.bucket}/${encodedKey}`,
+					`https://${domain}${serveObjectPath(target.projectId, target.bucket, key)}`,
 				);
 			}
 		} catch {
