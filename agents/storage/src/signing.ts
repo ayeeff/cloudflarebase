@@ -327,3 +327,39 @@ export function mintSecret(): string {
 		.map((byte) => byte.toString(16).padStart(2, '0'))
 		.join('');
 }
+
+/**
+ * The origin to hand out in URLs, or null when there is none to hand out.
+ *
+ * Takes the two facts separately on purpose: a serving domain being SET means
+ * this Worker answers on that Host, and says NOTHING about whether a browser
+ * can reach it. Only `routed` licenses putting it in a URL.
+ */
+export function publicServeOrigin(env: {
+	STORAGE_SERVE_DOMAIN?: string;
+	STORAGE_SERVE_DOMAIN_ROUTED?: string;
+}): string | null {
+	const domain = env.STORAGE_SERVE_DOMAIN?.trim();
+	if (!domain) return null;
+	if (env.STORAGE_SERVE_DOMAIN_ROUTED !== 'true') return null;
+	return `https://${domain}`;
+}
+
+/** The serving-domain path for an object: `/<projectId>/<bucket>/<key>`. The
+ * `p/` prefix that keys it inside R2 is composed by this Worker and never
+ * appears in a URL. */
+export function serveObjectPath(projectId: string, bucket: string, key: string): string {
+	const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+	return `/${encodeURIComponent(projectId)}/${encodeURIComponent(bucket)}/${encodedKey}`;
+}
+
+/** The agent-path spelling of the same object, on a given origin. */
+export function agentObjectUrl(
+	origin: string,
+	projectId: string,
+	bucket: string,
+	key: string,
+): string {
+	const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+	return `${origin}/agents/storage-agent/${encodeURIComponent(projectId)}/buckets/${encodeURIComponent(bucket)}/objects/${encodedKey}`;
+}

@@ -263,6 +263,21 @@
 		}
 	}
 
+	/**
+	 * The plain, unsigned URL for the open object - only on a bucket that
+	 * actually reads `public`, and only on a serving domain this deployment has
+	 * ROUTED. Both halves matter: a private bucket's plain URL answers 401, and
+	 * an unrouted domain resolves nowhere, so either one would have the console
+	 * hand an operator a link that does not work.
+	 */
+	const publicUrl = $derived.by(() => {
+		const object = previewOf;
+		const serveOrigin = overview.serveOrigin;
+		if (!object || !serveOrigin || activeBucket?.read !== 'public') return '';
+		const encoded = object.key.split('/').map(encodeURIComponent).join('/');
+		return `${serveOrigin}/${encodeURIComponent(projectId)}/${encodeURIComponent(activeBucket.name)}/${encoded}`;
+	});
+
 	let deleteTarget = $state<StorageObjectInfo | null>(null);
 	async function confirmDelete() {
 		if (!deleteTarget) return;
@@ -596,7 +611,7 @@
 		buildStorageIntegrationExamples(
 			`${page.url.origin}/agents/storage-agent/${projectId}`,
 			activeBucket?.name ?? 'my-bucket',
-			{ origin: page.url.origin, projectId }
+			{ origin: page.url.origin, projectId, serveOrigin: overview.serveOrigin ?? null }
 		)
 	);
 </script>
@@ -1396,6 +1411,33 @@
 					>
 						<Download class="mr-1.5 h-4 w-4" /> Download
 					</Button>
+					{#if publicUrl}
+						<div class="space-y-1.5" data-testid="public-url-block">
+							<p class="text-xs font-medium">Public URL</p>
+							<div class="flex items-start gap-1.5 rounded-md border bg-muted p-2">
+								<code
+									class="min-w-0 flex-1 font-mono text-[11px] break-all select-all"
+									data-testid="public-url">{publicUrl}</code
+								>
+								<Button
+									variant="ghost"
+									size="icon"
+									class="h-6 w-6 shrink-0"
+									title="Copy public URL"
+									data-testid="copy-public-url"
+									onclick={() => copy(publicUrl, 'public')}
+								>
+									{#if copied === 'public'}<Check class="h-3 w-3" />{:else}<Copy
+											class="h-3 w-3"
+										/>{/if}
+								</Button>
+							</div>
+							<p class="text-[11px] text-muted-foreground">
+								This bucket reads <span class="font-mono">public</span>, so no signature is needed
+								and this link does not expire.
+							</p>
+						</div>
+					{/if}
 					<Button
 						variant="outline"
 						class="w-full"

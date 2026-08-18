@@ -45,10 +45,20 @@ extra hop. GET and HEAD only. Four rules that are easy to get backwards:
 - **Mint reads the parent directly** (`bucketAccess(..., force)`), never the
   isolate cache. Signing from a stale entry signs with a RETIRED secret, and a
   seven-day URL that dies in 30 seconds is worse than no URL.
-- **Mint builds on the request's origin**, never `STORAGE_SERVE_DOMAIN` - a
-  serve domain can be set without being routed, which is true in production
-  (route commented pending DNS) and in e2e (host stand-in) right now. The host
-  is not signed, so swapping it is the caller's option.
+- **Mint builds on the ROUTED serving domain, else the request's origin.**
+  Originally it was the request's origin unconditionally, because a serve
+  domain can be SET without being routed - true in production until 2026-08-18
+  (custom domain pending DNS) and still true in local/e2e, which name a host
+  that resolves nowhere and reach the path through the `x-cfbase-host`
+  stand-in. Those are two different facts, so they are now two vars:
+  `STORAGE_SERVE_DOMAIN` is the Host this worker ANSWERS on, and
+  `STORAGE_SERVE_DOMAIN_ROUTED="true"` is what licenses putting it in a URL
+  (`publicServeOrigin`). Minting on it is also a security gain - the bytes
+  leave the console's origin, where operator cookies live. The host is still
+  not signed, so either spelling verifies and swapping it stays the caller's
+  option. Pinned by `signing.unit.test.ts` (the routed branch, which no
+  environment here can honestly stand up) and by the e2e case proving the
+  unrouted stack serves on its domain and never names it.
 - **Rotation is bounded-time revocation**, converging within the access-cache
   TTL. The version-mismatch refetch rescues NEW URLs against a stale isolate;
   an OLD URL matches the version that isolate still holds. To kill a URL
@@ -203,8 +213,9 @@ uploads/<id>`. Five things worth holding on to:
   `configured: false` and object requests answer 503 with the setup steps;
   bucket metadata still works. Local dev and e2e declare the binding against
   miniflare's R2 simulator - full fidelity.
-- **`STORAGE_SERVE_DOMAIN`** (production: `cdn.cloudflarebase.com`, route
-  commented in wrangler.jsonc until DNS is ready): GET/HEAD only at
+- **`STORAGE_SERVE_DOMAIN`** (production: `cdn.cloudflarebase.com`, a Worker
+  **custom domain** since 2026-08-18 - not a zone route, which creates no DNS
+  and conflicts with a custom domain on the same hostname): GET/HEAD only at
   `/<pid>/<bucket>/<key>`, same pipeline and enforcement as the agent path.
   Read-only by design - writes stay on the agent surface where the console
   guard and CORS policy already apply. `STORAGE_SERVE_HOST_HEADER` (local/

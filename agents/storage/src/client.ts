@@ -35,6 +35,18 @@ export interface StorageClientOptions {
 	 * the guess would 404 in a way that looks like a broken install.
 	 */
 	baseUrl: string;
+	/**
+	 * The dedicated object-serving origin, when your deployment routes one at
+	 * the storage worker (`https://cdn.example.com`). Only `getPublicUrl()`
+	 * uses it - every request this client makes still goes to `baseUrl`,
+	 * because the serving domain is GET/HEAD only.
+	 *
+	 * Passed rather than discovered: `getPublicUrl` builds a string and makes
+	 * no request, so there is nowhere to learn this without turning a sync call
+	 * into an async one. The console's Integration tab prints the value your
+	 * deployment actually has.
+	 */
+	publicBaseUrl?: string;
 	/** Called per request; return null for public buckets. */
 	getToken?: () => Promise<string | null> | string | null;
 }
@@ -433,13 +445,20 @@ export function createStorageClient(options: StorageClientOptions) {
 				},
 
 				/**
-				 * The plain URL for an object on a `read: public` bucket. String
-				 * building only - it makes no request and CANNOT tell you whether
-				 * the bucket is actually public, so on a private bucket the URL is
-				 * real but answers 401. Use `createSignedUrl` when in doubt.
+				 * The plain URL for an object on a `read: public` bucket - on
+				 * `publicBaseUrl` when you configured one, else the agent base.
+				 * String building only: it makes no request and CANNOT tell you
+				 * whether the bucket is actually public, so on a private bucket the
+				 * URL is real but answers 401. Use `createSignedUrl` when in doubt.
 				 */
 				getPublicUrl(key: string): string {
-					return objectUrl(key);
+					const serveOrigin = options.publicBaseUrl?.replace(/\/$/, '');
+					if (!serveOrigin) return objectUrl(key);
+					// The serving domain's own path shape - `/<projectId>/<bucket>/<key>`,
+					// no agent prefix. The projectId comes off the base URL, which
+					// always ends in it.
+					const projectId = baseUrl.slice(baseUrl.lastIndexOf('/') + 1);
+					return `${serveOrigin}/${projectId}/${encodeURIComponent(bucket)}/${encodeKey(key)}`;
 				},
 			};
 		},

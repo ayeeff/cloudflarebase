@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
 	MAX_PART_SIZE,
+	agentObjectUrl,
+	publicServeOrigin,
+	serveObjectPath,
 	MIN_PART_SIZE,
 	SIGNED_URL_MAX_TTL_SECONDS,
 	hasSignedParams,
@@ -259,4 +262,61 @@ test('part counts never round down, and never reach zero', () => {
 	assert.equal(partCount(1, MIN_PART_SIZE), 1);
 	assert.equal(partCount(MIN_PART_SIZE, MIN_PART_SIZE), 1);
 	assert.equal(partCount(MIN_PART_SIZE + 1, MIN_PART_SIZE), 2);
+});
+
+/**
+ * Advertising a serving domain is a SEPARATE decision from serving on one.
+ * This is the rule that keeps e2e's dead host - and production's, for the
+ * fortnight it was set but unrouted - out of URLs handed to callers.
+ */
+test('a serving domain is only advertised once it is routed', () => {
+	// Set but not routed: the shape local dev and the e2e stack run in, and
+	// the shape production ran in until the custom domain was attached.
+	assert.equal(publicServeOrigin({ STORAGE_SERVE_DOMAIN: 'cdn.cfbase.test' }), null);
+	assert.equal(
+		publicServeOrigin({ STORAGE_SERVE_DOMAIN: 'cdn.cfbase.test', STORAGE_SERVE_DOMAIN_ROUTED: '' }),
+		null,
+	);
+	// Only the exact string - a truthy-looking value is not a promise that DNS
+	// exists, and getting this wrong mints URLs that resolve nowhere.
+	assert.equal(
+		publicServeOrigin({
+			STORAGE_SERVE_DOMAIN: 'cdn.example.com',
+			STORAGE_SERVE_DOMAIN_ROUTED: 'yes',
+		}),
+		null,
+	);
+	assert.equal(
+		publicServeOrigin({
+			STORAGE_SERVE_DOMAIN: 'cdn.example.com',
+			STORAGE_SERVE_DOMAIN_ROUTED: 'true',
+		}),
+		'https://cdn.example.com',
+	);
+	// Routed with no domain is meaningless, not a crash.
+	assert.equal(publicServeOrigin({ STORAGE_SERVE_DOMAIN_ROUTED: 'true' }), null);
+	assert.equal(
+		publicServeOrigin({ STORAGE_SERVE_DOMAIN: '   ', STORAGE_SERVE_DOMAIN_ROUTED: 'true' }),
+		null,
+	);
+});
+
+test('the two URL spellings address the same object, and neither leaks the R2 prefix', () => {
+	const serve = serveObjectPath('proj', 'avatars', 'me.png');
+	assert.equal(serve, '/proj/avatars/me.png');
+	const agent = agentObjectUrl('https://console.example', 'proj', 'avatars', 'me.png');
+	assert.equal(
+		agent,
+		'https://console.example/agents/storage-agent/proj/buckets/avatars/objects/me.png',
+	);
+
+	// `p/` is how the worker keys the object INSIDE the shared bucket - the
+	// tenant boundary - and it must never appear in a URL, on either door.
+	assert.ok(!serve.startsWith('/p/'));
+	assert.ok(!agent.includes('/p/'));
+
+	// Key separators stay separators; every segment is encoded individually,
+	// so a folder path survives and a stray `?` or `#` cannot escape the path.
+	assert.equal(serveObjectPath('proj', 'b', 'a/b/c.txt'), '/proj/b/a/b/c.txt');
+	assert.equal(serveObjectPath('proj', 'b', 'a b?c.txt'), '/proj/b/a%20b%3Fc.txt');
 });
