@@ -125,7 +125,14 @@ export type SignedUrlRequest = z.infer<typeof signedUrlRequestSchema>;
 export const createUploadRequestSchema = z.strictObject({
 	key: z.string().min(1).max(1024),
 	size: z.number().int().min(1),
-	contentType: z.string().max(255).optional(),
+	// No control characters: the value is signed into the NUL-separated upload
+	// envelope, where an embedded NUL would shift the field boundaries.
+	contentType: z
+		.string()
+		.max(255)
+		// eslint-disable-next-line no-control-regex -- the keys.ts idiom
+		.regex(/^[^\x00-\x1f\x7f]*$/, 'contentType must not contain control characters')
+		.optional(),
 });
 export type CreateUploadRequest = z.infer<typeof createUploadRequestSchema>;
 

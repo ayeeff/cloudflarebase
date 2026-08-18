@@ -498,11 +498,14 @@ test.describe('security boundaries', () => {
 	 * `text/plain`, so the primary documented server path answered 403 before
 	 * the key was read.
 	 *
-	 * The relaxation is narrow: skip ONLY when an `Authorization` header is
-	 * present, which a browser cannot attach cross-origin without a preflight
-	 * this app never answers. Everything cookie-shaped keeps the full check.
-	 * These assertions are the half that matters - get the relaxation wrong and
-	 * the whole console API becomes CSRF-able, sign-in included.
+	 * The relaxation is narrow: skip ONLY for a BEARER-shaped `Authorization`
+	 * header, which a browser cannot attach cross-origin without a preflight
+	 * this app never answers. Everything cookie-shaped keeps the full check -
+	 * including a request carrying a NON-bearer Authorization, because `Basic`
+	 * is one a browser CAN attach by itself (a user:pass@host navigation)
+	 * beside the victim's cookies. These assertions are the half that matters -
+	 * get the relaxation wrong and the whole console API becomes CSRF-able,
+	 * sign-in included.
 	 */
 	test('cross-site form writes are still refused without a bearer', async ({ playwright }) => {
 		const base = process.env.BASE_URL ?? 'http://localhost:8797';
@@ -537,6 +540,20 @@ test.describe('security boundaries', () => {
 					data: 'collection=posts'
 				});
 				expect(bare.status(), `no origin, ${contentType}`).toBe(403);
+
+				// A NON-bearer Authorization must not buy the skip: `Basic` can ride
+				// beside cookies on a browser-initiated navigation, and the guard
+				// would authenticate the request from the cookies it carries.
+				const basic = await victim.fetch(dbAdminQueryPath(SEED_PROJECT), {
+					method: 'POST',
+					headers: {
+						origin: 'https://evil.example',
+						'content-type': contentType,
+						authorization: `Basic ${Buffer.from('user:pass').toString('base64')}`
+					},
+					data: 'collection=posts'
+				});
+				expect(basic.status(), `Basic auth, ${contentType}`).toBe(403);
 			}
 
 			// Sign-in is the highest-value CSRF target on this deployment: it is

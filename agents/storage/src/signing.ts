@@ -296,9 +296,29 @@ export async function openUpload(
 		typeof envelope?.key !== 'string' ||
 		typeof envelope?.reservationId !== 'string' ||
 		typeof envelope?.r2UploadId !== 'string' ||
+		typeof envelope?.contentType !== 'string' ||
+		typeof envelope?.owner !== 'string' ||
 		typeof envelope?.partSize !== 'number' ||
 		typeof envelope?.size !== 'number' ||
 		typeof envelope?.expires !== 'number'
+	) {
+		return { ok: false, reason: 'malformed' };
+	}
+	// The signature is an HMAC over the NUL-JOINED fields, so the join is only
+	// injective while no field can contain the separator. A NUL smuggled into
+	// one field (mint validates most of them, but the envelope must not depend
+	// on that) would let the same signed bytes be re-sliced into different
+	// field values - a forged owner, a shifted expiry.
+	if (
+		[
+			envelope.projectId,
+			envelope.bucket,
+			envelope.key,
+			envelope.reservationId,
+			envelope.r2UploadId,
+			envelope.contentType,
+			envelope.owner,
+		].some((field) => field.includes('\0'))
 	) {
 		return { ok: false, reason: 'malformed' };
 	}

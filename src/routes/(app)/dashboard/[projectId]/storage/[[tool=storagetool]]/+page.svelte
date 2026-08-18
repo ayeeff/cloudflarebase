@@ -132,8 +132,11 @@
 		}
 	}
 
-	// Re-read whenever the bucket or the folder changes.
+	// Re-read whenever the bucket or the folder changes - but only while the
+	// Files tab is the one rendering the listing. Access and Integration never
+	// display it, and each read is a worker hop plus a bucket-DO page scan.
 	$effect(() => {
+		if (tool !== 'files') return;
 		void activeBucket?.name;
 		void prefix;
 		cursorStack = [];
@@ -144,6 +147,7 @@
 	// live refresh never yanks the operator back to the top. Paused during an
 	// upload, whose own reload lands the moment it finishes.
 	$effect(() => {
+		if (tool !== 'files') return;
 		const timer = setInterval(() => {
 			if (!uploading && !loading) void loadObjects(pageCursor, true);
 		}, 5000);
@@ -331,6 +335,10 @@
 			}
 			await loadObjects(null);
 			await invalidateAll();
+		} catch {
+			// A thrown fetch (network drop) must not vanish silently: without
+			// this the progress bar just disappears and nothing says why.
+			if (!uploadError) uploadError = 'upload failed - could not reach the storage agent';
 		} finally {
 			uploading = false;
 			uploadProgress = 0;
@@ -356,27 +364,35 @@
 		}
 		const session = (await created.json()) as UploadSession;
 		const parts: { partNumber: number; etag: string }[] = [];
-		for (let index = 0; index < session.parts; index += 1) {
-			const start = index * session.partSize;
-			const chunk = file.slice(start, Math.min(start + session.partSize, file.size));
-			const response = await fetch(`${base}/${session.uploadId}/parts/${index + 1}`, {
-				method: 'PUT',
-				body: chunk
-			});
-			if (!response.ok) {
-				uploadError = `part ${index + 1} failed`;
-				await fetch(`${base}/${session.uploadId}`, { method: 'DELETE' });
-				return;
+		try {
+			for (let index = 0; index < session.parts; index += 1) {
+				const start = index * session.partSize;
+				const chunk = file.slice(start, Math.min(start + session.partSize, file.size));
+				const response = await fetch(`${base}/${session.uploadId}/parts/${index + 1}`, {
+					method: 'PUT',
+					body: chunk
+				});
+				if (!response.ok) {
+					uploadError = `part ${index + 1} failed`;
+					await fetch(`${base}/${session.uploadId}`, { method: 'DELETE' });
+					return;
+				}
+				parts.push((await response.json()) as { partNumber: number; etag: string });
+				uploadProgress = Math.round(((index + 1) / session.parts) * 100);
 			}
-			parts.push((await response.json()) as { partNumber: number; etag: string });
-			uploadProgress = Math.round(((index + 1) / session.parts) * 100);
+			const done = await fetch(`${base}/${session.uploadId}/complete`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ parts })
+			});
+			if (!done.ok) uploadError = 'upload could not complete';
+		} catch (error) {
+			// A thrown fetch mid-part would otherwise leave the R2 upload and its
+			// quota reservation parked until the 24h sweep. Abort best-effort -
+			// the sweep stays the backstop, not the plan.
+			await fetch(`${base}/${session.uploadId}`, { method: 'DELETE' }).catch(() => undefined);
+			throw error;
 		}
-		const done = await fetch(`${base}/${session.uploadId}/complete`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ parts })
-		});
-		if (!done.ok) uploadError = 'upload could not complete';
 	}
 
 	function onDrop(event: DragEvent) {
@@ -486,6 +502,17 @@
 	let edits = $state<Record<string, Pending>>({});
 	let accessBusy = $state('');
 	let accessFeedback = $state<Record<string, { ok: boolean; message: string }>>({});
+
+	// The Access rail: every bucket's posture in one list, ONE editor at a
+	// time beside it - the Files page's idiom, instead of a stacked full form
+	// per bucket. Derived with a first-bucket fallback so the selection heals
+	// itself when a bucket is deleted or the page lands fresh.
+	let accessSelected = $state<string | null>(null);
+	const accessConfig = $derived(
+		(data.configs ?? []).find((config) => config.name === accessSelected) ??
+			data.configs?.[0] ??
+			null
+	);
 
 	// Reset from the server payload: reading `data.configs` only, so a save's
 	// invalidateAll re-seeds the controls and nothing here re-triggers itself.
@@ -713,200 +740,244 @@
 					</p>
 				{/if}
 
-				{#each data.configs ?? [] as config (config.name)}
-					{@const pending = edits[config.name]}
-					{#if pending}
-						{@const feedback = accessFeedback[config.name]}
-						{@const busy = accessBusy === config.name}
-						<Card.Root data-testid="access-card-{config.name}">
-							<Card.Header>
-								<Card.Title class="flex items-center gap-2 font-mono text-base">
-									<Folder class="h-4 w-4 text-primary" />
-									{config.name}
-									<span class="ml-auto text-xs font-normal text-muted-foreground">
-										{plural(config.objectCount, 'object')} · {formatBytes(config.totalBytes)}
-									</span>
-								</Card.Title>
-								<Card.Description data-testid="access-sentence-{config.name}">
-									{accessSentence(pending)}
-								</Card.Description>
-							</Card.Header>
-							<Card.Content class="space-y-4">
-								{#if pending.read === 'public' || pending.write === 'public'}
-									<p
-										class="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-400"
-									>
-										<TriangleAlert class="mt-px h-3.5 w-3.5 shrink-0" />
-										<span>
-											{pending.write === 'public'
-												? 'Public write means anyone on the internet can upload to this bucket. Use it only for buckets you can afford to have filled by strangers.'
-												: 'Public read means anyone with the key can fetch the object without signing in. Private objects want a signed URL instead.'}
-										</span>
-									</p>
-								{/if}
-
-								<div class="grid gap-4 sm:grid-cols-2">
-									<div class="space-y-1.5">
-										<Label>Read</Label>
-										<Select.Root
-											type="single"
-											value={pending.read}
-											onValueChange={(value) => setField(config.name, 'read', toAccessMode(value))}
-										>
-											<Select.Trigger
-												class="w-full font-mono"
-												disabled={busy}
-												aria-label={`Read access for ${config.name}`}
-												data-testid="access-read-{config.name}"
-											>
-												{pending.read}
-											</Select.Trigger>
-											<Select.Content>
-												{#each accessModes as mode (mode)}
-													<Select.Item value={mode} label={mode} class="font-mono" />
-												{/each}
-											</Select.Content>
-										</Select.Root>
-									</div>
-									<div class="space-y-1.5">
-										<Label>Write</Label>
-										<Select.Root
-											type="single"
-											value={pending.write}
-											onValueChange={(value) => setField(config.name, 'write', toAccessMode(value))}
-										>
-											<Select.Trigger
-												class="w-full font-mono"
-												disabled={busy}
-												aria-label={`Write access for ${config.name}`}
-												data-testid="access-write-{config.name}"
-											>
-												{pending.write}
-											</Select.Trigger>
-											<Select.Content>
-												{#each accessModes as mode (mode)}
-													<Select.Item value={mode} label={mode} class="font-mono" />
-												{/each}
-											</Select.Content>
-										</Select.Root>
-									</div>
-
-									<div class="space-y-1.5">
-										<Label for="read-perm-{config.name}">Read permission</Label>
-										<Input
-											id="read-perm-{config.name}"
-											class="font-mono"
-											placeholder="none"
-											value={pending.readPermission}
-											disabled={busy || pending.read === 'public'}
-											oninput={(event) =>
-												setField(config.name, 'readPermission', event.currentTarget.value)}
-										/>
-									</div>
-									<div class="space-y-1.5">
-										<Label for="write-perm-{config.name}">Write permission</Label>
-										<Input
-											id="write-perm-{config.name}"
-											class="font-mono"
-											placeholder="none"
-											value={pending.writePermission}
-											disabled={busy || pending.write === 'public'}
-											oninput={(event) =>
-												setField(config.name, 'writePermission', event.currentTarget.value)}
-										/>
-									</div>
-								</div>
-								<p class="text-xs text-muted-foreground">
-									A permission key tightens auth/owner further: the user's role must grant that key.
-									Roles live under Auth &gt; Roles, and the built-in admin role grants everything.
-								</p>
-
-								<div class="flex items-start justify-between gap-4 rounded-md border p-3">
-									<div>
-										<p class="text-sm font-medium">Public listing</p>
-										<p class="text-xs text-muted-foreground">
-											Whether anonymous callers may list every key. Separate from reading a key they
-											already know.
-										</p>
-									</div>
-									<Switch
-										checked={pending.publicListing}
-										disabled={busy}
-										aria-label={`Public listing for ${config.name}`}
-										data-testid="access-listing-{config.name}"
-										onCheckedChange={(value) => setField(config.name, 'publicListing', value)}
-									/>
-								</div>
-
-								<div class="grid gap-4 sm:grid-cols-3">
-									<div class="space-y-1.5">
-										<Label for="max-size-{config.name}">Max object size (MB)</Label>
-										<Input
-											id="max-size-{config.name}"
-											inputmode="numeric"
-											placeholder="no limit"
-											value={pending.maxObjectMb}
-											disabled={busy}
-											oninput={(event) =>
-												setField(config.name, 'maxObjectMb', event.currentTarget.value)}
-										/>
-									</div>
-									<div class="space-y-1.5">
-										<Label for="types-{config.name}">Allowed content types</Label>
-										<Input
-											id="types-{config.name}"
-											class="font-mono"
-											placeholder="any"
-											value={pending.allowedContentTypes}
-											disabled={busy}
-											oninput={(event) =>
-												setField(config.name, 'allowedContentTypes', event.currentTarget.value)}
-										/>
-									</div>
-									<div class="space-y-1.5">
-										<Label for="cache-{config.name}">Cache-Control</Label>
-										<Input
-											id="cache-{config.name}"
-											class="font-mono"
-											placeholder="default"
-											value={pending.cacheControl}
-											disabled={busy}
-											oninput={(event) =>
-												setField(config.name, 'cacheControl', event.currentTarget.value)}
-										/>
-									</div>
-								</div>
-								<p class="text-xs text-muted-foreground">
-									Content types are a comma-separated allowlist checked at write time (<code
-										class="font-mono">image/png, image/jpeg</code
-									>); empty allows any. HTML and SVG always download rather than render, whatever
-									you allow here - the byte path shares this origin.
-								</p>
-							</Card.Content>
-							<Card.Footer class="justify-end gap-3">
-								{#if feedback?.message}
-									<span
-										class={[
-											'text-xs',
-											feedback.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'
-										]}
-										data-testid="access-feedback-{config.name}"
-									>
-										{feedback.message}
-									</span>
-								{/if}
-								<Button
-									size="sm"
-									disabled={busy || !isDirty(config)}
-									onclick={() => void saveAccess(config)}
-									data-testid="access-save-{config.name}"
+				{#if data.configs?.length}
+					<div class="grid items-start gap-4 lg:grid-cols-[230px_minmax(0,1fr)]">
+						<!-- Every bucket's posture at a glance; ONE editor at a time on
+						     the right. Badges render from the PENDING values, like the
+						     sentence: they answer what this will become. -->
+						<nav
+							class="flex flex-col gap-1 self-start rounded-lg border p-2 lg:sticky lg:top-4"
+							aria-label="Buckets"
+							data-testid="access-bucket-rail"
+						>
+							{#each data.configs ?? [] as config (config.name)}
+								{@const pending = edits[config.name]}
+								{@const selected = config.name === accessConfig?.name}
+								<button
+									type="button"
+									class={[
+										'rounded-md px-2.5 py-2 text-left transition-colors',
+										selected ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+									]}
+									onclick={() => (accessSelected = config.name)}
+									data-testid="access-bucket-{config.name}"
 								>
-									{busy ? 'Saving…' : 'Save'}
-								</Button>
-							</Card.Footer>
-						</Card.Root>
-					{/if}
-				{/each}
+									<span class="flex items-center gap-2 font-mono text-sm">
+										<Folder class="h-3.5 w-3.5 shrink-0 text-primary" />
+										<span class="truncate">{config.name}</span>
+									</span>
+									<span class="mt-0.5 block pl-5.5 text-xs text-muted-foreground">
+										{pending?.read ?? config.read} · {pending?.write ??
+											config.write}{(pending?.publicListing ?? config.publicListing)
+											? ' · listed'
+											: ''}
+									</span>
+								</button>
+							{/each}
+						</nav>
+
+						{#if accessConfig}
+							{@const config = accessConfig}
+							{@const pending = edits[config.name]}
+							{#if pending}
+								{@const feedback = accessFeedback[config.name]}
+								{@const busy = accessBusy === config.name}
+								<Card.Root data-testid="access-card-{config.name}">
+									<Card.Header>
+										<Card.Title class="flex items-center gap-2 font-mono text-base">
+											<Folder class="h-4 w-4 text-primary" />
+											{config.name}
+											<span class="ml-auto text-xs font-normal text-muted-foreground">
+												{plural(config.objectCount, 'object')} · {formatBytes(config.totalBytes)}
+											</span>
+										</Card.Title>
+										<Card.Description data-testid="access-sentence-{config.name}">
+											{accessSentence(pending)}
+										</Card.Description>
+									</Card.Header>
+									<Card.Content class="space-y-4">
+										{#if pending.read === 'public' || pending.write === 'public'}
+											<p
+												class="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-400"
+											>
+												<TriangleAlert class="mt-px h-3.5 w-3.5 shrink-0" />
+												<span>
+													{pending.write === 'public'
+														? 'Public write means anyone on the internet can upload to this bucket. Use it only for buckets you can afford to have filled by strangers.'
+														: 'Public read means anyone with the key can fetch the object without signing in. Private objects want a signed URL instead.'}
+												</span>
+											</p>
+										{/if}
+
+										<div class="grid gap-4 sm:grid-cols-2">
+											<div class="space-y-1.5">
+												<Label>Read</Label>
+												<Select.Root
+													type="single"
+													value={pending.read}
+													onValueChange={(value) =>
+														setField(config.name, 'read', toAccessMode(value))}
+												>
+													<Select.Trigger
+														class="w-full font-mono"
+														disabled={busy}
+														aria-label={`Read access for ${config.name}`}
+														data-testid="access-read-{config.name}"
+													>
+														{pending.read}
+													</Select.Trigger>
+													<Select.Content>
+														{#each accessModes as mode (mode)}
+															<Select.Item value={mode} label={mode} class="font-mono" />
+														{/each}
+													</Select.Content>
+												</Select.Root>
+											</div>
+											<div class="space-y-1.5">
+												<Label>Write</Label>
+												<Select.Root
+													type="single"
+													value={pending.write}
+													onValueChange={(value) =>
+														setField(config.name, 'write', toAccessMode(value))}
+												>
+													<Select.Trigger
+														class="w-full font-mono"
+														disabled={busy}
+														aria-label={`Write access for ${config.name}`}
+														data-testid="access-write-{config.name}"
+													>
+														{pending.write}
+													</Select.Trigger>
+													<Select.Content>
+														{#each accessModes as mode (mode)}
+															<Select.Item value={mode} label={mode} class="font-mono" />
+														{/each}
+													</Select.Content>
+												</Select.Root>
+											</div>
+
+											<div class="space-y-1.5">
+												<Label for="read-perm-{config.name}">Read permission</Label>
+												<Input
+													id="read-perm-{config.name}"
+													class="font-mono"
+													placeholder="none"
+													value={pending.readPermission}
+													disabled={busy || pending.read === 'public'}
+													oninput={(event) =>
+														setField(config.name, 'readPermission', event.currentTarget.value)}
+												/>
+											</div>
+											<div class="space-y-1.5">
+												<Label for="write-perm-{config.name}">Write permission</Label>
+												<Input
+													id="write-perm-{config.name}"
+													class="font-mono"
+													placeholder="none"
+													value={pending.writePermission}
+													disabled={busy || pending.write === 'public'}
+													oninput={(event) =>
+														setField(config.name, 'writePermission', event.currentTarget.value)}
+												/>
+											</div>
+										</div>
+										<p class="text-xs text-muted-foreground">
+											A permission key tightens auth/owner further: the user's role must grant that
+											key. Roles live under Auth &gt; Roles, and the built-in admin role grants
+											everything.
+										</p>
+
+										<div class="flex items-start justify-between gap-4 rounded-md border p-3">
+											<div>
+												<p class="text-sm font-medium">Public listing</p>
+												<p class="text-xs text-muted-foreground">
+													Whether anonymous callers may list every key. Separate from reading a key
+													they already know.
+												</p>
+											</div>
+											<Switch
+												checked={pending.publicListing}
+												disabled={busy}
+												aria-label={`Public listing for ${config.name}`}
+												data-testid="access-listing-{config.name}"
+												onCheckedChange={(value) => setField(config.name, 'publicListing', value)}
+											/>
+										</div>
+
+										<div class="grid gap-4 sm:grid-cols-3">
+											<div class="space-y-1.5">
+												<Label for="max-size-{config.name}">Max object size (MB)</Label>
+												<Input
+													id="max-size-{config.name}"
+													inputmode="numeric"
+													placeholder="no limit"
+													value={pending.maxObjectMb}
+													disabled={busy}
+													oninput={(event) =>
+														setField(config.name, 'maxObjectMb', event.currentTarget.value)}
+												/>
+											</div>
+											<div class="space-y-1.5">
+												<Label for="types-{config.name}">Allowed content types</Label>
+												<Input
+													id="types-{config.name}"
+													class="font-mono"
+													placeholder="any"
+													value={pending.allowedContentTypes}
+													disabled={busy}
+													oninput={(event) =>
+														setField(config.name, 'allowedContentTypes', event.currentTarget.value)}
+												/>
+											</div>
+											<div class="space-y-1.5">
+												<Label for="cache-{config.name}">Cache-Control</Label>
+												<Input
+													id="cache-{config.name}"
+													class="font-mono"
+													placeholder="default"
+													value={pending.cacheControl}
+													disabled={busy}
+													oninput={(event) =>
+														setField(config.name, 'cacheControl', event.currentTarget.value)}
+												/>
+											</div>
+										</div>
+										<p class="text-xs text-muted-foreground">
+											Content types are a comma-separated allowlist checked at write time (<code
+												class="font-mono">image/png, image/jpeg</code
+											>); empty allows any. HTML and SVG always download rather than render,
+											whatever you allow here - the byte path shares this origin.
+										</p>
+									</Card.Content>
+									<Card.Footer class="justify-end gap-3">
+										{#if feedback?.message}
+											<span
+												class={[
+													'text-xs',
+													feedback.ok
+														? 'text-emerald-600 dark:text-emerald-400'
+														: 'text-destructive'
+												]}
+												data-testid="access-feedback-{config.name}"
+											>
+												{feedback.message}
+											</span>
+										{/if}
+										<Button
+											size="sm"
+											disabled={busy || !isDirty(config)}
+											onclick={() => void saveAccess(config)}
+											data-testid="access-save-{config.name}"
+										>
+											{busy ? 'Saving…' : 'Save'}
+										</Button>
+									</Card.Footer>
+								</Card.Root>
+							{/if}
+						{/if}
+					</div>
+				{/if}
 			</div>
 		{:else if tool === 'integration'}
 			<div data-testid="storage-integration">

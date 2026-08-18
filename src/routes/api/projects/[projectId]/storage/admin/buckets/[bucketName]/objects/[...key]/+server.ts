@@ -67,12 +67,19 @@ const proxy: RequestHandler = async ({ params, request, url, platform }) => {
 	// would resolve it straight out of this bucket's prefix. Normalise first,
 	// then require the result to still sit under it. An empty `params.key` is
 	// the LIST path (`/objects`), which the agent's own route makes optional.
+	//
+	// Re-encode per segment BEFORE the URL is built: the param arrives decoded,
+	// and a raw `#` would truncate the key at URL parsing, `?` would turn its
+	// tail into a query string, and a literal `%` would read as malformed
+	// percent-encoding - all keys the agent accepts through `/agents/*`, where
+	// the client SDKs encode exactly this way.
+	const encodedKey = params.key.split('/').map(encodeURIComponent).join('/');
 	const target = agentProxyUrl(
 		url.origin,
 		entry,
 		projectId,
 		`/admin/buckets/${agentSegment(params.bucketName)}/objects`,
-		params.key,
+		encodedKey,
 		url.search
 	);
 

@@ -37,6 +37,28 @@ export class StorageAdminError extends Error {
 	}
 }
 
+/** A 404 from a route the DEPLOYED console or agent lacks, told apart from
+ * the agent's own misses (`no such object`, `no such bucket`, the guard's
+ * `no such project`), which all name what is missing. Conflating them is
+ * data-loss-shaped: a pre-S2 console has no object proxy at all, and its
+ * routing 404 would read as "object absent" - the db and auth clients carry
+ * the same guard for the same reason. */
+export class StorageAgentTooOldError extends Error {
+	constructor(path: string) {
+		super(
+			`the console did not recognise ${path}. Deploy a console (and @cloudflarebase/storage) that ` +
+				`ships the storage object proxy before calling this - an older deployment answers a 404 ` +
+				`that looks like a missing object.`,
+		);
+		this.name = 'StorageAgentTooOldError';
+	}
+}
+
+/** The agent and the console guard name what a real 404 is missing. */
+function isEntityMiss(message: string | undefined): boolean {
+	return /^no such /i.test(message ?? '');
+}
+
 export interface StorageObjectSummary {
 	key: string;
 	size: number;
@@ -115,6 +137,9 @@ export function createStorageAdmin(options: StorageAdminOptions = {}) {
 		});
 		const payload = (await response.json().catch(() => null)) as (R & { error?: string }) | null;
 		if (!response.ok) {
+			if (response.status === 404 && !isEntityMiss(payload?.error)) {
+				throw new StorageAgentTooOldError(path);
+			}
 			throw new StorageAdminError(
 				response.status,
 				payload?.error ?? `request failed (${response.status})`,
@@ -152,14 +177,25 @@ export function createStorageAdmin(options: StorageAdminOptions = {}) {
 				/**
 				 * The raw response, so a caller can stream the body rather than
 				 * buffer it - `.body`, `.arrayBuffer()`, `.text()`, all still theirs.
-				 * Returns null for a missing object instead of throwing, because
-				 * "is it there" is the common question.
+				 * Returns null for a missing OBJECT instead of throwing, because
+				 * "is it there" is the common question - but only for that answer.
+				 * A missing bucket or project throws instead: a typo'd bucket name
+				 * reading as "empty dataset" is how a sync job silently treats a
+				 * misconfiguration as truth.
 				 */
 				async get(objectKey: string): Promise<Response | null> {
-					const response = await doFetch(`${base}${objectPath(objectKey)}`, {
+					const path = objectPath(objectKey);
+					const response = await doFetch(`${base}${path}`, {
 						headers: { authorization: `Bearer ${key}` },
 					});
-					if (response.status === 404) return null;
+					if (response.status === 404) {
+						const body = (await response.json().catch(() => null)) as { error?: string } | null;
+						if (/^no such object$/i.test(body?.error ?? '')) return null;
+						if (isEntityMiss(body?.error)) {
+							throw new StorageAdminError(404, body?.error ?? 'not found');
+						}
+						throw new StorageAgentTooOldError(path);
+					}
 					if (!response.ok) {
 						throw new StorageAdminError(response.status, `download failed (${response.status})`);
 					}
@@ -232,6 +268,9 @@ export function createStorageAdmin(options: StorageAdminOptions = {}) {
 						error?: string;
 					} | null;
 					if (!response.ok) {
+						if (response.status === 404 && !isEntityMiss(payload?.error)) {
+							throw new StorageAgentTooOldError(objectPath(objectKey));
+						}
 						throw new StorageAdminError(
 							response.status,
 							payload?.error ?? `upload failed (${response.status})`,

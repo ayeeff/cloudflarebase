@@ -205,7 +205,11 @@ export function createStorageClient(options: StorageClientOptions) {
 		from(bucket: string) {
 			const objectUrl = (key: string) => bucketUrl(bucket, `/objects/${encodeKey(key)}`);
 
-			return {
+			// A named handle, not `this`: `upload` escalates to `uploadMultipart`
+			// through it, and `this` would break the moment a caller destructures
+			// the method - a size-dependent crash, since only bodies over the
+			// single-PUT ceiling take the escalation path.
+			const handle = {
 				/**
 				 * Store an object, creating or REPLACING it.
 				 *
@@ -235,7 +239,7 @@ export function createStorageClient(options: StorageClientOptions) {
 						);
 					}
 					if (length > SINGLE_PUT_MAX_BYTES) {
-						return this.uploadMultipart(key, body, uploadOptions);
+						return handle.uploadMultipart(key, body, uploadOptions);
 					}
 					const response = await fetch(objectUrl(key), {
 						method: 'PUT',
@@ -461,6 +465,7 @@ export function createStorageClient(options: StorageClientOptions) {
 					return `${serveOrigin}/${projectId}/${encodeURIComponent(bucket)}/${encodeKey(key)}`;
 				},
 			};
+			return handle;
 		},
 	};
 }

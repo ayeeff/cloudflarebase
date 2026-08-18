@@ -50,6 +50,13 @@ const journal = {
 			tag: '0005_busy_cobalt_man',
 			breakpoints: true,
 		},
+		{
+			idx: 6,
+			version: '6',
+			when: 1787078076297,
+			tag: '0006_amusing_steve_rogers',
+			breakpoints: true,
+		},
 	],
 };
 
@@ -174,6 +181,8 @@ CREATE TABLE \`organization\` (
 CREATE UNIQUE INDEX \`organization_slug_unique\` ON \`organization\` (\`slug\`);--> statement-breakpoint
 ALTER TABLE \`session\` ADD \`active_organization_id\` text;`;
 
+const m0006 = `CREATE INDEX \`account_user_idx\` ON \`account\` (\`user_id\`);`;
+
 export default {
 	journal,
 	migrations: {
@@ -183,5 +192,6 @@ export default {
 		m0003,
 		m0004,
 		m0005,
+		m0006,
 	},
 };

@@ -150,6 +150,43 @@ test.describe('admin clients', () => {
 	});
 
 	/**
+	 * Keys the URL grammar is hostile to. The SvelteKit proxy DECODES the path
+	 * param, so the route must re-encode before rebuilding the agent URL: a raw
+	 * `#` would truncate the key at parsing, `?` would become a query string,
+	 * and a literal `%` would read as malformed encoding. Every one of these
+	 * keys silently addressed the WRONG object before the re-encode (a `#`-key
+	 * PUT overwrote its own prefix).
+	 */
+	test('storage: keys with URL-hostile characters round-trip intact', async () => {
+		const storage = createStorageAdmin({ url, projectId: SDK_PROJECT, key });
+		const bucket = storage.bucket('sdk-files');
+		await bucket.configure({});
+
+		for (const objectKey of [
+			`odd/${run} notes #1.txt`,
+			`odd/${run}-100%.txt`,
+			`odd/${run}-a?b.txt`
+		]) {
+			const body = `stored under ${objectKey}`;
+			await bucket.put(objectKey, body);
+
+			const downloaded = await bucket.get(objectKey);
+			expect(downloaded, objectKey).not.toBeNull();
+			expect(await downloaded!.text(), objectKey).toBe(body);
+
+			// The exact key is indexed - not a truncation of it.
+			const { objects } = await bucket.list({ prefix: 'odd/' });
+			expect(
+				objects.map((object) => object.key),
+				objectKey
+			).toContain(objectKey);
+
+			await bucket.delete(objectKey);
+			expect(await bucket.get(objectKey), objectKey).toBeNull();
+		}
+	});
+
+	/**
 	 * The client refuses the content types SvelteKit's CSRF check would reject
 	 * on an originless write - BEFORE the request leaves, so the developer gets
 	 * a sentence explaining it rather than a bare 403 from a layer they have

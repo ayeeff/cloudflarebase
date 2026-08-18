@@ -197,7 +197,7 @@ export class DbTable extends LiveShard {
 				// applying this entry runs the same DDL diff path.
 				const image = JSON.stringify(parsed);
 				const lsn = appendLog(this.ctx.storage.sql, 'cfg', '', image);
-				this.schedulePush({ lsn, op: 'cfg', id: '', image, ts: Date.now() });
+				this.schedulePush([{ lsn, op: 'cfg', id: '', image, ts: Date.now() }]);
 			} else if (previous?.replication === 'auto') {
 				await this.repDisable();
 			}
@@ -397,14 +397,31 @@ export class DbTable extends LiveShard {
 	// are the snapshot source and the row-image apply)
 
 	private logChange(op: 'put' | 'del', id: string, image: string | null): void {
-		if (this.role.kind !== 'primary' || this.config?.replication !== 'auto') return;
-		const lsn = appendLog(this.ctx.storage.sql, op, id, image);
-		this.pendingLsn = lsn;
-		this.schedulePush({ lsn, op, id, image, ts: Date.now() });
+		const entry = this.appendChange(op, id, image);
+		if (!entry) return;
+		this.pendingLsn = entry.lsn;
+		this.schedulePush([entry]);
 	}
 
-	/** REP2 delivery by RPC - the collection twin's reasoning applies. */
-	private schedulePush(entry: LogEntry): void {
+	/** Append one entry to the transactional change log and hand it back for
+	 * the CALLER to deliver. The append rolls back with the data write it
+	 * describes; the bookmark and the push must not - and sqlite_sequence
+	 * rolls back too, so a rolled-back LSN is REISSUED to the next committed
+	 * write. A push that escaped a rollback would therefore not only serve a
+	 * phantom row: the replica's applied position would swallow the reissued
+	 * LSN as a duplicate and silently drop a committed write, permanently.
+	 * Anything running inside transactionSync may only COLLECT entries and
+	 * act on them after the commit (see runSqlStatements). */
+	private appendChange(op: 'put' | 'del', id: string, image: string | null): LogEntry | null {
+		if (this.role.kind !== 'primary' || this.config?.replication !== 'auto') return null;
+		const lsn = appendLog(this.ctx.storage.sql, op, id, image);
+		return { lsn, op, id, image, ts: Date.now() };
+	}
+
+	/** REP2 delivery by RPC - the collection twin's reasoning applies.
+	 * Entries must already be COMMITTED: never call this from inside a
+	 * transaction, and never with an entry a rollback could retract. */
+	private schedulePush(entries: LogEntry[]): void {
 		const config = this.config;
 		const name = this.ctx.id.name;
 		if (!config || !name) return;
@@ -418,7 +435,7 @@ export class DbTable extends LiveShard {
 					try {
 						const stub = namespace.get(namespace.idFromName(`${name}:${replica.id}`));
 						const result = (await stub.repApply({
-							entries: [entry],
+							entries,
 							epoch: config.repEpoch,
 						})) as RepApplyResult;
 						if ('stop' in result) {
@@ -1160,8 +1177,14 @@ export class DbTable extends LiveShard {
 	}
 
 	/** Execute inside ONE transactionSync (a failing batch rolls back whole);
-	 * log entries are appended in the same transaction, notifications are
-	 * collected for after the commit. */
+	 * log entries are appended in the same transaction, notifications AND
+	 * replica pushes are collected for after the commit. The push used to be
+	 * scheduled per-entry from inside the transaction, which a rollback
+	 * cannot retract: replicas applied rows the primary never committed, and
+	 * because the rolled-back LSN is reissued (sqlite_sequence reverts with
+	 * the transaction), the next committed write was then dropped as a
+	 * duplicate - permanent divergence. Same for pendingLsn: it must only
+	 * ever name a committed LSN, so it is set here, after the commit. */
 	private runSqlStatements(
 		statements: {
 			kind: 'select' | 'insert' | 'update' | 'delete';
@@ -1174,6 +1197,7 @@ export class DbTable extends LiveShard {
 	} {
 		const results: TableSqlResult[] = [];
 		const notifications: { kind: 'upsert' | 'delete'; row: DbRow }[] = [];
+		const entries: LogEntry[] = [];
 
 		this.ctx.storage.transactionSync(() => {
 			for (const statement of statements) {
@@ -1193,10 +1217,12 @@ export class DbTable extends LiveShard {
 					for (const row of objects) {
 						const dto = this.toDto(row);
 						if (statement.kind === 'delete') {
-							this.logChange('del', dto.id, null);
+							const entry = this.appendChange('del', dto.id, null);
+							if (entry) entries.push(entry);
 							notifications.push({ kind: 'delete', row: dto });
 						} else {
-							this.logChange('put', dto.id, JSON.stringify(dto));
+							const entry = this.appendChange('put', dto.id, JSON.stringify(dto));
+							if (entry) entries.push(entry);
 							notifications.push({ kind: 'upsert', row: dto });
 						}
 					}
@@ -1214,6 +1240,15 @@ export class DbTable extends LiveShard {
 				});
 			}
 		});
+
+		// The commit landed: only now may the entries drive anything a
+		// rollback could not have retracted - the session bookmark and the
+		// replica pushes (one batched RPC per replica, all-or-nothing like
+		// the transaction they describe).
+		if (entries.length) {
+			this.pendingLsn = entries[entries.length - 1].lsn;
+			this.schedulePush(entries);
+		}
 
 		return { results, notifications };
 	}
