@@ -244,13 +244,13 @@
 		<Card.Root data-testid="service-keys-card">
 			<Card.Header>
 				<Card.Title class="flex items-center gap-2 text-base">
-					<KeyRound class="h-4 w-4 text-primary" /> Service keys
+					<KeyRound class="h-4 w-4 text-primary" /> Admin service keys
 				</Card.Title>
 				<Card.Description>
-					For a server with no signed-in user: crons, queue consumers, webhook handlers, seed
-					scripts. In a browser your users' own tokens are the credential and you need none of this
-					— a key is <strong>refused outright</strong> from any request carrying an
-					<code>Origin</code>, so it cannot work in frontend code.
+					Admin-grade over this project, for a server with no signed-in user: crons, queue
+					consumers, webhook handlers, seed scripts. In a browser your users' own tokens are the
+					credential and you need none of this — a key is <strong>refused outright</strong> from any
+					request carrying an <code>Origin</code>, so it cannot work in frontend code.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="space-y-4">

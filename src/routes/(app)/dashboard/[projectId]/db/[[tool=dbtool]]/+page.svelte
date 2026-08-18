@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser, dev } from '$app/environment';
 	import { replaceState } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type {
 		DbAccessMode,
@@ -949,16 +950,16 @@ export async function load({ request }) {
 
 // NO USER AT ALL - a cron, a queue consumer, a Stripe webhook, a seed
 // script? There is nobody to relay, so none of the above applies. That is
-// what a project service key is for: see the Service key tab.`
+// what an admin service key is for: see the Admin service key tab.`
 		},
 		{
 			id: 'service-key',
-			label: 'Service key',
+			label: 'Admin service key',
 			lang: 'typescript',
 			code: `import { createDbAdmin } from '@cloudflarebase/db/admin';
 
-// SERVER ONLY. A service key is admin-grade over this project's whole data
-// plane: it bypasses access modes, validators, and permission keys, exactly
+// SERVER ONLY. An admin service key is admin-grade over this project's whole
+// data plane: it bypasses access modes, validators, and permission keys, exactly
 // like the operator session it stands in for. Mint one under Settings - it
 // is shown once, and it is scoped to THIS project, not to sibling branches.
 //
@@ -1964,7 +1965,13 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 						<CodeExamples examples={snippets} />
 						<p class="text-xs text-muted-foreground">
 							auth and owner collections need a project JWT from the auth agent; external browser
-							applications must be listed under the project's allowed origins.
+							applications must be listed under the project's allowed origins. An
+							<a
+								href={resolve('/(app)/dashboard/[projectId]/settings', {
+									projectId: data.projectId
+								})}
+								class="underline underline-offset-2 hover:text-foreground">admin service key</a
+							> is the server-side credential, minted under Settings - never shipped to a browser.
 						</p>
 					</Card.Content>
 				</Card.Root>

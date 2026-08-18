@@ -130,13 +130,13 @@ curl ${url}/get-session \\
 			? [
 					{
 						id: 'service-key',
-						label: 'Service key',
+						label: 'Admin service key',
 						lang: 'typescript',
 						code: `import { createAuthAdmin } from '@cloudflarebase/auth/admin';
 
-// SERVER ONLY. A service key can read, create, re-role, and delete every
-// account in this project. Mint one under Settings - it is shown once and is
-// scoped to THIS project, not to sibling branches.
+// SERVER ONLY. An admin service key can read, create, re-role, and delete
+// every account in this project. Mint one under Settings - it is shown once
+// and is scoped to THIS project, not to sibling branches.
 //
 // Two guards make a leak fail loudly rather than silently: this client
 // refuses to construct in a browser, and the API refuses ANY request carrying
@@ -369,14 +369,19 @@ const blob = await response.blob();`
 		},
 		{
 			id: 'storage-server',
-			label: 'Server',
+			label: 'Admin service key',
 			lang: 'typescript',
 			code: `import { createStorageAdmin } from '@cloudflarebase/storage/admin';
 
-// For a cron, a queue consumer, a webhook handler, a seed script - anything
-// with no signed-in user to speak for. Mint the key under Settings.
-// It is REFUSED from any request carrying an Origin, so it cannot ship in
-// frontend code by accident.
+// SERVER ONLY. An admin service key is admin-grade over this project's
+// storage: it bypasses bucket access modes, exactly like the operator session
+// it stands in for. Mint one under Settings - it is shown once, and it is
+// scoped to THIS project, not to sibling branches.
+//
+// Two guards make a leak fail loudly instead of silently: this client refuses
+// to construct in a browser, and the API refuses ANY request carrying an
+// Origin header. A key pasted into frontend code breaks at your desk rather
+// than shipping inside a JS bundle.
 const storage = createStorageAdmin({
   url: '${origin}',
   projectId: '${projectId}',

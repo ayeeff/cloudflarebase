@@ -1640,7 +1640,13 @@
 								</div>
 								<p class="text-xs text-muted-foreground">
 									External browser applications must be added under Settings → Allowed origins. Keep
-									bearer tokens out of logs and URLs.
+									bearer tokens out of logs and URLs. An
+									<a
+										href={resolve('/(app)/dashboard/[projectId]/settings', {
+											projectId: data.projectId
+										})}
+										class="underline underline-offset-2 hover:text-foreground">admin service key</a
+									> is the server-side credential, minted under Settings - never shipped to a browser.
 								</p>
 							</Card.Content>
 						</Card.Root>

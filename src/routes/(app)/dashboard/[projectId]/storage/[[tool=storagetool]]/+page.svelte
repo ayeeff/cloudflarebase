@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type {
 		StorageAccessMode,
@@ -10,6 +11,7 @@
 		StorageOverview
 	} from '$lib/agents';
 	import CodeExamples from '$lib/components/code-examples.svelte';
+	import ToolTabs from '$lib/components/tool-tabs.svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button, buttonVariants } from '$lib/components/ui/button';
@@ -22,6 +24,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import { Switch } from '$lib/components/ui/switch';
+	import { buildConsoleNav } from '$lib/agent-registry';
 	import { buildStorageIntegrationExamples } from '$lib/integration-examples';
 	import {
 		Check,
@@ -563,6 +566,32 @@
 		}`;
 	}
 
+	/** Desktop quick-switcher over this agent's tool pages (sidebar stays canonical). */
+	const toolTabs = $derived(
+		buildConsoleNav(projectId)
+			.flatMap((section) => section.items)
+			.filter((item) => item.href.startsWith(`/dashboard/${projectId}/storage`))
+	);
+	const toolMeta: Record<string, { title: string; blurb: string }> = {
+		files: {
+			title: 'Files',
+			blurb:
+				'Objects on R2, keyed per project - buckets are namespaces, and folders are derived from the keys you write rather than created.'
+		},
+		access: {
+			title: 'Access',
+			blurb:
+				'Per-bucket read and write modes, permission keys, public listing, and the write-time limits.'
+		},
+		integration: {
+			title: 'Integration',
+			blurb:
+				'Upload at any size from the client SDK, hand a private object to a browser with a signed URL, or reach it server-side with an admin service key.'
+		}
+	};
+
+	const settingsHref = $derived(resolve('/(app)/dashboard/[projectId]/settings', { projectId }));
+
 	const snippets = $derived(
 		buildStorageIntegrationExamples(
 			`${page.url.origin}/agents/storage-agent/${projectId}`,
@@ -620,270 +649,27 @@
 			</Card.Header>
 		</Card.Root>
 	</div>
-{:else if tool === 'access'}
-	<div class="mx-auto max-w-4xl space-y-4 px-4 py-6" data-testid="storage-access">
-		<div>
-			<h1 class="text-lg font-semibold">Access</h1>
-			<p class="text-sm text-muted-foreground">
-				Read and write are separate rules, and both default to
-				<code class="font-mono text-xs">auth</code> - a fresh bucket is never anonymous.
-				<span class="font-mono text-foreground">public</span> = no sign-in needed ·
-				<span class="font-mono text-foreground">auth</span> = any signed-in user of this project ·
-				<span class="font-mono text-foreground">owner</span> = signed-in, and each object remembers who
-				wrote it, so users only reach their own.
-			</p>
-		</div>
-
-		{#if readOnly}
-			<Card.Root data-testid="storage-access-demo">
-				<Card.Header>
-					<Card.Title class="text-base">The sample bucket is read-only</Card.Title>
-					<Card.Description>
-						Demo projects get a public sample bucket to browse. Create a real project to configure
-						access on buckets of your own.
-					</Card.Description>
-				</Card.Header>
-			</Card.Root>
-		{:else if !buckets.length}
-			<p class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-				No buckets yet - create one on the Files page.
-			</p>
-		{/if}
-
-		{#each data.configs ?? [] as config (config.name)}
-			{@const pending = edits[config.name]}
-			{#if pending}
-				{@const feedback = accessFeedback[config.name]}
-				{@const busy = accessBusy === config.name}
-				<Card.Root data-testid="access-card-{config.name}">
-					<Card.Header>
-						<Card.Title class="flex items-center gap-2 font-mono text-base">
-							<Folder class="h-4 w-4 text-primary" />
-							{config.name}
-							<span class="ml-auto text-xs font-normal text-muted-foreground">
-								{plural(config.objectCount, 'object')} · {formatBytes(config.totalBytes)}
-							</span>
-						</Card.Title>
-						<Card.Description data-testid="access-sentence-{config.name}">
-							{accessSentence(pending)}
-						</Card.Description>
-					</Card.Header>
-					<Card.Content class="space-y-4">
-						{#if pending.read === 'public' || pending.write === 'public'}
-							<p
-								class="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-400"
-							>
-								<TriangleAlert class="mt-px h-3.5 w-3.5 shrink-0" />
-								<span>
-									{pending.write === 'public'
-										? 'Public write means anyone on the internet can upload to this bucket. Use it only for buckets you can afford to have filled by strangers.'
-										: 'Public read means anyone with the key can fetch the object without signing in. Private objects want a signed URL instead.'}
-								</span>
-							</p>
-						{/if}
-
-						<div class="grid gap-4 sm:grid-cols-2">
-							<div class="space-y-1.5">
-								<Label>Read</Label>
-								<Select.Root
-									type="single"
-									value={pending.read}
-									onValueChange={(value) => setField(config.name, 'read', toAccessMode(value))}
-								>
-									<Select.Trigger
-										class="w-full font-mono"
-										disabled={busy}
-										aria-label={`Read access for ${config.name}`}
-										data-testid="access-read-{config.name}"
-									>
-										{pending.read}
-									</Select.Trigger>
-									<Select.Content>
-										{#each accessModes as mode (mode)}
-											<Select.Item value={mode} label={mode} class="font-mono" />
-										{/each}
-									</Select.Content>
-								</Select.Root>
-							</div>
-							<div class="space-y-1.5">
-								<Label>Write</Label>
-								<Select.Root
-									type="single"
-									value={pending.write}
-									onValueChange={(value) => setField(config.name, 'write', toAccessMode(value))}
-								>
-									<Select.Trigger
-										class="w-full font-mono"
-										disabled={busy}
-										aria-label={`Write access for ${config.name}`}
-										data-testid="access-write-{config.name}"
-									>
-										{pending.write}
-									</Select.Trigger>
-									<Select.Content>
-										{#each accessModes as mode (mode)}
-											<Select.Item value={mode} label={mode} class="font-mono" />
-										{/each}
-									</Select.Content>
-								</Select.Root>
-							</div>
-
-							<div class="space-y-1.5">
-								<Label for="read-perm-{config.name}">Read permission</Label>
-								<Input
-									id="read-perm-{config.name}"
-									class="font-mono"
-									placeholder="none"
-									value={pending.readPermission}
-									disabled={busy || pending.read === 'public'}
-									oninput={(event) =>
-										setField(config.name, 'readPermission', event.currentTarget.value)}
-								/>
-							</div>
-							<div class="space-y-1.5">
-								<Label for="write-perm-{config.name}">Write permission</Label>
-								<Input
-									id="write-perm-{config.name}"
-									class="font-mono"
-									placeholder="none"
-									value={pending.writePermission}
-									disabled={busy || pending.write === 'public'}
-									oninput={(event) =>
-										setField(config.name, 'writePermission', event.currentTarget.value)}
-								/>
-							</div>
-						</div>
-						<p class="text-xs text-muted-foreground">
-							A permission key tightens auth/owner further: the user's role must grant that key.
-							Roles live under Auth &gt; Roles, and the built-in admin role grants everything.
-						</p>
-
-						<div class="flex items-start justify-between gap-4 rounded-md border p-3">
-							<div>
-								<p class="text-sm font-medium">Public listing</p>
-								<p class="text-xs text-muted-foreground">
-									Whether anonymous callers may list every key. Separate from reading a key they
-									already know.
-								</p>
-							</div>
-							<Switch
-								checked={pending.publicListing}
-								disabled={busy}
-								aria-label={`Public listing for ${config.name}`}
-								data-testid="access-listing-{config.name}"
-								onCheckedChange={(value) => setField(config.name, 'publicListing', value)}
-							/>
-						</div>
-
-						<div class="grid gap-4 sm:grid-cols-3">
-							<div class="space-y-1.5">
-								<Label for="max-size-{config.name}">Max object size (MB)</Label>
-								<Input
-									id="max-size-{config.name}"
-									inputmode="numeric"
-									placeholder="no limit"
-									value={pending.maxObjectMb}
-									disabled={busy}
-									oninput={(event) =>
-										setField(config.name, 'maxObjectMb', event.currentTarget.value)}
-								/>
-							</div>
-							<div class="space-y-1.5">
-								<Label for="types-{config.name}">Allowed content types</Label>
-								<Input
-									id="types-{config.name}"
-									class="font-mono"
-									placeholder="any"
-									value={pending.allowedContentTypes}
-									disabled={busy}
-									oninput={(event) =>
-										setField(config.name, 'allowedContentTypes', event.currentTarget.value)}
-								/>
-							</div>
-							<div class="space-y-1.5">
-								<Label for="cache-{config.name}">Cache-Control</Label>
-								<Input
-									id="cache-{config.name}"
-									class="font-mono"
-									placeholder="default"
-									value={pending.cacheControl}
-									disabled={busy}
-									oninput={(event) =>
-										setField(config.name, 'cacheControl', event.currentTarget.value)}
-								/>
-							</div>
-						</div>
-						<p class="text-xs text-muted-foreground">
-							Content types are a comma-separated allowlist checked at write time (<code
-								class="font-mono">image/png, image/jpeg</code
-							>); empty allows any. HTML and SVG always download rather than render, whatever you
-							allow here - the byte path shares this origin.
-						</p>
-					</Card.Content>
-					<Card.Footer class="justify-end gap-3">
-						{#if feedback?.message}
-							<span
-								class={[
-									'text-xs',
-									feedback.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'
-								]}
-								data-testid="access-feedback-{config.name}"
-							>
-								{feedback.message}
-							</span>
-						{/if}
-						<Button
-							size="sm"
-							disabled={busy || !isDirty(config)}
-							onclick={() => void saveAccess(config)}
-							data-testid="access-save-{config.name}"
-						>
-							{busy ? 'Saving…' : 'Save'}
-						</Button>
-					</Card.Footer>
-				</Card.Root>
-			{/if}
-		{/each}
-	</div>
-{:else if tool === 'integration'}
-	<div class="mx-auto max-w-3xl space-y-4 px-4 py-6" data-testid="storage-integration">
-		<div>
-			<h1 class="text-lg font-semibold">Integration</h1>
-			<p class="text-sm text-muted-foreground">
-				One call for every size - the client escalates to multipart above 100 MB by itself. Snippets
-				target <span class="font-mono text-foreground">{activeBucket?.name ?? 'my-bucket'}</span>.
-			</p>
-		</div>
-		<CodeExamples examples={snippets} />
-	</div>
-{:else if !buckets.length}
-	<div class="mx-auto max-w-2xl px-4 py-16 text-center" data-testid="storage-empty">
-		<FolderOpen class="mx-auto h-10 w-10 text-muted-foreground" />
-		<h1 class="mt-4 text-lg font-semibold">No buckets yet</h1>
-		<p class="mt-1 text-sm text-muted-foreground">
-			A bucket is a namespace for files. New buckets are private by default - read and write both
-			require a signed-in project user.
-		</p>
-		<Button class="mt-4" onclick={() => (newBucketOpen = true)} data-testid="new-bucket">
-			<Plus class="mr-1.5 h-4 w-4" /> New bucket
-		</Button>
-	</div>
 {:else}
-	<div class="mx-auto max-w-7xl space-y-5 px-3 py-5 sm:px-6 sm:py-8">
-		<div class="flex flex-wrap items-end justify-between gap-3">
-			<div>
-				<h1 class="text-lg font-semibold">Files</h1>
-				<p class="text-sm text-muted-foreground">
-					{plural(overview.totalObjects, 'object')} across
-					{plural(buckets.length, 'bucket')} · {formatBytes(overview.totalBytes)} of {formatBytes(
-						overview.caps.maxProjectBytes
-					)} used.
-				</p>
+	<!-- One page shell for every storage tool, the auth and db shape: the tool
+	     quick-switcher, then a title and blurb, then the tool. Three agents
+	     whose pages are laid out three different ways is how a console stops
+	     reading as one product. -->
+	<div class="mx-auto max-w-7xl space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-8">
+		<ToolTabs items={toolTabs} />
+
+		<!-- The text SHRINKS rather than wrapping the action below it: with the
+		     copilot pane open the column is ~800px, where flex-wrap put the
+		     button on its own line under a full-width blurb. -->
+		<div class="flex items-center justify-between gap-4">
+			<div class="min-w-0">
+				<h1 class="text-2xl font-semibold">{toolMeta[tool]?.title ?? 'Files'}</h1>
+				<p class="mt-1 text-sm text-muted-foreground">{toolMeta[tool]?.blurb}</p>
 			</div>
-			{#if !readOnly}
+			{#if tool === 'files' && buckets.length && !readOnly}
 				<Button
 					variant="outline"
 					size="sm"
+					class="shrink-0"
 					onclick={() => (newBucketOpen = true)}
 					data-testid="new-bucket"
 				>
@@ -892,384 +678,646 @@
 			{/if}
 		</div>
 
-		<!-- The console's browser idiom: a bounded card whose panes scroll
-		     INSIDE it, never a pane that grows the page. `lg:grid-rows-1` is
-		     what makes the height bite - the implicit row track is auto, so a
-		     fixed-height grid alone lets its items stretch straight past it. -->
-		<Card.Root class="overflow-hidden py-0">
-			<div
-				class="grid grid-cols-1 max-lg:divide-y lg:h-[36rem] lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-1 lg:divide-x"
-			>
-				<!-- Bucket rail -->
-				<aside class="flex min-h-0 flex-col" data-testid="bucket-rail">
-					<div class="flex items-center justify-between border-b px-3 py-2">
-						<span class="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-							Buckets
-						</span>
-						{#if !readOnly}
-							<Button
-								size="icon"
-								variant="ghost"
-								class="-mr-1 h-6 w-6"
-								title="New bucket"
-								onclick={() => (newBucketOpen = true)}><Plus class="h-3.5 w-3.5" /></Button
-							>
-						{/if}
-					</div>
-					<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
-						{#each buckets as bucket (bucket.name)}
-							{@const active = activeBucket?.name === bucket.name}
-							<!-- The row and its menu are siblings, not nested: a <button>
-					     cannot contain the menu trigger, which is itself a button. -->
-							<div
-								class={[
-									'group flex items-center rounded-md transition-colors',
-									active ? 'bg-muted' : 'hover:bg-muted/60'
-								]}
-							>
-								<button
-									type="button"
-									class="min-w-0 flex-1 px-2 py-1.5 text-left text-sm"
-									data-testid="bucket-{bucket.name}"
-									onclick={() => {
-										selected = bucket.name;
-										prefix = '';
-									}}
-								>
-									<span class="flex items-center gap-1.5">
-										<span class={['truncate', active && 'font-medium']}>{bucket.name}</span>
-										{#if bucket.read === 'public'}
-											<Globe class="h-3 w-3 shrink-0 text-muted-foreground" />
-										{/if}
+		{#if tool === 'access'}
+			<div class="space-y-4" data-testid="storage-access">
+				{#if readOnly}
+					<Card.Root data-testid="storage-access-demo">
+						<Card.Header>
+							<Card.Title class="text-base">The sample bucket is read-only</Card.Title>
+							<Card.Description>
+								Demo projects get a public sample bucket to browse. Create a real project to
+								configure access on buckets of your own.
+							</Card.Description>
+						</Card.Header>
+					</Card.Root>
+				{:else if !buckets.length}
+					<p
+						class="rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground"
+					>
+						No buckets yet - create one on the Files page.
+					</p>
+				{/if}
+
+				{#each data.configs ?? [] as config (config.name)}
+					{@const pending = edits[config.name]}
+					{#if pending}
+						{@const feedback = accessFeedback[config.name]}
+						{@const busy = accessBusy === config.name}
+						<Card.Root data-testid="access-card-{config.name}">
+							<Card.Header>
+								<Card.Title class="flex items-center gap-2 font-mono text-base">
+									<Folder class="h-4 w-4 text-primary" />
+									{config.name}
+									<span class="ml-auto text-xs font-normal text-muted-foreground">
+										{plural(config.objectCount, 'object')} · {formatBytes(config.totalBytes)}
 									</span>
-									<span class="block text-xs text-muted-foreground">
-										{plural(bucket.objectCount, 'object')} · {formatBytes(bucket.totalBytes)}
-									</span>
-								</button>
-								{#if !readOnly}
-									<DropdownMenu.Root>
-										<DropdownMenu.Trigger
-											class={[
-												buttonVariants({ variant: 'ghost', size: 'icon' }),
-												'mr-1 h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100'
-											]}
-											aria-label={`Actions for ${bucket.name}`}
-											data-testid="bucket-menu-{bucket.name}"
+								</Card.Title>
+								<Card.Description data-testid="access-sentence-{config.name}">
+									{accessSentence(pending)}
+								</Card.Description>
+							</Card.Header>
+							<Card.Content class="space-y-4">
+								{#if pending.read === 'public' || pending.write === 'public'}
+									<p
+										class="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-400"
+									>
+										<TriangleAlert class="mt-px h-3.5 w-3.5 shrink-0" />
+										<span>
+											{pending.write === 'public'
+												? 'Public write means anyone on the internet can upload to this bucket. Use it only for buckets you can afford to have filled by strangers.'
+												: 'Public read means anyone with the key can fetch the object without signing in. Private objects want a signed URL instead.'}
+										</span>
+									</p>
+								{/if}
+
+								<div class="grid gap-4 sm:grid-cols-2">
+									<div class="space-y-1.5">
+										<Label>Read</Label>
+										<Select.Root
+											type="single"
+											value={pending.read}
+											onValueChange={(value) => setField(config.name, 'read', toAccessMode(value))}
 										>
-											<EllipsisVertical class="h-3.5 w-3.5" />
-										</DropdownMenu.Trigger>
-										<DropdownMenu.Content align="end">
-											<DropdownMenu.Item
-												onclick={() => {
-													selected = bucket.name;
-													prefix = '';
-												}}
+											<Select.Trigger
+												class="w-full font-mono"
+												disabled={busy}
+												aria-label={`Read access for ${config.name}`}
+												data-testid="access-read-{config.name}"
 											>
-												<FolderOpen class="mr-2 h-3.5 w-3.5" /> Browse
-											</DropdownMenu.Item>
-											<DropdownMenu.Item
-												onclick={() => {
-													dropTarget = bucket;
-													dropConfirmName = '';
-													dropError = '';
-												}}
-												data-testid="delete-bucket-{bucket.name}"
-												class="text-destructive data-highlighted:text-destructive"
+												{pending.read}
+											</Select.Trigger>
+											<Select.Content>
+												{#each accessModes as mode (mode)}
+													<Select.Item value={mode} label={mode} class="font-mono" />
+												{/each}
+											</Select.Content>
+										</Select.Root>
+									</div>
+									<div class="space-y-1.5">
+										<Label>Write</Label>
+										<Select.Root
+											type="single"
+											value={pending.write}
+											onValueChange={(value) => setField(config.name, 'write', toAccessMode(value))}
+										>
+											<Select.Trigger
+												class="w-full font-mono"
+												disabled={busy}
+												aria-label={`Write access for ${config.name}`}
+												data-testid="access-write-{config.name}"
 											>
-												<Trash2 class="mr-2 h-3.5 w-3.5" /> Delete bucket
-											</DropdownMenu.Item>
-										</DropdownMenu.Content>
-									</DropdownMenu.Root>
-								{/if}
-							</div>
-						{/each}
-					</div>
-				</aside>
+												{pending.write}
+											</Select.Trigger>
+											<Select.Content>
+												{#each accessModes as mode (mode)}
+													<Select.Item value={mode} label={mode} class="font-mono" />
+												{/each}
+											</Select.Content>
+										</Select.Root>
+									</div>
 
-				<!-- Browser -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<section
-					class="relative flex min-w-0 flex-col"
-					data-testid="file-browser"
-					ondragover={(event) => {
-						if (readOnly) return;
-						event.preventDefault();
-						dragging = true;
-					}}
-					ondragleave={() => (dragging = false)}
-					ondrop={onDrop}
-				>
-					<div class="flex flex-wrap items-center gap-2 border-b px-4 py-2">
-						<nav class="flex min-w-0 flex-1 items-center gap-1 text-sm" data-testid="breadcrumb">
-							<button
-								type="button"
-								class="flex items-center gap-1.5 font-medium hover:underline"
-								onclick={() => goToSegment(-1)}
-							>
-								<Folder class="h-3.5 w-3.5 text-muted-foreground" />
-								{activeBucket?.name}
-							</button>
-							{#each segments as segment, index (index)}
-								<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-								<button
-									type="button"
-									class="truncate hover:underline"
-									onclick={() => goToSegment(index)}
+									<div class="space-y-1.5">
+										<Label for="read-perm-{config.name}">Read permission</Label>
+										<Input
+											id="read-perm-{config.name}"
+											class="font-mono"
+											placeholder="none"
+											value={pending.readPermission}
+											disabled={busy || pending.read === 'public'}
+											oninput={(event) =>
+												setField(config.name, 'readPermission', event.currentTarget.value)}
+										/>
+									</div>
+									<div class="space-y-1.5">
+										<Label for="write-perm-{config.name}">Write permission</Label>
+										<Input
+											id="write-perm-{config.name}"
+											class="font-mono"
+											placeholder="none"
+											value={pending.writePermission}
+											disabled={busy || pending.write === 'public'}
+											oninput={(event) =>
+												setField(config.name, 'writePermission', event.currentTarget.value)}
+										/>
+									</div>
+								</div>
+								<p class="text-xs text-muted-foreground">
+									A permission key tightens auth/owner further: the user's role must grant that key.
+									Roles live under Auth &gt; Roles, and the built-in admin role grants everything.
+								</p>
+
+								<div class="flex items-start justify-between gap-4 rounded-md border p-3">
+									<div>
+										<p class="text-sm font-medium">Public listing</p>
+										<p class="text-xs text-muted-foreground">
+											Whether anonymous callers may list every key. Separate from reading a key they
+											already know.
+										</p>
+									</div>
+									<Switch
+										checked={pending.publicListing}
+										disabled={busy}
+										aria-label={`Public listing for ${config.name}`}
+										data-testid="access-listing-{config.name}"
+										onCheckedChange={(value) => setField(config.name, 'publicListing', value)}
+									/>
+								</div>
+
+								<div class="grid gap-4 sm:grid-cols-3">
+									<div class="space-y-1.5">
+										<Label for="max-size-{config.name}">Max object size (MB)</Label>
+										<Input
+											id="max-size-{config.name}"
+											inputmode="numeric"
+											placeholder="no limit"
+											value={pending.maxObjectMb}
+											disabled={busy}
+											oninput={(event) =>
+												setField(config.name, 'maxObjectMb', event.currentTarget.value)}
+										/>
+									</div>
+									<div class="space-y-1.5">
+										<Label for="types-{config.name}">Allowed content types</Label>
+										<Input
+											id="types-{config.name}"
+											class="font-mono"
+											placeholder="any"
+											value={pending.allowedContentTypes}
+											disabled={busy}
+											oninput={(event) =>
+												setField(config.name, 'allowedContentTypes', event.currentTarget.value)}
+										/>
+									</div>
+									<div class="space-y-1.5">
+										<Label for="cache-{config.name}">Cache-Control</Label>
+										<Input
+											id="cache-{config.name}"
+											class="font-mono"
+											placeholder="default"
+											value={pending.cacheControl}
+											disabled={busy}
+											oninput={(event) =>
+												setField(config.name, 'cacheControl', event.currentTarget.value)}
+										/>
+									</div>
+								</div>
+								<p class="text-xs text-muted-foreground">
+									Content types are a comma-separated allowlist checked at write time (<code
+										class="font-mono">image/png, image/jpeg</code
+									>); empty allows any. HTML and SVG always download rather than render, whatever
+									you allow here - the byte path shares this origin.
+								</p>
+							</Card.Content>
+							<Card.Footer class="justify-end gap-3">
+								{#if feedback?.message}
+									<span
+										class={[
+											'text-xs',
+											feedback.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'
+										]}
+										data-testid="access-feedback-{config.name}"
+									>
+										{feedback.message}
+									</span>
+								{/if}
+								<Button
+									size="sm"
+									disabled={busy || !isDirty(config)}
+									onclick={() => void saveAccess(config)}
+									data-testid="access-save-{config.name}"
 								>
-									{segment}
-								</button>
-							{/each}
-						</nav>
-
-						{#if activeBucket}
-							<Badge variant="outline" class="gap-1 font-mono text-[11px]">
-								{@render modeIcon(activeBucket.read)}
-								{activeBucket.read}
-							</Badge>
-						{/if}
-
-						{#if !readOnly}
-							<!-- The primary action of the page, styled as one. -->
-							<label
-								class={[
-									buttonVariants({ size: 'sm' }),
-									'cursor-pointer',
-									uploading && 'pointer-events-none opacity-70'
-								]}
-							>
-								<input
-									type="file"
-									multiple
-									class="hidden"
-									disabled={uploading}
-									data-testid="upload-input"
-									onchange={(event) => uploadFiles(event.currentTarget.files)}
-								/>
-								{#if uploading}
-									<LoaderCircle class="mr-1.5 h-3.5 w-3.5 animate-spin" /> Uploading…
-								{:else}
-									<Upload class="mr-1.5 h-3.5 w-3.5" /> Upload
-								{/if}
-							</label>
-						{/if}
-					</div>
-
-					{#if uploading}
-						<div class="space-y-1.5 border-b px-4 py-2" data-testid="upload-progress">
-							<div class="flex items-center justify-between text-xs text-muted-foreground">
-								<span class="truncate font-mono">{uploadName}</span>
-								<span class="tabular-nums">
-									{uploadTotal > 1 ? `${uploadDone + 1} of ${uploadTotal} · ` : ''}{uploadProgress}%
-								</span>
-							</div>
-							<Progress value={uploadProgress} class="h-1" />
+									{busy ? 'Saving…' : 'Save'}
+								</Button>
+							</Card.Footer>
+						</Card.Root>
+					{/if}
+				{/each}
+			</div>
+		{:else if tool === 'integration'}
+			<div data-testid="storage-integration">
+				<Card.Root>
+					<Card.Header>
+						<Card.Title>Connect your application</Card.Title>
+						<Card.Description>
+							One call at every size - the client escalates to multipart above 100 MB by itself.
+							Snippets target <span class="font-mono text-foreground"
+								>{activeBucket?.name ?? 'my-bucket'}</span
+							>.
+						</Card.Description>
+					</Card.Header>
+					<Card.Content class="space-y-5">
+						<div>
+							<Label>Storage base URL</Label>
+							<code class="mt-2 block overflow-x-auto rounded-lg border bg-muted/50 p-3 text-xs">
+								{page.url.origin}/agents/storage-agent/{projectId}
+							</code>
 						</div>
-					{/if}
-
-					{#if uploadError}
-						<p class="px-4 py-2 text-sm text-destructive" data-testid="upload-error">
-							{uploadError}
+						<CodeExamples examples={snippets} />
+						<p class="text-xs text-muted-foreground">
+							<code class="font-mono">auth</code> and <code class="font-mono">owner</code> buckets
+							need a project JWT from the auth agent; external browser applications must be listed
+							under the project's allowed origins. An
+							<a href={settingsHref} class="underline underline-offset-2 hover:text-foreground"
+								>admin service key</a
+							> is the server-side credential, minted under Settings - never shipped to a browser.
 						</p>
-					{/if}
-					{#if listError}
-						<p class="px-4 py-2 text-sm text-destructive" data-testid="list-error">{listError}</p>
-					{/if}
-
-					<div class="min-h-0 flex-1 overflow-auto">
-						<table class="w-full text-sm">
-							<thead class="sticky top-0 z-10 bg-background">
-								<tr class="border-b text-left text-xs text-muted-foreground">
-									<th class="px-4 py-2 font-medium">Name</th>
-									<th class="px-4 py-2 text-right font-medium">Size</th>
-									<th class="hidden px-4 py-2 font-medium sm:table-cell">Type</th>
-									<th class="px-4 py-2 font-medium">Updated</th>
-									<th class="w-20 px-4 py-2"><span class="sr-only">Actions</span></th>
-								</tr>
-							</thead>
-							<tbody data-testid="file-rows">
-								<!-- The whole ROW is the target, not just the name: the row is
-						     what looks clickable, so it has to be what responds. Rows
-						     carry the keyboard affordance themselves rather than
-						     wrapping a button, which a <td> cannot contain without
-						     breaking the row into two tab stops. -->
-								{#each folders as folder (folder.prefix)}
-									<tr
-										class="group cursor-pointer border-b hover:bg-muted/50 focus-visible:bg-muted"
-										data-testid="folder-row"
-										role="button"
-										tabindex="0"
-										onclick={() => enterFolder(folder.prefix)}
-										onkeydown={(event) => {
-											if (event.key === 'Enter' || event.key === ' ') {
-												event.preventDefault();
-												enterFolder(folder.prefix);
-											}
+					</Card.Content>
+				</Card.Root>
+			</div>
+		{:else if !buckets.length}
+			<div class="py-12 text-center" data-testid="storage-empty">
+				<FolderOpen class="mx-auto h-10 w-10 text-muted-foreground" />
+				<h1 class="mt-4 text-lg font-semibold">No buckets yet</h1>
+				<p class="mt-1 text-sm text-muted-foreground">
+					A bucket is a namespace for files. New buckets are private by default - read and write
+					both require a signed-in project user.
+				</p>
+				<Button class="mt-4" onclick={() => (newBucketOpen = true)} data-testid="new-bucket">
+					<Plus class="mr-1.5 h-4 w-4" /> New bucket
+				</Button>
+			</div>
+		{:else}
+			<!-- The console's browser idiom: a bounded card whose panes scroll
+				     INSIDE it, never a pane that grows the page. `lg:grid-rows-1` is
+				     what makes the height bite - the implicit row track is auto, so a
+				     fixed-height grid alone lets its items stretch straight past it. -->
+			<Card.Root class="overflow-hidden py-0">
+				<div
+					class="grid grid-cols-1 max-lg:divide-y lg:h-[36rem] lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-1 lg:divide-x"
+				>
+					<!-- Bucket rail -->
+					<aside class="flex min-h-0 flex-col" data-testid="bucket-rail">
+						<div class="flex items-center justify-between border-b px-3 py-2">
+							<span class="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+								Buckets
+							</span>
+							{#if !readOnly}
+								<Button
+									size="icon"
+									variant="ghost"
+									class="-mr-1 h-6 w-6"
+									title="New bucket"
+									onclick={() => (newBucketOpen = true)}><Plus class="h-3.5 w-3.5" /></Button
+								>
+							{/if}
+						</div>
+						<div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
+							{#each buckets as bucket (bucket.name)}
+								{@const active = activeBucket?.name === bucket.name}
+								<!-- The row and its menu are siblings, not nested: a <button>
+							     cannot contain the menu trigger, which is itself a button. -->
+								<div
+									class={[
+										'group flex items-center rounded-md transition-colors',
+										active ? 'bg-muted' : 'hover:bg-muted/60'
+									]}
+								>
+									<button
+										type="button"
+										class="min-w-0 flex-1 px-2 py-1.5 text-left text-sm"
+										data-testid="bucket-{bucket.name}"
+										onclick={() => {
+											selected = bucket.name;
+											prefix = '';
 										}}
 									>
-										<td class="px-4 py-2">
-											<span class="flex items-center gap-2 font-medium">
-												<Folder class="h-4 w-4 shrink-0 text-primary/70" />
-												<span class="truncate">{displayName(folder.prefix)}</span>
-											</span>
-										</td>
-										<td class="px-4 py-2 text-right text-muted-foreground">—</td>
-										<td class="hidden px-4 py-2 text-muted-foreground sm:table-cell">
-											{folder.objectCount}
-											{folder.objectCount === 1 ? 'object' : 'objects'}
-										</td>
-										<td class="px-4 py-2 text-muted-foreground">—</td>
-										<td class="px-4 py-2 text-right">
-											<ChevronRight class="ml-auto h-4 w-4 text-muted-foreground" />
-										</td>
-									</tr>
-								{/each}
-								{#each objects as object (object.key)}
-									{@const Icon = iconFor(object.contentType)}
-									<tr
-										class="group cursor-pointer border-b hover:bg-muted/50 focus-visible:bg-muted"
-										data-testid="object-row"
-										role="button"
-										tabindex="0"
-										onclick={() => openObject(object)}
-										onkeydown={(event) => {
-											if (event.key === 'Enter' || event.key === ' ') {
-												event.preventDefault();
-												openObject(object);
-											}
-										}}
-									>
-										<td class="px-4 py-2">
-											<span class="flex items-center gap-2">
-												<Icon class="h-4 w-4 shrink-0 text-muted-foreground" />
-												<span class="truncate">{displayName(object.key)}</span>
-											</span>
-										</td>
-										<td class="px-4 py-2 text-right text-muted-foreground tabular-nums">
-											{formatBytes(object.size)}
-										</td>
-										<td
-											class="hidden max-w-48 truncate px-4 py-2 font-mono text-xs text-muted-foreground sm:table-cell"
-										>
-											{object.contentType}
-										</td>
-										<td
-											class="px-4 py-2 text-muted-foreground"
-											title={new Date(object.updatedAt).toLocaleString()}
-										>
-											{formatWhen(object.updatedAt)}
-										</td>
-										<td class="px-4 py-2">
-											<!-- Row actions appear on hover but stay reachable by
-									     keyboard; the stopPropagation keeps them from
-									     opening the sheet behind them. -->
-											<div
-												class="flex justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+										<span class="flex items-center gap-1.5">
+											<span class={['truncate', active && 'font-medium']}>{bucket.name}</span>
+											{#if bucket.read === 'public'}
+												<Globe class="h-3 w-3 shrink-0 text-muted-foreground" />
+											{/if}
+										</span>
+										<span class="block text-xs text-muted-foreground">
+											{plural(bucket.objectCount, 'object')} · {formatBytes(bucket.totalBytes)}
+										</span>
+									</button>
+									{#if !readOnly}
+										<DropdownMenu.Root>
+											<DropdownMenu.Trigger
+												class={[
+													buttonVariants({ variant: 'ghost', size: 'icon' }),
+													'mr-1 h-6 w-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100'
+												]}
+												aria-label={`Actions for ${bucket.name}`}
+												data-testid="bucket-menu-{bucket.name}"
 											>
-												<Button
-													href={objectUrl(object.key)}
-													download={displayName(object.key)}
-													variant="ghost"
-													size="icon"
-													class="h-7 w-7"
-													title="Download"
-													onclick={(event) => event.stopPropagation()}
+												<EllipsisVertical class="h-3.5 w-3.5" />
+											</DropdownMenu.Trigger>
+											<DropdownMenu.Content align="end">
+												<DropdownMenu.Item
+													onclick={() => {
+														selected = bucket.name;
+														prefix = '';
+													}}
 												>
-													<Download class="h-3.5 w-3.5" />
-												</Button>
-												{#if !readOnly}
+													<FolderOpen class="mr-2 h-3.5 w-3.5" /> Browse
+												</DropdownMenu.Item>
+												<DropdownMenu.Item
+													onclick={() => {
+														dropTarget = bucket;
+														dropConfirmName = '';
+														dropError = '';
+													}}
+													data-testid="delete-bucket-{bucket.name}"
+													class="text-destructive data-highlighted:text-destructive"
+												>
+													<Trash2 class="mr-2 h-3.5 w-3.5" /> Delete bucket
+												</DropdownMenu.Item>
+											</DropdownMenu.Content>
+										</DropdownMenu.Root>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					</aside>
+
+					<!-- Browser -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<section
+						class="relative flex min-w-0 flex-col"
+						data-testid="file-browser"
+						ondragover={(event) => {
+							if (readOnly) return;
+							event.preventDefault();
+							dragging = true;
+						}}
+						ondragleave={() => (dragging = false)}
+						ondrop={onDrop}
+					>
+						<div class="flex flex-wrap items-center gap-2 border-b px-4 py-2">
+							<nav class="flex min-w-0 flex-1 items-center gap-1 text-sm" data-testid="breadcrumb">
+								<button
+									type="button"
+									class="flex items-center gap-1.5 font-medium hover:underline"
+									onclick={() => goToSegment(-1)}
+								>
+									<Folder class="h-3.5 w-3.5 text-muted-foreground" />
+									{activeBucket?.name}
+								</button>
+								{#each segments as segment, index (index)}
+									<ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+									<button
+										type="button"
+										class="truncate hover:underline"
+										onclick={() => goToSegment(index)}
+									>
+										{segment}
+									</button>
+								{/each}
+							</nav>
+
+							{#if activeBucket}
+								<Badge variant="outline" class="gap-1 font-mono text-[11px]">
+									{@render modeIcon(activeBucket.read)}
+									{activeBucket.read}
+								</Badge>
+							{/if}
+
+							{#if !readOnly}
+								<!-- The primary action of the page, styled as one. -->
+								<label
+									class={[
+										buttonVariants({ size: 'sm' }),
+										'cursor-pointer',
+										uploading && 'pointer-events-none opacity-70'
+									]}
+								>
+									<input
+										type="file"
+										multiple
+										class="hidden"
+										disabled={uploading}
+										data-testid="upload-input"
+										onchange={(event) => uploadFiles(event.currentTarget.files)}
+									/>
+									{#if uploading}
+										<LoaderCircle class="mr-1.5 h-3.5 w-3.5 animate-spin" /> Uploading…
+									{:else}
+										<Upload class="mr-1.5 h-3.5 w-3.5" /> Upload
+									{/if}
+								</label>
+							{/if}
+						</div>
+
+						{#if uploading}
+							<div class="space-y-1.5 border-b px-4 py-2" data-testid="upload-progress">
+								<div class="flex items-center justify-between text-xs text-muted-foreground">
+									<span class="truncate font-mono">{uploadName}</span>
+									<span class="tabular-nums">
+										{uploadTotal > 1
+											? `${uploadDone + 1} of ${uploadTotal} · `
+											: ''}{uploadProgress}%
+									</span>
+								</div>
+								<Progress value={uploadProgress} class="h-1" />
+							</div>
+						{/if}
+
+						{#if uploadError}
+							<p class="px-4 py-2 text-sm text-destructive" data-testid="upload-error">
+								{uploadError}
+							</p>
+						{/if}
+						{#if listError}
+							<p class="px-4 py-2 text-sm text-destructive" data-testid="list-error">{listError}</p>
+						{/if}
+
+						<div class="min-h-0 flex-1 overflow-auto">
+							<table class="w-full text-sm">
+								<thead class="sticky top-0 z-10 bg-background">
+									<tr class="border-b text-left text-xs text-muted-foreground">
+										<th class="px-4 py-2 font-medium">Name</th>
+										<th class="px-4 py-2 text-right font-medium">Size</th>
+										<th class="hidden px-4 py-2 font-medium sm:table-cell">Type</th>
+										<th class="px-4 py-2 font-medium">Updated</th>
+										<th class="w-20 px-4 py-2"><span class="sr-only">Actions</span></th>
+									</tr>
+								</thead>
+								<tbody data-testid="file-rows">
+									<!-- The whole ROW is the target, not just the name: the row is
+								     what looks clickable, so it has to be what responds. Rows
+								     carry the keyboard affordance themselves rather than
+								     wrapping a button, which a <td> cannot contain without
+								     breaking the row into two tab stops. -->
+									{#each folders as folder (folder.prefix)}
+										<tr
+											class="group cursor-pointer border-b hover:bg-muted/50 focus-visible:bg-muted"
+											data-testid="folder-row"
+											role="button"
+											tabindex="0"
+											onclick={() => enterFolder(folder.prefix)}
+											onkeydown={(event) => {
+												if (event.key === 'Enter' || event.key === ' ') {
+													event.preventDefault();
+													enterFolder(folder.prefix);
+												}
+											}}
+										>
+											<td class="px-4 py-2">
+												<span class="flex items-center gap-2 font-medium">
+													<Folder class="h-4 w-4 shrink-0 text-primary/70" />
+													<span class="truncate">{displayName(folder.prefix)}</span>
+												</span>
+											</td>
+											<td class="px-4 py-2 text-right text-muted-foreground">—</td>
+											<td class="hidden px-4 py-2 text-muted-foreground sm:table-cell">
+												{folder.objectCount}
+												{folder.objectCount === 1 ? 'object' : 'objects'}
+											</td>
+											<td class="px-4 py-2 text-muted-foreground">—</td>
+											<td class="px-4 py-2 text-right">
+												<ChevronRight class="ml-auto h-4 w-4 text-muted-foreground" />
+											</td>
+										</tr>
+									{/each}
+									{#each objects as object (object.key)}
+										{@const Icon = iconFor(object.contentType)}
+										<tr
+											class="group cursor-pointer border-b hover:bg-muted/50 focus-visible:bg-muted"
+											data-testid="object-row"
+											role="button"
+											tabindex="0"
+											onclick={() => openObject(object)}
+											onkeydown={(event) => {
+												if (event.key === 'Enter' || event.key === ' ') {
+													event.preventDefault();
+													openObject(object);
+												}
+											}}
+										>
+											<td class="px-4 py-2">
+												<span class="flex items-center gap-2">
+													<Icon class="h-4 w-4 shrink-0 text-muted-foreground" />
+													<span class="truncate">{displayName(object.key)}</span>
+												</span>
+											</td>
+											<td class="px-4 py-2 text-right text-muted-foreground tabular-nums">
+												{formatBytes(object.size)}
+											</td>
+											<td
+												class="hidden max-w-48 truncate px-4 py-2 font-mono text-xs text-muted-foreground sm:table-cell"
+											>
+												{object.contentType}
+											</td>
+											<td
+												class="px-4 py-2 text-muted-foreground"
+												title={new Date(object.updatedAt).toLocaleString()}
+											>
+												{formatWhen(object.updatedAt)}
+											</td>
+											<td class="px-4 py-2">
+												<!-- Row actions appear on hover but stay reachable by
+											     keyboard; the stopPropagation keeps them from
+											     opening the sheet behind them. -->
+												<div
+													class="flex justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+												>
 													<Button
+														href={objectUrl(object.key)}
+														download={displayName(object.key)}
 														variant="ghost"
 														size="icon"
-														class="h-7 w-7 text-muted-foreground hover:text-destructive"
-														title="Delete"
-														data-testid="row-delete"
-														onclick={(event) => {
-															event.stopPropagation();
-															deleteTarget = object;
-														}}
+														class="h-7 w-7"
+														title="Download"
+														onclick={(event) => event.stopPropagation()}
 													>
-														<Trash2 class="h-3.5 w-3.5" />
+														<Download class="h-3.5 w-3.5" />
 													</Button>
-												{/if}
-											</div>
-										</td>
-									</tr>
-								{/each}
-								{#if loading && !folders.length && !objects.length}
-									<tr>
-										<td colspan="5" class="px-4 py-10 text-center text-muted-foreground">
-											<LoaderCircle class="mx-auto h-4 w-4 animate-spin" />
-										</td>
-									</tr>
-								{:else if !loading && !folders.length && !objects.length}
-									<tr>
-										<td colspan="5" class="px-4 py-14 text-center">
-											<FolderOpen class="mx-auto h-8 w-8 text-muted-foreground/60" />
-											<p class="mt-3 text-sm font-medium">
-												{prefix ? 'This folder is empty.' : 'This bucket is empty.'}
-											</p>
-											{#if !readOnly}
-												<p class="mt-1 text-xs text-muted-foreground">
-													Drop files here, or use Upload. Folders are made by the keys you write -
-													<span class="font-mono">photos/cat.png</span> creates
-													<span class="font-mono">photos/</span>.
+													{#if !readOnly}
+														<Button
+															variant="ghost"
+															size="icon"
+															class="h-7 w-7 text-muted-foreground hover:text-destructive"
+															title="Delete"
+															data-testid="row-delete"
+															onclick={(event) => {
+																event.stopPropagation();
+																deleteTarget = object;
+															}}
+														>
+															<Trash2 class="h-3.5 w-3.5" />
+														</Button>
+													{/if}
+												</div>
+											</td>
+										</tr>
+									{/each}
+									{#if loading && !folders.length && !objects.length}
+										<tr>
+											<td colspan="5" class="px-4 py-10 text-center text-muted-foreground">
+												<LoaderCircle class="mx-auto h-4 w-4 animate-spin" />
+											</td>
+										</tr>
+									{:else if !loading && !folders.length && !objects.length}
+										<tr>
+											<td colspan="5" class="px-4 py-14 text-center">
+												<FolderOpen class="mx-auto h-8 w-8 text-muted-foreground/60" />
+												<p class="mt-3 text-sm font-medium">
+													{prefix ? 'This folder is empty.' : 'This bucket is empty.'}
 												</p>
-											{/if}
-										</td>
-									</tr>
-								{/if}
-							</tbody>
-						</table>
-					</div>
-
-					<div
-						class="flex items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground"
-					>
-						<span data-testid="object-range">
-							{objects.length ? `1–${objects.length} of ${total}` : `0 of ${total}`}
-							{folders.length
-								? ` · ${folders.length} ${folders.length === 1 ? 'folder' : 'folders'}`
-								: ''}
-						</span>
-						<div class="flex gap-2">
-							<Button
-								size="sm"
-								variant="outline"
-								disabled={!cursorStack.length}
-								onclick={() => {
-									const stack = [...cursorStack];
-									stack.pop();
-									cursorStack = stack;
-									void loadObjects(stack[stack.length - 1] ?? null);
-								}}>Prev</Button
-							>
-							<Button
-								size="sm"
-								variant="outline"
-								disabled={!cursor}
-								onclick={() => {
-									if (!cursor) return;
-									cursorStack = [...cursorStack, cursor];
-									void loadObjects(cursor);
-								}}>Next</Button
-							>
+												{#if !readOnly}
+													<p class="mt-1 text-xs text-muted-foreground">
+														Drop files here, or use Upload. Folders are made by the keys you write -
+														<span class="font-mono">photos/cat.png</span> creates
+														<span class="font-mono">photos/</span>.
+													</p>
+												{/if}
+											</td>
+										</tr>
+									{/if}
+								</tbody>
+							</table>
 						</div>
-					</div>
 
-					{#if dragging && !readOnly}
 						<div
-							class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-primary bg-primary/5"
-							data-testid="drop-overlay"
+							class="flex items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground"
 						>
-							<p class="flex items-center gap-2 text-sm font-medium text-primary">
-								<Upload class="h-4 w-4" /> Drop to upload to
-								<span class="font-mono">{prefix || '/'}</span>
-							</p>
+							<span data-testid="object-range">
+								{objects.length ? `1–${objects.length} of ${total}` : `0 of ${total}`}
+								{folders.length
+									? ` · ${folders.length} ${folders.length === 1 ? 'folder' : 'folders'}`
+									: ''}
+							</span>
+							<div class="flex gap-2">
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={!cursorStack.length}
+									onclick={() => {
+										const stack = [...cursorStack];
+										stack.pop();
+										cursorStack = stack;
+										void loadObjects(stack[stack.length - 1] ?? null);
+									}}>Prev</Button
+								>
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={!cursor}
+									onclick={() => {
+										if (!cursor) return;
+										cursorStack = [...cursorStack, cursor];
+										void loadObjects(cursor);
+									}}>Next</Button
+								>
+							</div>
 						</div>
-					{/if}
-				</section>
-			</div>
-		</Card.Root>
+
+						{#if dragging && !readOnly}
+							<div
+								class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed border-primary bg-primary/5"
+								data-testid="drop-overlay"
+							>
+								<p class="flex items-center gap-2 text-sm font-medium text-primary">
+									<Upload class="h-4 w-4" /> Drop to upload to
+									<span class="font-mono">{prefix || '/'}</span>
+								</p>
+							</div>
+						{/if}
+					</section>
+				</div>
+			</Card.Root>
+		{/if}
 	</div>
 {/if}
 

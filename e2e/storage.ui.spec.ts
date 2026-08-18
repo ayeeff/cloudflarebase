@@ -233,8 +233,12 @@ test.describe('storage console', () => {
 		// The shared code-sample component, so the snippets get the same tabs,
 		// copy button, and syntax highlighting every other Integration tab has.
 		await expect(panel.getByTestId('copy-integration')).toBeVisible();
-		await panel.getByRole('tab', { name: 'Server' }).click();
+		// One name for the server credential across all three agents' Integration
+		// tabs - it was 'Server' here and 'Service key' on auth and db.
+		await panel.getByRole('tab', { name: 'Admin service key' }).click();
 		await expect(panel).toContainText('@cloudflarebase/storage/admin');
+		// And the page shape matches auth and db: base URL, samples, caveat.
+		await expect(panel).toContainText('Storage base URL');
 	});
 
 	test('an unknown tool page is a 404, never an empty workspace', async ({ page }) => {
