@@ -678,13 +678,20 @@ const cloudflareSentryHandle: Handle = async (input) => {
  * natural call a server can write was refused 403 before the key was ever
  * read, on the primary documented server path rather than some edge.
  *
- * WHY SKIPPING ON `Authorization` IS SOUND: CSRF works only because the
- * browser supplies the credential by itself. It never adds an Authorization
+ * WHY SKIPPING ON A BEARER IS SOUND: CSRF works only because the browser
+ * supplies the credential by itself. It never adds a `Bearer` Authorization
  * header on its own, and a cross-origin fetch that sets one triggers a CORS
  * preflight this app does not answer for untrusted origins. So a request
  * carrying one cannot have been forged by a victim's browser - and an
  * attacker who already knows the bearer does not need CSRF at all. Cookie
  * requests keep the full check.
+ *
+ * The skip is BEARER-shaped only, not any Authorization header: every
+ * credential this app accepts is a bearer (session token, `cfbd_`, `cfbs_`,
+ * OIDC), while `Basic` is one a browser CAN attach by itself (a
+ * `user:pass@host` top-level navigation), riding beside the victim's cookies
+ * on a request the guard would then authenticate from those cookies. A
+ * non-bearer Authorization therefore keeps the full check.
  *
  * SvelteKit applies this before ANY hook, so the replacement sits first in the
  * sequence - ahead of the rate limiter and the guard - to keep the same
@@ -701,7 +708,7 @@ const csrfHandle: Handle = async ({ event, resolve }) => {
 	const method = request.method;
 	if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
 		// A bearer is not ambient - see above. This is the only relaxation.
-		if (!request.headers.get('authorization')) {
+		if (!/^Bearer\s+\S/i.test(request.headers.get('authorization') ?? '')) {
 			const type = (request.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
 			const origin = request.headers.get('origin');
 			if (FORM_CONTENT_TYPES.includes(type) && origin !== url.origin) {
@@ -713,12 +720,14 @@ const csrfHandle: Handle = async ({ event, resolve }) => {
 };
 
 export const handle = sequence(
+	// Before everything: SvelteKit's own version of this ran ahead of every
+	// hook, and the ordering guarantee is part of the protection. A refused
+	// forgery never reaches Sentry's wrappers, exactly as it never did under
+	// SvelteKit's built-in check.
+	csrfHandle,
 	platformHandle,
 	cloudflareSentryHandle,
 	sentryHandle(),
-	// Before everything: SvelteKit's own version of this ran ahead of every
-	// hook, and the ordering guarantee is part of the protection.
-	csrfHandle,
 	// Outside the guard: its redirects and 401s are responses a crawler sees
 	// too, and they need the header as much as a rendered page does.
 	noindexHandle,
