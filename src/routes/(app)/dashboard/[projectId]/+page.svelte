@@ -35,10 +35,12 @@
 
 <svelte:head>
 	<title>{data.projectId} · Project Overview · Cloudflarebase</title>
-	<meta
-		name="description"
-		content="Manage the Cloudflarebase backend for project {data.projectId}."
-	/>
+	<!-- The TITLE names the project, because that is the browser tab and an
+	     operator with six of them open needs it. The description deliberately
+	     does not: the console is noindex, so its only real consumer is a chat
+	     client unfurling a pasted link, and that card must never name somebody's
+	     project. See src/routes/+layout.svelte. -->
+	<meta name="description" content="Manage your Cloudflarebase backend." />
 </svelte:head>
 
 <div class="mx-auto max-w-6xl space-y-6 px-3 py-5 sm:space-y-8 sm:px-6 sm:py-8">

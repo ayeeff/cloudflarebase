@@ -1,6 +1,11 @@
 import { dev } from '$app/environment';
 import { agentByApiPrefix, agentByWorkerSegment, routeAccess } from '$lib/agent-registry';
-import { CONSOLE_DASHBOARD_PAGES, CONSOLE_PROJECT_ID, RESERVED_PROJECT_IDS } from '$lib/console';
+import {
+	CONSOLE_DASHBOARD_PAGES,
+	CONSOLE_PROJECT_ID,
+	isPrivateSurface,
+	RESERVED_PROJECT_IDS
+} from '$lib/console';
 import { projectIdSchema } from '$lib/schemas/auth';
 import { agentFetcher, agentUrl, serverError } from '$lib/server/agents';
 import { isDemoMode, isDemoProjectId, resolveConsoleIdentity } from '$lib/server/console';
@@ -115,13 +120,16 @@ const applicationHandle: Handle = async ({ event, resolve }) => {
  * `noindex` in the markup would never be seen and an already-indexed URL would
  * stay indexed forever. This is served on every response, including the guard's
  * redirects and 401s, which is what lets Google drop what it already has.
+ *
+ * `noindex` is not the whole job, though: it governs SEARCH, and a link preview
+ * is not a search engine - WhatsApp, iMessage, and every chat client that
+ * unfurls a URL ignore it entirely. The same surface list therefore also drives
+ * the root layout's Open Graph, which is what stops a shared `/dashboard` link
+ * previewing as somebody's throwaway demo project.
  */
-const PRIVATE_SURFACES = ['/dashboard', '/login', '/cli-auth', '/api', '/agents'];
-
 const noindexHandle: Handle = async ({ event, resolve }) => {
 	const response = await resolve(event);
-	const { pathname } = event.url;
-	if (PRIVATE_SURFACES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) {
+	if (isPrivateSurface(event.url.pathname)) {
 		// Responses proxied from an agent carry immutable headers; the console
 		// pages this actually targets do not, and a crawler never reaches those.
 		try {

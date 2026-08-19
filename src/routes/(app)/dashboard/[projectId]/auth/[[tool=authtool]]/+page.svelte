@@ -808,9 +808,11 @@
 
 <svelte:head>
 	<title>{data.projectId} · Authentication · Cloudflarebase</title>
+	<!-- No project id: the console is noindex, so the only consumer of this is a
+	     link unfurler, and that card must not name a project. -->
 	<meta
 		name="description"
-		content="Configure authentication, users, sessions, OAuth providers, and analytics for project {data.projectId}."
+		content="Configure authentication, users, sessions, OAuth providers, and analytics."
 	/>
 </svelte:head>
 

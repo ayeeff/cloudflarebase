@@ -1059,9 +1059,11 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 
 <svelte:head>
 	<title>{data.projectId} · Database · Cloudflarebase</title>
+	<!-- No project id: the console is noindex, so the only consumer of this is a
+	     link unfurler, and that card must not name a project. -->
 	<meta
 		name="description"
-		content="Browse collections and documents, tune access modes, and connect apps to project {data.projectId}'s database."
+		content="Browse collections and documents, tune access modes, and connect apps to your database."
 	/>
 </svelte:head>
 
