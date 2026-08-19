@@ -160,17 +160,31 @@ export function prepareTableSql(
 	}
 
 	// DML must target THIS table by its unquoted or quoted name.
-	const t = `("?)${escapeRegExp(table)}\\1`;
-	if (
-		kind === 'insert' &&
-		!new RegExp(`^insert\\s+(or\\s+\\w+\\s+)?into\\s+${t}\\b`, 'i').test(sql)
-	) {
+	//
+	// The quote group is NAMED, and the trailing guard is a lookahead rather
+	// than `\b`. Both spellings were wrong, in opposite directions:
+	//
+	// - `("?)…\1` numbered the group, but the insert and update patterns carry
+	//   an earlier `(or\s+\w+\s+)?` group - so `\1` referenced THAT one, and an
+	//   unmatched group backreferences the empty string in JS. Quotes went
+	//   unbalanced: `INSERT INTO "todos` passed. Delete has no earlier group,
+	//   so there `\1` really was the quote, and then...
+	// - `\b` after a closing `"` can never match (a quote is not a word
+	//   character and neither is the space or end-of-input that follows it), so
+	//   `DELETE FROM "todos"` - what every ORM emits, drizzle included - was
+	//   refused with "deletes must target". Every existing test wrote the name
+	//   unquoted, which is why nothing caught it.
+	//
+	// The lookahead also refuses `todos-archive` for table `todos`: a hyphen IS
+	// a word boundary, and hyphens are legal in table names.
+	const t = `(?<q>"?)${escapeRegExp(table)}\\k<q>(?![\\w"-])`;
+	if (kind === 'insert' && !new RegExp(`^insert\\s+(or\\s+\\w+\\s+)?into\\s+${t}`, 'i').test(sql)) {
 		return { ok: false, error: `inserts must target "${table}"` };
 	}
-	if (kind === 'update' && !new RegExp(`^update\\s+(or\\s+\\w+\\s+)?${t}\\b`, 'i').test(sql)) {
+	if (kind === 'update' && !new RegExp(`^update\\s+(or\\s+\\w+\\s+)?${t}`, 'i').test(sql)) {
 		return { ok: false, error: `updates must target "${table}"` };
 	}
-	if (kind === 'delete' && !new RegExp(`^delete\\s+from\\s+${t}\\b`, 'i').test(sql)) {
+	if (kind === 'delete' && !new RegExp(`^delete\\s+from\\s+${t}`, 'i').test(sql)) {
 		return { ok: false, error: `deletes must target "${table}"` };
 	}
 
