@@ -13,6 +13,7 @@ import {
 	bucketConfigInputSchema,
 	bucketNameSchema,
 	projectIdSchema,
+	type AccessMode,
 	type BucketConfig,
 	type BucketConfigInput,
 } from './schemas';
@@ -65,8 +66,8 @@ function envInt(env: Env, name: string, fallback: number): number {
 
 export interface StorageBucketSummary {
 	name: string;
-	read: 'public' | 'auth' | 'owner';
-	write: 'public' | 'auth' | 'owner';
+	read: AccessMode;
+	write: AccessMode;
 	publicListing: boolean;
 	objectCount: number;
 	totalBytes: number;

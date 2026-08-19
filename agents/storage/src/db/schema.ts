@@ -16,8 +16,17 @@ import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
  * absolute counters reported by each bucket's index as a heartbeat. */
 export const buckets = sqliteTable('buckets', {
 	name: text('name').primaryKey(),
-	readAccess: text('read_access').$type<'public' | 'auth' | 'owner'>().notNull().default('auth'),
-	writeAccess: text('write_access').$type<'public' | 'auth' | 'owner'>().notNull().default('auth'),
+	/** Spelled out rather than importing AccessMode: this file is the drizzle
+	 * schema and stays free of the boundary schemas. Widening it is metadata
+	 * only - the column is TEXT either way, so no migration is involved. */
+	readAccess: text('read_access')
+		.$type<'public' | 'auth' | 'owner' | 'none'>()
+		.notNull()
+		.default('auth'),
+	writeAccess: text('write_access')
+		.$type<'public' | 'auth' | 'owner' | 'none'>()
+		.notNull()
+		.default('auth'),
 	readPermission: text('read_permission'),
 	writePermission: text('write_permission'),
 	/** Enumeration is a separate grant from reading a known key. */

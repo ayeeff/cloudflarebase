@@ -198,7 +198,9 @@ export const projectBranchesSchema = z
 // agents/db/src/agent.ts - deliberately copied, never imported (the agent is
 // its own TypeScript project with its own generated Env).
 
-export const dbAccessModeSchema = z.enum(['public', 'auth', 'owner']);
+/** `none` closes a side to the public API entirely - operator surfaces only.
+ * A read-only collection is `writeAccess: 'none'`. */
+export const dbAccessModeSchema = z.enum(['public', 'auth', 'owner', 'none']);
 
 const dbFieldPath = z
 	.string()
@@ -759,7 +761,9 @@ export const mintedDeployTokenSchema = z
 
 // --- Storage agent (mirrors agents/storage/src/{agent,bucket,schemas}.ts) ---
 
-export const storageAccessModeSchema = z.enum(['public', 'auth', 'owner']);
+/** `none` closes a side to the public API entirely - operator surfaces only.
+ * A read-only bucket is `write: 'none'`. */
+export const storageAccessModeSchema = z.enum(['public', 'auth', 'owner', 'none']);
 
 export const storageBucketSummarySchema = z
 	.object({

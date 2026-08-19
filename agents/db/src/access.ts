@@ -8,6 +8,7 @@ import type { AccessMode } from './schemas';
  * Behavior is exactly the collection v1 gate:
  *
  * - `public` mode: straight through, no token looked at.
+ * - `none`: refused before the token is looked at - see below.
  * - `auth`/`owner`: Bearer token required (401 without), verified against
  *   the project JWKS (401 invalid, 503 when verification is unconfigured),
  *   then the optional permission key is checked - a VALID token lacking the
@@ -24,6 +25,21 @@ export async function checkAccess(
 	verifier: ProjectJwtVerifier,
 ): Promise<AccessDecision> {
 	if (mode === 'public') return { ok: true, owner: null };
+
+	// 403 rather than 401, and BEFORE the token is read: no token would work,
+	// so asking for one would be a lie - and a 401 sends a client into a
+	// sign-in loop it can never satisfy. The operator surfaces (admin routes,
+	// service keys, the admin SDK) never reach this gate, so `none` closes the
+	// public plane without closing the shard.
+	if (mode === 'none') {
+		return {
+			ok: false,
+			response: Response.json(
+				{ error: 'that operation is closed on the public API - it is operator-only' },
+				{ status: 403 },
+			),
+		};
+	}
 
 	const header = request.headers.get('authorization');
 	const token = header?.match(/^Bearer (.+)$/i)?.[1];

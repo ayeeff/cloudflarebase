@@ -308,7 +308,26 @@ export interface RepStatus {
 // ---------------------------------------------------------------------------
 // Collection configuration
 
-export const accessModeSchema = z.enum(['public', 'auth', 'owner']);
+/**
+ * Who may reach a shard over the PUBLIC API, per side (read and write are set
+ * independently).
+ *
+ * `none` is the closed one, and it exists because there was previously no way
+ * to say "nobody writes this from a client". That is the shape of every
+ * server-owned dataset - feature flags, pricing tiers, a country list, a
+ * product catalog - and the closest approximation was `auth` plus a permission
+ * key nobody's token carries, which works by accident and is one role edit
+ * away from being wrong.
+ *
+ * `writeAccess: 'none'` is a read-only collection or table: Firestore's
+ * `allow write: if false` expressed against the operator bypass that already
+ * exists (console, `cfbs_` service key, admin SDK - none of which pass through
+ * this gate at all). `readAccess: 'none'` falls out for free and is genuinely
+ * useful: append-only ingest that clients may write but never read back.
+ *
+ * Widening an enum is backward-compatible - every stored config still parses.
+ */
+export const accessModeSchema = z.enum(['public', 'auth', 'owner', 'none']);
 export type AccessMode = z.infer<typeof accessModeSchema>;
 
 /**

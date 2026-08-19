@@ -7,6 +7,7 @@ import type { AccessMode } from './schemas';
  * stands), adapted to the stateless worker:
  *
  * - `public` mode: straight through, no token looked at.
+ * - `none`: refused before the token is looked at - see below.
  * - `auth`/`owner`: Bearer token required (401 without), verified against
  *   the project JWKS (401 invalid, 503 when verification is unconfigured),
  *   then the optional permission key is checked - a VALID token lacking the
@@ -33,6 +34,25 @@ export async function checkAccess(
 ): Promise<AccessDecision> {
 	const header = request.headers.get('authorization');
 	const token = header?.match(/^Bearer (.+)$/i)?.[1];
+
+	// 403 rather than 401, and before the token is verified: no token would
+	// work, so asking for one would be a lie - and a 401 sends a client into a
+	// sign-in loop it can never satisfy.
+	//
+	// Signed URLs stay coherent with this. VERIFYING one bypasses the read mode
+	// by design (that is what a capability is) and never reaches this gate, but
+	// MINTING one on the public path passes `config.read` through here - so on a
+	// `read: 'none'` bucket only the admin mirror can mint, and a client cannot
+	// hand itself the capability the mode just refused.
+	if (mode === 'none') {
+		return {
+			ok: false,
+			response: Response.json(
+				{ error: 'that operation is closed on the public API - it is operator-only' },
+				{ status: 403 },
+			),
+		};
+	}
 
 	if (mode === 'public') {
 		// A public bucket still resolves a VALID token's subject so writes can

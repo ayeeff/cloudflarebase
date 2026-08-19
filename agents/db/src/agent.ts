@@ -140,6 +140,12 @@ function parseStoredMembers(raw: string | null): string[] {
  * selected by OTHER owners' todos, and the general fix is a row-level
  * security engine, which this is not. Refusing at both edges is the whole
  * mitigation, so the message has to say why rather than just say no.
+ *
+ * `none` on the read side is refused for the same structural reason: a view is
+ * a second copy of every member, so a member nobody may read through the public
+ * API must not become readable by being joined. DbView re-checks it at read
+ * time as well - the member's config travels by replication, so a member closed
+ * after the view was built has a window.
  */
 function viewMemberRefusal(
 	member: string,
@@ -150,6 +156,12 @@ function viewMemberRefusal(
 		return (
 			`"${member}" is owner-scoped, so it cannot be a view member - row ownership ` +
 			`does not survive a join, and the join would expose other owners' rows`
+		);
+	}
+	if (readAccess === 'none') {
+		return (
+			`"${member}" is closed to the public API, so it cannot be a view member - ` +
+			`a view is a second copy of it, and the join would serve rows its own gate refuses`
 		);
 	}
 	if (replication !== 'auto') {
