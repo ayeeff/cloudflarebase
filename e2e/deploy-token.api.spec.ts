@@ -11,7 +11,7 @@ import {
 } from './helpers';
 
 /**
- * Deploy tokens (docs/managed-service-design.md, Phase B): CI's durable
+ * Deploy tokens (Phase B): CI's durable
  * credential. The contract this file pins: minted on roots only, the secret
  * appears exactly once and is stored hashed, the `cfbd_` bearer is accepted
  * SOLELY on the deploy and branch-create endpoints for the token's family -

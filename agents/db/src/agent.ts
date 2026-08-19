@@ -1337,7 +1337,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			return Response.json(result);
 		}
 		// GET and PATCH landed with the server-side service path
-		// (docs/admin-sdk-design.md 5.1): until then this route was PUT and
+		//: until then this route was PUT and
 		// DELETE only, so a service key could write a document and never read it
 		// back - /admin/query cannot filter on `id` at all.
 		if (request.method === 'GET') {
@@ -1809,7 +1809,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			return Response.json(result);
 		}
 		// The collection twin's GET/PATCH, so both kinds read and merge through
-		// the same idiom (docs/admin-sdk-design.md 5.1). Tables could already do
+		// the same idiom. Tables could already do
 		// this via /admin/tables/:name/sql; raw SQL is not an API for a
 		// single-row read.
 		if (request.method === 'GET') {

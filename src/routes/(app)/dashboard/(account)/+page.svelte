@@ -42,7 +42,7 @@
 	}
 
 	// Branches group under their root project instead of listing as siblings
-	// (docs/branches-design.md). parentId decides - never the id's shape, so
+	//. parentId decides - never the id's shape, so
 	// grandfathered roots containing `--` stay top-level. A branch whose root
 	// row is somehow missing degrades to a top-level row rather than vanishing.
 	const rootIds = $derived(

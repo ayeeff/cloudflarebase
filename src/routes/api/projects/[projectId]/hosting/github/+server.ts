@@ -5,8 +5,7 @@ import { getProjectOwnership } from '$lib/server/registry';
 import type { RequestHandler } from './$types';
 
 /**
- * GitHub push-to-deploy state for the Hosting page (docs/managed-service-design.md,
- * Phase B). `configured: false` is the self-hosted default - no App
+ * GitHub push-to-deploy state for the Hosting page (* Phase B). `configured: false` is the self-hosted default - no App
  * credentials, so the page offers the manual deploy-token flow instead.
  */
 export const GET: RequestHandler = async ({ params, platform }) => {

@@ -106,7 +106,7 @@ export const localResetPasswordSchema = z.strictObject({
 });
 
 /**
- * Admin user management (docs/admin-sdk-design.md 5.2) - the Firebase
+ * Admin user management - the Firebase
  * Admin-SDK operations this surface never had. It could list, re-role, and
  * delete; it could not CREATE, read one, or update one, and the end-user
  * sign-up route is not a substitute (it obeys the project's sign-up mode and

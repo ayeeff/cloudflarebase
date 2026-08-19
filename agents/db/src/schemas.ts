@@ -185,7 +185,7 @@ export interface DbDocument {
 }
 
 // ---------------------------------------------------------------------------
-// Replication (phase REP1 of docs/db-scale-plan.md; docs/db-replication-design.md)
+// Replication (phase REP1)
 
 export const replicationModeSchema = z.enum(['off', 'auto']);
 export type ReplicationMode = z.infer<typeof replicationModeSchema>;
@@ -238,7 +238,7 @@ export type RepPullResult =
  * whole reason the pattern is not just `r:`:
  *
  * - `r:<region>:<n>` - a region replica of THIS shard (REP1/REP2).
- * - `v:<view>:<region>:<n>` - a join view (docs/db-join-design.md), which
+ * - `v:<view>:<region>:<n>` - a join view, which
  *   follows SEVERAL primaries into one SQLite. It registers in each member's
  *   `replicas` table like any other follower, so the erase fan-out reaches it.
  *
@@ -406,7 +406,7 @@ export const settingsRequestSchema = z.strictObject({
 });
 
 // ---------------------------------------------------------------------------
-// Tables: the typed-column DSL (phase T1 of docs/db-scale-plan.md)
+// Tables: the typed-column DSL (phase T1)
 
 /** Table names are DO name suffixes exactly like collection names; the
  * physical SQLite table inside the instance is always `rows`. */
@@ -650,7 +650,7 @@ export type TableSqlResponse =
 	| { success: false; error: string };
 
 // ---------------------------------------------------------------------------
-// Join views (JOIN1; docs/db-join-design.md)
+// Join views (JOIN1)
 
 /** A view name is a registry name like any other - unique ACROSS kinds, and
  * a Durable Object name segment, so the same tame grammar applies. */

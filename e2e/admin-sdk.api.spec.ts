@@ -5,7 +5,7 @@ import { createStorageAdmin } from '../agents/storage/src/admin';
 import { ensureProject } from './helpers';
 
 /**
- * The per-agent ADMIN clients (docs/admin-sdk-design.md).
+ * The per-agent ADMIN clients.
  *
  * These drive the REAL exported clients, not a hand-rolled fetch that happens
  * to hit the same URLs - the point is to prove the published surface works,

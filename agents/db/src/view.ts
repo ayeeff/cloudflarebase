@@ -36,7 +36,7 @@ import {
 import type { DbTable } from './table';
 
 /**
- * `DbView` - the join view (JOIN1, docs/db-join-design.md).
+ * `DbView` - the join view (JOIN1).
  *
  * A region replica is a Durable Object that follows ONE primary's change log
  * into a copy of ONE table. A view is the same machinery pointed at SEVERAL:

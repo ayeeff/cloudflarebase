@@ -23,7 +23,7 @@ import {
 } from './helpers';
 
 /**
- * The storage agent end to end (docs/storage-agent-plan.md, S1): bucket
+ * The storage agent end to end (S1): bucket
  * lifecycle through the operator proxy, object round trips on the direct
  * agent byte path, per-bucket access modes against real project JWTs, the
  * serve-time inline allowlist, key validation, caps, and erase-then-re-mint.
@@ -768,7 +768,7 @@ test.describe('storage agent (S1)', () => {
 });
 
 /**
- * Signed download URLs (docs/storage-agent-plan.md, S2's first item).
+ * Signed download URLs (S2's first item).
  *
  * The claim under test is narrow and load-bearing: a URL minted by someone who
  * could read the object lets someone holding NO credential read exactly that

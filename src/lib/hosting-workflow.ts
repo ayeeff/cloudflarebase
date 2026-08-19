@@ -1,6 +1,5 @@
 /**
- * The official GitHub Actions deploy workflow (docs/managed-service-design.md,
- * Phase B) - Workers-Builds-style push-to-deploy WITHOUT us running a build
+ * The official GitHub Actions deploy workflow (* Phase B) - Workers-Builds-style push-to-deploy WITHOUT us running a build
  * farm: GitHub's runners do the user's build, `cloudflarebase deploy` ships
  * the output with the repo's deploy token. Single-sourced here so the
  * dashboard's Connect GitHub card can never drift from what we document.

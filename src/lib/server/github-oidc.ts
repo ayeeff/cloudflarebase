@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/sveltekit';
 
 /**
- * GitHub Actions OIDC verification (docs/managed-service-design.md, Phase B).
+ * GitHub Actions OIDC verification (Phase B).
  *
  * This is what lets `build`-mode connections deploy with NO secret anywhere:
  * the workflow asks GitHub for a short-lived identity token describing the

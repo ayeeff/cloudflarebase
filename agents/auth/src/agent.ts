@@ -496,7 +496,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 	}
 
 	/**
-	 * Console registration policy (docs/managed-service-design.md). `open` only
+	 * Console registration policy. `open` only
 	 * counts when the mail sender is configured - without one, verification
 	 * mail cannot leave, so the console stays effectively claimed and the
 	 * sign-up paths answer a loud config error instead of registering users
@@ -1076,7 +1076,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			);
 		}
 
-		// Admin user management (docs/admin-sdk-design.md 5.2). Until this landed
+		// Admin user management. Until this landed
 		// the surface could list, re-role, and delete - never create, read one,
 		// or update one - so seeding accounts, migrating from another provider,
 		// and provisioning a service account were all impossible from a server.

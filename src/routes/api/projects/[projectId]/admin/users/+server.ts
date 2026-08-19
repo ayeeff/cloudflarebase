@@ -24,7 +24,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 };
 
 /**
- * Create an account with no sign-up flow (docs/admin-sdk-design.md 5.2) - the
+ * Create an account with no sign-up flow - the
  * Admin-SDK operation this surface never had. Seeding, invite-first products,
  * and migrations off another provider all need it, and none of them can use
  * the end-user sign-up route, which obeys the project's sign-up mode and

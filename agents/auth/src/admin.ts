@@ -1,6 +1,6 @@
 /**
  * The ADMIN client for `@cloudflarebase/auth` - user and session management
- * from a server (docs/admin-sdk-design.md).
+ * from a server.
  *
  * The twin of `@cloudflarebase/db/admin`, and the same three properties hold:
  * it targets the CONSOLE (a `cfbs_` service key is verified in the console
@@ -43,10 +43,11 @@ export class AuthAdminError extends Error {
 
 /** A 404 from a route the DEPLOYED agent lacks, told apart from the agent's
  * own entity misses (`user not found`, `session not found`, the guard's
- * `no such project`). Conflating them is data-loss-shaped - see
- * docs/admin-sdk-design.md 8. The agent's ROUTING fallback body is a bare
- * `not found`, which is exactly what an older agent answers on these routes -
- * so a bare `not found` must map HERE, never to "missing record". */
+ * `no such project`). Conflating them is data-loss-shaped: a caller that
+ * reads "not found" and then writes overwrites a record that exists. The
+ * agent's ROUTING fallback body is a bare `not found`, which is exactly what
+ * an older agent answers on these routes - so a bare `not found` must map
+ * HERE, never to "missing record". */
 export class AuthAgentTooOldError extends Error {
 	constructor(path: string) {
 		super(

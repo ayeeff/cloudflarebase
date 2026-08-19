@@ -355,7 +355,7 @@ export const dbActivityEventSchema = z
 	})
 	.meta({ id: 'DbActivityEvent' });
 
-// --- Tables (phase T1 of docs/db-scale-plan.md) ---
+// --- Tables (phase T1) ---
 
 export const dbColumnTypeSchema = z.enum(['text', 'integer', 'real', 'boolean', 'json']);
 
@@ -521,7 +521,7 @@ export const dbBookmarkResolutionSchema = z
 		description: 'The closest available bookmark for a wall-clock time, D1-restore-style.'
 	});
 
-// --- Join views (JOIN1 of docs/db-join-design.md) ---
+// --- Join views (JOIN1) ---
 
 /** A read-only view over several member tables: one Durable Object that
  * follows each member's change log into one SQLite, so a SELECT can join

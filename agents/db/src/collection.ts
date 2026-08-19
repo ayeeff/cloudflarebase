@@ -300,7 +300,7 @@ export class DbCollection extends LiveShard {
 	 * it: `compileQuery` turns every `where.field` into a JSON path into the
 	 * `data` blob, so `id` - a system column - is unreachable by any query the
 	 * DSL can express. A server holding a service key could write a document
-	 * and then never read it back (docs/admin-sdk-design.md 5.1).
+	 * and then never read it back.
 	 *
 	 * Null, not a throw, so the parent can answer 404 - and so an older
 	 * deployed agent's route-level 404 stays distinguishable from this one.
@@ -369,7 +369,7 @@ export class DbCollection extends LiveShard {
 	}
 
 	// -------------------------------------------------------------------------
-	// Replication: the primary's feed (docs/db-replication-design.md)
+	// Replication: the primary's feed
 
 	/** Append to the change log in the SAME task as the data write, then
 	 * schedule the live push to any replica holding subscribers. */

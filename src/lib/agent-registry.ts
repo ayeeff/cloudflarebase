@@ -5,7 +5,7 @@ import hostingManifestJson from '../../agents/hosting/cloudflarebase.agent.json'
 import storageManifestJson from '../../agents/storage/cloudflarebase.agent.json';
 
 /**
- * The agent manifest contract from docs/agent-contract.md.
+ * The agent manifest contract - see "The agent contract" in AGENTS.md.
  *
  * Each agent package ships a cloudflarebase.agent.json declaring what it is
  * and what the platform must do to host it. The app imports those files

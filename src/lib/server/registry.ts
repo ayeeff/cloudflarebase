@@ -32,7 +32,7 @@ import { z } from 'zod';
 export const createProjectSchema = z.object({
 	id: projectIdSchema
 		.refine((value) => !RESERVED_PROJECT_IDS.has(value), 'that project id is reserved')
-		// `--` is the branch separator (docs/branches-design.md): keeping it out
+		// `--` is the branch separator: keeping it out
 		// of NEW user-chosen ids is what makes `<root>--<branch>` unambiguous.
 		// Rows that predate this rule stay valid - the registry's parent_id
 		// column decides what is a branch, never the string shape.
@@ -358,7 +358,7 @@ export type CreateBranchResult =
 
 /**
  * Mints a branch of a root project: a full registry row whose id is
- * `<rootId>--<branch>` (docs/branches-design.md). The derived id IS the
+ * `<rootId>--<branch>`. The derived id IS the
  * isolation - every agent keys on project id, so the branch gets its own
  * Durable Objects, JWKS keypair, replicas, and analytics with zero agent
  * involvement. v1 branches start empty, like a fresh project.

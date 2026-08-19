@@ -21,10 +21,9 @@ import type { StorageAgent } from './agent';
  *
  * Bytes never enter this object. The worker streams to R2 and calls the
  * small metadata RPCs here afterwards; the row wants the put's REAL size and
- * etag, which is why writes go to R2 first (see "Index consistency" in
- * docs/storage-agent-plan.md - deletes also go to R2 first, so a crash can
- * only ever leave the benign phantom-row shape, never an unindexed orphan
- * that bills forever, on the delete path).
+ * etag, which is why writes go to R2 first. Deletes go to R2 first too, so a
+ * crash on either path can only ever leave the benign phantom-row shape,
+ * never an unindexed orphan that bills forever.
  */
 
 /** How often the child reports absolute counters to the parent. A heartbeat,

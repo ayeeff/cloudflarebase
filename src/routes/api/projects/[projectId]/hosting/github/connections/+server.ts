@@ -3,8 +3,7 @@ import { connectRepository, listConnections } from '$lib/server/github-connect';
 import type { RequestHandler } from './$types';
 
 /**
- * Repository connections, console-plane (docs/managed-service-design.md,
- * Phase B). Made on ROOT projects; a push to a git branch deploys
+ * Repository connections, console-plane (* Phase B). Made on ROOT projects; a push to a git branch deploys
  * `<root>--<branch>` through the same connection.
  */
 

@@ -10,7 +10,7 @@ import {
 import { jsonBody, jsonResponse, UNAUTHORIZED, type AgentOpenApiModule } from './shared';
 
 /**
- * Hosting agent module (docs/managed-service-design.md, Phase B). Every
+ * Hosting agent module (Phase B). Every
  * endpoint here is operator-plane: apps are deployed BY the project owner,
  * not called by their application, so nothing is public. Claims and deploy
  * tokens are console-plane (control-plane D1) but documented under the same

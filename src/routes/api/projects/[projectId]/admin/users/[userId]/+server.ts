@@ -8,7 +8,7 @@ import {
 import type { RequestHandler } from './$types';
 
 /** Read one account. Added with the server-side service path
- * (docs/admin-sdk-design.md 5.2): the surface could list users and delete
+ *: the surface could list users and delete
  * them, but never fetch one by id. */
 export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const projectId = assertProjectId(params.projectId);

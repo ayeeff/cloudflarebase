@@ -60,9 +60,9 @@ export interface ConsoleAuthConfig {
 
 /**
  * The console auth instance's public /config, narrowed to what the login page
- * needs: which social buttons to offer and whether public sign-up is open
- * (docs/managed-service-design.md - the agent reports the effective mode, so
- * a misconfigured `open` never renders a doomed sign-up form).
+ * needs: which social buttons to offer and whether public sign-up is open.
+ * The agent reports the EFFECTIVE mode, so a misconfigured `open` never
+ * renders a doomed sign-up form.
  */
 export async function consoleAuthConfig(
 	platform: App.Platform | undefined,

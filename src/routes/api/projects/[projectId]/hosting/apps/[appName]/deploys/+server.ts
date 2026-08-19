@@ -5,7 +5,7 @@ import { resolveAppClaim } from '$lib/server/hosting';
 import type { RequestHandler } from './$types';
 
 /**
- * The deploy endpoint (docs/managed-service-design.md, Phase B). The console
+ * The deploy endpoint (Phase B). The console
  * resolves the subdomain claim BEFORE proxying - claims are control-plane
  * state, the agent owns no global namespace - then pushes the result to the
  * agent's service-binding-only link route and forwards the multipart deploy.

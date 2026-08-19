@@ -22,7 +22,7 @@ export const project = sqliteTable(
 	{
 		/** Becomes the Durable Object name and the API base path. Immutable.
 		 * A BRANCH row's id is `<parentId>--<branchName>` - the derived id IS
-		 * the isolation (docs/branches-design.md): every agent already keys on
+		 * the isolation: every agent already keys on
 		 * project id, so a branch gets its own instances, keys, and replicas
 		 * with zero agent changes. */
 		id: text('id').primaryKey(),
@@ -34,7 +34,7 @@ export const project = sqliteTable(
 		/** The branch's short name (`staging`); null on roots (`main`). */
 		branchName: text('branch_name'),
 		/** Owning organization - a row in the console AuthAgent's org tables
-		 * (docs/managed-service-design.md). The registry knows which org owns a
+		 *. The registry knows which org owns a
 		 * project; the agent knows who is in the org; the guard joins the two
 		 * per request. Null = legacy/self-hosted row, visible to any operator -
 		 * exactly the pre-Phase-A behaviour, so a claimed-mode install never
@@ -94,7 +94,7 @@ export const chatMessage = sqliteTable(
 );
 
 /**
- * Hosting subdomain claims (docs/managed-service-design.md, Phase B). The
+ * Hosting subdomain claims (Phase B). The
  * dispatch namespace is global, so claims are control-plane state - no agent
  * may own the namespace without every project depending on that one instance.
  * One row per project+app: `project_id` is the FULL registry id (a branch is
@@ -121,7 +121,7 @@ export const app = sqliteTable(
 export type AppRow = typeof app.$inferSelect;
 
 /**
- * Project-scoped deploy tokens (docs/managed-service-design.md, Phase B) -
+ * Project-scoped deploy tokens (Phase B) -
  * the durable credential CI deploys ride, minted on ROOT projects and valid
  * for the root and its branches. Only the SHA-256 digest is stored, so a
  * control-plane leak never yields a working credential; the guard accepts
@@ -148,7 +148,7 @@ export const deployToken = sqliteTable(
 export type DeployTokenRow = typeof deployToken.$inferSelect;
 
 /**
- * Project service keys (docs/service-keys-design.md) - the credential a SERVER
+ * Project service keys - the credential a SERVER
  * can hold, for the cases with no user to relay: crons, queue consumers,
  * webhook handlers, seed scripts, and backends we do not host.
  *

@@ -11,8 +11,8 @@ import {
 } from './helpers';
 
 /**
- * The stubbed CLI -> console -> agent hosting contract (Phase B of
- * docs/managed-service-design.md): subdomain claims resolve in the control
+ * The stubbed CLI -> console -> agent hosting contract (Phase B): subdomain
+ * claims resolve in the control
  * plane with auto-numbering, deploys are multipart uploads the console
  * forwards after pushing the claim, and HOSTING_STUB records everything
  * without a dispatch namespace. Real upload coverage is the opt-in

@@ -104,7 +104,7 @@ export type BucketAccessAnswer =
 			maxProjectBytes: number;
 			/** The signed-URL secret, delivered INSIDE this answer on purpose:
 			 * verification then costs zero hops beyond the access check the
-			 * request already pays (docs/storage-agent-plan.md). */
+			 * request already pays. */
 			signing: SigningSecret;
 	  };
 
@@ -252,7 +252,7 @@ export class StorageAgent extends Agent<Env, StorageAgentState> {
 	 * The worker's per-request authority, answered from the registry. One
 	 * call carries config, counters, and quota verdict - the worker caches it
 	 * per isolate, so a flip toward MORE restrictive access converges within
-	 * that TTL rather than instantly (docs/storage-agent-plan.md, "Access
+	 * that TTL rather than instantly ("Access
 	 * control").
 	 */
 	async getBucketAccess(bucket: string): Promise<BucketAccessAnswer> {
@@ -550,7 +550,7 @@ export class StorageAgent extends Agent<Env, StorageAgentState> {
 		if (DEMO_PROJECT_PATTERN.test(this.name)) {
 			// No demo storage in v1: anonymous object hosting is a phishing
 			// machine. The synthetic read-only demo bucket is the planned
-			// replacement (docs/storage-agent-plan.md, "Demo storage").
+			// replacement ("Demo storage").
 			return Response.json(
 				{ error: 'storage is not available on demo projects - create a real project to use it' },
 				{ status: 403 },

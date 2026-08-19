@@ -56,5 +56,5 @@ jobs:
           # which pins the Worker name back to `hosting-agent`. This deploy
           # needs the cfbase.dev zone, the cfbase-apps namespace, and the
           # CF_ACCOUNT_ID/CF_HOSTING_API_TOKEN worker secrets to exist first
-          # (Phase B launch checklist in docs/managed-service-design.md).
+          # (Phase B launch checklist).
           environment: production

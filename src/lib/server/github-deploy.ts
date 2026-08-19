@@ -8,7 +8,7 @@ import { resolveAppClaim } from '$lib/server/hosting';
 import { branchNameSchema, createBranch, getProjectOwnership } from '$lib/server/registry';
 
 /**
- * What a verified push does (docs/managed-service-design.md, Phase B).
+ * What a verified push does (Phase B).
  *
  * Only `direct` connections are acted on here. A `build` connection's
  * repository deploys itself through the Actions workflow - GitHub already

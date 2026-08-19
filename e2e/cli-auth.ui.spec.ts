@@ -3,7 +3,7 @@ import { expect, request as playwrightRequest, test } from '@playwright/test';
 
 /**
  * The `cloudflarebase login` browser hand-off, frontend half
- * (docs/schema-cli-design.md): /cli-auth renders for a signed-in operator,
+ *: /cli-auth renders for a signed-in operator,
  * and Approve fetches the session token then form-POSTs it to the CLI's
  * localhost listener - played here by a real node:http server on an
  * ephemeral port, mirroring the CLI's exactly.

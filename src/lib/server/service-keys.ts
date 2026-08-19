@@ -5,7 +5,7 @@ import { getDb } from './db';
 import { serviceKey } from './db/schema';
 
 /**
- * Project service keys (docs/service-keys-design.md, SK1) - the credential a
+ * Project service keys (SK1) - the credential a
  * SERVER can hold.
  *
  * The gap this closes: a browser app needs no API key by design, because the

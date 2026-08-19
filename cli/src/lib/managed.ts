@@ -6,7 +6,7 @@ import { UserError } from './log.js';
 import { run } from './run.js';
 
 /**
- * Managed hosting support (docs/managed-service-design.md, Phase B):
+ * Managed hosting support (Phase B):
  * `cloudflarebase.json` marks a project as linked to a console, and `deploy`
  * branches on its presence - present means managed deploy against the
  * console's hosting API, absent means the self-hosted wrangler path.

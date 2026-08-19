@@ -111,7 +111,7 @@ export const objectCursorSchema = z.string().max(1024).optional().catch(undefine
  * call takes either `key` or `keys`.
  *
  * GET and HEAD only: a signed URL bypasses the bucket's read mode, and write
- * capabilities have a protocol of their own (docs/storage-agent-plan.md).
+ * capabilities have a protocol of their own.
  */
 export const signedUrlRequestSchema = z
 	.strictObject({

@@ -9,7 +9,7 @@ import { blank, bold, dim, error, info, step, success, UserError } from '../lib/
 
 /**
  * `cloudflarebase schema <generate|apply|drop>` - the schema workflow
- * (docs/schema-cli-design.md). The column DSL stays the single source of
+ *. The column DSL stays the single source of
  * truth: `apply` speaks it (never SQL - the SQL endpoint refuses DDL), and
  * `generate` derives the drizzle schema from what the project has declared,
  * so the ORM's types cannot drift from the declared truth.

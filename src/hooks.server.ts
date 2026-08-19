@@ -433,7 +433,7 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		return noSuchProject(access.kind);
 	}
 
-	// Deploy tokens (docs/managed-service-design.md, Phase B): a `cfbd_` bearer
+	// Deploy tokens (Phase B): a `cfbd_` bearer
 	// is CI's durable credential, accepted SOLELY on the deploy and
 	// branch-create endpoints for the token's root project and its branches.
 	// Any other use of one - wrong surface, wrong project, revoked - is a
@@ -460,7 +460,7 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		return Response.json({ error: 'invalid deploy token' }, { status: 401 });
 	}
 
-	// Service keys (docs/service-keys-design.md, SK1): a `cfbs_` bearer is the
+	// Service keys (SK1): a `cfbs_` bearer is the
 	// credential a SERVER holds for the cases with no user to relay - crons,
 	// queue consumers, webhook handlers, seed scripts. It reaches the DATA
 	// plane of its own project and nothing else (isServiceKeySurface), so it
@@ -514,7 +514,7 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		return Response.json({ error: 'invalid service key' }, { status: 401 });
 	}
 
-	// GitHub Actions OIDC (docs/managed-service-design.md, Phase B): a
+	// GitHub Actions OIDC (Phase B): a
 	// `build`-mode connection deploys with NO stored credential at all - the
 	// workflow presents a short-lived token GitHub signed, describing the
 	// repository it ran in, and the connection table says which project that

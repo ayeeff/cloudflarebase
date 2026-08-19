@@ -1,6 +1,5 @@
 /**
- * Framework presets for GitHub connections (docs/managed-service-design.md,
- * Phase B) - the CF-Pages-style table that turns "we read your package.json"
+ * Framework presets for GitHub connections (* Phase B) - the CF-Pages-style table that turns "we read your package.json"
  * into a populated build command and output directory at connect time.
  *
  * Deliberately a pure module with zero imports so `npm run test:unit` can pin

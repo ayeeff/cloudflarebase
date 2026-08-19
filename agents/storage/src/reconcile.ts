@@ -1,5 +1,5 @@
 /**
- * The index reconcile walk (docs/storage-agent-plan.md, "Index consistency").
+ * The index reconcile walk ("Index consistency").
  *
  * R2 owns the bytes; the index is derived. Writes and deletes both hit R2
  * first and record afterwards, so an interrupted request can only leave the

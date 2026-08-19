@@ -14,7 +14,7 @@
 
 	let { data, children } = $props();
 
-	// --- Organization switcher (docs/managed-service-design.md). Lives in the
+	// --- Organization switcher. Lives in the
 	// sidebar so every account page re-scopes together; switching keys on the
 	// session's activeOrganizationId, so one invalidateAll refreshes it all. ---
 	const activeOrgEntry = $derived(

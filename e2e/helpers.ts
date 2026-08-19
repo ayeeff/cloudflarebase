@@ -205,7 +205,7 @@ export function dbTableQueryPath(projectId: string, table: string): string {
 	return `/api/projects/${projectId}/db/tables/${table}/query`;
 }
 
-// --- Join views (JOIN1, docs/db-join-design.md) ---
+// --- Join views (JOIN1) ---
 
 export function dbAdminViewPath(projectId: string, name: string): string {
 	return `/api/projects/${projectId}/db/admin/views/${encodeURIComponent(name)}`;
@@ -215,7 +215,7 @@ export function dbViewSqlPath(projectId: string, view: string): string {
 	return `/api/projects/${projectId}/db/views/${view}/sql`;
 }
 
-// --- Hosting (docs/managed-service-design.md, Phase B) ---
+// --- Hosting (Phase B) ---
 
 export function hostingOverviewPath(projectId: string): string {
 	return `/api/projects/${projectId}/hosting/overview`;
@@ -245,7 +245,7 @@ export function hostingTokenPath(projectId: string, tokenId: string): string {
 	return `/api/projects/${projectId}/hosting/tokens/${encodeURIComponent(tokenId)}`;
 }
 
-// --- GitHub push-to-deploy (docs/managed-service-design.md, Phase B) ---
+// --- GitHub push-to-deploy (Phase B) ---
 
 export function githubStatePath(projectId: string): string {
 	return `/api/projects/${projectId}/hosting/github`;
@@ -270,7 +270,7 @@ export function githubConnectionPath(projectId: string, app: string): string {
 /** The webhook is public by exception - its HMAC signature is the credential. */
 export const GITHUB_WEBHOOK_PATH = '/api/github/webhook';
 
-// --- Storage (docs/storage-agent-plan.md, S1) ---
+// --- Storage (S1) ---
 
 /** Project the storage specs self-seed. Buckets use FIXED names (creates are
  * idempotent upserts) and objects carry per-run keys, so reused local stacks
@@ -291,7 +291,7 @@ export function storageBucketPath(projectId: string, bucket: string): string {
 
 /** The PUBLIC object paths - the direct agent base. Bytes must not transit a
  * BUFFERING proxy, which is what every JSON proxy here is; the operator
- * object proxy below streams instead (docs/admin-sdk-design.md 5.3). */
+ * object proxy below streams instead. */
 export function storageObjectsPath(projectId: string, bucket: string): string {
 	return `/agents/storage-agent/${projectId}/buckets/${bucket}/objects`;
 }
@@ -328,7 +328,7 @@ export function storageAdminObjectPath(projectId: string, bucket: string, key: s
  * key can use, since `isServiceKeySurface` matches only under
  * `/api/projects/<id>/` and `/agents/*` refuses a `cfbs_` bearer outright.
  * Unlike every other proxy here it STREAMS the body through to the agent
- * (docs/admin-sdk-design.md 5.3).
+ *.
  */
 export function storageProxyObjectsPath(projectId: string, bucket: string): string {
 	return `/api/projects/${projectId}/storage/admin/buckets/${encodeURIComponent(bucket)}/objects`;

@@ -7,7 +7,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
- * Hosting control plane (docs/managed-service-design.md, Phase B): subdomain
+ * Hosting control plane (Phase B): subdomain
  * claims on the global `*.cfbase.dev` namespace, and project-scoped deploy
  * tokens. Both live HERE and not in the hosting agent because they are
  * installation-wide state - the agent contract's rule that no agent owns

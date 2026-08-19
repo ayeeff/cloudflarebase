@@ -241,7 +241,7 @@ export class DbTable extends LiveShard {
 	}
 
 	/**
-	 * Operator read by id - the collection twin (docs/admin-sdk-design.md 5.1).
+	 * Operator read by id - the collection twin.
 	 *
 	 * Tables could already do this through `POST /admin/tables/:name/sql`
 	 * (`SELECT * FROM t WHERE id = ?`), but only because they happen to have a

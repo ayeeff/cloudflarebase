@@ -1,7 +1,7 @@
 import { logEntrySchema, MAX_LOG_ROWS, REPLICATION_PULL_CHUNK, type LogEntry } from './schemas';
 
 /**
- * The replication substrate's shared plumbing (docs/db-replication-design.md):
+ * The replication substrate's shared plumbing:
  * role parsing from instance names, change-log append/read/prune on the
  * primary, and applied-position bookkeeping helpers for replicas. The feed
  * itself (bootstrap/pullSince RPCs) lives on the shard classes; everything

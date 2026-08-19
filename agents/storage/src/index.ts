@@ -1105,7 +1105,7 @@ class StorageService extends WorkerEntrypoint<Env> {
 			const { config } = answer;
 			if (config.read === 'public') {
 				// Enumeration is a separate grant: serving one known key to anyone
-				// is not the same as listing every key (docs/storage-agent-plan.md).
+				// is not the same as listing every key.
 				if (!config.publicListing) {
 					return Response.json({ error: 'listing is not public on this bucket' }, { status: 403 });
 				}

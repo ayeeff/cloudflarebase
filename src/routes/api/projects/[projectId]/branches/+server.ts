@@ -3,7 +3,7 @@ import { createBranch, listBranches } from '$lib/server/registry';
 import type { RequestHandler } from './$types';
 
 /**
- * Branches of one root project (docs/branches-design.md). Operator-only via
+ * Branches of one root project. Operator-only via
  * the console guard. A branch is a full registry row whose id is
  * `<rootId>--<branch>` - creating one needs no agent calls (instances spawn
  * lazily on first touch), and deleting one is the ordinary project delete

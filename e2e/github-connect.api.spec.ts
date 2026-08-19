@@ -13,7 +13,7 @@ import {
 } from './helpers';
 
 /**
- * GitHub push-to-deploy (docs/managed-service-design.md, Phase B).
+ * GitHub push-to-deploy (Phase B).
  *
  * This stack configures NO GitHub App, which is the self-hosted default and
  * the important half of the contract to pin: adding push-to-deploy must not

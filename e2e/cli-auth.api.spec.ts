@@ -1,7 +1,7 @@
 import { expect, request as playwrightRequest, test } from '@playwright/test';
 
 /**
- * CLI console auth, API half (docs/schema-cli-design.md): POST /api/cli/token
+ * CLI console auth, API half: POST /api/cli/token
  * hands the signed-in operator their own session token, and the console guard
  * accepts that token as `Authorization: Bearer` on every operator surface -
  * the mechanism `cloudflarebase login` and every `schema` command ride. No

@@ -15,7 +15,7 @@ import {
 } from './helpers';
 
 /**
- * Join views (JOIN1, docs/db-join-design.md): the one thing single-table SQL
+ * Join views (JOIN1): the one thing single-table SQL
  * cannot do. A view follows several tables' change logs into one Durable
  * Object's SQLite, so a SELECT can JOIN them.
  *

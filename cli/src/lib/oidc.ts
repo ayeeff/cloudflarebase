@@ -1,7 +1,7 @@
 import { UserError } from './log.js';
 
 /**
- * GitHub Actions OIDC (docs/managed-service-design.md, Phase B).
+ * GitHub Actions OIDC (Phase B).
  *
  * A repository connected through the console's GitHub App deploys with NO
  * stored credential: the workflow asks GitHub for a short-lived token

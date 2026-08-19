@@ -2,9 +2,8 @@ import { selectList } from './table-schema';
 import type { TableColumn } from './schemas';
 
 /**
- * The raw-SQL gate for the D1-shaped table endpoint (T2 of
- * docs/db-scale-plan.md, design in docs/db-table-design.md §10). Pure
- * module, unit-tested against bypass attempts.
+ * The raw-SQL gate for the D1-shaped table endpoint (T2). Pure module,
+ * unit-tested against bypass attempts.
  *
  * The physical table is named after the declared table with plain system
  * columns, so ORM-generated SQL runs unmodified - the gate's job is not to

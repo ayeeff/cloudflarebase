@@ -164,7 +164,7 @@
 				// the agent reports "claimed" and 503s sign-up rather than
 				// registering accounts that could never verify.
 				// DEMO_MODE stays on: anonymous visitors keep throwaway projects
-				// alongside real accounts (docs/managed-service-design.md).
+				// alongside real accounts.
 				"CONSOLE_SIGNUPS": "open",
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",
@@ -318,7 +318,7 @@
 				// managed configuration. Safe here because the preview web Worker
 				// (cloudflarebase-com-preview, deployed by Workers Builds from the
 				// preview branch) already carries the ownership guard
-				// (docs/managed-service-design.md).
+				//.
 				"CONSOLE_SIGNUPS": "open",
 				"DEMO_MODE": "true",
 				"DEMO_TTL_HOURS": "720",

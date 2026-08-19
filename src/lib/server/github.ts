@@ -1,8 +1,7 @@
 import * as Sentry from '@sentry/sveltekit';
 
 /**
- * GitHub App plumbing for push-to-deploy (docs/managed-service-design.md,
- * Phase B). Everything here is control-plane: the hosting agent never learns
+ * GitHub App plumbing for push-to-deploy (* Phase B). Everything here is control-plane: the hosting agent never learns
  * that GitHub exists, it only ever receives an already-resolved subdomain and
  * a deploy body - the same contract the console's own deploy route uses.
  *

@@ -94,7 +94,7 @@ test.describe('openapi document', () => {
 	});
 
 	/**
-	 * The SERVER path (docs/admin-sdk-design.md).
+	 * The SERVER path.
 	 *
 	 * There is no server SDK by design - the decision was to complete the API
 	 * and let the generated reference describe it, rather than hand-maintain a

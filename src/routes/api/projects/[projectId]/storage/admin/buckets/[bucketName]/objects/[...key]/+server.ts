@@ -22,7 +22,7 @@ import type { RequestHandler } from './$types';
  * A `cfbs_` service key cannot. `isServiceKeySurface` matches only under
  * `/api/projects/<id>/`, so the passthrough is closed to it, and with no route
  * here a key could configure buckets but never read or write a single object -
- * storage's entire point (docs/admin-sdk-design.md 5.3).
+ * storage's entire point.
  *
  * So the constraint the original note names has to be SOLVED rather than
  * routed around: this handler streams. `request.body` is handed to the binding
