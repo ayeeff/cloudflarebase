@@ -68,9 +68,30 @@ extra hop. GET and HEAD only. Four rules that are easy to get backwards:
   TTL. The version-mismatch refetch rescues NEW URLs against a stale isolate;
   an OLD URL matches the version that isolate still holds. To kill a URL
   instantly, delete the object.
+- **That refetch is THROTTLED** (`mayRefetchForVersion`, 2026-08-19, issue
+  #72). The version is checked before the signature and the expiry, so a
+  forged request needs neither to reach the one cache bypass on an
+  unauthenticated path - and the coordinator it bypasses to is a
+  single-threaded DO. A flood of bogus versions was therefore one uncached
+  parent hop per request, on a worker with no rate limiter, reachable on the
+  public CDN host. Two gates, and **the second is the load-bearing one**:
+  versions only increment, so a requested version at or below the held one is
+  a retired secret or a forgery and is refused with no hop - but a forgery can
+  name an arbitrarily HIGH version, so that gate alone bounds nothing. The
+  5s per-bucket cooldown is what turns a flood into one hop per window.
+  It counts FORCED refetches only, never ordinary cache refills: an isolate's
+  first sight of a new version must still ask, because mint (console origin)
+  and serve (cdn) are usually different isolates in different colos, and that
+  is exactly the rotation case. `openEnvelope` shares the throttle - a part
+  PUT's envelope version is equally caller-controlled. The MINT paths stay
+  unthrottled on purpose (see above: signing off a stale entry signs with a
+  retired secret) and are gated surfaces, so they are not the lever.
 
 Pinned by `signing.unit.test.ts` and the S2 block of `e2e/storage.api.spec.ts`,
 where every containment case proves the URL is live in the same test first.
+The hop COUNT is not observable from e2e, so the decision is unit-pinned and
+the e2e case pins the wire contract around it (forged versions fail closed, the
+bucket serves normally after a burst).
 
 **Folder listing** (shipped 2026-08-17): `?delimiter=/` on the object listing
 returns only DIRECT children as objects and collapses the rest into

@@ -982,6 +982,38 @@ test.describe('storage signed URLs (S2)', () => {
 			await anon.dispose();
 		}
 	});
+
+	test('forged versions are refused and never wedge the bucket (issue #72)', async ({
+		request,
+		baseURL
+	}) => {
+		// A version mismatch is what asks the single-threaded coordinator for a
+		// fresh secret, and it is checked before the signature - so unthrottled,
+		// each forged request bought a DO hop. The hop count is not observable
+		// from out here (`mayRefetchForVersion` is unit-pinned for that); this
+		// pins the wire contract the throttle must not have changed.
+		const minted = await mint(request, { key: KEY });
+		const anon = await stranger(baseURL);
+		try {
+			expect((await anon.get(minted.signedUrl)).status(), 'live before the burst').toBe(200);
+
+			const url = new URL(minted.signedUrl);
+			for (const version of ['0', '1', '9999999999', '4294967295']) {
+				url.searchParams.set('v', version);
+				const response = await anon.get(url.toString());
+				expect(response.status(), `v=${version}`).toBe(403);
+			}
+
+			// Still healthy, and still bounded by the signature rather than by
+			// the version: a good URL works, a tampered signature does not.
+			expect((await anon.get(minted.signedUrl)).status(), 'live after the burst').toBe(200);
+			const tampered = new URL(minted.signedUrl);
+			tampered.searchParams.set('sig', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+			expect((await anon.get(tampered.toString())).status()).toBe(403);
+		} finally {
+			await anon.dispose();
+		}
+	});
 });
 
 /**

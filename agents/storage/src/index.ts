@@ -29,6 +29,7 @@ import {
 	SIGNED_PARAM_SIGNATURE,
 	SIGNED_PARAM_VERSION,
 	hasSignedParams,
+	mayRefetchForVersion,
 	parseSignedParams,
 	resolveTtlSeconds,
 	signSubject,
@@ -106,6 +107,9 @@ const INLINE_CONTENT_TYPES =
 interface AccessCacheEntry {
 	answer: BucketAccessAnswer;
 	expires: number;
+	/** When a version mismatch last forced this entry to be re-read. Absent on
+	 * an ordinary fetch on purpose - see `mayRefetchForVersion`. */
+	forcedAt?: number;
 }
 
 const accessCache = new Map<string, AccessCacheEntry>();
@@ -681,8 +685,13 @@ class StorageService extends WorkerEntrypoint<Env> {
 		}
 		let verdict = await openUpload(answer.signing, token, Math.floor(Date.now() / 1000));
 		if (!verdict.ok && verdict.reason === 'version') {
-			const fresh = await this.bucketAccess(target.projectId, target.bucket, true);
-			if (fresh.status === 'ok') {
+			const fresh = await this.refetchForVersion(
+				target.projectId,
+				target.bucket,
+				verdict.version,
+				verdict.held,
+			);
+			if (fresh?.status === 'ok') {
 				verdict = await openUpload(fresh.signing, token, Math.floor(Date.now() / 1000));
 			}
 		}
@@ -1520,10 +1529,13 @@ class StorageService extends WorkerEntrypoint<Env> {
 	 * Durable Object hops: the secret arrives inside the access answer this
 	 * request already paid for.
 	 *
-	 * The one exception is a VERSION mismatch, which means the secret moved
-	 * since this isolate cached it. That is not a forgery, so it refetches
-	 * once and re-checks - which is what lets a URL minted from a rotated
+	 * The one exception is a VERSION mismatch, which MAY mean the secret moved
+	 * since this isolate cached it. That is not necessarily a forgery, so it
+	 * refetches and re-checks - which is what lets a URL minted from a rotated
 	 * secret work immediately against an isolate still holding the old one.
+	 * That refetch is throttled (`refetchForVersion`): the version is caller
+	 * input on an unauthenticated path, and an unthrottled bypass of the cache
+	 * is a lever on the single-threaded coordinator DO.
 	 *
 	 * Note the asymmetry, because it bounds revocation: this rescues NEW URLs
 	 * against a stale cache, not old URLs against one. An already-issued URL
@@ -1560,9 +1572,16 @@ class StorageService extends WorkerEntrypoint<Env> {
 		let verdict = await verifySignature(answer.signing, params, subject, now);
 
 		if (!verdict.ok && verdict.reason === 'version') {
-			const fresh = await this.bucketAccess(target.projectId, target.bucket, true);
-			if (fresh.status !== 'ok') return refuse('invalid signed URL');
-			verdict = await verifySignature(fresh.signing, params, subject, now);
+			const fresh = await this.refetchForVersion(
+				target.projectId,
+				target.bucket,
+				verdict.version,
+				verdict.held,
+			);
+			if (fresh) {
+				if (fresh.status !== 'ok') return refuse('invalid signed URL');
+				verdict = await verifySignature(fresh.signing, params, subject, now);
+			}
 		}
 
 		if (verdict.ok) return true;
@@ -1589,6 +1608,32 @@ class StorageService extends WorkerEntrypoint<Env> {
 			answer,
 			expires: Date.now() + (answer.status === 'ok' ? ACCESS_CACHE_TTL_MS : NEGATIVE_CACHE_TTL_MS),
 		});
+		return answer;
+	}
+
+	/**
+	 * The throttled refetch a version mismatch may force (`mayRefetchForVersion`).
+	 * The MINT paths still call `bucketAccess(..., true)` directly and stay
+	 * unthrottled: they are gated surfaces, and signing off a stale entry would
+	 * sign with a retired secret. Null = did not ask, so the caller keeps the
+	 * verdict it already has.
+	 */
+	private async refetchForVersion(
+		projectId: string,
+		bucket: string,
+		requested: number,
+		held: number,
+	): Promise<BucketAccessAnswer | null> {
+		const cacheId = `${projectId}:${bucket}`;
+		const now = Date.now();
+		if (!mayRefetchForVersion(requested, held, accessCache.get(cacheId)?.forcedAt, now)) {
+			return null;
+		}
+		const answer = await this.bucketAccess(projectId, bucket, true);
+		// Stamp the entry the refetch just wrote, so the next mismatch in the
+		// window is refused without a hop.
+		const entry = accessCache.get(cacheId);
+		if (entry) entry.forcedAt = now;
 		return answer;
 	}
 

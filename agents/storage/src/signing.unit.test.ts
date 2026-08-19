@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+	FORCED_REFETCH_COOLDOWN_MS,
 	MAX_PART_SIZE,
 	agentObjectUrl,
 	publicServeOrigin,
@@ -8,6 +9,7 @@ import {
 	MIN_PART_SIZE,
 	SIGNED_URL_MAX_TTL_SECONDS,
 	hasSignedParams,
+	mayRefetchForVersion,
 	mintSecret,
 	openUpload,
 	parseSignedParams,
@@ -25,6 +27,8 @@ import {
 
 const HELD: SigningSecret = { version: 3, secret: 'a'.repeat(64) };
 const NOW = 1_760_000_000;
+/** The refetch throttle works in milliseconds; signatures work in seconds. */
+const NOW_MS = NOW * 1000;
 
 const SUBJECT: Omit<SignatureSubject, 'expires'> = {
 	projectId: 'proj-one',
@@ -104,7 +108,67 @@ test('a version mismatch reports `version`, never `mismatch`', async () => {
 	assert.deepEqual(await verifySignature(HELD, params, SUBJECT, NOW), {
 		ok: false,
 		reason: 'version',
+		version: 2,
+		held: 3,
 	});
+});
+
+test('a version mismatch reports BOTH versions, so the caller can compare them', async () => {
+	// The worker refetches only when the requested version could be newer, and
+	// must not parse the URL itself to find that out (issue #72).
+	for (const version of [1, 2, 4, 9_999_999_999]) {
+		const params = await signedParamsFor({}, { version, secret: HELD.secret });
+		const verdict = await verifySignature(HELD, params, SUBJECT, NOW);
+		assert.equal(verdict.ok, false);
+		assert.equal(verdict.ok === false && verdict.reason, 'version');
+		assert.deepEqual(
+			verdict.ok === false && verdict.reason === 'version'
+				? { version: verdict.version, held: verdict.held }
+				: null,
+			{ version, held: HELD.version },
+		);
+	}
+});
+
+test('a version below the held one never earns a coordinator hop', async () => {
+	// Versions only ever increment, so a lower one cannot be a rotation this
+	// isolate has yet to see - it is a retired secret or a forgery, and neither
+	// is worth asking the single-threaded parent about (issue #72).
+	for (const requested of [0, 1, 2, 3]) {
+		assert.equal(mayRefetchForVersion(requested, 3, undefined, NOW_MS), false, `v=${requested}`);
+	}
+});
+
+test('a version above the held one earns exactly one hop per cooldown', async () => {
+	// The gate above bounds nothing on its own: a forged version can be
+	// arbitrarily high. The cooldown is what turns a flood of distinct bogus
+	// versions into one hop per bucket per window instead of one per request.
+	assert.equal(mayRefetchForVersion(4, 3, undefined, NOW_MS), true, 'none forced yet');
+	assert.equal(mayRefetchForVersion(9_999_999_999, 3, NOW_MS, NOW_MS), false, 'just forced one');
+	assert.equal(
+		mayRefetchForVersion(4, 3, NOW_MS - FORCED_REFETCH_COOLDOWN_MS + 1, NOW_MS),
+		false,
+		'inside the window',
+	);
+	assert.equal(
+		mayRefetchForVersion(4, 3, NOW_MS - FORCED_REFETCH_COOLDOWN_MS, NOW_MS),
+		true,
+		'the boundary has elapsed',
+	);
+});
+
+test('the FIRST mismatch an isolate sees always asks, which is the rotation case', async () => {
+	// A URL is minted on the console origin and read on the CDN - different
+	// isolates - so the serving isolate's first sight of a new version must not
+	// be refused. Only a SECOND inside the window is, which is a flood's shape
+	// and not a rotation's.
+	assert.equal(mayRefetchForVersion(4, 3, undefined, NOW_MS), true);
+	assert.equal(mayRefetchForVersion(4, 3, NOW_MS, NOW_MS), false);
+	assert.equal(
+		mayRefetchForVersion(4, 3, NOW_MS, NOW_MS + FORCED_REFETCH_COOLDOWN_MS),
+		true,
+		'and it converges after one window even under a flood',
+	);
 });
 
 test('rotation invalidates outstanding URLs', async () => {
@@ -257,7 +321,12 @@ test('an expired envelope is refused, and reports why', async () => {
 test('a rotated secret kills in-flight uploads along with URLs', async () => {
 	const token = await sealUpload(HELD, ENVELOPE);
 	const rotated: SigningSecret = { version: HELD.version + 1, secret: mintSecret() };
-	assert.deepEqual(await openUpload(rotated, token, NOW), { ok: false, reason: 'version' });
+	assert.deepEqual(await openUpload(rotated, token, NOW), {
+		ok: false,
+		reason: 'version',
+		version: HELD.version,
+		held: rotated.version,
+	});
 });
 
 test('malformed tokens are refused rather than throwing', async () => {

@@ -189,7 +189,11 @@ export function parseSignedParams(url: URL): SignedParams | null {
 }
 
 export type SignatureVerdict =
-	{ ok: true } | { ok: false; reason: 'expired' | 'mismatch' | 'version' };
+	| { ok: true }
+	| { ok: false; reason: 'expired' | 'mismatch' }
+	/** Both versions ride along so the caller can compare them without parsing
+	 * the URL itself - see `mayRefetchForVersion`. */
+	| { ok: false; reason: 'version'; version: number; held: number };
 
 /**
  * Verify a parsed signature against the held secret. The version check comes
@@ -203,11 +207,39 @@ export async function verifySignature(
 	subject: Omit<SignatureSubject, 'expires'>,
 	nowSeconds: number,
 ): Promise<SignatureVerdict> {
-	if (params.version !== held.version) return { ok: false, reason: 'version' };
+	if (params.version !== held.version) {
+		return { ok: false, reason: 'version', version: params.version, held: held.version };
+	}
 	if (params.expires <= nowSeconds) return { ok: false, reason: 'expired' };
 	const expected = await signSubject(held.secret, { ...subject, expires: params.expires });
 	if (!constantTimeEqual(expected, params.signature)) return { ok: false, reason: 'mismatch' };
 	return { ok: true };
+}
+
+export const FORCED_REFETCH_COOLDOWN_MS = 5_000;
+
+/**
+ * Whether a version mismatch has earned an uncached hop to the coordinator DO.
+ * The version is caller input checked before the signature, so this is the one
+ * cache bypass an unauthenticated request can reach - and it lands on a
+ * single-threaded object (issue #72). Two gates, and the second carries the
+ * weight: versions only increment, so `requested <= held` is a retired secret
+ * or a forgery and is refused free - but a forgery can name an arbitrarily
+ * HIGH version, so only the cooldown actually bounds a flood.
+ *
+ * `lastForcedAt` counts FORCED refetches, never ordinary cache refills, so an
+ * isolate's first sight of a new version always asks. That is the rotation
+ * case: mint and serve are usually different isolates in different colos.
+ */
+export function mayRefetchForVersion(
+	requested: number,
+	held: number,
+	lastForcedAt: number | undefined,
+	now: number,
+): boolean {
+	if (requested <= held) return false;
+	if (lastForcedAt !== undefined && lastForcedAt + FORCED_REFETCH_COOLDOWN_MS > now) return false;
+	return true;
 }
 
 /** Clamp a requested TTL into the allowed window. */
@@ -268,7 +300,8 @@ export async function sealUpload(held: SigningSecret, envelope: UploadEnvelope):
 
 export type UploadVerdict =
 	| { ok: true; envelope: UploadEnvelope }
-	| { ok: false; reason: 'malformed' | 'version' | 'expired' | 'mismatch' };
+	| { ok: false; reason: 'malformed' | 'expired' | 'mismatch' }
+	| { ok: false; reason: 'version'; version: number; held: number };
 
 /** Open a sealed envelope. Same version-first ordering as a download
  * signature, and for the same reason: a rotation is not a forgery. */
@@ -281,7 +314,9 @@ export async function openUpload(
 	if (parts.length !== 3) return { ok: false, reason: 'malformed' };
 	const [rawVersion, body, signature] = parts;
 	if (!/^\d{1,10}$/.test(rawVersion)) return { ok: false, reason: 'malformed' };
-	if (Number(rawVersion) !== held.version) return { ok: false, reason: 'version' };
+	if (Number(rawVersion) !== held.version) {
+		return { ok: false, reason: 'version', version: Number(rawVersion), held: held.version };
+	}
 
 	let envelope: UploadEnvelope;
 	try {
