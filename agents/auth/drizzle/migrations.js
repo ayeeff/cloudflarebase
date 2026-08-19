@@ -6,6 +6,7 @@ import m0003 from './0003_reflective_tinkerer.sql';
 import m0004 from './0004_thin_hercules.sql';
 import m0005 from './0005_busy_cobalt_man.sql';
 import m0006 from './0006_amusing_steve_rogers.sql';
+import m0007 from './0007_nosy_the_stranger.sql';
 
   export default {
     journal,
@@ -16,7 +17,8 @@ m0002,
 m0003,
 m0004,
 m0005,
-m0006
+m0006,
+m0007
     }
   }
   

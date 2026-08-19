@@ -21,22 +21,26 @@ export const user = sqliteTable('user', {
 	updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 });
 
-export const session = sqliteTable('session', {
-	id: text('id').primaryKey(),
-	expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
-	token: text('token').notNull().unique(),
-	createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
-	updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
-	ipAddress: text('ip_address'),
-	userAgent: text('user_agent'),
-	// Captured from request.cf.country when the session is created (analytics).
-	country: text('country'),
-	// Added by the Better Auth organization plugin (set-active).
-	activeOrganizationId: text('active_organization_id'),
-	userId: text('user_id')
-		.notNull()
-		.references(() => user.id, { onDelete: 'cascade' }),
-});
+export const session = sqliteTable(
+	'session',
+	{
+		id: text('id').primaryKey(),
+		expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+		token: text('token').notNull().unique(),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+		updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+		ipAddress: text('ip_address'),
+		userAgent: text('user_agent'),
+		// Captured from request.cf.country when the session is created (analytics).
+		country: text('country'),
+		// Added by the Better Auth organization plugin (set-active).
+		activeOrganizationId: text('active_organization_id'),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+	},
+	(table) => [index('session_user_idx').on(table.userId)],
+);
 
 /**
  * Better Auth organization plugin (teams). Shapes mirror the plugin's
@@ -116,14 +120,18 @@ export const account = sqliteTable(
 	(table) => [index('account_user_idx').on(table.userId)],
 );
 
-export const verification = sqliteTable('verification', {
-	id: text('id').primaryKey(),
-	identifier: text('identifier').notNull(),
-	value: text('value').notNull(),
-	expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
-	createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
-	updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
-});
+export const verification = sqliteTable(
+	'verification',
+	{
+		id: text('id').primaryKey(),
+		identifier: text('identifier').notNull(),
+		value: text('value').notNull(),
+		expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+		createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+		updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+	},
+	(table) => [index('verification_identifier_idx').on(table.identifier)],
+);
 
 /** Better Auth jwt plugin: per-project signing keys backing GET /token. */
 export const jwks = sqliteTable('jwks', {
