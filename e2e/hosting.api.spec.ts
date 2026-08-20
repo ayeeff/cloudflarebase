@@ -216,6 +216,30 @@ test.describe('hosting deploys (stubbed)', () => {
 		expect(((await freed.json()) as { subdomain: string }).subdomain).toBe(ghost);
 	});
 
+	test('the 11th app claim is refused - the cap is the squatting guard', async ({ request }) => {
+		const capProbe = `e2e-hostcap-${runId}`;
+		const created = await request.post('/api/registry/projects', {
+			data: { id: capProbe, name: 'cap probe' }
+		});
+		expect(created.status(), await created.text()).toBe(201);
+		try {
+			for (let n = 1; n <= 10; n += 1) {
+				const claim = await request.post(hostingClaimsPath(capProbe), {
+					data: { app: `cap-${runId}-${n}` }
+				});
+				expect(claim.status(), await claim.text()).toBe(201);
+			}
+			const eleventh = await request.post(hostingClaimsPath(capProbe), {
+				data: { app: `cap-${runId}-11` }
+			});
+			expect(eleventh.status(), await eleventh.text()).toBe(409);
+			expect(((await eleventh.json()) as { error: string }).error).toContain('10');
+		} finally {
+			// Cascades the ten claims with the row.
+			await request.delete(registryProjectPath(capProbe));
+		}
+	});
+
 	test('deleting the project releases its claims', async ({ request }) => {
 		const releaseProbe = `e2e-hostc-${runId}`;
 		const created = await request.post('/api/registry/projects', {

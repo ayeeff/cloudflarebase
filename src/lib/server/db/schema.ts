@@ -229,6 +229,21 @@ export const githubConnection = sqliteTable(
 		/** Build mode: monorepo root - install/build/deploy run here.
 		 * Null = repository root. */
 		rootDir: text('root_dir'),
+		/** Branch that deploys the ROOT project; null = the repo's default
+		 * branch. Any other branch still deploys `<root>--<branch>`. */
+		productionBranch: text('production_branch'),
+		/** JSON array of branch names and simple `*` globs; pushes to a matching
+		 * branch never deploy (webhook skip, workflow branches-ignore, and OIDC
+		 * grant refusal - all three enforce it). */
+		ignoredBranches: text('ignored_branches'),
+		/** Workflow file this connection committed (per-app names fix the
+		 * two-apps-one-repo collision); null = the legacy
+		 * `.github/workflows/cloudflarebase.yml`. */
+		workflowPath: text('workflow_path'),
+		/** Package manager detected at connect (npm/pnpm/yarn/bun), persisted so
+		 * a build-settings edit can re-render the workflow's install steps.
+		 * Null (legacy rows) = generic npm steps. */
+		packageManager: text('package_manager'),
 		createdAt: integer('created_at', { mode: 'timestamp_ms' })
 			.notNull()
 			.default(sql`(unixepoch() * 1000)`),

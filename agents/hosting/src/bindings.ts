@@ -37,6 +37,9 @@ export interface HostingAgentBindings {
 	/** Record deploys and serve a stub page instead of calling Cloudflare -
 	 * local dev and e2e, where dynamic upload has no simulator. */
 	HOSTING_STUB?: 'true';
+	/** Master key for build secrets (AES-GCM at rest, src/crypto.ts). Optional:
+	 * without it build-secret writes answer 503 and everything else works. */
+	HOSTING_MASTER_KEY?: string;
 	SENTRY_DSN?: string;
 	SENTRY_ENV?: string;
 

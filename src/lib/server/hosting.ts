@@ -60,7 +60,7 @@ export const appNameSchema = z
 /** Deploy-token secret shape: `cfbd_` + 32 random bytes hex. */
 export const DEPLOY_TOKEN_PATTERN = /^cfbd_[0-9a-f]{64}$/;
 
-const MAX_APPS_PER_PROJECT = 2;
+const MAX_APPS_PER_PROJECT = 10;
 const MAX_DEPLOY_TOKENS_PER_PROJECT = 10;
 /** How far auto-numbering searches before giving up (squatting backstop). */
 const MAX_AUTO_NUMBER = 50;

@@ -1,10 +1,12 @@
 import journal from './meta/_journal.json';
 import m0000 from './0000_red_la_nuit.sql';
+import m0001 from './0001_slippery_prism.sql';
 
   export default {
     journal,
     migrations: {
-      m0000
+      m0000,
+m0001
     }
   }
   

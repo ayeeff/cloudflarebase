@@ -11,7 +11,7 @@
 	"bindings": {},
 	"secrets": {
 		"generated": [],
-		"optional": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN"]
+		"optional": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN", "HOSTING_MASTER_KEY"]
 	},
 	"vars": {
 		"SENTRY_DSN": {

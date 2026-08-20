@@ -87,6 +87,10 @@
 				"HOSTING_STUB": "true",
 				"HOSTING_DOMAIN": "cfbase.dev",
 				"DISPATCH_NAMESPACE": "",
+				// Pinned dev key (a var, not a secret) so build-secret encryption is
+				// REAL in local dev - stub mode stubs the Cloudflare API, never the
+				// crypto. Worthless outside this machine.
+				"HOSTING_MASTER_KEY": "local-dev-master-key-not-a-secret",
 			},
 		},
 		"test": {
@@ -104,6 +108,9 @@
 				"HOSTING_STUB": "true",
 				"HOSTING_DOMAIN": "cfbase.dev",
 				"DISPATCH_NAMESPACE": "",
+				// Same pinned dev key as env.local: e2e exercises real
+				// encrypt/decrypt against the stub stack.
+				"HOSTING_MASTER_KEY": "local-dev-master-key-not-a-secret",
 			},
 		},
 		"production": {
@@ -146,7 +153,7 @@
 				"HOSTING_APEX_REDIRECT": "https://cloudflarebase.com",
 			},
 			"secrets": {
-				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN"],
+				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN", "HOSTING_MASTER_KEY"],
 			},
 		},
 		"preview": {
@@ -191,7 +198,7 @@
 			// credentials production requires - without this block a preview
 			// deploy succeeds silently and every real upload fails at the API.
 			"secrets": {
-				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN"],
+				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN", "HOSTING_MASTER_KEY"],
 			},
 		},
 	},

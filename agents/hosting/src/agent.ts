@@ -15,7 +15,16 @@ import {
 	type ModuleFile,
 } from './cloudflare';
 import * as schema from './db/schema';
-import { apps, deploys, type AppRecord, type DeployRecord } from './db/schema';
+import {
+	apps,
+	appSecrets,
+	appVars,
+	buildSecrets,
+	buildVars,
+	deploys,
+	type AppRecord,
+	type DeployRecord,
+} from './db/schema';
 import migrations from './migrations';
 import {
 	DEMO_PROJECT_PATTERN,
@@ -42,7 +51,7 @@ import { gunzip, parseTar, toAssetPaths } from './tar';
  * recorded for THIS project.
  */
 
-const MAX_APPS = 2;
+const MAX_APPS = 10;
 const MAX_DEPLOYS_PER_DAY = 50;
 // Sized for framework output, not just hand-rolled Workers: an OpenNext
 // worker bundle routinely passes 10 MB uncompressed, and a Next site blows
@@ -273,6 +282,13 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 	 */
 	async eraseApp(appName: string): Promise<{ ok: true } | { error: string }> {
 		if (!appNameSchema.safeParse(appName).success) return { error: 'invalid app name' };
+
+		// Environment rows exist without an `apps` row (a claim-only app can be
+		// configured before its first deploy), so they are cleared regardless.
+		await this.db.delete(appVars).where(eq(appVars.appName, appName));
+		await this.db.delete(appSecrets).where(eq(appSecrets.appName, appName));
+		await this.db.delete(buildVars).where(eq(buildVars.appName, appName));
+		await this.db.delete(buildSecrets).where(eq(buildSecrets.appName, appName));
 
 		const [app] = await this.db.select().from(apps).where(eq(apps.name, appName)).limit(1);
 		if (!app) return { ok: true };
