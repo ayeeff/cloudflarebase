@@ -162,7 +162,6 @@
 	});
 	let disconnectTarget = $state<GithubConnectionInfo | null>(null);
 	let disconnectBusy = $state(false);
-	const connection = $derived(data.github.connections[0] ?? null);
 
 	async function disconnect() {
 		if (!disconnectTarget || disconnectBusy) return;
@@ -466,58 +465,67 @@
 								>.
 							</p>
 							{#if data.github.configured}
-								{#if connection}
-									<!-- Connected: what a push does, and how to stop it. -->
+								{#if data.github.connections.length}
+									<!-- One repository per app, Workers/Pages-style: every
+									     connection is its own row, and another repo can join as a
+									     NEW app at any time. Per-row copy stays one line - the
+									     app's own page carries the build settings. -->
 									<div class="space-y-3" data-testid="github-connection">
-										<div class="flex flex-wrap items-center gap-2">
-											<!-- Dark in BOTH themes on purpose: the repository is a fixed
-									 identity, and the chip reads as one token rather than a
-									 link that happens to be sitting there. -->
-											<a
-												class="inline-flex items-center gap-2 rounded-lg bg-neutral-900 px-2.5 py-1.5 font-mono text-xs text-neutral-50 transition-colors hover:bg-neutral-800 dark:bg-neutral-800 dark:hover:bg-neutral-700"
-												href={`https://github.com/${connection.repoFullName}`}
-												target="_blank"
-												rel="noreferrer"
-											>
-												<GithubMark class="h-3.5 w-3.5 shrink-0" />
-												{connection.repoFullName}
-											</a>
-											<Badge variant="secondary">
-												{connection.mode === 'direct' ? 'No build step' : 'Builds on Actions'}
-											</Badge>
-											{#if connection.lastEventAt}
-												<span class="text-xs text-muted-foreground">
-													last push {timeAgo(connection.lastEventAt)}
-												</span>
-											{/if}
+										<div class="grid gap-2">
+											{#each data.github.connections as connection (connection.appName)}
+												<div
+													class="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3"
+													data-testid={`github-connection-${connection.appName}`}
+												>
+													<!-- Dark in BOTH themes on purpose: the repository is a
+													     fixed identity, and the chip reads as one token
+													     rather than a link that happens to be sitting there. -->
+													<a
+														class="inline-flex items-center gap-2 rounded-lg bg-neutral-900 px-2.5 py-1.5 font-mono text-xs text-neutral-50 transition-colors hover:bg-neutral-800 dark:bg-neutral-800 dark:hover:bg-neutral-700"
+														href={`https://github.com/${connection.repoFullName}`}
+														target="_blank"
+														rel="noreferrer"
+													>
+														<GithubMark class="h-3.5 w-3.5 shrink-0" />
+														{connection.repoFullName}
+													</a>
+													<div class="min-w-0 flex-1">
+														<p class="truncate text-sm">
+															deploys <code class="font-mono text-xs">{connection.appName}</code>
+															<span class="text-muted-foreground">
+																on push to
+																<code class="font-mono text-xs"
+																	>{connection.productionBranch ?? connection.defaultBranch}</code
+																></span
+															>
+														</p>
+														<p class="text-xs text-muted-foreground">
+															{connection.mode === 'direct'
+																? 'No build step - published directly'
+																: "Builds on GitHub's runners, authenticated by identity token"}{connection.lastEventAt
+																? ` · last push ${timeAgo(connection.lastEventAt)}`
+																: ''}
+														</p>
+													</div>
+													<Button
+														size="sm"
+														variant="outline"
+														onclick={() => (disconnectTarget = connection)}
+														data-testid={`disconnect-github-${connection.appName}`}
+													>
+														Disconnect
+													</Button>
+												</div>
+											{/each}
 										</div>
-										<p class="text-sm text-muted-foreground">
-											{#if connection.mode === 'direct'}
-												Every push to <code class="font-mono text-xs"
-													>{connection.defaultBranch}</code
-												>
-												publishes
-												<code class="font-mono text-xs"
-													>{connection.assetsDir || 'the repo root'}</code
-												>
-												to <code class="font-mono text-xs">{connection.appName}</code> directly - no workflow
-												file, no Actions minutes.
-											{:else}
-												Every push to <code class="font-mono text-xs"
-													>{connection.defaultBranch}</code
-												>
-												builds on GitHub's runners and deploys
-												<code class="font-mono text-xs">{connection.appName}</code>. The repository
-												holds no secret - deploys authenticate with GitHub's identity token.
-											{/if}
-										</p>
 										<Button
 											size="sm"
 											variant="outline"
-											onclick={() => (disconnectTarget = connection)}
-											data-testid="disconnect-github"
+											class="gap-2"
+											onclick={() => (connectOpen = true)}
+											data-testid="connect-github"
 										>
-											Disconnect
+											<GithubMark class="h-4 w-4" /> Connect another repository
 										</Button>
 									</div>
 								{:else}
