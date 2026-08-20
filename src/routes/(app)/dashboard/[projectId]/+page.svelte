@@ -117,7 +117,7 @@
 					sign-in.
 				</Card.Description>
 			</Card.Header>
-			<Card.Content class="mt-auto flex flex-nowrap items-end justify-between gap-4">
+			<Card.Content class="@container mt-auto flex flex-wrap items-end justify-between gap-4">
 				<div class="flex gap-6">
 					<div>
 						<p class="text-2xl font-semibold tabular-nums" data-testid="overview-users-count">
@@ -132,9 +132,11 @@
 						<p class="text-xs text-muted-foreground">sessions</p>
 					</div>
 				</div>
-				<div class="flex shrink-0 gap-2">
+				<div class="ml-auto flex shrink-0 gap-2">
 					<Button href={`${authHref}/integration`} size="sm" variant="outline">
-						<CodeXml class="mr-1 h-3.5 w-3.5" /> Integration
+						<CodeXml class="mr-1 h-3.5 w-3.5 @max-[26rem]:mr-0" /><span class="@max-[26rem]:sr-only"
+							>Integration</span
+						>
 					</Button>
 					<Button href={authHref} size="sm" variant="outline">
 						Open <ArrowRight class="ml-1 h-3.5 w-3.5" />
@@ -163,7 +165,7 @@
 					per collection or table, pushed to subscribers as writes happen.
 				</Card.Description>
 			</Card.Header>
-			<Card.Content class="mt-auto flex flex-nowrap items-end justify-between gap-4">
+			<Card.Content class="@container mt-auto flex flex-wrap items-end justify-between gap-4">
 				<div class="flex gap-6">
 					<div>
 						<p class="text-2xl font-semibold tabular-nums" data-testid="overview-collections-count">
@@ -178,9 +180,11 @@
 						<p class="text-xs text-muted-foreground">documents</p>
 					</div>
 				</div>
-				<div class="flex shrink-0 gap-2">
+				<div class="ml-auto flex shrink-0 gap-2">
 					<Button href={`${dbHref}/integration`} size="sm" variant="outline">
-						<CodeXml class="mr-1 h-3.5 w-3.5" /> Integration
+						<CodeXml class="mr-1 h-3.5 w-3.5 @max-[26rem]:mr-0" /><span class="@max-[26rem]:sr-only"
+							>Integration</span
+						>
 					</Button>
 					<Button href={dbHref} size="sm" variant="outline">
 						Open <ArrowRight class="ml-1 h-3.5 w-3.5" />
