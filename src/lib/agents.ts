@@ -1215,6 +1215,7 @@ export type GithubConnectionInfo = z.infer<typeof githubConnectionSchema>;
 export type MintedDeployToken = z.infer<typeof mintedDeployTokenSchema>;
 export type HostingVar = z.infer<typeof hostingVarSchema>;
 export type HostingSecretMeta = z.infer<typeof hostingSecretMetaSchema>;
+export type HostingAnalytics = z.infer<typeof hostingAnalyticsSchema>;
 export type StorageAccessMode = z.infer<typeof storageAccessModeSchema>;
 export type StorageBucketSummary = z.infer<typeof storageBucketSummarySchema>;
 export type StorageBucketInfo = z.infer<typeof storageBucketSchema>;

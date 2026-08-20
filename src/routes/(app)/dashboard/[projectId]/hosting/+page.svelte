@@ -2,14 +2,11 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import type {
-		DeployTokenInfo,
-		GithubConnectionInfo,
-		HostingDeploy,
-		HostingOverview
-	} from '$lib/agents';
+	import type { DeployTokenInfo, GithubConnectionInfo, HostingOverview } from '$lib/agents';
 	import GithubMark from '$lib/components/github-mark.svelte';
 	import ConnectGithubDialog from './connect-github-dialog.svelte';
+	import DeploysTable from './deploys-table.svelte';
+	import { onMount } from 'svelte';
 	import {
 		DEPLOY_TOKEN_SECRET_NAME,
 		deployWorkflowYaml,
@@ -27,16 +24,21 @@
 	import * as Tabs from '$lib/components/ui/tabs';
 	import {
 		Check,
+		ChevronRight,
 		Copy,
 		ExternalLink,
 		KeyRound,
 		Rocket,
 		Sparkles,
-		Terminal,
-		Trash2
+		Terminal
 	} from '@lucide/svelte';
 
 	let { data } = $props();
+
+	// UI tests click SSR-rendered controls; without this attribute a click can
+	// land before Svelte attaches its handler and silently vanish.
+	let hydrated = $state(false);
+	onMount(() => (hydrated = true));
 
 	// Writable derived: the SSR payload wins on navigation, the poll overwrites
 	// between loads.
@@ -82,53 +84,6 @@
 		if (!response?.ok) return;
 		const body = (await response.json().catch(() => null)) as HostingOverview | null;
 		if (body) overview = body;
-	}
-
-	// --- Deploy history: keyset paging, range-of-total + Prev/Next, never
-	// truncation. Prev walks a client-side stack of the cursors that STARTED
-	// each page, so the poll-refreshed current page never yanks the operator
-	// back to the top.
-	const PAGE_SIZE = 10;
-	let deploys = $state<HostingDeploy[]>([]);
-	let deployTotal = $state(0);
-	let nextCursor = $state<string | null>(null);
-	let cursorStack = $state<string[]>([]);
-	let pageStart = $state(0);
-
-	async function loadDeploys(cursor: string | null) {
-		const query = `limit=${PAGE_SIZE}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
-		const response = await fetch(`/api/projects/${data.projectId}/hosting/deploys?${query}`).catch(
-			() => null
-		);
-		if (!response?.ok) return;
-		const body = (await response.json().catch(() => null)) as {
-			deploys: HostingDeploy[];
-			total: number;
-			cursor: string | null;
-		} | null;
-		if (!body) return;
-		deploys = body.deploys;
-		deployTotal = body.total;
-		nextCursor = body.cursor;
-	}
-
-	$effect(() => {
-		if (data.demo) return;
-		void loadDeploys(null);
-	});
-
-	async function nextPage() {
-		if (!nextCursor) return;
-		cursorStack = [...cursorStack, nextCursor];
-		pageStart += deploys.length;
-		await loadDeploys(nextCursor);
-	}
-	async function prevPage() {
-		if (!cursorStack.length) return;
-		const stack = cursorStack.slice(0, -1);
-		cursorStack = stack;
-		pageStart = Math.max(0, pageStart - PAGE_SIZE);
-		await loadDeploys(stack[stack.length - 1] ?? null);
 	}
 
 	// --- Deploy tokens (roots only).
@@ -256,35 +211,6 @@
 		}
 	}
 
-	// App deletion: typed-name confirm (the project-settings convention) -
-	// this erases a deployed script, its history, and frees the subdomain.
-	let deleteAppTarget = $state<{ name: string; subdomain: string } | null>(null);
-	let deleteAppConfirm = $state('');
-	let deleteAppBusy = $state(false);
-	let deleteAppError = $state<string | null>(null);
-
-	async function deleteApp() {
-		if (!deleteAppTarget) return;
-		deleteAppBusy = true;
-		deleteAppError = null;
-		try {
-			const response = await fetch(
-				`/api/projects/${data.projectId}/hosting/apps/${encodeURIComponent(deleteAppTarget.name)}`,
-				{ method: 'DELETE' }
-			);
-			const body = (await response.json().catch(() => null)) as { error?: string } | null;
-			if (!response.ok) {
-				deleteAppError = body?.error ?? 'Could not delete the app.';
-				return;
-			}
-			deleteAppTarget = null;
-			deleteAppConfirm = '';
-			await invalidateAll();
-		} finally {
-			deleteAppBusy = false;
-		}
-	}
-
 	let copied = $state<string | null>(null);
 	async function copy(label: string, value: string) {
 		try {
@@ -303,12 +229,6 @@
 		if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
 		return `${Math.floor(seconds / 86400)}d ago`;
 	};
-	const kb = (bytes: number) =>
-		bytes < 1024
-			? `${bytes} B`
-			: bytes < 1024 * 1024
-				? `${Math.round(bytes / 1024)} KB`
-				: `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 </script>
 
 <svelte:head>
@@ -319,6 +239,7 @@
 <div
 	class="mx-auto max-w-7xl space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-8"
 	data-testid="hosting-page"
+	data-hydrated={hydrated}
 >
 	<div class="flex items-center gap-3">
 		<Rocket class="h-6 w-6 text-muted-foreground" />
@@ -389,7 +310,20 @@
 				{:else}
 					<div class="grid gap-2">
 						{#each apps as app (app.name)}
-							<div class="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3">
+							<!-- The whole card navigates: vars, secrets, build settings,
+							     analytics, and deletion all live on the app's own page. -->
+							<a
+								href={resolve(
+									'/(app)/dashboard/[projectId]/hosting/apps/[appName]/[[tab=hostingapp]]',
+									{
+										projectId: data.projectId,
+										appName: app.name,
+										tab: undefined as unknown as string
+									}
+								)}
+								class="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent/40"
+								data-testid={`open-app-${app.name}`}
+							>
 								<div class="min-w-0 flex-1">
 									<p class="flex items-center gap-2 truncate text-sm font-medium">
 										{app.name}
@@ -400,21 +334,9 @@
 											<Badge variant="outline" class="font-normal">Awaiting first deploy</Badge>
 										{/if}
 									</p>
-									{#if app.url}
-										<!-- eslint-disable svelte/no-navigation-without-resolve -- external app URL, not an in-app route -->
-										<a
-											href={app.url}
-											target="_blank"
-											rel="noreferrer"
-											class="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
-										>
-											{app.url.replace('https://', '')}
-											<ExternalLink class="h-3 w-3" />
-										</a>
-										<!-- eslint-enable svelte/no-navigation-without-resolve -->
-									{:else}
-										<p class="font-mono text-xs text-muted-foreground">{app.subdomain}</p>
-									{/if}
+									<p class="font-mono text-xs text-muted-foreground">
+										{app.url ? app.url.replace('https://', '') : app.subdomain}
+									</p>
 								</div>
 								<div class="shrink-0 text-right text-xs text-muted-foreground">
 									{#if app.deployCount === 0}
@@ -426,21 +348,8 @@
 										{/if}
 									{/if}
 								</div>
-								<Button
-									variant="ghost"
-									size="icon"
-									class="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-									aria-label={`Delete ${app.name}`}
-									data-testid={`delete-app-${app.name}`}
-									onclick={() => {
-										deleteAppTarget = { name: app.name, subdomain: app.subdomain };
-										deleteAppConfirm = '';
-										deleteAppError = null;
-									}}
-								>
-									<Trash2 class="h-4 w-4" />
-								</Button>
-							</div>
+								<ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground" />
+							</a>
 						{/each}
 					</div>
 				{/if}
@@ -453,50 +362,7 @@
 				<Card.Title class="text-base">Deploys</Card.Title>
 			</Card.Header>
 			<Card.Content class="space-y-3">
-				{#if deploys.length === 0}
-					<p class="text-sm text-muted-foreground">No deploys yet.</p>
-				{:else}
-					<div class="grid gap-2">
-						{#each deploys as deploy (deploy.id)}
-							<div class="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3">
-								<Badge
-									variant={deploy.status === 'live' ? 'default' : 'outline'}
-									class="shrink-0 text-xs"
-								>
-									{deploy.status}
-								</Badge>
-								<div class="min-w-0 flex-1">
-									<p class="truncate font-mono text-xs">{deploy.subdomain}</p>
-									<p class="text-xs text-muted-foreground">
-										{deploy.hasWorker ? 'worker + ' : ''}{deploy.assetCount} asset{deploy.assetCount ===
-										1
-											? ''
-											: 's'} · {kb(deploy.assetBytes + deploy.moduleBytes)}
-									</p>
-								</div>
-								<p class="shrink-0 text-xs text-muted-foreground">{timeAgo(deploy.createdAt)}</p>
-							</div>
-						{/each}
-					</div>
-					<div class="flex items-center justify-between text-xs text-muted-foreground">
-						<span data-testid="hosting-deploys-range">
-							{pageStart + 1}–{pageStart + deploys.length} of {deployTotal}
-						</span>
-						<div class="flex gap-2">
-							<Button
-								size="sm"
-								variant="outline"
-								disabled={cursorStack.length === 0}
-								onclick={prevPage}
-							>
-								Prev
-							</Button>
-							<Button size="sm" variant="outline" disabled={!nextCursor} onclick={nextPage}>
-								Next
-							</Button>
-						</div>
-					</div>
-				{/if}
+				<DeploysTable projectId={data.projectId} showApp pageSize={10} />
 			</Card.Content>
 		</Card.Root>
 
@@ -784,52 +650,6 @@
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
-
-<!-- App deletion: typed-name confirm (the settings-page convention - a plain
-     Dialog so a failure stays visible instead of closing with the click). -->
-<Dialog.Root
-	open={deleteAppTarget !== null}
-	onOpenChange={(open) => {
-		if (!open) deleteAppTarget = null;
-	}}
->
-	<Dialog.Content>
-		<Dialog.Header>
-			<Dialog.Title>Delete {deleteAppTarget?.name}?</Dialog.Title>
-			<Dialog.Description>
-				The deployed site at <code class="font-mono text-xs">{deleteAppTarget?.subdomain}</code> stops
-				serving, its deploy history is erased, and the subdomain is released for anyone to claim. A connected
-				repository is disconnected too. This cannot be undone.
-			</Dialog.Description>
-		</Dialog.Header>
-		<div class="space-y-1.5">
-			<Label for="delete-app-confirm">
-				Type <span class="font-mono">{deleteAppTarget?.name}</span> to confirm
-			</Label>
-			<Input
-				id="delete-app-confirm"
-				bind:value={deleteAppConfirm}
-				class="font-mono text-xs"
-				autocomplete="off"
-				data-testid="delete-app-confirm"
-			/>
-			{#if deleteAppError}
-				<p class="text-sm text-destructive" data-testid="delete-app-error">{deleteAppError}</p>
-			{/if}
-		</div>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (deleteAppTarget = null)}>Cancel</Button>
-			<Button
-				variant="destructive"
-				disabled={deleteAppBusy || deleteAppConfirm.trim() !== deleteAppTarget?.name}
-				onclick={deleteApp}
-				data-testid="confirm-delete-app"
-			>
-				{deleteAppBusy ? 'Deleting…' : 'Delete app'}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
 
 <!-- Mint dialog: the secret appears exactly once. -->
 <Dialog.Root bind:open={mintOpen}>
