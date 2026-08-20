@@ -348,7 +348,8 @@ export const dbActivityEventSchema = z
 			'rows.imported',
 			'view.created',
 			'view.configured',
-			'view.deleted'
+			'view.deleted',
+			'remote-config.changed'
 		]),
 		message: z.string(),
 		at: z.iso.datetime()
@@ -674,7 +675,11 @@ export const dbAgentStateSchema = z
 		rev: z.number(),
 		totalEvents: z.number(),
 		lastEventAt: z.iso.datetime().nullable(),
-		events: z.array(dbActivityEventSchema)
+		// `.catch([])` because the event-type enum is the one place a NEW agent
+		// feature widens this state: Remote Config's first event 502'd the whole
+		// db page until this mirror learned the type. An unknown event must cost
+		// the activity feed, never the page.
+		events: z.array(dbActivityEventSchema).catch([])
 	})
 	.meta({
 		id: 'DbAgentState',

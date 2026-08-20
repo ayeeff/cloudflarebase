@@ -124,6 +124,30 @@ test.describe('remote config', () => {
 		expect(pending.pending).toBe(true);
 	});
 
+	test('a remote config edit never takes the db page down', async ({ request }) => {
+		// Editing records a `remote-config.changed` activity event into the
+		// agent's state. The console parses that state on every db page load, so
+		// an event type its mirrored schema does not know 502s the ENTIRE db
+		// workspace - which is exactly what shipped with RC1. This loads the real
+		// dashboard page (the api project carries the operator session) so the
+		// mirror can never drift silently again.
+		const flag = key('canary');
+		const edited = await request.put(`${base}/${flag}`, {
+			data: { valueType: 'boolean', defaultValue: true }
+		});
+		expect(edited.ok(), await edited.text()).toBeTruthy();
+
+		const dbPage = await request.get(`/dashboard/${DB_PROJECT}/db`);
+		expect(dbPage.status(), 'the db workspace must render after a remote config edit').toBe(200);
+
+		// And the overview it renders from still parses as far as the events go:
+		// the freshest event must be the one the edit just recorded.
+		const overview = await request.get(`/api/projects/${DB_PROJECT}/db/overview`);
+		expect(overview.ok()).toBeTruthy();
+		const events = (await overview.json()).state.events as { type: string; message: string }[];
+		expect(events.some((event) => event.type === 'remote-config.changed')).toBeTruthy();
+	});
+
 	test('discard puts every draft back to what is being served', async ({ request }) => {
 		const kept = key('kept');
 		const invented = key('invented');
