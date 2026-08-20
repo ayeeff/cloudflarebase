@@ -23,6 +23,9 @@ isolation by architecture, not by a `WHERE` clause.
   and permissions, project-signed JWTs.
 - **Database** — JSON collections (no schema) and typed SQL tables, live
   queries on both, regional read replicas, export/import, 30-day rollback.
+- **Remote Config** — feature flags and tuning values your app reads at
+  startup, targeted by country, role, version, or rollout percentage —
+  flipped without shipping a release.
 - **Storage** — buckets of files on R2: public/auth/owner access modes,
   signed URLs, multipart uploads, a file browser in the console.
 - **Hosting** — static sites and Workers at `<app>.cfbase.dev`, deployed from
@@ -158,6 +161,18 @@ posts.subscribe(
 );
 ```
 
+**Remote Config** turns hardcoded constants into flags you flip from the
+console — evaluated per caller on the server, so the targeting rules never
+reach the device:
+
+```ts
+const config = db.remoteConfig({ defaults: { checkoutV2: false } });
+await config.fetch(); // never throws — offline keeps the defaults
+if (config.get('checkoutV2')) {
+	// ship the new checkout
+}
+```
+
 **Storage** is buckets of files with per-bucket access modes:
 
 ```ts
@@ -173,7 +188,6 @@ await files.upload('me.png', file); // any size — large files go multipart aut
 
 // A URL a browser can hold — drops straight into <img src>
 const { signedUrl } = await files.createSignedUrl('me.png', { expiresIn: 3600 });
-const { objects, folders } = await files.list({ prefix: '', folders: true });
 ```
 
 **On a server** with no user to relay — a cron, queue consumer, or webhook —
