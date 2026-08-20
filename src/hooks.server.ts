@@ -13,6 +13,7 @@ import { guardConsoleClaim } from '$lib/server/console-setup';
 import { verifyGithubDeployGrant } from '$lib/server/github-connect';
 import {
 	deployTokenCoversProject,
+	isBuildEnvSurface,
 	isDeployTokenSurface,
 	verifyDeployToken
 } from '$lib/server/hosting';
@@ -519,12 +520,17 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 	// workflow presents a short-lived token GitHub signed, describing the
 	// repository it ran in, and the connection table says which project that
 	// repository may deploy to. Same surfaces and same all-or-nothing contract
-	// as a deploy token: never a fall-through to session resolution.
+	// as a deploy token: never a fall-through to session resolution. The
+	// build-env GET is the one read the bearer also opens - the workflow
+	// fetches its build vars and secrets before the build step - and it is
+	// deliberately NOT a deploy-token surface (see isBuildEnvSurface).
 	//
-	// Only attempted on the deploy surfaces, so a three-segment console session
+	// Only attempted on those surfaces, so a three-segment console session
 	// bearer on any other route still reaches the session path below.
 	const oidcBearer =
-		access.projectId && isDeployTokenSurface(event.url.pathname, event.request.method)
+		access.projectId &&
+		(isDeployTokenSurface(event.url.pathname, event.request.method) ||
+			isBuildEnvSurface(event.url.pathname, event.request.method))
 			? event.request.headers
 					.get('authorization')
 					?.match(/^Bearer\s+([\w-]+\.[\w-]+\.[\w-]+)$/)?.[1]

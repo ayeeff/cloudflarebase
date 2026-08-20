@@ -1,5 +1,8 @@
 import {
 	deployTokenSchema,
+	hostingBuildEnvBundleSchema,
+	hostingBuildEnvSchema,
+	hostingBuildSecretRequestSchema,
 	hostingClaimRequestSchema,
 	hostingClaimSchema,
 	hostingDeployPageSchema,
@@ -12,7 +15,7 @@ import {
 	mintDeployTokenSchema,
 	mintedDeployTokenSchema
 } from '$lib/agents';
-import { jsonBody, jsonResponse, UNAUTHORIZED, type AgentOpenApiModule } from './shared';
+import { jsonBody, jsonResponse, ref, UNAUTHORIZED, type AgentOpenApiModule } from './shared';
 
 /**
  * Hosting agent module (Phase B). Every
@@ -55,6 +58,9 @@ export const hostingOpenApi: AgentOpenApiModule = {
 		hostingVarsUpdatedSchema,
 		hostingSecretListSchema,
 		hostingSecretRequestSchema,
+		hostingBuildEnvSchema,
+		hostingBuildEnvBundleSchema,
+		hostingBuildSecretRequestSchema,
 		deployTokenSchema,
 		mintDeployTokenSchema,
 		mintedDeployTokenSchema
@@ -196,6 +202,81 @@ export const hostingOpenApi: AgentOpenApiModule = {
 					'200': { description: 'Deleted (or was already gone).' },
 					'401': UNAUTHORIZED,
 					'502': { description: 'Cloudflare refused the deletion; the secret is still set.' }
+				}
+			}
+		},
+		'/hosting/apps/{app}/build-env': {
+			get: {
+				tags: [HOSTING_TAG],
+				summary: 'Read the build-time environment',
+				description:
+					'Two personas. An operator session gets `HostingBuildEnv`: vars with values, secret NAMES only. A GitHub Actions OIDC bearer (the workflow of the connection that owns this app) gets `HostingBuildEnvBundle`: the decrypted values it exports before the build step. Build env is connection-scoped - branch builds read the root project.',
+				security: [{ sessionCookie: [] }, { bearerAuth: [] }],
+				parameters: [appParam],
+				responses: {
+					'200': {
+						description: 'The environment, shaped by the caller (see description).',
+						content: {
+							'application/json': {
+								schema: {
+									oneOf: [ref(hostingBuildEnvSchema), ref(hostingBuildEnvBundleSchema)]
+								}
+							}
+						}
+					},
+					'401': UNAUTHORIZED,
+					'503': {
+						description: 'Build secrets exist but HOSTING_MASTER_KEY is not set on this install.'
+					}
+				}
+			}
+		},
+		'/hosting/apps/{app}/build-vars': {
+			put: {
+				tags: [HOSTING_TAG],
+				summary: 'Replace build-time variables',
+				description:
+					'Replaces the whole set - absent names are deleted. Exported into the build environment by the connected workflow.',
+				security: [{ sessionCookie: [] }],
+				parameters: [appParam],
+				requestBody: jsonBody(hostingVarsUpdateSchema, 'The full variable set.'),
+				responses: {
+					'200': jsonResponse(hostingVarListSchema, 'The stored set.'),
+					'400': { description: 'Invalid name/value, or the 64-variable cap was exceeded.' },
+					'401': UNAUTHORIZED
+				}
+			}
+		},
+		'/hosting/apps/{app}/build-secrets/{name}': {
+			put: {
+				tags: [HOSTING_TAG],
+				summary: 'Set a build secret',
+				description:
+					"Encrypted at rest (AES-256-GCM) under the install's master key. Write-only on this surface: the console never reads a value back, and the runner's copy travels the OIDC build-env route.",
+				security: [{ sessionCookie: [] }],
+				parameters: [
+					appParam,
+					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				requestBody: jsonBody(hostingBuildSecretRequestSchema, 'The secret value.'),
+				responses: {
+					'200': { description: 'Set.' },
+					'400': { description: 'Invalid name/value, or the 32-secret cap was exceeded.' },
+					'401': UNAUTHORIZED,
+					'503': { description: 'HOSTING_MASTER_KEY is not set on this install.' }
+				}
+			},
+			delete: {
+				tags: [HOSTING_TAG],
+				summary: 'Delete a build secret',
+				security: [{ sessionCookie: [] }],
+				parameters: [
+					appParam,
+					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				responses: {
+					'200': { description: 'Deleted (or was already gone).' },
+					'401': UNAUTHORIZED
 				}
 			}
 		},

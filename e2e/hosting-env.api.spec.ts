@@ -1,8 +1,12 @@
 import { expect, test } from '@playwright/test';
 import {
+	hostingBuildEnvPath,
+	hostingBuildSecretPath,
+	hostingBuildVarsPath,
 	hostingDeployPath,
 	hostingSecretPath,
 	hostingSecretsPath,
+	hostingTokensPath,
 	hostingVarsPath,
 	registryProjectPath
 } from './helpers';
@@ -143,7 +147,82 @@ test.describe('hosting app environment (stubbed)', () => {
 		]);
 	});
 
+	test('build env stores vars, keeps secret values write-only', async ({ request }) => {
+		const putVars = await request.put(hostingBuildVarsPath(projectId, appName), {
+			data: { vars: { VITE_API_URL: 'https://api.example' } }
+		});
+		expect(putVars.status(), await putVars.text()).toBe(200);
+
+		// The env.test stack pins HOSTING_MASTER_KEY, so encryption is REAL here
+		// - stub mode stubs the Cloudflare API, never the crypto.
+		const putSecret = await request.put(hostingBuildSecretPath(projectId, appName, 'NPM_TOKEN'), {
+			data: { value: 'npm_supersecret' }
+		});
+		expect(putSecret.status(), await putSecret.text()).toBe(200);
+
+		const env = await request.get(hostingBuildEnvPath(projectId, appName));
+		expect(env.status(), await env.text()).toBe(200);
+		const body = (await env.json()) as {
+			vars: { name: string; value: string }[];
+			secrets: { name: string }[];
+			encryptionConfigured: boolean;
+		};
+		expect(body.vars).toEqual([
+			expect.objectContaining({ name: 'VITE_API_URL', value: 'https://api.example' })
+		]);
+		expect(body.secrets.map((secret) => secret.name)).toEqual(['NPM_TOKEN']);
+		expect(body.encryptionConfigured).toBe(true);
+		// The operator surface never returns a decrypted value.
+		expect(JSON.stringify(body)).not.toContain('npm_supersecret');
+
+		const deleted = await request.delete(hostingBuildSecretPath(projectId, appName, 'NPM_TOKEN'));
+		expect(deleted.status(), await deleted.text()).toBe(200);
+		const after = await request.get(hostingBuildEnvPath(projectId, appName));
+		expect(((await after.json()) as { secrets: unknown[] }).secrets).toEqual([]);
+	});
+
+	test('build-env refuses every wrong bearer', async ({ request, playwright, baseURL }) => {
+		// A deploy token can ship code, but it is a long-lived credential that
+		// lives in repository settings - it must never read build secrets.
+		const minted = await request.post(hostingTokensPath(projectId), {
+			data: { name: 'env-spec' }
+		});
+		expect(minted.status(), await minted.text()).toBe(201);
+		const token = ((await minted.json()) as { token: string }).token;
+		const asDeployToken = await playwright.request.newContext({
+			baseURL,
+			extraHTTPHeaders: { origin: baseURL ?? '', authorization: `Bearer ${token}` },
+			storageState: { cookies: [], origins: [] }
+		});
+		try {
+			const denied = await asDeployToken.get(hostingBuildEnvPath(projectId, appName));
+			expect(denied.status(), await denied.text()).toBe(401);
+		} finally {
+			await asDeployToken.dispose();
+		}
+
+		// An OIDC-shaped bearer that verifies to nothing is a plain 401, never a
+		// fall-through to session resolution.
+		const asGarbageOidc = await playwright.request.newContext({
+			baseURL,
+			extraHTTPHeaders: { origin: baseURL ?? '', authorization: 'Bearer x.y.z' },
+			storageState: { cookies: [], origins: [] }
+		});
+		try {
+			const denied = await asGarbageOidc.get(hostingBuildEnvPath(projectId, appName));
+			expect(denied.status(), await denied.text()).toBe(401);
+		} finally {
+			await asGarbageOidc.dispose();
+		}
+	});
+
 	test('deleting the app erases its environment', async ({ request }) => {
+		// Re-seed a build var so the erase has something to prove on.
+		const putVars = await request.put(hostingBuildVarsPath(projectId, appName), {
+			data: { vars: { VITE_API_URL: 'https://api.example' } }
+		});
+		expect(putVars.status(), await putVars.text()).toBe(200);
+
 		const deleted = await request.delete(`/api/projects/${projectId}/hosting/apps/${appName}`);
 		expect(deleted.status(), await deleted.text()).toBe(200);
 
@@ -151,6 +230,8 @@ test.describe('hosting app environment (stubbed)', () => {
 		expect(((await vars.json()) as { vars: unknown[] }).vars).toEqual([]);
 		const secrets = await request.get(hostingSecretsPath(projectId, appName));
 		expect(((await secrets.json()) as { secrets: unknown[] }).secrets).toEqual([]);
+		const buildEnv = await request.get(hostingBuildEnvPath(projectId, appName));
+		expect(((await buildEnv.json()) as { vars: unknown[] }).vars).toEqual([]);
 	});
 });
 
@@ -165,7 +246,11 @@ test.describe('hosting env guard', () => {
 			['PUT', hostingVarsPath(projectId, appName)],
 			['GET', hostingSecretsPath(projectId, appName)],
 			['POST', hostingSecretsPath(projectId, appName)],
-			['DELETE', hostingSecretPath(projectId, appName, 'API_KEY')]
+			['DELETE', hostingSecretPath(projectId, appName, 'API_KEY')],
+			['GET', hostingBuildEnvPath(projectId, appName)],
+			['PUT', hostingBuildVarsPath(projectId, appName)],
+			['PUT', hostingBuildSecretPath(projectId, appName, 'NPM_TOKEN')],
+			['DELETE', hostingBuildSecretPath(projectId, appName, 'NPM_TOKEN')]
 		] as const;
 		for (const [method, path] of closed) {
 			const response = await request.fetch(path, {

@@ -81,6 +81,11 @@ export const varsBodySchema = z.strictObject({
  * written by an older version (or by hand) degrades to "no CLI vars". */
 export const storedVarsSchema = z.record(z.string(), z.string()).catch({});
 
+/** One build secret value - encrypted at rest, name rides the path. */
+export const buildSecretBodySchema = z.strictObject({
+	value: varValueSchema.min(1),
+});
+
 /** Keyset cursor for the deploy list: `<createdAtMs>:<id>`. */
 export const deployCursorSchema = z
 	.string()

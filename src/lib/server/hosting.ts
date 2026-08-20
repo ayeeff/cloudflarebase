@@ -408,3 +408,15 @@ export function isDeployTokenSurface(pathname: string, method: string): boolean 
 		/^\/api\/projects\/[^/]+\/branches$/.test(pathname)
 	);
 }
+
+/**
+ * The one surface a GitHub Actions OIDC bearer may READ: the build-env fetch
+ * its workflow runs before the build step. Deliberately NOT part of
+ * isDeployTokenSurface - a `cfbd_` deploy token is a long-lived credential
+ * that lives in repository settings, and it must never read build secrets;
+ * the OIDC token is minted per run and dies with it.
+ */
+export function isBuildEnvSurface(pathname: string, method: string): boolean {
+	if (method !== 'GET') return false;
+	return /^\/api\/projects\/[^/]+\/hosting\/apps\/[^/]+\/build-env$/.test(pathname);
+}

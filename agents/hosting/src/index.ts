@@ -173,6 +173,30 @@ class HostingService extends WorkerEntrypoint<Env> {
 			return Response.json(result);
 		}
 
+		// The build-env fetch: the console verified a GitHub Actions OIDC grant
+		// and relays the DECRYPTED bundle to the runner. Values only ever
+		// transit the dashboard's service binding - the operator HTTP surface
+		// answers names only. Service-binding-only, like the routes above.
+		const buildEnv = url.pathname.match(
+			/^\/internal\/projects\/([^/]+)\/apps\/([^/]+)\/build-env$/,
+		);
+		if (buildEnv && request.method === 'GET') {
+			const projectId = decodeURIComponent(buildEnv[1]);
+			const appName = decodeURIComponent(buildEnv[2]);
+			if (
+				!projectIdSchema.safeParse(projectId).success ||
+				!appNameSchema.safeParse(appName).success
+			) {
+				return Response.json({ error: 'invalid build-env request' }, { status: 400 });
+			}
+			const agent = await getAgentByName<Env, HostingAgentBase>(this.env.HostingAgent, projectId);
+			const result = await agent.buildEnvBundle(appName);
+			if ('error' in result) {
+				return Response.json({ error: result.error }, { status: result.status });
+			}
+			return Response.json(result);
+		}
+
 		// Direct deploys (Phase B): a push webhook the console verified, whose
 		// repository needs no build. The console resolved the claim and the
 		// download URL first, so the agent receives a plain URL and never holds

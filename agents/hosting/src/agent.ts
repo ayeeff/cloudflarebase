@@ -27,10 +27,12 @@ import {
 	type AppRecord,
 	type DeployRecord,
 } from './db/schema';
+import { decryptValue, encryptValue, importMasterKey } from './crypto';
 import migrations from './migrations';
 import {
 	DEMO_PROJECT_PATTERN,
 	appNameSchema,
+	buildSecretBodySchema,
 	deployCursorSchema,
 	deployMetaSchema,
 	projectIdSchema,
@@ -60,6 +62,7 @@ const MAX_APPS = 10;
 const MAX_DEPLOYS_PER_DAY = 50;
 const MAX_VARS_PER_APP = 64;
 const MAX_SECRETS_PER_APP = 64;
+const MAX_BUILD_SECRETS_PER_APP = 32;
 // Sized for framework output, not just hand-rolled Workers: an OpenNext
 // worker bundle routinely passes 10 MB uncompressed, and a Next site blows
 // 1000 files on `_next/static` alone. The DO parses deploys in memory, so
@@ -383,6 +386,28 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			return this.deleteSecret(
 				decodeURIComponent(secretName[1]),
 				decodeURIComponent(secretName[2]),
+			);
+		}
+		const buildEnv = subPath.match(/^\/apps\/([^/]+)\/build-env$/);
+		if (buildEnv && request.method === 'GET') {
+			return this.getBuildEnv(decodeURIComponent(buildEnv[1]));
+		}
+		const buildVarsPath = subPath.match(/^\/apps\/([^/]+)\/build-vars$/);
+		if (buildVarsPath && request.method === 'PUT') {
+			return this.putBuildVars(decodeURIComponent(buildVarsPath[1]), request);
+		}
+		const buildSecret = subPath.match(/^\/apps\/([^/]+)\/build-secrets\/([^/]+)$/);
+		if (buildSecret && request.method === 'PUT') {
+			return this.putBuildSecret(
+				decodeURIComponent(buildSecret[1]),
+				decodeURIComponent(buildSecret[2]),
+				request,
+			);
+		}
+		if (buildSecret && request.method === 'DELETE') {
+			return this.deleteBuildSecret(
+				decodeURIComponent(buildSecret[1]),
+				decodeURIComponent(buildSecret[2]),
 			);
 		}
 
@@ -929,5 +954,217 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			patched,
 			...(warning ? { warning } : {}),
 		});
+	}
+
+	/**
+	 * Operator read of the build-time environment: vars with values, secret
+	 * NAMES only. Decrypted values never cross the operator surface - the
+	 * runner's copy travels the service-binding-only /internal route instead.
+	 */
+	private async getBuildEnv(appName: string): Promise<Response> {
+		if (!appNameSchema.safeParse(appName).success) {
+			return Response.json({ error: 'invalid app name' }, { status: 400 });
+		}
+		const varRows = await this.db
+			.select()
+			.from(buildVars)
+			.where(eq(buildVars.appName, appName))
+			.orderBy(buildVars.name);
+		const secretRows = await this.db
+			.select()
+			.from(buildSecrets)
+			.where(eq(buildSecrets.appName, appName))
+			.orderBy(buildSecrets.name);
+		return Response.json({
+			vars: varRows.map((row) => ({
+				name: row.name,
+				value: row.value,
+				createdAt: row.createdAt.toISOString(),
+				updatedAt: row.updatedAt.toISOString(),
+			})),
+			secrets: secretRows.map((row) => ({
+				name: row.name,
+				createdAt: row.createdAt.toISOString(),
+				updatedAt: row.updatedAt.toISOString(),
+			})),
+			encryptionConfigured: !!this.env.HOSTING_MASTER_KEY,
+		});
+	}
+
+	/** Replace-the-set for build vars, exactly like runtime vars - minus the
+	 * live patch, because build vars only exist at build time. */
+	private async putBuildVars(appName: string, request: Request): Promise<Response> {
+		if (!appNameSchema.safeParse(appName).success) {
+			return Response.json({ error: 'invalid app name' }, { status: 400 });
+		}
+		const body = varsBodySchema.safeParse(await request.json().catch(() => null));
+		if (!body.success) {
+			return Response.json({ error: 'invalid vars body' }, { status: 400 });
+		}
+		const wanted = body.data.vars;
+		if (Object.keys(wanted).length > MAX_VARS_PER_APP) {
+			return Response.json(
+				{ error: `apps are limited to ${MAX_VARS_PER_APP} build variables` },
+				{ status: 400 },
+			);
+		}
+
+		const now = new Date();
+		const existing = await this.db.select().from(buildVars).where(eq(buildVars.appName, appName));
+		const current = new Map(existing.map((row) => [row.name, row]));
+		for (const row of existing) {
+			if (!(row.name in wanted)) {
+				await this.db
+					.delete(buildVars)
+					.where(and(eq(buildVars.appName, appName), eq(buildVars.name, row.name)));
+			}
+		}
+		for (const [name, value] of Object.entries(wanted)) {
+			const row = current.get(name);
+			if (!row) {
+				await this.db
+					.insert(buildVars)
+					.values({ appName, name, value, createdAt: now, updatedAt: now });
+			} else if (row.value !== value) {
+				await this.db
+					.update(buildVars)
+					.set({ value, updatedAt: now })
+					.where(and(eq(buildVars.appName, appName), eq(buildVars.name, name)));
+			}
+		}
+
+		const rows = await this.db
+			.select()
+			.from(buildVars)
+			.where(eq(buildVars.appName, appName))
+			.orderBy(buildVars.name);
+		return Response.json({
+			vars: rows.map((row) => ({
+				name: row.name,
+				value: row.value,
+				createdAt: row.createdAt.toISOString(),
+				updatedAt: row.updatedAt.toISOString(),
+			})),
+		});
+	}
+
+	/** Encrypts one build secret at rest. The 503 without a master key is the
+	 * degradation contract: everything else on the install keeps working. */
+	private async putBuildSecret(appName: string, name: string, request: Request): Promise<Response> {
+		if (!appNameSchema.safeParse(appName).success) {
+			return Response.json({ error: 'invalid app name' }, { status: 400 });
+		}
+		if (!varNameSchema.safeParse(name).success) {
+			return Response.json({ error: 'invalid secret name' }, { status: 400 });
+		}
+		const body = buildSecretBodySchema.safeParse(await request.json().catch(() => null));
+		if (!body.success) {
+			return Response.json({ error: 'invalid secret body' }, { status: 400 });
+		}
+		const master = this.env.HOSTING_MASTER_KEY;
+		if (!master) {
+			return Response.json(
+				{
+					error:
+						'build secrets are not configured on this install - set the HOSTING_MASTER_KEY secret on the hosting agent',
+				},
+				{ status: 503 },
+			);
+		}
+
+		const [existing] = await this.db
+			.select()
+			.from(buildSecrets)
+			.where(and(eq(buildSecrets.appName, appName), eq(buildSecrets.name, name)))
+			.limit(1);
+		if (!existing) {
+			const [{ value: secretCount }] = await this.db
+				.select({ value: count() })
+				.from(buildSecrets)
+				.where(eq(buildSecrets.appName, appName));
+			if (secretCount >= MAX_BUILD_SECRETS_PER_APP) {
+				return Response.json(
+					{ error: `apps are limited to ${MAX_BUILD_SECRETS_PER_APP} build secrets` },
+					{ status: 400 },
+				);
+			}
+		}
+
+		const key = await importMasterKey(master);
+		// The AAD binds the ciphertext to its row: copied to another name or
+		// app, it fails authentication instead of decrypting.
+		const ciphertext = await encryptValue(key, body.data.value, `${appName}\0${name}`);
+		const now = new Date();
+		await this.db
+			.insert(buildSecrets)
+			.values({ appName, name, ciphertext, createdAt: now, updatedAt: now })
+			.onConflictDoUpdate({
+				target: [buildSecrets.appName, buildSecrets.name],
+				set: { ciphertext, updatedAt: now },
+			});
+		return Response.json({ ok: true });
+	}
+
+	private async deleteBuildSecret(appName: string, name: string): Promise<Response> {
+		if (!appNameSchema.safeParse(appName).success) {
+			return Response.json({ error: 'invalid app name' }, { status: 400 });
+		}
+		if (!varNameSchema.safeParse(name).success) {
+			return Response.json({ error: 'invalid secret name' }, { status: 400 });
+		}
+		await this.db
+			.delete(buildSecrets)
+			.where(and(eq(buildSecrets.appName, appName), eq(buildSecrets.name, name)));
+		return Response.json({ ok: true });
+	}
+
+	/**
+	 * RPC from the worker's service-binding-only build-env route: the DECRYPTED
+	 * bundle a GitHub Actions runner exports before its build step. The console
+	 * verified the OIDC grant before dialling this; decrypted values only ever
+	 * transit the dashboard's service binding, never the operator HTTP surface.
+	 */
+	async buildEnvBundle(
+		appName: string,
+	): Promise<
+		| { vars: Record<string, string>; secrets: Record<string, string> }
+		| { error: string; status: number }
+	> {
+		if (!appNameSchema.safeParse(appName).success) {
+			return { error: 'invalid app name', status: 400 };
+		}
+		const varRows = await this.db.select().from(buildVars).where(eq(buildVars.appName, appName));
+		const vars = Object.fromEntries(varRows.map((row) => [row.name, row.value]));
+		const secretRows = await this.db
+			.select()
+			.from(buildSecrets)
+			.where(eq(buildSecrets.appName, appName));
+		if (!secretRows.length) return { vars, secrets: {} };
+
+		const master = this.env.HOSTING_MASTER_KEY;
+		if (!master) {
+			// Fail loud: a build that silently runs without its secrets is worse
+			// than one that fails attributed to configuration.
+			return {
+				error: 'build secrets exist but HOSTING_MASTER_KEY is not set on this install',
+				status: 503,
+			};
+		}
+		const key = await importMasterKey(master);
+		const secrets: Record<string, string> = {};
+		for (const row of secretRows) {
+			try {
+				secrets[row.name] = await decryptValue(key, row.ciphertext, `${row.appName}\0${row.name}`);
+			} catch (cause) {
+				Sentry.captureException(cause, {
+					tags: { operation: 'hosting-build-env', projectId: this.name },
+				});
+				return {
+					error: `build secret ${row.name} cannot be decrypted - was the master key rotated?`,
+					status: 503,
+				};
+			}
+		}
+		return { vars, secrets };
 	}
 }

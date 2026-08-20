@@ -923,6 +923,39 @@ export const hostingSecretRequestSchema = z
 	})
 	.meta({ id: 'HostingSecretRequest' });
 
+export const hostingBuildEnvSchema = z
+	.object({
+		vars: z.array(hostingVarSchema),
+		secrets: z.array(hostingSecretMetaSchema),
+		encryptionConfigured: z
+			.boolean()
+			.describe('Whether this install can store build secrets (HOSTING_MASTER_KEY is set).')
+	})
+	.meta({
+		id: 'HostingBuildEnv',
+		description:
+			"The operator view of an app's build-time environment: vars with values, secret names only - decrypted values never cross the operator surface."
+	});
+
+export const hostingBuildEnvBundleSchema = z
+	.object({
+		vars: z.record(z.string(), z.string()),
+		secrets: z.record(z.string(), z.string())
+	})
+	.meta({
+		id: 'HostingBuildEnvBundle',
+		description:
+			'The decrypted bundle a GitHub Actions runner exports before its build step. Served only to a verified OIDC bearer of the connection that owns the app.'
+	});
+
+export const hostingBuildSecretRequestSchema = z
+	.object({
+		value: z
+			.string()
+			.describe("1-5000 characters, single-line. Encrypted at rest under the install's master key.")
+	})
+	.meta({ id: 'HostingBuildSecretRequest' });
+
 // --- Storage agent (mirrors agents/storage/src/{agent,bucket,schemas}.ts) ---
 
 /** `none` closes a side to the public API entirely - operator surfaces only.

@@ -259,6 +259,18 @@ export function hostingSecretPath(projectId: string, app: string, name: string):
 	return `/api/projects/${projectId}/hosting/apps/${encodeURIComponent(app)}/secrets/${encodeURIComponent(name)}`;
 }
 
+export function hostingBuildEnvPath(projectId: string, app: string): string {
+	return `/api/projects/${projectId}/hosting/apps/${encodeURIComponent(app)}/build-env`;
+}
+
+export function hostingBuildVarsPath(projectId: string, app: string): string {
+	return `/api/projects/${projectId}/hosting/apps/${encodeURIComponent(app)}/build-vars`;
+}
+
+export function hostingBuildSecretPath(projectId: string, app: string, name: string): string {
+	return `/api/projects/${projectId}/hosting/apps/${encodeURIComponent(app)}/build-secrets/${encodeURIComponent(name)}`;
+}
+
 export function hostingTokensPath(projectId: string): string {
 	return `/api/projects/${projectId}/hosting/tokens`;
 }

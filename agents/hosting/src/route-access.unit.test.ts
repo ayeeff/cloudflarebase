@@ -54,6 +54,7 @@ test('a public Worker refuses every surface', () => {
 		'/agents/hosting-agent/p1',
 		'/internal/projects/p1',
 		'/internal/projects/p1/apps/site',
+		'/internal/projects/p1/apps/site/build-env',
 	]) {
 		assert.equal(gate(path)?.status, 404, path);
 	}
