@@ -263,12 +263,25 @@
 			if (versionsResponse.ok) {
 				const points = dbRestorePointsSchema.safeParse(await versionsResponse.json());
 				if (points.success) {
-					versions = points.data.points;
+					// Belt and braces against an agent that still lists one bookmark
+					// twice (publish + an immediate "before rollback" capture the same
+					// moment): the list is keyed by bookmark, and a duplicate key kills
+					// the whole render - which reads as the history being GONE. Keep
+					// the oldest entry (the last in this newest-first list); it carries
+					// the label the state was created under. Quadratic over a list the
+					// agent caps at 200 - and no mutable built-in for the reactivity
+					// lint to flag.
+					versions = points.data.points.filter(
+						(point, index, all) =>
+							!all.some((other, at) => at > index && other.bookmark === point.bookmark)
+					);
 					versionsSupported = points.data.supported;
 				}
-			} else {
-				versionsSupported = false;
 			}
+			// A failed versions fetch keeps whatever was on screen: "unsupported"
+			// is a fact the agent REPORTS (supported: false), never a guess made
+			// from a transient error - guessing here hid the entire history behind
+			// "recovery is not available" whenever one request hiccuped.
 		} catch {
 			error = 'could not reach the db agent';
 		} finally {

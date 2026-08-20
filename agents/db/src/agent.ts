@@ -32,6 +32,7 @@ import {
 	MAX_IMPORT_DOCS,
 	MAX_REMOTE_CONFIG_PARAMETERS,
 	MAX_RESTORE_POINTS,
+	duplicateRestorePointIds,
 	PLATFORM_SHARD_PREFIX,
 	REMOTE_CONFIG_COLUMNS,
 	REMOTE_CONFIG_TABLE,
@@ -1418,6 +1419,24 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		bookmark: string,
 		reason: string,
 	): Promise<RestorePoint> {
+		// Capturing with no writes since the last capture yields the SAME
+		// bookmark - publish, then an immediate rollback's "before rollback"
+		// capture, is the ordinary way there. One bookmark is one storage state,
+		// so it gets one row, under the label it was first captured with; a
+		// duplicate would list the same state twice and broke the version list
+		// that keys by bookmark.
+		const [existing] = await this.db
+			.select()
+			.from(restorePoints)
+			.where(and(eq(restorePoints.collection, name), eq(restorePoints.bookmark, bookmark)))
+			.limit(1);
+		if (existing) {
+			return {
+				bookmark,
+				reason: existing.reason,
+				capturedAt: existing.capturedAt.toISOString(),
+			};
+		}
 		const capturedAt = new Date();
 		await this.db.insert(restorePoints).values({ collection: name, bookmark, reason, capturedAt });
 		// Marker-list cap only - restore-by-timestamp reaches any moment in the
@@ -1489,13 +1508,23 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			.from(restorePoints)
 			.where(eq(restorePoints.collection, name))
 			.orderBy(desc(restorePoints.capturedAt), desc(restorePoints.id));
+		// Same-bookmark rows written before saveRestorePoint refused duplicates
+		// heal here, on read - the oldest row keeps the bookmark's original
+		// label, the re-captures go.
+		const duplicates = duplicateRestorePointIds(rows);
+		for (const id of duplicates) {
+			await this.db.delete(restorePoints).where(eq(restorePoints.id, id));
+		}
+		const removed = new Set(duplicates);
 		return Response.json({
 			supported: probe.ok,
-			points: rows.map((row) => ({
-				bookmark: row.bookmark,
-				reason: row.reason,
-				capturedAt: row.capturedAt.toISOString(),
-			})),
+			points: rows
+				.filter((row) => !removed.has(row.id))
+				.map((row) => ({
+					bookmark: row.bookmark,
+					reason: row.reason,
+					capturedAt: row.capturedAt.toISOString(),
+				})),
 		});
 	}
 

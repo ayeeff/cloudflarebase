@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+	duplicateRestorePointIds,
 	isPlatformShard,
 	MAX_REMOTE_CONFIG_VALUE_BYTES,
 	remoteConfigKeySchema,
@@ -131,4 +132,29 @@ test('the platform namespace is a prefix, so the next feature needs no new rule'
 	assert.equal(isPlatformShard('cfbase_notes'), false);
 	assert.equal(isPlatformShard('remote_config'), false);
 	assert.equal(isPlatformShard('todos'), false);
+});
+
+test('one bookmark keeps one restore point, under its original label', () => {
+	// Publish (id 2), then an immediate rollback captured the SAME bookmark as
+	// "before rollback" (id 3) - the flow that broke the version list. Rows
+	// arrive newest-first, as adminRestorePoints reads them.
+	const rows = [
+		{ id: 3, bookmark: 'bm-2' }, // before rollback - the duplicate
+		{ id: 2, bookmark: 'bm-2' }, // the publish that created the state
+		{ id: 1, bookmark: 'bm-1' },
+	];
+	assert.deepEqual(duplicateRestorePointIds(rows), [3]);
+
+	// No duplicates, nothing to remove - and an undo chain that re-captures an
+	// OLD bookmark loses the re-capture, not the original.
+	assert.deepEqual(duplicateRestorePointIds([{ id: 1, bookmark: 'bm-1' }]), []);
+	assert.deepEqual(
+		duplicateRestorePointIds([
+			{ id: 4, bookmark: 'bm-1' },
+			{ id: 3, bookmark: 'bm-2' },
+			{ id: 1, bookmark: 'bm-1' },
+		]),
+		[4],
+	);
+	assert.deepEqual(duplicateRestorePointIds([]), []);
 });

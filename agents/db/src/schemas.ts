@@ -777,6 +777,29 @@ export const checkpointRequestSchema = z.strictObject({
 	reason: z.string().trim().min(1).max(80).optional(),
 });
 
+/**
+ * Ids of restore-point rows that repeat an earlier row's bookmark.
+ *
+ * Capturing with no writes since the last capture yields the SAME bookmark -
+ * publish checkpoints, then an immediate "before rollback" capture, is the
+ * ordinary way to get there. Two rows for one bookmark list a single storage
+ * state twice, and the dashboard keys its version list by bookmark, so the
+ * duplicate breaks the very page it appears on. Rows arrive newest-first;
+ * the OLDEST row per bookmark is the keeper - it carries the label the state
+ * was created under (usually the publish), not the label of whatever
+ * captured it again.
+ */
+export function duplicateRestorePointIds(rows: { id: number; bookmark: string }[]): number[] {
+	const keeperByBookmark = new Map<string, number>();
+	for (const row of rows) {
+		const held = keeperByBookmark.get(row.bookmark);
+		// Autoincrement ids: the smallest id is the oldest capture.
+		if (held === undefined || row.id < held) keeperByBookmark.set(row.bookmark, row.id);
+	}
+	const keepers = new Set(keeperByBookmark.values());
+	return rows.filter((row) => !keepers.has(row.id)).map((row) => row.id);
+}
+
 export interface RestorePoint {
 	bookmark: string;
 	reason: string;
