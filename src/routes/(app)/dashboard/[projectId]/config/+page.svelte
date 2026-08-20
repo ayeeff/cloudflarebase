@@ -2,6 +2,7 @@
 	import {
 		dbRemoteConfigSchema,
 		dbRestorePointsSchema,
+		type DbRemoteConfigCondition,
 		type DbRemoteConfigParameter,
 		type DbRestorePoint
 	} from '$lib/agents';
@@ -16,15 +17,18 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import {
+		Eye,
 		History,
 		LoaderCircle,
 		Pencil,
 		Plus,
 		RotateCcw,
 		SlidersHorizontal,
+		Target,
 		Trash2,
 		Undo2,
-		Upload
+		Upload,
+		X
 	} from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
@@ -40,9 +44,13 @@
 	 * what is pending, and why Discard exists beside it.
 	 *
 	 * Nothing here configures access, because there is nothing to configure: the
-	 * parameters live in a platform-owned table closed on both sides, and RC2's
-	 * public endpoint will serve them EVALUATED - so the raw parameters never
-	 * leave the server even once clients can read their values.
+	 * parameters live in a platform-owned table closed on both sides, and the
+	 * public endpoint serves them EVALUATED - so the targeting rules never leave
+	 * the server even though clients can read the values they resolve to.
+	 *
+	 * Which is also why Preview calls that same public endpoint rather than
+	 * re-implementing the rules here. A preview that could disagree with the
+	 * real evaluation would be worse than no preview at all.
 	 */
 
 	let { data } = $props();
@@ -79,6 +87,136 @@
 	let draftValue = $state('false');
 	let draftDescription = $state('');
 	let draftError = $state('');
+
+	/**
+	 * Conditions are edited as a small form per rule rather than as JSON.
+	 * Targeting people cannot read is targeting they stop trusting, and an
+	 * untrusted flag gets hardcoded back into the app - so the editor never
+	 * shows the wire shape.
+	 */
+	type DraftCondition = {
+		label: string;
+		kind: 'country' | 'role' | 'permission' | 'appVersion' | 'rollout';
+		/** country: `DE, AT`; role: `admin, staff`; permission: one key. */
+		text: string;
+		versionGte: string;
+		versionLt: string;
+		percent: number;
+		salt: string;
+		value: string;
+	};
+	let draftConditions = $state<DraftCondition[]>([]);
+
+	const CONDITION_KINDS: { kind: DraftCondition['kind']; label: string; hint: string }[] = [
+		{ kind: 'country', label: 'Country', hint: 'Resolved at the edge - a caller cannot claim it.' },
+		{
+			kind: 'role',
+			label: 'User role',
+			hint: 'From a verified sign-in. Signed-out never matches.'
+		},
+		{
+			kind: 'permission',
+			label: 'Permission key',
+			hint: 'From a verified sign-in. Signed-out never matches.'
+		},
+		{ kind: 'appVersion', label: 'App version', hint: 'Reported by your app build.' },
+		{
+			kind: 'rollout',
+			label: 'Percentage rollout',
+			hint: 'Gradual exposure, not a lock - a client can re-roll its id. Use a role for anything that must not be reached.'
+		}
+	];
+
+	function newCondition(): DraftCondition {
+		return {
+			label: '',
+			kind: 'country',
+			text: '',
+			versionGte: '',
+			versionLt: '',
+			percent: 10,
+			salt: '',
+			value: draftType === 'boolean' ? 'true' : ''
+		};
+	}
+
+	/** Wire condition -> the form. */
+	function toDraftCondition(condition: DbRemoteConfigCondition): DraftCondition {
+		const base = newCondition();
+		base.label = condition.label ?? '';
+		base.value =
+			draftType === 'string'
+				? String(condition.value ?? '')
+				: JSON.stringify(condition.value ?? null);
+		const when = condition.when ?? {};
+		if (when.country?.length) return { ...base, kind: 'country', text: when.country.join(', ') };
+		if (when.role?.length) return { ...base, kind: 'role', text: when.role.join(', ') };
+		if (when.permission) return { ...base, kind: 'permission', text: when.permission };
+		if (when.appVersion) {
+			return {
+				...base,
+				kind: 'appVersion',
+				versionGte: when.appVersion.gte ?? '',
+				versionLt: when.appVersion.lt ?? ''
+			};
+		}
+		if (when.rollout) {
+			return { ...base, kind: 'rollout', percent: when.rollout.percent, salt: when.rollout.salt };
+		}
+		return base;
+	}
+
+	/** The form -> the wire, or a message naming what is missing. */
+	function fromDraftCondition(
+		draft: DraftCondition,
+		index: number
+	): { ok: true; condition: DbRemoteConfigCondition } | { ok: false; error: string } {
+		const where = `Condition ${index + 1}`;
+		const value = parseValue(draft.value);
+		if (!value.ok) return { ok: false, error: `${where}: ${value.error}` };
+
+		let when: DbRemoteConfigCondition['when'];
+		if (draft.kind === 'country') {
+			const codes = draft.text
+				.split(',')
+				.map((code) => code.trim().toUpperCase())
+				.filter(Boolean);
+			if (!codes.length) return { ok: false, error: `${where}: add at least one country code` };
+			if (codes.some((code) => !/^[A-Z]{2}$/.test(code))) {
+				return { ok: false, error: `${where}: use 2-letter country codes, e.g. DE` };
+			}
+			when = { country: codes };
+		} else if (draft.kind === 'role') {
+			const roles = draft.text
+				.split(',')
+				.map((role) => role.trim())
+				.filter(Boolean);
+			if (!roles.length) return { ok: false, error: `${where}: add at least one role` };
+			when = { role: roles };
+		} else if (draft.kind === 'permission') {
+			if (!draft.text.trim()) return { ok: false, error: `${where}: add a permission key` };
+			when = { permission: draft.text.trim() };
+		} else if (draft.kind === 'appVersion') {
+			const gte = draft.versionGte.trim();
+			const lt = draft.versionLt.trim();
+			if (!gte && !lt) return { ok: false, error: `${where}: set a minimum, a maximum, or both` };
+			when = { appVersion: { ...(gte ? { gte } : {}), ...(lt ? { lt } : {}) } };
+		} else {
+			if (!draft.salt.trim()) {
+				return { ok: false, error: `${where}: name the rollout so it gets its own group` };
+			}
+			when = { rollout: { percent: draft.percent, salt: draft.salt.trim() } };
+		}
+
+		return {
+			ok: true,
+			condition: {
+				...(draft.label.trim() ? { label: draft.label.trim() } : {}),
+				when,
+				value: value.value
+			}
+		};
+	}
 
 	async function load() {
 		error = '';
@@ -130,6 +268,7 @@
 		draftType = 'boolean';
 		draftValue = 'false';
 		draftDescription = '';
+		draftConditions = [];
 		draftError = '';
 		editorOpen = true;
 	}
@@ -143,6 +282,7 @@
 				? String(parameter.draftValue ?? '')
 				: JSON.stringify(parameter.draftValue ?? null);
 		draftDescription = parameter.description ?? '';
+		draftConditions = (parameter.draftConditions ?? []).map(toDraftCondition);
 		draftError = '';
 		editorOpen = true;
 	}
@@ -152,9 +292,9 @@
 	 * quoting your own strings is a papercut nobody wants - and every other type
 	 * is JSON, which is what makes `null` expressible at all.
 	 */
-	function parseDraft(): { ok: true; value: unknown } | { ok: false; error: string } {
-		if (draftType === 'string') return { ok: true, value: draftValue };
-		const text = draftValue.trim();
+	function parseValue(raw: string): { ok: true; value: unknown } | { ok: false; error: string } {
+		if (draftType === 'string') return { ok: true, value: raw };
+		const text = raw.trim();
 		if (!text) return { ok: false, error: 'a value is required' };
 		try {
 			return { ok: true, value: JSON.parse(text) as unknown };
@@ -167,6 +307,10 @@
 						: `that is not a valid ${draftType}`
 			};
 		}
+	}
+
+	function parseDraft() {
+		return parseValue(draftValue);
 	}
 
 	async function send(path: string, init: RequestInit): Promise<Record<string, unknown> | null> {
@@ -191,13 +335,27 @@
 		}
 		busy = true;
 		try {
+			const conditions: DbRemoteConfigCondition[] = [];
+			for (const [index, draft] of draftConditions.entries()) {
+				const built = fromDraftCondition(draft, index);
+				if (!built.ok) {
+					draftError = built.error;
+					return;
+				}
+				conditions.push(built.condition);
+			}
+
 			const response = await fetch(`${base}/${encodeURIComponent(draftKey.trim())}`, {
 				method: 'PUT',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
 					valueType: draftType,
 					defaultValue: parsed.value,
-					description: draftDescription.trim() || null
+					description: draftDescription.trim() || null,
+					// Always sent, never omitted: omission means "leave the rules
+					// alone", and an editor that cannot REMOVE the last rule would
+					// be a trap.
+					conditions
 				})
 			});
 			if (!response.ok) {
@@ -277,6 +435,55 @@
 		}
 	}
 
+	// --- Preview -----------------------------------------------------------
+	//
+	// The control that makes targeting trustworthy. It calls the SAME public
+	// endpoint an app calls, so what it shows is not a second implementation of
+	// the rules that could disagree with the real one - it IS the real one.
+	let previewOpen = $state(false);
+	let previewCountry = $state('');
+	let previewUid = $state('');
+	let previewVersion = $state('');
+	let previewResult = $state<Record<string, unknown> | null>(null);
+	let previewError = $state('');
+	let previewBusy = $state(false);
+
+	async function runPreview() {
+		previewBusy = true;
+		previewError = '';
+		previewResult = null;
+		try {
+			// Plain string building rather than URLSearchParams: this is used once
+			// and thrown away, and the reactivity lint rightly flags a mutable
+			// built-in held in component scope.
+			const query = [
+				previewUid.trim() ? `uid=${encodeURIComponent(previewUid.trim())}` : '',
+				previewVersion.trim() ? `appVersion=${encodeURIComponent(previewVersion.trim())}` : ''
+			]
+				.filter(Boolean)
+				.join('&');
+			const headers: Record<string, string> = {};
+			// The same test-only override the e2e stack uses; on a deployment
+			// without it set, country comes from the edge and this is ignored -
+			// which the panel says rather than pretending otherwise.
+			if (previewCountry.trim()) headers['x-cfb-country'] = previewCountry.trim().toUpperCase();
+
+			const response = await fetch(`/api/projects/${data.projectId}/db/remote-config?${query}`, {
+				headers
+			});
+			if (!response.ok) {
+				previewError = 'the preview request failed';
+				return;
+			}
+			const body = (await response.json()) as { params?: Record<string, unknown> };
+			previewResult = body.params ?? {};
+		} catch {
+			previewError = 'could not reach the config endpoint';
+		} finally {
+			previewBusy = false;
+		}
+	}
+
 	/** What clients are being served right now, as text. */
 	function shown(parameter: DbRemoteConfigParameter, which: 'draftValue' | 'publishedValue') {
 		const value = parameter[which];
@@ -306,6 +513,18 @@
 			</p>
 		</div>
 		<div class="flex shrink-0 items-center gap-2">
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={loading}
+				onclick={() => {
+					previewOpen = true;
+					void runPreview();
+				}}
+				data-testid="config-preview-open"
+			>
+				<Eye class="mr-1.5 h-3.5 w-3.5" /> Preview
+			</Button>
 			<Button
 				variant="outline"
 				size="sm"
@@ -424,6 +643,13 @@
 											<Badge variant="secondary" class="text-[10px]">edited</Badge>
 										{/if}
 									</div>
+									{#if parameter.draftConditions?.length}
+										<p class="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+											<Target class="h-3 w-3" />
+											{parameter.draftConditions.length}
+											{parameter.draftConditions.length === 1 ? 'rule' : 'rules'} before the default
+										</p>
+									{/if}
 									{#if parameter.description}
 										<p class="mt-0.5 max-w-md truncate text-xs text-muted-foreground">
 											{parameter.description}
@@ -619,6 +845,134 @@
 				</p>
 			</div>
 
+			<div class="space-y-2 border-t pt-4">
+				<div class="flex items-center justify-between">
+					<div>
+						<Label class="flex items-center gap-1.5">
+							<Target class="h-3.5 w-3.5" /> Targeting
+						</Label>
+						<p class="mt-0.5 text-xs text-muted-foreground">
+							Checked top to bottom - the first rule that matches wins, and anyone matching none
+							gets the value above.
+						</p>
+					</div>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={draftConditions.length >= 5}
+						onclick={() => (draftConditions = [...draftConditions, newCondition()])}
+						data-testid="config-add-condition"
+					>
+						<Plus class="mr-1.5 h-3.5 w-3.5" /> Add rule
+					</Button>
+				</div>
+
+				{#each draftConditions as condition, index (index)}
+					{@const meta = CONDITION_KINDS.find((entry) => entry.kind === condition.kind)}
+					<div class="space-y-2 rounded-lg border p-3" data-testid={`config-condition-${index}`}>
+						<div class="flex items-center gap-2">
+							<span class="text-xs font-medium text-muted-foreground">#{index + 1}</span>
+							<Select.Root
+								type="single"
+								value={condition.kind}
+								onValueChange={(value) => {
+									condition.kind = (value ?? 'country') as DraftCondition['kind'];
+								}}
+							>
+								<Select.Trigger
+									class="h-8 flex-1 text-xs"
+									data-testid={`config-condition-kind-${index}`}
+								>
+									{meta?.label ?? condition.kind}
+								</Select.Trigger>
+								<Select.Content>
+									{#each CONDITION_KINDS as entry (entry.kind)}
+										<Select.Item value={entry.kind} label={entry.label} />
+									{/each}
+								</Select.Content>
+							</Select.Root>
+							<Button
+								variant="ghost"
+								size="icon"
+								class="h-8 w-8"
+								aria-label={`Remove rule ${index + 1}`}
+								data-testid={`config-remove-condition-${index}`}
+								onclick={() => (draftConditions = draftConditions.filter((_, at) => at !== index))}
+							>
+								<X class="h-3.5 w-3.5" />
+							</Button>
+						</div>
+
+						{#if condition.kind === 'country'}
+							<Input
+								bind:value={condition.text}
+								placeholder="DE, AT, CH"
+								class="h-8 font-mono text-xs"
+								data-testid={`config-condition-value-${index}`}
+							/>
+						{:else if condition.kind === 'role'}
+							<Input
+								bind:value={condition.text}
+								placeholder="admin, staff"
+								class="h-8 font-mono text-xs"
+								data-testid={`config-condition-value-${index}`}
+							/>
+						{:else if condition.kind === 'permission'}
+							<Input
+								bind:value={condition.text}
+								placeholder="beta:read"
+								class="h-8 font-mono text-xs"
+								data-testid={`config-condition-value-${index}`}
+							/>
+						{:else if condition.kind === 'appVersion'}
+							<div class="flex items-center gap-2">
+								<Input
+									bind:value={condition.versionGte}
+									placeholder="from 2.1.0"
+									class="h-8 font-mono text-xs"
+								/>
+								<Input
+									bind:value={condition.versionLt}
+									placeholder="before 3.0.0"
+									class="h-8 font-mono text-xs"
+								/>
+							</div>
+						{:else}
+							<div class="flex items-center gap-2">
+								<Input
+									type="number"
+									min="1"
+									max="99"
+									bind:value={condition.percent}
+									class="h-8 w-20 font-mono text-xs"
+									data-testid={`config-condition-percent-${index}`}
+								/>
+								<span class="text-xs text-muted-foreground">% of</span>
+								<Input
+									bind:value={condition.salt}
+									placeholder="rollout name"
+									class="h-8 flex-1 font-mono text-xs"
+									data-testid={`config-condition-salt-${index}`}
+								/>
+							</div>
+						{/if}
+
+						<div class="flex items-center gap-2">
+							<span class="w-10 shrink-0 text-xs text-muted-foreground">gets</span>
+							<Input
+								bind:value={condition.value}
+								placeholder={draftType === 'boolean' ? 'true' : 'value'}
+								class="h-8 font-mono text-xs"
+								data-testid={`config-condition-result-${index}`}
+							/>
+						</div>
+						{#if meta}
+							<p class="text-xs text-muted-foreground">{meta.hint}</p>
+						{/if}
+					</div>
+				{/each}
+			</div>
+
 			{#if draftError}
 				<p class="text-sm text-destructive" data-testid="config-draft-error">{draftError}</p>
 			{/if}
@@ -678,3 +1032,91 @@
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
+
+<Dialog.Root bind:open={previewOpen}>
+	<Dialog.Content class="sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title class="flex items-center gap-2">
+				<Eye class="h-4 w-4" /> Preview a caller
+			</Dialog.Title>
+			<Dialog.Description>
+				What a given app would receive right now. This calls the same public endpoint your app
+				calls, so it cannot disagree with the real thing - which also means it shows PUBLISHED
+				values, not your drafts.
+			</Dialog.Description>
+		</Dialog.Header>
+
+		<div class="space-y-3">
+			<div class="grid grid-cols-3 gap-2">
+				<div class="space-y-1.5">
+					<Label class="text-xs" for="preview-country">Country</Label>
+					<Input
+						id="preview-country"
+						bind:value={previewCountry}
+						placeholder="DE"
+						class="font-mono"
+						data-testid="config-preview-country"
+					/>
+				</div>
+				<div class="space-y-1.5">
+					<Label class="text-xs" for="preview-uid">User / install id</Label>
+					<Input
+						id="preview-uid"
+						bind:value={previewUid}
+						placeholder="user-42"
+						class="font-mono"
+						data-testid="config-preview-uid"
+					/>
+				</div>
+				<div class="space-y-1.5">
+					<Label class="text-xs" for="preview-version">App version</Label>
+					<Input
+						id="preview-version"
+						bind:value={previewVersion}
+						placeholder="2.1.0"
+						class="font-mono"
+						data-testid="config-preview-version"
+					/>
+				</div>
+			</div>
+			<p class="text-xs text-muted-foreground">
+				Role and permission rules follow the signed-in user's token, so they cannot be previewed
+				from here - sign in as that user in your app to see them. Country preview works on local
+				development; on a deployment the real caller's country always wins.
+			</p>
+
+			<Button
+				size="sm"
+				onclick={runPreview}
+				disabled={previewBusy}
+				data-testid="config-preview-run"
+			>
+				{#if previewBusy}<LoaderCircle class="mr-1.5 h-3.5 w-3.5 animate-spin" />{/if}
+				Evaluate
+			</Button>
+
+			{#if previewError}
+				<p class="text-sm text-destructive">{previewError}</p>
+			{:else if previewResult}
+				{#if Object.keys(previewResult).length === 0}
+					<p class="text-sm text-muted-foreground" data-testid="config-preview-empty">
+						Nothing published yet - this caller receives an empty config.
+					</p>
+				{:else}
+					<div class="rounded-lg border" data-testid="config-preview-result">
+						{#each Object.entries(previewResult) as [key, value] (key)}
+							<div
+								class="flex items-center justify-between gap-3 border-b px-3 py-1.5 last:border-b-0"
+							>
+								<span class="font-mono text-xs">{key}</span>
+								<span class="truncate font-mono text-xs text-muted-foreground">
+									{JSON.stringify(value)}
+								</span>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			{/if}
+		</div>
+	</Dialog.Content>
+</Dialog.Root>

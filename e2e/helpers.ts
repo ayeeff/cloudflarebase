@@ -131,6 +131,16 @@ export function authPage(projectId: string): string {
  */
 export const DB_PROJECT = 'e2e-db';
 
+/**
+ * Remote Config's PUBLIC spec gets a project of its own.
+ *
+ * It shares nothing with the operator spec on purpose: that one has a teardown
+ * test that drops the whole parameter table, and files run in parallel - so
+ * sharing a project meant the public spec occasionally read a config that had
+ * just been deleted out from under it. Two projects, no coordination needed.
+ */
+export const CONFIG_PROJECT = 'e2e-config';
+
 export function dbAdminCollectionPath(projectId: string, name: string): string {
 	return `/api/projects/${projectId}/db/admin/collections/${encodeURIComponent(name)}`;
 }

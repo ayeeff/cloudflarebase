@@ -42,6 +42,7 @@ import {
 	remoteConfigValueIssue,
 	remoteConfigPending,
 	remoteConfigStateSchema,
+	storedConditionsSchema,
 	remoteConfigValueTypeSchema,
 	type AccessMode,
 	type BookmarkOutcome,
@@ -61,6 +62,8 @@ import {
 	type ViewStatus,
 } from './schemas';
 import { drainUnusedBody } from './access';
+import type { EvaluableParameter } from './remote-config';
+import { ProjectJwtVerifier } from './jwt';
 import { primaryLocation, type PrimaryLocation } from './colo';
 
 /** The persisted form of the coordinator's location: the probe result plus
@@ -869,13 +872,23 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		const state = remoteConfigStateSchema.catch('published').parse(data.state);
 		const draftValue = data.draft_value ?? null;
 		const publishedValue = data.published_value ?? null;
+		const draftConditions = storedConditionsSchema.parse(data.draft_conditions ?? null);
+		const publishedConditions = storedConditionsSchema.parse(data.published_conditions ?? null);
 		return {
 			key: row.id,
 			valueType: remoteConfigValueTypeSchema.catch('json').parse(data.value_type),
 			draftValue,
 			publishedValue,
+			draftConditions,
+			publishedConditions,
 			state,
-			pending: remoteConfigPending({ state, draftValue, publishedValue }),
+			pending: remoteConfigPending({
+				state,
+				draftValue,
+				publishedValue,
+				draftConditions,
+				publishedConditions,
+			}),
 			description: typeof data.description === 'string' ? data.description : null,
 			updatedBy: typeof data.updated_by === 'string' ? data.updated_by : null,
 			updatedAt: row.updatedAt,
@@ -888,6 +901,66 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			limit: MAX_REMOTE_CONFIG_PARAMETERS,
 		})) as unknown as { docs: DbRow[] };
 		return docs;
+	}
+
+	/**
+	 * The published parameters, for the worker to evaluate against a caller.
+	 *
+	 * An RPC method rather than a route, deliberately: this returns the raw
+	 * targeting rules, and RPC is not reachable from outside the worker at all -
+	 * there is no URL to leave undeclared, no route table to get wrong, and no
+	 * gate to forget. The worker caches THIS (one entry per project) and does the
+	 * per-caller evaluation itself, so a cohort never becomes a cache key.
+	 *
+	 * Drafts are excluded here, not filtered later: what is not published cannot
+	 * reach a client even through a bug downstream.
+	 */
+	/**
+	 * Verify a project JWT and hand back the claims Remote Config targets on.
+	 *
+	 * The verifier needs Durable Object storage for its JWKS cache, so it cannot
+	 * live in the stateless worker - hence an RPC. Returns null for anything that
+	 * does not verify, including an unconfigured project: Remote Config never
+	 * REQUIRES a token, so a bad one makes a caller anonymous rather than an
+	 * error. It must never make them privileged, which is why only a verified
+	 * result contributes role and permissions at all.
+	 */
+	async verifyProjectToken(
+		token: string,
+	): Promise<{ sub: string; role: string | null; permissions: string[] } | null> {
+		if (!this.remoteConfigVerifier) {
+			this.remoteConfigVerifier = new ProjectJwtVerifier(
+				this.ctx.storage,
+				this.env as { AUTH_AGENT?: Fetcher },
+				this.name,
+			);
+		}
+		const result = await this.remoteConfigVerifier.verify(token);
+		if (!result.ok) return null;
+		return {
+			sub: result.claims.sub,
+			role: result.claims.role ?? null,
+			permissions: result.claims.permissions ?? [],
+		};
+	}
+
+	private remoteConfigVerifier: ProjectJwtVerifier | null = null;
+
+	async remoteConfigPublished(): Promise<EvaluableParameter[]> {
+		if (!(await this.tableRow(REMOTE_CONFIG_TABLE))) return [];
+		const published: EvaluableParameter[] = [];
+		for (const row of await this.remoteConfigRows()) {
+			const data = row.data as Record<string, unknown>;
+			// `deleting` is still live until the publish that removes it.
+			if (data.state === 'draft') continue;
+			published.push({
+				key: row.id,
+				valueType: remoteConfigValueTypeSchema.catch('json').parse(data.value_type),
+				value: data.published_value ?? null,
+				conditions: storedConditionsSchema.parse(data.published_conditions ?? null),
+			});
+		}
+		return published;
 	}
 
 	private async remoteConfigList(): Promise<Response> {
@@ -923,6 +996,19 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		const issue = remoteConfigValueIssue(body.data.valueType, body.data.defaultValue);
 		if (issue) return Response.json({ error: issue }, { status: 400 });
 
+		// A condition's override is a value for this parameter, so it answers to
+		// the declared type exactly like the default does. Checking it here is
+		// what stops a boolean flag resolving to the string "yes" for one cohort.
+		for (const [index, condition] of (body.data.conditions ?? []).entries()) {
+			const conditionIssue = remoteConfigValueIssue(body.data.valueType, condition.value);
+			if (conditionIssue) {
+				return Response.json(
+					{ error: `condition ${index + 1}: ${conditionIssue}` },
+					{ status: 400 },
+				);
+			}
+		}
+
 		await this.ensureRemoteConfigTable();
 		const child = this.tableStub(REMOTE_CONFIG_TABLE);
 
@@ -951,10 +1037,19 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				value_type: body.data.valueType,
 				draft_value: body.data.defaultValue ?? null,
 				published_value: previous?.published_value ?? null,
+				// Three-state, like every other config field in this agent:
+				// omitted leaves the drafted rules alone, null clears them.
+				draft_conditions:
+					body.data.conditions === undefined
+						? (previous?.draft_conditions ?? null)
+						: (body.data.conditions ?? null),
+				published_conditions: previous?.published_conditions ?? null,
 				// An edit to a parameter marked for deletion revives it: the
 				// operator is plainly no longer removing it.
 				state: previous && previous.state !== 'draft' ? 'published' : 'draft',
 				description: body.data.description ?? null,
+				// Resolved by the console guard from the session, never read off
+				// the caller's own request - see the db admin proxy.
 				updated_by: request.headers.get('cfb-operator') ?? null,
 			},
 			false,
@@ -1031,7 +1126,12 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			if (!parameter.pending) continue;
 			await child.adminPut(
 				row.id,
-				{ ...data, published_value: data.draft_value ?? null, state: 'published' },
+				{
+					...data,
+					published_value: data.draft_value ?? null,
+					published_conditions: data.draft_conditions ?? null,
+					state: 'published',
+				},
 				false,
 			);
 			published++;
@@ -1087,7 +1187,12 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			} else {
 				await child.adminPut(
 					row.id,
-					{ ...data, draft_value: data.published_value ?? null, state: 'published' },
+					{
+						...data,
+						draft_value: data.published_value ?? null,
+						draft_conditions: data.published_conditions ?? null,
+						state: 'published',
+					},
 					false,
 				);
 			}

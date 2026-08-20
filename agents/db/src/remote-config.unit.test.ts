@@ -24,12 +24,34 @@ test('the declared columns are a valid table schema', () => {
 	const columns = tableColumnsSchema.parse(REMOTE_CONFIG_COLUMNS);
 	assert.deepEqual(
 		columns.map((column) => column.name),
-		['value_type', 'draft_value', 'published_value', 'state', 'description', 'updated_by'],
+		[
+			'value_type',
+			'draft_value',
+			'published_value',
+			'draft_conditions',
+			'published_conditions',
+			'state',
+			'description',
+			'updated_by',
+		],
 	);
-	// The two value columns must be json: a config value is any JSON, and a
-	// scalar column would quietly reject an object default.
-	assert.equal(columns.find((column) => column.name === 'draft_value')?.type, 'json');
-	assert.equal(columns.find((column) => column.name === 'published_value')?.type, 'json');
+	// Every value and rule column must be json: a config value is any JSON, and
+	// a scalar column would quietly reject an object default.
+	for (const name of [
+		'draft_value',
+		'published_value',
+		'draft_conditions',
+		'published_conditions',
+	]) {
+		assert.equal(columns.find((column) => column.name === name)?.type, 'json', name);
+	}
+	// The draft/published pairs must be NULLABLE, which is what lets the DDL
+	// planner add them to a table an earlier version already created - a project
+	// provisioned before targeting existed gains them on next touch rather than
+	// needing a migration nobody can run.
+	for (const name of ['draft_conditions', 'published_conditions']) {
+		assert.equal(columns.find((column) => column.name === name)?.nullable, true, name);
+	}
 });
 
 test('values are checked against their declared type', () => {

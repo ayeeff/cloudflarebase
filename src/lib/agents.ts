@@ -535,6 +535,33 @@ export const dbRemoteConfigValueTypeSchema = z.enum(['string', 'number', 'boolea
 /** Editing is a draft; publishing is what reaches clients. */
 export const dbRemoteConfigStateSchema = z.enum(['draft', 'published', 'deleting']);
 
+/**
+ * One targeting rule. Every field present must match; a field listing values
+ * matches if any do. Conditions are an ordered list and the FIRST match wins -
+ * there is no priority field and no else.
+ *
+ * `country` is resolved at the edge and cannot be claimed by a caller; `role`
+ * and `permission` come from a verified project JWT; `appVersion` is
+ * client-reported; `rollout` buckets by uid and is advisory, not an
+ * entitlement. Mirrors agents/db/src/schemas.ts.
+ */
+export const dbRemoteConfigConditionSchema = z
+	.object({
+		label: z.string().max(60).optional(),
+		when: z.object({
+			country: z.array(z.string()).optional(),
+			role: z.array(z.string()).optional(),
+			permission: z.string().optional(),
+			appVersion: z.object({ gte: z.string().optional(), lt: z.string().optional() }).optional(),
+			rollout: z.object({ percent: z.number().int(), salt: z.string() }).optional()
+		}),
+		value: z.unknown()
+	})
+	.meta({
+		id: 'DbRemoteConfigCondition',
+		description: 'An ordered override. First match wins; no match yields the default.'
+	});
+
 export const dbRemoteConfigParameterSchema = z
 	.object({
 		key: z.string(),
@@ -543,6 +570,9 @@ export const dbRemoteConfigParameterSchema = z
 		draftValue: z.unknown(),
 		/** What clients get right now; null until first published. */
 		publishedValue: z.unknown(),
+		/** Targeting, drafted and published in step with the values. */
+		draftConditions: z.array(dbRemoteConfigConditionSchema).nullable().catch(null),
+		publishedConditions: z.array(dbRemoteConfigConditionSchema).nullable().catch(null),
 		state: dbRemoteConfigStateSchema.catch('published'),
 		/** Differs from what clients are being served. */
 		pending: z.boolean(),
@@ -559,11 +589,25 @@ export const dbRemoteConfigParameterInputSchema = z
 	.object({
 		valueType: dbRemoteConfigValueTypeSchema,
 		defaultValue: z.unknown(),
-		description: z.string().max(200).nullable().optional()
+		description: z.string().max(200).nullable().optional(),
+		/** Omitted leaves the drafted rules alone; null clears them. */
+		conditions: z.array(dbRemoteConfigConditionSchema).nullable().optional()
 	})
 	.meta({
 		id: 'DbRemoteConfigParameterInput',
 		description: 'A parameter to store as a draft. Nothing reaches clients until publish.'
+	});
+
+/** The PUBLIC endpoint's answer: resolved values, and nothing else. */
+export const dbRemoteConfigResolvedSchema = z
+	.object({
+		params: z.record(z.string(), z.unknown()),
+		fetchedAt: z.iso.datetime()
+	})
+	.meta({
+		id: 'DbRemoteConfigResolved',
+		description:
+			'Evaluated Remote Config for the calling app. Values only - the rules that produced them never leave the server.'
 	});
 
 export const dbRemoteConfigSchema = z
@@ -974,6 +1018,7 @@ export type DbRestoreResult = z.infer<typeof dbRestoreResultSchema>;
 export type DbRestorePoint = z.infer<typeof dbRestorePointSchema>;
 export type DbRemoteConfigParameter = z.infer<typeof dbRemoteConfigParameterSchema>;
 export type DbRemoteConfig = z.infer<typeof dbRemoteConfigSchema>;
+export type DbRemoteConfigCondition = z.infer<typeof dbRemoteConfigConditionSchema>;
 export type DbRestorePoints = z.infer<typeof dbRestorePointsSchema>;
 export type DbReplicationMode = z.infer<typeof dbReplicationModeSchema>;
 export type DbReplica = z.infer<typeof dbReplicaSchema>;

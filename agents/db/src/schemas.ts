@@ -995,8 +995,91 @@ export const remoteConfigParameterInputSchema = z.strictObject({
 	defaultValue: z.unknown(),
 	/** Shown in the console beside the key; never sent to clients. */
 	description: z.string().trim().max(200).nullable().optional(),
+	/** Ordered overrides; omitted leaves them unchanged, null clears them -
+	 * the three-state rule the shard config schemas already use. */
+	conditions: z
+		.array(z.lazy(() => remoteConfigConditionSchema))
+		.max(5)
+		.nullable()
+		.optional(),
 });
 export type RemoteConfigParameterInput = z.infer<typeof remoteConfigParameterInputSchema>;
+
+// --- Targeting (RC2) -------------------------------------------------------
+
+/**
+ * ISO 3166-1 alpha-2, as `request.cf.country` reports it. Uppercase only, so a
+ * rule cannot silently fail to match because someone typed `de`.
+ */
+const countryCodeSchema = z.string().regex(/^[A-Z]{2}$/, 'use an uppercase 2-letter country code');
+
+/** `1.2.3`, `2.0`, or `4` - what an app actually reports as its version. */
+export const appVersionSchema = z.string().regex(/^\d{1,6}(\.\d{1,6}){0,3}$/);
+
+export const MAX_REMOTE_CONFIG_CONDITIONS = 5;
+
+/**
+ * One targeting predicate. Every field present must match (AND); a field
+ * listing values matches if any of them do (OR within the field).
+ *
+ * Four predicates and no more, chosen by what the edge can establish rather
+ * than by what would look complete on a feature list:
+ *
+ * - `country` comes from `request.cf` and the client never supplies it, so it
+ *   is the only one an end user cannot influence at all.
+ * - `role` and `permission` come from a VERIFIED project JWT. No token means
+ *   they simply do not match - never a match by default.
+ * - `appVersion` is client-reported, and honestly so: it targets a build, and
+ *   a build that lies about its version is one you shipped.
+ * - `rollout` buckets a caller by `uid`. Advisory by construction (see
+ *   `rolloutBucket`), which is why the console says so next to the control.
+ *
+ * The absence of an `else`/priority language is deliberate: conditions are an
+ * ordered list and the FIRST match wins, which is the whole evaluation rule.
+ */
+export const remoteConfigConditionSchema = z.strictObject({
+	/** Shown in the console so a rule reads as something other than JSON. */
+	label: z.string().trim().max(60).optional(),
+	when: z
+		.strictObject({
+			country: z.array(countryCodeSchema).min(1).max(20).optional(),
+			role: z.array(z.string().trim().min(1).max(64)).min(1).max(10).optional(),
+			permission: permissionKeySchema.optional(),
+			appVersion: z
+				.strictObject({
+					gte: appVersionSchema.optional(),
+					lt: appVersionSchema.optional(),
+				})
+				.refine(
+					(range) => range.gte !== undefined || range.lt !== undefined,
+					'an appVersion rule needs gte, lt, or both',
+				)
+				.optional(),
+			rollout: z
+				.strictObject({
+					/** 1-99: 0 and 100 are a rule that should just be deleted or
+					 * made the default, and accepting them invites both. */
+					percent: z.number().int().min(1).max(99),
+					/** Two 10% rollouts with different salts hit DIFFERENT tenths -
+					 * without it every rollout targets the same unlucky cohort. */
+					salt: z.string().trim().min(1).max(64),
+				})
+				.optional(),
+		})
+		.refine(
+			(when) => Object.keys(when).length > 0,
+			'a condition needs at least one rule, or it matches everyone',
+		),
+	value: z.unknown(),
+});
+export type RemoteConfigCondition = z.infer<typeof remoteConfigConditionSchema>;
+
+/** Parses what came back out of the json column; unreadable = no targeting. */
+export const storedConditionsSchema = z
+	.array(remoteConfigConditionSchema)
+	.max(MAX_REMOTE_CONFIG_CONDITIONS)
+	.nullable()
+	.catch(null);
 
 /** Null when the value fits its declared type, else the operator-facing why. */
 export function remoteConfigValueIssue(type: RemoteConfigValueType, value: unknown): string | null {
@@ -1064,8 +1147,13 @@ export const REMOTE_CONFIG_COLUMNS = [
 	},
 	/** What the console edits. */
 	{ name: 'draft_value', type: 'json', nullable: true },
-	/** What clients get - RC2's endpoint reads THIS column and never the draft. */
+	/** What clients get - the public endpoint reads THIS column, never the draft. */
 	{ name: 'published_value', type: 'json', nullable: true },
+	/** Targeting rules, drafted and published in step with the values they
+	 * override. Added in RC2 as nullable columns, which the DDL planner applies
+	 * to a live table - a project provisioned by RC1 gains them on next touch. */
+	{ name: 'draft_conditions', type: 'json', nullable: true },
+	{ name: 'published_conditions', type: 'json', nullable: true },
 	{
 		name: 'state',
 		type: 'text',
@@ -1086,6 +1174,9 @@ export interface RemoteConfigParameter {
 	draftValue: unknown;
 	/** What clients currently get; null until first published. */
 	publishedValue: unknown;
+	/** Targeting, drafted and published in step with the values. */
+	draftConditions: RemoteConfigCondition[] | null;
+	publishedConditions: RemoteConfigCondition[] | null;
 	state: RemoteConfigState;
 	/** Whether this parameter differs from what clients are being served. */
 	pending: boolean;
@@ -1094,15 +1185,25 @@ export interface RemoteConfigParameter {
 	updatedAt: string;
 }
 
-/** Whether a parameter is not yet what clients are being served. */
+/** Whether a parameter is not yet what clients are being served - value AND
+ * targeting, since a changed rule changes what someone receives just as much as
+ * a changed value does. */
 export function remoteConfigPending(parameter: {
 	state: RemoteConfigState;
 	draftValue: unknown;
 	publishedValue: unknown;
+	draftConditions?: unknown;
+	publishedConditions?: unknown;
 }): boolean {
 	if (parameter.state !== 'published') return true;
-	return (
+	if (
 		JSON.stringify(parameter.draftValue ?? null) !==
 		JSON.stringify(parameter.publishedValue ?? null)
+	) {
+		return true;
+	}
+	return (
+		JSON.stringify(parameter.draftConditions ?? null) !==
+		JSON.stringify(parameter.publishedConditions ?? null)
 	);
 }

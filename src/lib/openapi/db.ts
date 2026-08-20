@@ -12,8 +12,10 @@ import {
 	dbQuerySchema,
 	dbReplicaSchema,
 	dbReplicationStatusSchema,
+	dbRemoteConfigConditionSchema,
 	dbRemoteConfigParameterInputSchema,
 	dbRemoteConfigParameterSchema,
+	dbRemoteConfigResolvedSchema,
 	dbRemoteConfigSchema,
 	dbRestorePointSchema,
 	dbRestorePointsSchema,
@@ -113,8 +115,10 @@ export const dbOpenApi: AgentOpenApiModule = {
 		dbRestoreResultSchema,
 		dbRestorePointSchema,
 		dbRestorePointsSchema,
+		dbRemoteConfigConditionSchema,
 		dbRemoteConfigParameterInputSchema,
 		dbRemoteConfigParameterSchema,
+		dbRemoteConfigResolvedSchema,
 		dbRemoteConfigSchema,
 		dbReplicaSchema,
 		dbReplicationStatusSchema,
@@ -521,6 +525,51 @@ export const dbOpenApi: AgentOpenApiModule = {
 					'401': UNAUTHORIZED,
 					'404': { description: 'No such collection.' },
 					'501': { description: 'This environment has no point-in-time recovery.' }
+				}
+			}
+		},
+		'/db/remote-config': {
+			get: {
+				tags: [DB_TAG],
+				summary: 'Fetch evaluated Remote Config',
+				description: [
+					'The values THIS caller resolves to, with targeting applied server-side.',
+					'',
+					'No authentication required, by design: config has to resolve on a logged-out first',
+					'run, which is the moment it exists for. A project JWT is READ when present -',
+					'`role` and `permission` rules match on its claims - but never demanded, and an',
+					'invalid one makes the caller anonymous rather than an error.',
+					'',
+					'The response is resolved values ONLY. Which cohorts exist, what the rollout',
+					'percentages are, and which flags are aimed at internal roles never leave the',
+					'server - that is why evaluation happens here instead of in the client.',
+					'',
+					'Country comes from the edge and cannot be supplied by the caller. Send `uid` for',
+					'stable percentage rollouts (the signed-in subject is used when there is a token)',
+					'and `appVersion` to match version rules. Honour the `ETag`: repeat fetches with',
+					'`If-None-Match` answer 304.'
+				].join('\n'),
+				security: PUBLIC_SECURITY,
+				parameters: [
+					{
+						name: 'uid',
+						in: 'query',
+						required: false,
+						schema: { type: 'string' },
+						description:
+							'Stable per-install id for percentage rollouts. Ignored when a token is sent (the subject wins). Advisory - a rollout is not an entitlement.'
+					},
+					{
+						name: 'appVersion',
+						in: 'query',
+						required: false,
+						schema: { type: 'string', example: '2.1.0' },
+						description: 'Client build version, for appVersion rules.'
+					}
+				],
+				responses: {
+					'200': jsonResponse(dbRemoteConfigResolvedSchema, 'The values for this caller.'),
+					'304': { description: 'Unchanged since the ETag you sent.' }
 				}
 			}
 		},

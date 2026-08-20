@@ -32,6 +32,7 @@
 		{ "path": "/views/*", "access": "public" },
 		{ "path": "/realtime", "access": "public" },
 		{ "path": "/config", "access": "public" },
+		{ "path": "/remote-config", "access": "public" },
 		{ "path": "/overview", "access": "operator" },
 		{ "path": "/admin/*", "access": "operator" }
 	],

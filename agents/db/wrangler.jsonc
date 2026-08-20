@@ -296,6 +296,10 @@
 				// (24k sockets, 60s TTL).
 				"SIBLING_SPAWN_SOCKETS": "2",
 				"SIBLING_ROUTING_TTL_MS": "250",
+				// No Remote Config edge cache under test: the publish propagation
+				// window is a real product property, but a spec that publishes and
+				// then reads must see its own write, not a 30-second-old answer.
+				"REMOTE_CONFIG_CACHE_SECONDS": "0",
 			},
 
 			"analytics_engine_datasets": [
