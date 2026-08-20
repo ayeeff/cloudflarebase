@@ -160,15 +160,18 @@ These are expensive to rediscover.
 
 ## Releasing
 
-Deploy the agent workers **by hand before pushing**. Workers Builds races the
-service binding: a pushed commit can rebuild the dashboard against an agent that
-has not deployed yet.
+Releases ride CI, not hands. Bump the changed packages' `package.json`
+versions in the release commit — the release workflow treats the npm registry
+as the ledger and publishes any package whose local version is not on it; an
+unbumped version merges to main and publishes nothing. Workers deploy through
+Workers Builds on push: `preview` builds the preview stack, `main` builds
+production.
 
-```bash
-npm run deploy:all    # auth, db, storage, hosting, then the dashboard
-```
+Push `preview`, verify against the preview stack, then merge to `main`.
 
-Then push `preview`, verify, and merge to `main`.
+New **required secrets** are the one thing CI cannot mint: set them on the
+target workers (dashboard or `wrangler secret put`) BEFORE pushing a commit
+whose wrangler config requires them, or the deploy fails.
 
 ## Commits
 
