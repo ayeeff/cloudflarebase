@@ -71,9 +71,16 @@
 			},
 			{
 				"path": "/config",
-				"title": "Remote Config",
+				"title": "Parameters",
 				"testId": "nav-remote-config",
 				"icon": "sliders-horizontal",
+				"section": "Remote Config"
+			},
+			{
+				"path": "/config/integration",
+				"title": "Integration",
+				"testId": "nav-config-integration",
+				"icon": "plug",
 				"section": "Remote Config"
 			}
 		]

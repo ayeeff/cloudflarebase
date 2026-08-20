@@ -148,6 +148,19 @@ test.describe('remote config', () => {
 		expect(events.some((event) => event.type === 'remote-config.changed')).toBeTruthy();
 	});
 
+	test('the integration page SSRs its snippets, and unknown tools 404', async ({ request }) => {
+		// Code samples are SSR'd, so a plain GET proves the page and its snippets.
+		const integration = await request.get(`/dashboard/${DB_PROJECT}/config/integration`);
+		expect(integration.status()).toBe(200);
+		const html = await integration.text();
+		expect(html).toContain('config-integration');
+		expect(html).toContain(`/api/projects/${DB_PROJECT}/db/remote-config`);
+
+		// Anything else under /config/<x> is a 404, never an empty workspace.
+		const unknown = await request.get(`/dashboard/${DB_PROJECT}/config/nope`);
+		expect(unknown.status()).toBe(404);
+	});
+
 	test('discard puts every draft back to what is being served', async ({ request }) => {
 		const kept = key('kept');
 		const invented = key('invented');

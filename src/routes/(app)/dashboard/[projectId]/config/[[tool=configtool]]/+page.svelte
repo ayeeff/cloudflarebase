@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { page } from '$app/state';
+	import { buildConsoleNav } from '$lib/agent-registry';
 	import {
 		dbRemoteConfigSchema,
 		dbRestorePointsSchema,
@@ -6,6 +8,9 @@
 		type DbRemoteConfigParameter,
 		type DbRestorePoint
 	} from '$lib/agents';
+	import CodeExamples from '$lib/components/code-examples.svelte';
+	import ToolTabs from '$lib/components/tool-tabs.svelte';
+	import { buildRemoteConfigIntegrationExamples } from '$lib/integration-examples';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -30,7 +35,6 @@
 		Upload,
 		X
 	} from '@lucide/svelte';
-	import { onMount } from 'svelte';
 
 	/**
 	 * Remote Config - server-controlled parameters an app reads at startup:
@@ -59,6 +63,18 @@
 	type ValueType = (typeof VALUE_TYPES)[number];
 
 	const base = $derived(`/api/projects/${data.projectId}/db/admin/remote-config`);
+
+	// Page-per-tool like the db workspace: /config is the parameter editor,
+	// /config/integration shows how an app reads the values.
+	const activeTab = $derived(page.params.tool ?? 'parameters');
+	const toolTabs = $derived(
+		buildConsoleNav(data.projectId)
+			.flatMap((section) => section.items)
+			.filter((item) => item.href.startsWith(`/dashboard/${data.projectId}/config`))
+	);
+	// page.url.origin is SSR-safe, so the snippets render without a flash.
+	const dbBase = $derived(`${page.url.origin}/api/projects/${data.projectId}/db`);
+	const snippets = $derived(buildRemoteConfigIntegrationExamples(dbBase));
 
 	let parameters = $state<DbRemoteConfigParameter[]>([]);
 	let pendingChanges = $state(0);
@@ -260,7 +276,16 @@
 		}
 	}
 
-	onMount(load);
+	// Loaded once, and only when the editor is what's open: the first GET is
+	// what lazily provisions the parameter table, and reading code samples must
+	// not create a shard. Not onMount - the two tools share this component, so
+	// landing on /config/integration and clicking over must still load.
+	let editorLoaded = false;
+	$effect(() => {
+		if (activeTab === 'integration' || editorLoaded) return;
+		editorLoaded = true;
+		void load();
+	});
 
 	function openNew() {
 		editingKey = '';
@@ -504,244 +529,282 @@
 </svelte:head>
 
 <div class="mx-auto max-w-6xl space-y-6 px-3 py-5 sm:space-y-8 sm:px-6 sm:py-8">
-	<div class="flex flex-wrap items-start justify-between gap-4">
+	<ToolTabs items={toolTabs} />
+
+	{#if activeTab === 'integration'}
 		<div>
-			<h1 class="text-2xl font-semibold">Remote Config</h1>
+			<h1 class="text-2xl font-semibold">Integration</h1>
 			<p class="mt-1 max-w-2xl text-sm text-muted-foreground">
-				Values your app reads at startup - feature flags, kill switches, limits - changed from here
-				without shipping a release. Edits are a draft until you publish.
+				Read these values from your app - the client SDK, plain REST, or cURL. Evaluated per caller,
+				revalidated with ETags.
 			</p>
 		</div>
-		<div class="flex shrink-0 items-center gap-2">
-			<Button
-				variant="outline"
-				size="sm"
-				disabled={loading}
-				onclick={() => {
-					previewOpen = true;
-					void runPreview();
-				}}
-				data-testid="config-preview-open"
+
+		<Card.Root data-testid="config-integration">
+			<Card.Header>
+				<Card.Title>Read config in your app</Card.Title>
+				<Card.Description>
+					One public endpoint, answering values already evaluated for the caller - the targeting
+					rules never leave the server. Ship defaults so the app renders before the first fetch
+					answers, and keeps working if it never does.
+				</Card.Description>
+			</Card.Header>
+			<Card.Content class="space-y-5">
+				<div>
+					<Label>Config endpoint</Label><code
+						class="mt-2 block overflow-x-auto rounded-lg border bg-muted/50 p-3 text-xs"
+						>{dbBase}/remote-config</code
+					>
+				</div>
+				<CodeExamples examples={snippets} />
+				<p class="text-xs text-muted-foreground">
+					Role and permission rules follow the project JWT the caller sends; anonymous callers never
+					match them. Percentage rollouts key on the signed-in user id, or on
+					<code class="font-mono">uid</code> - generate one per install and persist it, or the same user
+					re-rolls their bucket on every launch.
+				</p>
+			</Card.Content>
+		</Card.Root>
+	{:else}
+		<div class="flex flex-wrap items-start justify-between gap-4">
+			<div>
+				<h1 class="text-2xl font-semibold">Remote Config</h1>
+				<p class="mt-1 max-w-2xl text-sm text-muted-foreground">
+					Values your app reads at startup - feature flags, kill switches, limits - changed from
+					here without shipping a release. Edits are a draft until you publish.
+				</p>
+			</div>
+			<div class="flex shrink-0 items-center gap-2">
+				<Button
+					variant="outline"
+					size="sm"
+					disabled={loading}
+					onclick={() => {
+						previewOpen = true;
+						void runPreview();
+					}}
+					data-testid="config-preview-open"
+				>
+					<Eye class="mr-1.5 h-3.5 w-3.5" /> Preview
+				</Button>
+				<Button
+					variant="outline"
+					size="sm"
+					disabled={busy || loading || pendingChanges === 0}
+					onclick={() => (confirmDiscard = true)}
+					data-testid="config-discard"
+				>
+					<Undo2 class="mr-1.5 h-3.5 w-3.5" /> Discard
+				</Button>
+				<Button
+					size="sm"
+					disabled={busy || loading || pendingChanges === 0}
+					onclick={publish}
+					data-testid="config-publish"
+				>
+					{#if busy}
+						<LoaderCircle class="mr-1.5 h-3.5 w-3.5 animate-spin" />
+					{:else}
+						<Upload class="mr-1.5 h-3.5 w-3.5" />
+					{/if}
+					Publish changes
+				</Button>
+			</div>
+		</div>
+
+		{#if pendingChanges > 0}
+			<div
+				class="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
+				data-testid="config-pending-banner"
 			>
-				<Eye class="mr-1.5 h-3.5 w-3.5" /> Preview
-			</Button>
-			<Button
-				variant="outline"
-				size="sm"
-				disabled={busy || loading || pendingChanges === 0}
-				onclick={() => (confirmDiscard = true)}
-				data-testid="config-discard"
-			>
-				<Undo2 class="mr-1.5 h-3.5 w-3.5" /> Discard
-			</Button>
-			<Button
-				size="sm"
-				disabled={busy || loading || pendingChanges === 0}
-				onclick={publish}
-				data-testid="config-publish"
-			>
-				{#if busy}
-					<LoaderCircle class="mr-1.5 h-3.5 w-3.5 animate-spin" />
+				<span class="font-medium">
+					{pendingChanges}
+					{pendingChanges === 1 ? 'change' : 'changes'} not published yet.
+				</span>
+				<span class="text-muted-foreground">
+					Clients still get the last published values until you publish.
+				</span>
+			</div>
+		{/if}
+
+		{#if error}
+			<p class="text-sm text-destructive" data-testid="config-error">{error}</p>
+		{/if}
+		{#if notice}
+			<p class="text-sm text-muted-foreground" data-testid="config-notice">{notice}</p>
+		{/if}
+
+		<Card.Root>
+			<Card.Header class="flex flex-row items-start justify-between gap-4 space-y-0">
+				<div class="space-y-1.5">
+					<Card.Title class="flex items-center gap-2">
+						<SlidersHorizontal class="h-4 w-4 text-primary" /> Parameters
+					</Card.Title>
+					<Card.Description>
+						{#if loading}
+							Loading…
+						{:else}
+							{parameters.length} of {limit}. The key is what your app asks for.
+						{/if}
+					</Card.Description>
+				</div>
+				<Button
+					size="sm"
+					disabled={busy || loading || parameters.length >= limit}
+					onclick={openNew}
+					data-testid="config-new"
+				>
+					<Plus class="mr-1.5 h-3.5 w-3.5" /> Add parameter
+				</Button>
+			</Card.Header>
+			<Card.Content>
+				{#if loading}
+					<div class="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+						<LoaderCircle class="h-4 w-4 animate-spin" /> Loading parameters…
+					</div>
+				{:else if parameters.length === 0}
+					<div
+						class="rounded-lg border border-dashed px-4 py-12 text-center"
+						data-testid="config-empty"
+					>
+						<SlidersHorizontal class="mx-auto h-6 w-6 text-muted-foreground" />
+						<p class="mt-3 text-sm font-medium">No parameters yet</p>
+						<p class="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+							Add a flag like <code class="font-mono">checkoutV2</code>, read it in your app, and
+							flip it from here without shipping anything.
+						</p>
+						<Button size="sm" class="mt-4" onclick={openNew} data-testid="config-new-empty">
+							<Plus class="mr-1.5 h-3.5 w-3.5" /> Add your first parameter
+						</Button>
+					</div>
 				{:else}
-					<Upload class="mr-1.5 h-3.5 w-3.5" />
+					<Table.Root>
+						<Table.Header>
+							<Table.Row>
+								<Table.Head>Parameter</Table.Head>
+								<Table.Head>Type</Table.Head>
+								<Table.Head>Draft value</Table.Head>
+								<Table.Head class="hidden md:table-cell">Serving now</Table.Head>
+								<Table.Head class="w-24 text-right">Actions</Table.Head>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
+							{#each parameters as parameter (parameter.key)}
+								<Table.Row
+									data-testid={`config-row-${parameter.key}`}
+									class={parameter.state === 'deleting' ? 'opacity-60' : ''}
+								>
+									<Table.Cell>
+										<div class="flex flex-wrap items-center gap-2">
+											<span class="font-mono font-medium">{parameter.key}</span>
+											{#if parameter.state === 'deleting'}
+												<Badge variant="destructive" class="text-[10px]">removing on publish</Badge>
+											{:else if parameter.state === 'draft'}
+												<Badge variant="secondary" class="text-[10px]">new</Badge>
+											{:else if parameter.pending}
+												<Badge variant="secondary" class="text-[10px]">edited</Badge>
+											{/if}
+										</div>
+										{#if parameter.draftConditions?.length}
+											<p class="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+												<Target class="h-3 w-3" />
+												{parameter.draftConditions.length}
+												{parameter.draftConditions.length === 1 ? 'rule' : 'rules'} before the default
+											</p>
+										{/if}
+										{#if parameter.description}
+											<p class="mt-0.5 max-w-md truncate text-xs text-muted-foreground">
+												{parameter.description}
+											</p>
+										{/if}
+									</Table.Cell>
+									<Table.Cell class="font-mono text-xs text-muted-foreground">
+										{parameter.valueType}
+									</Table.Cell>
+									<Table.Cell class="max-w-56 truncate font-mono text-xs">
+										{shown(parameter, 'draftValue')}
+									</Table.Cell>
+									<Table.Cell
+										class="hidden max-w-56 truncate font-mono text-xs text-muted-foreground md:table-cell"
+									>
+										{shown(parameter, 'publishedValue')}
+									</Table.Cell>
+									<Table.Cell class="text-right whitespace-nowrap">
+										<Button
+											variant="ghost"
+											size="icon"
+											disabled={busy}
+											aria-label={`Edit ${parameter.key}`}
+											data-testid={`config-edit-${parameter.key}`}
+											onclick={() => openEdit(parameter)}
+										>
+											<Pencil class="h-3.5 w-3.5" />
+										</Button>
+										<Button
+											variant="ghost"
+											size="icon"
+											disabled={busy}
+											aria-label={`Remove ${parameter.key}`}
+											data-testid={`config-delete-${parameter.key}`}
+											onclick={() => remove(parameter.key)}
+										>
+											<Trash2 class="h-3.5 w-3.5 text-destructive" />
+										</Button>
+									</Table.Cell>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
 				{/if}
-				Publish changes
-			</Button>
-		</div>
-	</div>
+			</Card.Content>
+		</Card.Root>
 
-	{#if pendingChanges > 0}
-		<div
-			class="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
-			data-testid="config-pending-banner"
-		>
-			<span class="font-medium">
-				{pendingChanges}
-				{pendingChanges === 1 ? 'change' : 'changes'} not published yet.
-			</span>
-			<span class="text-muted-foreground">
-				Clients still get the last published values until you publish.
-			</span>
-		</div>
-	{/if}
-
-	{#if error}
-		<p class="text-sm text-destructive" data-testid="config-error">{error}</p>
-	{/if}
-	{#if notice}
-		<p class="text-sm text-muted-foreground" data-testid="config-notice">{notice}</p>
-	{/if}
-
-	<Card.Root>
-		<Card.Header class="flex flex-row items-start justify-between gap-4 space-y-0">
-			<div class="space-y-1.5">
+		<Card.Root>
+			<Card.Header class="space-y-1.5">
 				<Card.Title class="flex items-center gap-2">
-					<SlidersHorizontal class="h-4 w-4 text-primary" /> Parameters
+					<History class="h-4 w-4 text-muted-foreground" /> Change history
 				</Card.Title>
 				<Card.Description>
-					{#if loading}
-						Loading…
-					{:else}
-						{parameters.length} of {limit}. The key is what your app asks for.
-					{/if}
+					Every publish captures a restore point. Rolling back puts the parameters exactly as they
+					were - and itself becomes a point you can undo.
 				</Card.Description>
-			</div>
-			<Button
-				size="sm"
-				disabled={busy || loading || parameters.length >= limit}
-				onclick={openNew}
-				data-testid="config-new"
-			>
-				<Plus class="mr-1.5 h-3.5 w-3.5" /> Add parameter
-			</Button>
-		</Card.Header>
-		<Card.Content>
-			{#if loading}
-				<div class="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-					<LoaderCircle class="h-4 w-4 animate-spin" /> Loading parameters…
-				</div>
-			{:else if parameters.length === 0}
-				<div
-					class="rounded-lg border border-dashed px-4 py-12 text-center"
-					data-testid="config-empty"
-				>
-					<SlidersHorizontal class="mx-auto h-6 w-6 text-muted-foreground" />
-					<p class="mt-3 text-sm font-medium">No parameters yet</p>
-					<p class="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-						Add a flag like <code class="font-mono">checkoutV2</code>, read it in your app, and flip
-						it from here without shipping anything.
+			</Card.Header>
+			<Card.Content>
+				{#if !versionsSupported}
+					<p class="text-sm text-muted-foreground" data-testid="config-versions-unsupported">
+						Point-in-time recovery is not available in this environment, so publishing records no
+						version here. It works on a deployed project.
 					</p>
-					<Button size="sm" class="mt-4" onclick={openNew} data-testid="config-new-empty">
-						<Plus class="mr-1.5 h-3.5 w-3.5" /> Add your first parameter
-					</Button>
-				</div>
-			{:else}
-				<Table.Root>
-					<Table.Header>
-						<Table.Row>
-							<Table.Head>Parameter</Table.Head>
-							<Table.Head>Type</Table.Head>
-							<Table.Head>Draft value</Table.Head>
-							<Table.Head class="hidden md:table-cell">Serving now</Table.Head>
-							<Table.Head class="w-24 text-right">Actions</Table.Head>
-						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#each parameters as parameter (parameter.key)}
-							<Table.Row
-								data-testid={`config-row-${parameter.key}`}
-								class={parameter.state === 'deleting' ? 'opacity-60' : ''}
-							>
-								<Table.Cell>
-									<div class="flex flex-wrap items-center gap-2">
-										<span class="font-mono font-medium">{parameter.key}</span>
-										{#if parameter.state === 'deleting'}
-											<Badge variant="destructive" class="text-[10px]">removing on publish</Badge>
-										{:else if parameter.state === 'draft'}
-											<Badge variant="secondary" class="text-[10px]">new</Badge>
-										{:else if parameter.pending}
-											<Badge variant="secondary" class="text-[10px]">edited</Badge>
-										{/if}
-									</div>
-									{#if parameter.draftConditions?.length}
-										<p class="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-											<Target class="h-3 w-3" />
-											{parameter.draftConditions.length}
-											{parameter.draftConditions.length === 1 ? 'rule' : 'rules'} before the default
-										</p>
-									{/if}
-									{#if parameter.description}
-										<p class="mt-0.5 max-w-md truncate text-xs text-muted-foreground">
-											{parameter.description}
-										</p>
-									{/if}
-								</Table.Cell>
-								<Table.Cell class="font-mono text-xs text-muted-foreground">
-									{parameter.valueType}
-								</Table.Cell>
-								<Table.Cell class="max-w-56 truncate font-mono text-xs">
-									{shown(parameter, 'draftValue')}
-								</Table.Cell>
-								<Table.Cell
-									class="hidden max-w-56 truncate font-mono text-xs text-muted-foreground md:table-cell"
+				{:else if versions.length === 0}
+					<p class="text-sm text-muted-foreground" data-testid="config-versions-empty">
+						{everPublished
+							? 'No versions recorded yet.'
+							: 'Nothing published yet - your first publish starts the history.'}
+					</p>
+				{:else}
+					<ul class="divide-y" data-testid="config-versions">
+						{#each versions as point (point.bookmark)}
+							<li class="flex items-center justify-between gap-4 py-2.5">
+								<div class="min-w-0">
+									<p class="text-sm font-medium">{new Date(point.capturedAt).toLocaleString()}</p>
+									<p class="truncate text-xs text-muted-foreground">{point.reason}</p>
+								</div>
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={busy}
+									onclick={() => (rollbackTarget = point)}
+									data-testid={`config-rollback-${point.bookmark}`}
 								>
-									{shown(parameter, 'publishedValue')}
-								</Table.Cell>
-								<Table.Cell class="text-right whitespace-nowrap">
-									<Button
-										variant="ghost"
-										size="icon"
-										disabled={busy}
-										aria-label={`Edit ${parameter.key}`}
-										data-testid={`config-edit-${parameter.key}`}
-										onclick={() => openEdit(parameter)}
-									>
-										<Pencil class="h-3.5 w-3.5" />
-									</Button>
-									<Button
-										variant="ghost"
-										size="icon"
-										disabled={busy}
-										aria-label={`Remove ${parameter.key}`}
-										data-testid={`config-delete-${parameter.key}`}
-										onclick={() => remove(parameter.key)}
-									>
-										<Trash2 class="h-3.5 w-3.5 text-destructive" />
-									</Button>
-								</Table.Cell>
-							</Table.Row>
+									<RotateCcw class="mr-1.5 h-3.5 w-3.5" /> Roll back
+								</Button>
+							</li>
 						{/each}
-					</Table.Body>
-				</Table.Root>
-			{/if}
-		</Card.Content>
-	</Card.Root>
-
-	<Card.Root>
-		<Card.Header class="space-y-1.5">
-			<Card.Title class="flex items-center gap-2">
-				<History class="h-4 w-4 text-muted-foreground" /> Change history
-			</Card.Title>
-			<Card.Description>
-				Every publish captures a restore point. Rolling back puts the parameters exactly as they
-				were - and itself becomes a point you can undo.
-			</Card.Description>
-		</Card.Header>
-		<Card.Content>
-			{#if !versionsSupported}
-				<p class="text-sm text-muted-foreground" data-testid="config-versions-unsupported">
-					Point-in-time recovery is not available in this environment, so publishing records no
-					version here. It works on a deployed project.
-				</p>
-			{:else if versions.length === 0}
-				<p class="text-sm text-muted-foreground" data-testid="config-versions-empty">
-					{everPublished
-						? 'No versions recorded yet.'
-						: 'Nothing published yet - your first publish starts the history.'}
-				</p>
-			{:else}
-				<ul class="divide-y" data-testid="config-versions">
-					{#each versions as point (point.bookmark)}
-						<li class="flex items-center justify-between gap-4 py-2.5">
-							<div class="min-w-0">
-								<p class="text-sm font-medium">{new Date(point.capturedAt).toLocaleString()}</p>
-								<p class="truncate text-xs text-muted-foreground">{point.reason}</p>
-							</div>
-							<Button
-								variant="outline"
-								size="sm"
-								disabled={busy}
-								onclick={() => (rollbackTarget = point)}
-								data-testid={`config-rollback-${point.bookmark}`}
-							>
-								<RotateCcw class="mr-1.5 h-3.5 w-3.5" /> Roll back
-							</Button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</Card.Content>
-	</Card.Root>
+					</ul>
+				{/if}
+			</Card.Content>
+		</Card.Root>
+	{/if}
 </div>
 
 <Dialog.Root bind:open={editorOpen}>
