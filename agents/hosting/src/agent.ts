@@ -27,6 +27,7 @@ import {
 	type AppRecord,
 	type DeployRecord,
 } from './db/schema';
+import { mergeBuildEnv } from './build-env';
 import { decryptValue, encryptValue, importMasterKey } from './crypto';
 import migrations from './migrations';
 import {
@@ -795,13 +796,27 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			}
 		}
 
+		// Also at rest, encrypted, when the install can: builds receive runtime
+		// secrets too (frameworks inline env at build time), and the write-through
+		// value above is unrecoverable by design. Keyless installs store null -
+		// the secret works at runtime and simply stays out of builds. The AAD's
+		// `runtime` prefix keeps this ciphertext and a build secret's from ever
+		// being interchangeable, even for the same app and name.
+		const master = this.env.HOSTING_MASTER_KEY;
+		const ciphertext = master
+			? await encryptValue(
+					await importMasterKey(master),
+					body.data.value,
+					`runtime\0${appName}\0${name}`,
+				)
+			: null;
 		const now = new Date();
 		await this.db
 			.insert(appSecrets)
-			.values({ appName, name, createdAt: now, updatedAt: now })
+			.values({ appName, name, ciphertext, createdAt: now, updatedAt: now })
 			.onConflictDoUpdate({
 				target: [appSecrets.appName, appSecrets.name],
-				set: { updatedAt: now },
+				set: { ciphertext, updatedAt: now },
 			});
 		return Response.json({ ok: true });
 	}
@@ -1139,39 +1154,83 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 		if (!appNameSchema.safeParse(appName).success) {
 			return { error: 'invalid app name', status: 400 };
 		}
-		const varRows = await this.db.select().from(buildVars).where(eq(buildVars.appName, appName));
-		const vars = Object.fromEntries(varRows.map((row) => [row.name, row.value]));
-		const secretRows = await this.db
+		// Runtime env rides into the build too - frameworks inline env at build
+		// time, so a PUBLIC_* var that exists only as a runtime binding never
+		// reaches the client bundle. Build-specific values win on collision
+		// (mergeBuildEnv pins the rule).
+		const appVarRows = await this.db.select().from(appVars).where(eq(appVars.appName, appName));
+		const buildVarRows = await this.db
+			.select()
+			.from(buildVars)
+			.where(eq(buildVars.appName, appName));
+		const appSecretRows = await this.db
+			.select()
+			.from(appSecrets)
+			.where(eq(appSecrets.appName, appName));
+		const buildSecretRows = await this.db
 			.select()
 			.from(buildSecrets)
 			.where(eq(buildSecrets.appName, appName));
-		if (!secretRows.length) return { vars, secrets: {} };
 
+		// Rows without ciphertext are runtime-only: written before values were
+		// stored at rest, or on an install with no master key. They were never
+		// promised to builds, so their absence is not an error - unlike a row
+		// that HAS ciphertext nobody can decrypt.
+		const encryptedAppSecrets = appSecretRows.filter(
+			(row): row is typeof row & { ciphertext: string } => row.ciphertext !== null,
+		);
 		const master = this.env.HOSTING_MASTER_KEY;
-		if (!master) {
+		if ((buildSecretRows.length || encryptedAppSecrets.length) && !master) {
 			// Fail loud: a build that silently runs without its secrets is worse
 			// than one that fails attributed to configuration.
 			return {
-				error: 'build secrets exist but HOSTING_MASTER_KEY is not set on this install',
+				error: 'stored secrets exist but HOSTING_MASTER_KEY is not set on this install',
 				status: 503,
 			};
 		}
-		const key = await importMasterKey(master);
-		const secrets: Record<string, string> = {};
-		for (const row of secretRows) {
-			try {
-				secrets[row.name] = await decryptValue(key, row.ciphertext, `${row.appName}\0${row.name}`);
-			} catch (cause) {
-				Sentry.captureException(cause, {
-					tags: { operation: 'hosting-build-env', projectId: this.name },
-				});
-				return {
-					error: `build secret ${row.name} cannot be decrypted - was the master key rotated?`,
-					status: 503,
-				};
+
+		const runtimeSecrets: Record<string, string> = {};
+		const buildOnlySecrets: Record<string, string> = {};
+		if (master) {
+			const key = await importMasterKey(master);
+			const decrypt = async (
+				into: Record<string, string>,
+				row: { appName: string; name: string; ciphertext: string },
+				aad: string,
+			) => {
+				try {
+					into[row.name] = await decryptValue(key, row.ciphertext, aad);
+					return null;
+				} catch (cause) {
+					Sentry.captureException(cause, {
+						tags: { operation: 'hosting-build-env', projectId: this.name },
+					});
+					return {
+						error: `secret ${row.name} cannot be decrypted - was the master key rotated?`,
+						status: 503,
+					};
+				}
+			};
+			for (const row of encryptedAppSecrets) {
+				const failed = await decrypt(runtimeSecrets, row, `runtime\0${row.appName}\0${row.name}`);
+				if (failed) return failed;
+			}
+			for (const row of buildSecretRows) {
+				const failed = await decrypt(buildOnlySecrets, row, `${row.appName}\0${row.name}`);
+				if (failed) return failed;
 			}
 		}
-		return { vars, secrets };
+
+		return mergeBuildEnv(
+			{
+				vars: Object.fromEntries(appVarRows.map((row) => [row.name, row.value])),
+				secrets: runtimeSecrets,
+			},
+			{
+				vars: Object.fromEntries(buildVarRows.map((row) => [row.name, row.value])),
+				secrets: buildOnlySecrets,
+			},
+		);
 	}
 
 	// --- Analytics ------------------------------------------------------------

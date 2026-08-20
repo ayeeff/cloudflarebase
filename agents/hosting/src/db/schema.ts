@@ -60,14 +60,19 @@ export const appVars = sqliteTable(
 
 export type AppVarRecord = typeof appVars.$inferSelect;
 
-/** Runtime secret NAMES only. Values are write-through to Cloudflare's script
- * settings and never at rest here - these rows exist so the console can list
- * and delete what was set. */
+/** Runtime secrets. The VALUE is write-through to Cloudflare's script
+ * settings (that is what binds it at runtime); `ciphertext` additionally
+ * holds it AES-GCM under `HOSTING_MASTER_KEY` so builds can receive it too -
+ * frameworks inline env at build time, and a secret that exists only at
+ * runtime never reaches them. Null on installs without the master key (and
+ * on rows written before this column existed): the secret still works at
+ * runtime, it just cannot ride into builds. */
 export const appSecrets = sqliteTable(
 	'app_secrets',
 	{
 		appName: text('app_name').notNull(),
 		name: text('name').notNull(),
+		ciphertext: text('ciphertext'),
 		createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 		updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 	},

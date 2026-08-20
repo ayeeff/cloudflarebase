@@ -69,20 +69,27 @@ Three stores per app, three different trust shapes — never mix them up:
   replaces the WHOLE `plain_text` set (that is how a deletion disappears), so
   `apps.last_deploy_vars` snapshots the CLI's vars to rebuild it without the
   CLI present. Store-first: an edit is never lost to a transient API failure.
-- **Runtime secrets** (`app_secrets`): NAMES only. Values are write-through to
-  Cloudflare's script settings and unrecoverable by design; deploys carry
-  `keep_bindings: ['secret_text']` so they survive. Delete uses the per-script
-  secrets endpoint (404-tolerant), then drops the row — a failed CF delete
-  keeps the row, which is the honest state.
+- **Runtime secrets** (`app_secrets`): the value is write-through to
+  Cloudflare's script settings (that is the runtime binding; deploys carry
+  `keep_bindings: ['secret_text']` so it survives), AND stored AES-256-GCM
+  under `HOSTING_MASTER_KEY` when the install has one, so builds receive it —
+  the Pages model: frameworks inline env at build time. The AAD carries a
+  `runtime\0` prefix so this ciphertext and a build secret's are never
+  interchangeable. Null ciphertext (keyless install, or rows from before the
+  column existed) means runtime-only: the bundle skips it rather than failing
+  the build. The operator surface still answers names only. Delete uses the
+  per-script secrets endpoint (404-tolerant), then drops the row — a failed
+  CF delete keeps the row, which is the honest state.
 - **Build env** (`build_vars` / `build_secrets`, ROOT project only —
-  connection-scoped): fetched by the GitHub Actions workflow via its OIDC
-  token before the build step. Build secrets are the ONE value we store AND
-  must recover, so they are AES-256-GCM under `HOSTING_MASTER_KEY`
-  (`src/crypto.ts`: `v1:<iv>:<ct>` versioned format, row-bound AAD
-  `<appName>\0<name>`). Decrypted values only ever transit the
-  service-binding-only `/internal/.../build-env` route; the operator surface
-  answers names only. No key ⇒ build-secret writes 503; encrypted rows with no
-  key ⇒ the bundle route fails loud rather than build without secrets.
+  connection-scoped): build-only OVERRIDES. The bundle the GitHub Actions
+  workflow fetches via its OIDC token is runtime vars+secrets merged under
+  these (`src/build-env.ts` pins build-wins-on-collision). Build secrets are
+  AES-256-GCM under `HOSTING_MASTER_KEY` (`src/crypto.ts`: `v1:<iv>:<ct>`
+  versioned format, row-bound AAD `<appName>\0<name>`). Decrypted values only
+  ever transit the service-binding-only `/internal/.../build-env` route; the
+  operator surface answers names only. No key ⇒ build-secret writes 503;
+  encrypted rows with no key ⇒ the bundle route fails loud rather than build
+  without secrets.
 
 `eraseApp` clears all three even without an `apps` row — claim-only apps can
 be configured before their first deploy.

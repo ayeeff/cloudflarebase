@@ -22,6 +22,13 @@ const journal = {
 			tag: '0001_slippery_prism',
 			breakpoints: true,
 		},
+		{
+			idx: 2,
+			version: '6',
+			when: 1787253423135,
+			tag: '0002_amazing_kronos',
+			breakpoints: true,
+		},
 	],
 };
 
@@ -83,10 +90,13 @@ CREATE TABLE \`build_vars\` (
 --> statement-breakpoint
 ALTER TABLE \`apps\` ADD \`last_deploy_vars\` text;`;
 
+const m0002 = `ALTER TABLE \`app_secrets\` ADD \`ciphertext\` text;`;
+
 export default {
 	journal,
 	migrations: {
 		m0000,
 		m0001,
+		m0002,
 	},
 };

@@ -494,10 +494,11 @@
 			<Card.Header>
 				<Card.Title class="text-base">Variables and secrets</Card.Title>
 				<Card.Description>
-					The deployed Worker's environment. Text values upload as plain-text bindings on every
-					deploy (they win over CLI-declared vars of the same name) and apply to the live script
-					when saved; secrets are written through to Cloudflare and survive redeploys - their values
-					are never shown again.
+					The app's environment, at runtime and at build time. Text values upload as plain-text
+					bindings on every deploy (they win over CLI-declared vars of the same name) and apply to
+					the live script when saved; secrets are written through to Cloudflare and survive
+					redeploys - their values are never shown again. GitHub builds export this whole set before
+					the build step, so framework-inlined values are present too.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>
@@ -517,12 +518,10 @@
 				<Card.Header>
 					<Card.Title class="text-base">Build environment</Card.Title>
 					<Card.Description>
-						Exported into the GitHub Actions build before it runs - where
-						<code class="font-mono text-xs">VITE_*</code>/<code class="font-mono text-xs"
-							>PUBLIC_*</code
-						>
-						values get baked in. Secrets are encrypted at rest and fetched by the workflow with its OIDC
-						identity; branch builds share this set.
+						Build-only overrides. Variables and secrets above are already exported into the GitHub
+						Actions build; anything set here exists only at build time and wins over a matching
+						name. Secrets are encrypted at rest and fetched by the workflow with its OIDC identity;
+						branch builds share this set.
 					</Card.Description>
 				</Card.Header>
 				<Card.Content>
