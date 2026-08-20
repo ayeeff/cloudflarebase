@@ -16,7 +16,17 @@
  */
 
 export const DEPLOY_TOKEN_SECRET_NAME = 'CLOUDFLAREBASE_DEPLOY_TOKEN';
+/** The legacy single-file path. Connections made before per-app filenames
+ * keep it forever (their row's `workflowPath` is null); the manual
+ * paste-a-workflow flow still uses it too. */
 export const WORKFLOW_FILENAME = '.github/workflows/cloudflarebase.yml';
+
+/** Per-app workflow path - what closes the two-apps-one-repo collision: each
+ * connection owns its own file. App names are already filename-safe
+ * (`[a-z0-9-]`). */
+export function workflowPathFor(appName: string): string {
+	return `.github/workflows/cloudflarebase-${appName}.yml`;
+}
 
 export type WorkflowPackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
@@ -197,6 +207,45 @@ export interface ConnectedWorkflowInput {
 	outputDir?: string | null;
 	/** Monorepo root directory - every step runs here. Null = repo root. */
 	rootDir?: string | null;
+	/** Branch that deploys the root project. Null = the repository's default
+	 * branch, resolved dynamically (`github.event.repository.default_branch`),
+	 * which is what pre-existing workflows do. */
+	productionBranch?: string | null;
+	/** Pushes to these never build - emitted as `branches-ignore` (GitHub
+	 * refuses `branches` and `branches-ignore` on the same event, so the
+	 * trigger emits exactly one). Charset pre-validated by branchFilterSchema. */
+	ignoredBranches?: string[];
+}
+
+/** The trigger block: catch-all, or the ignore list - never both. */
+function pushTrigger(ignoredBranches: string[] | undefined): string {
+	if (!ignoredBranches?.length) return `    branches: ['**']`;
+	return `    branches-ignore: [${ignoredBranches.map((branch) => `'${branch}'`).join(', ')}]`;
+}
+
+/**
+ * The step that turns the app's stored build environment into env vars for
+ * the build. Same OIDC identity the deploy step presents, minted here because
+ * $GITHUB_ENV is the only way to reach the BUILD step's environment. Secret
+ * values are masked before export so they never print in the job log. An app
+ * with no build env gets `{vars:{},secrets:{}}` - the step only fails when
+ * something is genuinely wrong (curl -sSf), and a build silently missing its
+ * secrets is worse than one that fails attributed.
+ */
+function fetchBuildEnvStep(input: { origin: string; projectId: string; appName: string }): string {
+	return `      - name: Fetch build environment
+        timeout-minutes: 2
+        run: |
+          OIDC=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \\
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$CLOUDFLAREBASE_URL" | jq -r '.value')
+          ENV_JSON=$(curl -sSf -H "Authorization: Bearer $OIDC" \\
+            "$CLOUDFLAREBASE_URL/api/projects/$CLOUDFLAREBASE_PROJECT/hosting/apps/$CLOUDFLAREBASE_APP/build-env")
+          echo "$ENV_JSON" | jq -r '.secrets | to_entries[] | .value' | while IFS= read -r v; do echo "::add-mask::$v"; done
+          echo "$ENV_JSON" | jq -r '(.vars + .secrets) | to_entries[] | "\\(.key)=\\(.value)"' >> "$GITHUB_ENV"
+        env:
+          CLOUDFLAREBASE_URL: ${input.origin}
+          CLOUDFLAREBASE_PROJECT: ${input.projectId}
+          CLOUDFLAREBASE_APP: ${input.appName}`;
 }
 
 /**
@@ -216,19 +265,27 @@ export interface ConnectedWorkflowInput {
  */
 export function connectedWorkflowYaml(input: ConnectedWorkflowInput): string {
 	const assetsLine = input.outputDir ? `\n          CLOUDFLAREBASE_ASSETS: ${input.outputDir}` : '';
+	// The CLI resolves root-vs-branch by comparing GIT_BRANCH against
+	// DEFAULT_BRANCH, so a user-set production branch simply becomes the
+	// literal value here - zero CLI changes, and pre-existing workflows keep
+	// the dynamic default.
+	const defaultBranch = input.productionBranch
+		? input.productionBranch
+		: `\${{ github.event.repository.default_branch }}`;
 	return `# Deploys this repository to Cloudflarebase on every push.
-# Managed by Cloudflarebase - reconnecting the repository rewrites this file.
-# The default branch deploys production; any other branch deploys an isolated
-# preview at <app>-<branch>. Authentication is GitHub's OIDC token, so this
-# repository holds no Cloudflarebase secret.
-name: Deploy to Cloudflarebase
+# Managed by Cloudflarebase - saving build settings in the console (or
+# reconnecting the repository) rewrites this file.
+# The production branch deploys the root project; any other branch deploys an
+# isolated preview at <app>-<branch>. Authentication is GitHub's OIDC token,
+# so this repository holds no Cloudflarebase secret.
+name: Deploy to Cloudflarebase (${input.appName})
 
 on:
   push:
-    branches: ['**']
+${pushTrigger(input.ignoredBranches)}
 
 concurrency:
-  group: cloudflarebase-\${{ github.ref }}
+  group: cloudflarebase-${input.appName}-\${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -246,6 +303,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+${fetchBuildEnvStep(input)}
 ${buildSteps({ packageManager: input.packageManager, buildCommand: input.buildCommand, rootDir: input.rootDir })}
       - name: Deploy${input.rootDir ? `\n        working-directory: ${input.rootDir}` : ''}
         # Bounded so a stalled upload is attributed here, not to a job cancel.
@@ -256,7 +314,7 @@ ${buildSteps({ packageManager: input.packageManager, buildCommand: input.buildCo
           CLOUDFLAREBASE_PROJECT: ${input.projectId}
           CLOUDFLAREBASE_APP: ${input.appName}${assetsLine}
           CLOUDFLAREBASE_GIT_BRANCH: \${{ github.ref_name }}
-          CLOUDFLAREBASE_DEFAULT_BRANCH: \${{ github.event.repository.default_branch }}
+          CLOUDFLAREBASE_DEFAULT_BRANCH: ${defaultBranch}
 `;
 }
 

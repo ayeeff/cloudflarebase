@@ -842,14 +842,54 @@ export const githubConnectionSchema = z
 		assetsDir: z
 			.string()
 			.nullable()
-			.describe('Direct mode only: repo-relative directory published as assets.'),
+			.describe(
+				'Direct mode: repo-relative directory published as assets. Build mode: where the build lands.'
+			),
+		buildCommand: z
+			.string()
+			.nullable()
+			.describe('Build mode: the workflow build command; null = the generic default.'),
+		rootDir: z
+			.string()
+			.nullable()
+			.describe('Build mode: monorepo root the build runs in; null = repository root.'),
+		productionBranch: z
+			.string()
+			.nullable()
+			.describe("Branch that deploys the root project; null = the repository's default branch."),
+		ignoredBranches: z
+			.array(z.string())
+			.describe('Branch names and `*` globs whose pushes never deploy.'),
+		packageManager: z.string().nullable(),
 		createdAt: z.iso.datetime(),
 		lastEventAt: z.iso.datetime().nullable()
 	})
 	.meta({
 		id: 'GithubConnection',
 		description:
-			'A repository connected to one project+app. Made on a ROOT project; a push to the default branch deploys the root and any other branch deploys `<root>--<branch>`.'
+			'A repository connected to one project+app. Made on a ROOT project; a push to the production branch deploys the root and any other branch deploys `<root>--<branch>`.'
+	});
+
+export const githubConnectionPatchSchema = z
+	.object({
+		buildCommand: z.string().nullable().optional().describe('Null resets to the generic default.'),
+		rootDir: z.string().nullable().optional(),
+		assetsDir: z.string().nullable().optional(),
+		productionBranch: z
+			.string()
+			.nullable()
+			.optional()
+			.describe("Null resets to the repository's default branch."),
+		ignoredBranches: z
+			.array(z.string())
+			.max(20)
+			.optional()
+			.describe('Branch names or simple `*` globs (e.g. `renovate/*`).')
+	})
+	.meta({
+		id: 'GithubConnectionPatch',
+		description:
+			'Editable build settings. Absent fields keep their value; null resets to the default. On a build-mode connection, saving rewrites the workflow file in the repository.'
 	});
 
 export const mintedDeployTokenSchema = z
@@ -860,6 +900,26 @@ export const mintedDeployTokenSchema = z
 		createdAt: z.iso.datetime()
 	})
 	.meta({ id: 'MintedDeployToken' });
+
+export const githubConnectRequestSchema = z
+	.object({
+		installationId: z.number().int().positive(),
+		repoFullName: z.string().describe('`owner/repository`.'),
+		appName: z.string(),
+		mode: z.enum(['build', 'direct']),
+		assetsDir: z
+			.string()
+			.optional()
+			.describe('Direct: the published directory. Build: where the build lands.'),
+		buildCommand: z.string().optional(),
+		rootDir: z.string().optional().describe('Monorepo root (build mode).'),
+		packageManager: z.enum(['npm', 'pnpm', 'yarn', 'bun']).optional(),
+		wranglerTemplate: z
+			.string()
+			.optional()
+			.describe('A known wrangler.jsonc template id to commit for a repo that has none.')
+	})
+	.meta({ id: 'GithubConnectRequest' });
 
 export const hostingVarSchema = z
 	.object({

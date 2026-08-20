@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/sveltekit';
 import { AGENT_REGISTRY } from '$lib/agent-registry';
+import { branchIsIgnored } from '$lib/branch-match';
 import { requireAgent } from '$lib/server/agents';
 import { githubAppConfig } from '$lib/server/github';
 import { getConnectionsByRepo, touchConnection, type Connection } from '$lib/server/github-connect';
@@ -50,8 +51,9 @@ export function sanitizeBranchName(branch: string): string | null {
 
 /**
  * Resolves the project a pushed ref deploys to, creating the branch row when
- * a new git branch appears. The default branch is the ROOT project - `main`
- * never becomes a branch id, because it aliases the root everywhere.
+ * a new git branch appears. The production branch (operator-set, defaulting
+ * to the repo's default branch) is the ROOT project - `main` never becomes a
+ * branch id, because it aliases the root everywhere.
  */
 async function resolveTarget(
 	platform: App.Platform | undefined,
@@ -59,7 +61,8 @@ async function resolveTarget(
 	branch: string,
 	defaultBranch: string
 ): Promise<{ ok: true; projectId: string } | { ok: false; detail: string }> {
-	if (branch === defaultBranch) return { ok: true, projectId: connection.projectId };
+	const production = connection.productionBranch ?? defaultBranch;
+	if (branch === production) return { ok: true, projectId: connection.projectId };
 
 	const name = sanitizeBranchName(branch);
 	if (!name || name === 'main') {
@@ -197,6 +200,18 @@ export async function handlePush(
 	const outcomes: PushOutcome[] = [];
 
 	for (const connection of connections) {
+		if (branchIsIgnored(connection.ignoredBranches, branch)) {
+			// For direct mode this IS the enforcement; for build mode it is
+			// informational (the workflow's branches-ignore should not have fired)
+			// and the OIDC grant refuses the branch anyway.
+			outcomes.push({
+				appName: connection.appName,
+				projectId: connection.projectId,
+				status: 'skipped',
+				detail: 'branch is ignored by this connection'
+			});
+			continue;
+		}
 		if (connection.mode !== 'direct') {
 			// Build mode deploys itself through the workflow in the repository.
 			outcomes.push({

@@ -1,5 +1,8 @@
 import {
 	deployTokenSchema,
+	githubConnectionPatchSchema,
+	githubConnectionSchema,
+	githubConnectRequestSchema,
 	hostingBuildEnvBundleSchema,
 	hostingBuildEnvSchema,
 	hostingBuildSecretRequestSchema,
@@ -63,7 +66,10 @@ export const hostingOpenApi: AgentOpenApiModule = {
 		hostingBuildSecretRequestSchema,
 		deployTokenSchema,
 		mintDeployTokenSchema,
-		mintedDeployTokenSchema
+		mintedDeployTokenSchema,
+		githubConnectionSchema,
+		githubConnectRequestSchema,
+		githubConnectionPatchSchema
 	],
 	paths: {
 		'/hosting/overview': {
@@ -329,6 +335,114 @@ export const hostingOpenApi: AgentOpenApiModule = {
 					'200': { description: 'Revoked.' },
 					'401': UNAUTHORIZED,
 					'404': { description: 'No such token.' }
+				}
+			}
+		},
+		'/hosting/github': {
+			get: {
+				tags: [HOSTING_TAG],
+				summary: 'GitHub push-to-deploy state',
+				description:
+					'Whether a GitHub App is configured on this console, the installations visible to this organization, and the repository connections.',
+				security: [{ sessionCookie: [] }],
+				responses: {
+					'200': {
+						description: 'The state.',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										configured: { type: 'boolean' },
+										installations: {
+											type: 'array',
+											items: {
+												type: 'object',
+												properties: {
+													id: { type: 'integer' },
+													accountLogin: { type: 'string' }
+												},
+												required: ['id', 'accountLogin']
+											}
+										},
+										connections: {
+											type: 'array',
+											items: { $ref: '#/components/schemas/GithubConnection' }
+										}
+									},
+									required: ['configured', 'installations', 'connections']
+								}
+							}
+						}
+					},
+					'401': UNAUTHORIZED
+				}
+			}
+		},
+		'/hosting/github/connections': {
+			post: {
+				tags: [HOSTING_TAG],
+				summary: 'Connect a repository',
+				description:
+					'Connects a repository to this project+app (root projects only). `build` mode commits a deploy workflow into the repository and trusts its Actions OIDC token; `direct` mode deploys the pushed tree from the webhook with no file in the repository. Claims the subdomain first.',
+				security: [{ sessionCookie: [] }],
+				requestBody: jsonBody(githubConnectRequestSchema, 'The repository and its settings.'),
+				responses: {
+					'201': {
+						description: 'Connected; the body carries the connection and the claimed subdomain.'
+					},
+					'400': { description: 'Invalid request, or the project is a branch.' },
+					'401': UNAUTHORIZED,
+					'403': { description: 'The installation belongs to another organization.' },
+					'404': { description: 'The repository is not in this installation.' },
+					'503': { description: 'No GitHub App is configured on this console.' }
+				}
+			}
+		},
+		'/hosting/github/connections/{app}': {
+			patch: {
+				tags: [HOSTING_TAG],
+				summary: 'Edit build settings',
+				description:
+					'Edits a connection at any time: build command, root directory, output directory, production branch, ignored branches. On a build-mode connection the workflow file is rewritten in the repository FIRST - a failed commit changes nothing.',
+				security: [{ sessionCookie: [] }],
+				parameters: [appParam],
+				requestBody: jsonBody(githubConnectionPatchSchema, 'The fields to change.'),
+				responses: {
+					'200': {
+						description: 'Updated.',
+						content: {
+							'application/json': {
+								schema: {
+									type: 'object',
+									properties: {
+										connection: { $ref: '#/components/schemas/GithubConnection' },
+										workflowRewritten: { type: 'boolean' }
+									},
+									required: ['connection', 'workflowRewritten']
+								}
+							}
+						}
+					},
+					'400': {
+						description:
+							'Invalid value, build fields on a direct connection, or the production branch would be ignored.'
+					},
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such connection.' },
+					'503': { description: 'No GitHub App is configured on this console.' }
+				}
+			},
+			delete: {
+				tags: [HOSTING_TAG],
+				summary: 'Disconnect a repository',
+				description: 'Deletes the connection; the committed workflow file is removed best-effort.',
+				security: [{ sessionCookie: [] }],
+				parameters: [appParam],
+				responses: {
+					'200': { description: 'Disconnected.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such connection.' }
 				}
 			}
 		}
