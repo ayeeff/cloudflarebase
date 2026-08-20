@@ -778,6 +778,43 @@ export const checkpointRequestSchema = z.strictObject({
 });
 
 /**
+ * The human line a publish's restore point carries: which keys were added,
+ * edited, and removed, in words - the version list and the rollback dialog
+ * are where an operator decides what a version IS, and "publish (3)" told
+ * them nothing. Keys are listed until the checkpoint reason's 80-char cap
+ * would clip them, then the tail collapses to a count; a publish with no
+ * pending work (never reachable today) answers plain "publish".
+ */
+export function remoteConfigPublishSummary(delta: {
+	added: string[];
+	edited: string[];
+	removed: string[];
+}): string {
+	const groups = (['added', 'edited', 'removed'] as const)
+		.filter((verb) => delta[verb].length)
+		.map((verb) => ({ verb, keys: delta[verb] }));
+	if (!groups.length) return 'publish';
+
+	// Longest first keeps the label meaningful as it degrades: full key lists,
+	// then per-group counts from the back.
+	for (let collapsed = 0; collapsed <= groups.length; collapsed++) {
+		const line = groups
+			.map((group, index) => {
+				const asCount = index >= groups.length - collapsed;
+				return asCount
+					? `${group.verb} ${group.keys.length}`
+					: `${group.verb} ${group.keys.join(', ')}`;
+			})
+			.join(' · ');
+		if (line.length <= 80) return line;
+	}
+	return groups
+		.map((group) => `${group.verb} ${group.keys.length}`)
+		.join(' · ')
+		.slice(0, 80);
+}
+
+/**
  * Ids of restore-point rows that repeat an earlier row's bookmark.
  *
  * Capturing with no writes since the last capture yields the SAME bookmark -

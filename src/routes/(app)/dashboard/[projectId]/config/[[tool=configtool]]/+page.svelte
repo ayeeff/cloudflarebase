@@ -1092,9 +1092,19 @@
 		<AlertDialog.Header>
 			<AlertDialog.Title>Roll back to this version?</AlertDialog.Title>
 			<AlertDialog.Description>
-				Every parameter goes back to how it was at {rollbackTarget
-					? new Date(rollbackTarget.capturedAt).toLocaleString()
-					: ''}, drafts included. The rollback itself becomes a point you can undo.
+				{#if rollbackTarget}
+					{@const stepsOver = versions.indexOf(rollbackTarget)}
+					Every parameter goes back to how it was at
+					{new Date(rollbackTarget.capturedAt).toLocaleString()}, drafts included — the version
+					published as
+					<span class="font-medium text-foreground" data-testid="config-rollback-summary"
+						>{rollbackTarget.reason}</span
+					>.
+					{#if stepsOver > 0}
+						This steps back over {stepsOver} newer {stepsOver === 1 ? 'entry' : 'entries'}.
+					{/if}
+					The rollback itself becomes a point you can undo.
+				{/if}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>

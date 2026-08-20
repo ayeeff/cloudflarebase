@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
 	duplicateRestorePointIds,
 	isPlatformShard,
+	remoteConfigPublishSummary,
 	MAX_REMOTE_CONFIG_VALUE_BYTES,
 	remoteConfigKeySchema,
 	remoteConfigPending,
@@ -132,6 +133,28 @@ test('the platform namespace is a prefix, so the next feature needs no new rule'
 	assert.equal(isPlatformShard('cfbase_notes'), false);
 	assert.equal(isPlatformShard('remote_config'), false);
 	assert.equal(isPlatformShard('todos'), false);
+});
+
+test('a publish label says what happened to which keys, in words', () => {
+	assert.equal(
+		remoteConfigPublishSummary({ added: ['signupsOpen'], edited: ['maxUploadMb'], removed: [] }),
+		'added signupsOpen · edited maxUploadMb',
+	);
+	assert.equal(
+		remoteConfigPublishSummary({ added: [], edited: [], removed: ['promoBanner'] }),
+		'removed promoBanner',
+	);
+	// Nothing pending answers the plain word rather than an empty string.
+	assert.equal(remoteConfigPublishSummary({ added: [], edited: [], removed: [] }), 'publish');
+
+	// The checkpoint reason caps at 80 chars: key lists collapse to counts from
+	// the back until the label fits, and it NEVER exceeds the cap.
+	const many = Array.from({ length: 30 }, (_, at) => `parameterNumber${at}`);
+	const collapsed = remoteConfigPublishSummary({ added: ['one'], edited: many, removed: [] });
+	assert.ok(collapsed.length <= 80, collapsed);
+	assert.equal(collapsed, 'added one · edited 30');
+	const allCounts = remoteConfigPublishSummary({ added: many, edited: many, removed: many });
+	assert.equal(allCounts, 'added 30 · edited 30 · removed 30');
 });
 
 test('one bookmark keeps one restore point, under its original label', () => {

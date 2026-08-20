@@ -33,6 +33,7 @@ import {
 	MAX_REMOTE_CONFIG_PARAMETERS,
 	MAX_RESTORE_POINTS,
 	duplicateRestorePointIds,
+	remoteConfigPublishSummary,
 	PLATFORM_SHARD_PREFIX,
 	REMOTE_CONFIG_COLUMNS,
 	REMOTE_CONFIG_TABLE,
@@ -1114,13 +1115,17 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 
 		const child = this.tableStub(REMOTE_CONFIG_TABLE);
 		const rows = await this.remoteConfigRows();
-		let published = 0;
-		let removed = 0;
+		// Keys by what happened to them - the checkpoint label is built from
+		// these, because "publish (3)" told the rollback dialog nothing about
+		// what a version contains.
+		const addedKeys: string[] = [];
+		const editedKeys: string[] = [];
+		const removedKeys: string[] = [];
 		for (const row of rows) {
 			const data = row.data as Record<string, unknown>;
 			if (data.state === 'deleting') {
 				await child.adminDelete(row.id);
-				removed++;
+				removedKeys.push(row.id);
 				continue;
 			}
 			const parameter = this.remoteConfigRow(row);
@@ -1135,8 +1140,10 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 				},
 				false,
 			);
-			published++;
+			(parameter.state === 'draft' ? addedKeys : editedKeys).push(row.id);
 		}
+		const published = addedKeys.length + editedKeys.length;
+		const removed = removedKeys.length;
 
 		if (!published && !removed) {
 			return Response.json({ error: 'there is nothing to publish' }, { status: 409 });
@@ -1145,10 +1152,19 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		// The checkpoint is captured AFTER the flip, so restoring a version puts
 		// back a config that was actually served rather than the draft that
 		// preceded it.
+		const summary = remoteConfigPublishSummary({
+			added: addedKeys,
+			edited: editedKeys,
+			removed: removedKeys,
+		});
 		const checkpoint = await this.adminCheckpoint(
 			new Request('https://db-agent/internal/remote-config/publish', {
 				method: 'POST',
-				body: JSON.stringify({ reason: `${reason} (${published + removed})` }),
+				body: JSON.stringify({
+					// The console's default reason disappears into the summary; an
+					// operator's own reason leads it.
+					reason: (reason === 'publish' ? summary : `${reason}: ${summary}`).slice(0, 80),
+				}),
 			}),
 			'table',
 			REMOTE_CONFIG_TABLE,
@@ -1723,7 +1739,22 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		// after arming it, and in production that abort can outrace the RPC
 		// reply. With the pre-restore bookmark already persisted, an
 		// abort-reset error still reports success with a working undo.
-		const undoPoint = await this.captureRestorePoint(ops, name, 'before rollback');
+		// The undo point names its target - a history full of bare "before
+		// rollback" rows says nothing about which version each one stepped to.
+		let undoReason = 'before rollback';
+		if (parsed.data.bookmark) {
+			const [target] = await this.db
+				.select()
+				.from(restorePoints)
+				.where(
+					and(eq(restorePoints.collection, name), eq(restorePoints.bookmark, parsed.data.bookmark)),
+				)
+				.limit(1);
+			if (target) undoReason = `before rollback to "${target.reason}"`.slice(0, 80);
+		} else if (parsed.data.timestamp) {
+			undoReason = `before rollback to ${parsed.data.timestamp}`.slice(0, 80);
+		}
+		const undoPoint = await this.captureRestorePoint(ops, name, undoReason);
 		let outcome: RestoreOutcome;
 		try {
 			outcome = await ops.restoreTo(parsed.data);
