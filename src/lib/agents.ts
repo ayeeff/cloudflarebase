@@ -1016,6 +1016,33 @@ export const hostingBuildSecretRequestSchema = z
 	})
 	.meta({ id: 'HostingBuildSecretRequest' });
 
+export const hostingAnalyticsSchema = z
+	.object({
+		appName: z.string(),
+		subdomain: z.string(),
+		days: z.number().int().describe('The window that was queried: 7, 30, or 90.'),
+		totals: z.object({
+			requests: z.number(),
+			errors: z.number().describe('Responses with a 5xx status.'),
+			avgDurationMs: z.number()
+		}),
+		byDay: z.array(z.object({ day: z.string(), requests: z.number(), errors: z.number() })),
+		engine: z.object({
+			dataset: z.string(),
+			enabled: z.boolean(),
+			status: z
+				.enum(['connected', 'local', 'write-only', 'error'])
+				.describe(
+					'connected = Analytics Engine reads work; local = the dev stand-in; write-only = events are recorded but reads need CF_ANALYTICS_API_TOKEN; error = the query failed (see `error`).'
+				),
+			error: z.string().optional()
+		})
+	})
+	.meta({
+		id: 'HostingAnalytics',
+		description: 'Per-app request analytics: daily requests/errors and totals.'
+	});
+
 // --- Storage agent (mirrors agents/storage/src/{agent,bucket,schemas}.ts) ---
 
 /** `none` closes a side to the public API entirely - operator surfaces only.

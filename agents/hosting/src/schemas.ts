@@ -86,6 +86,9 @@ export const buildSecretBodySchema = z.strictObject({
 	value: varValueSchema.min(1),
 });
 
+/** Analytics Engine SQL API envelope (mirrors the auth agent's copy). */
+export const analyticsApiResponseSchema = z.object({ data: z.array(z.unknown()).optional() });
+
 /** Keyset cursor for the deploy list: `<createdAtMs>:<id>`. */
 export const deployCursorSchema = z
 	.string()

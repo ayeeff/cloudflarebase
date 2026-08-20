@@ -8,10 +8,19 @@
 	"durableObjects": [{ "class": "HostingAgent", "scope": "perProject" }],
 	"entrypoint": { "assertEnvType": "AssertHostingAgentEnv" },
 	"erase": { "method": "DELETE", "path": "/internal/projects/:projectId" },
-	"bindings": {},
+	"bindings": {
+		"analyticsEngine": [
+			{ "binding": "HOSTING_REQUESTS", "dataset": "cloudflarebase_hosting_requests" }
+		]
+	},
 	"secrets": {
 		"generated": [],
-		"optional": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN", "HOSTING_MASTER_KEY"]
+		"optional": [
+			"CF_ACCOUNT_ID",
+			"CF_HOSTING_API_TOKEN",
+			"HOSTING_MASTER_KEY",
+			"CF_ANALYTICS_API_TOKEN"
+		]
 	},
 	"vars": {
 		"SENTRY_DSN": {
@@ -25,6 +34,10 @@
 		"DISPATCH_NAMESPACE": {
 			"default": "",
 			"hint": "Workers for Platforms dispatch namespace name the DISPATCH binding targets."
+		},
+		"WAE_DATASET": {
+			"default": "cloudflarebase_hosting_requests",
+			"hint": "Analytics Engine dataset for per-request analytics; reads need CF_ANALYTICS_API_TOKEN."
 		}
 	},
 	"routes": [

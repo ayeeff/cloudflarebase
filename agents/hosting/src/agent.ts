@@ -31,6 +31,7 @@ import { decryptValue, encryptValue, importMasterKey } from './crypto';
 import migrations from './migrations';
 import {
 	DEMO_PROJECT_PATTERN,
+	analyticsApiResponseSchema,
 	appNameSchema,
 	buildSecretBodySchema,
 	deployCursorSchema,
@@ -63,6 +64,7 @@ const MAX_DEPLOYS_PER_DAY = 50;
 const MAX_VARS_PER_APP = 64;
 const MAX_SECRETS_PER_APP = 64;
 const MAX_BUILD_SECRETS_PER_APP = 32;
+const ANALYTICS_CACHE_MS = 5_000;
 // Sized for framework output, not just hand-rolled Workers: an OpenNext
 // worker bundle routinely passes 10 MB uncompressed, and a Next site blows
 // 1000 files on `_next/static` alone. The DO parses deploys in memory, so
@@ -387,6 +389,10 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 				decodeURIComponent(secretName[1]),
 				decodeURIComponent(secretName[2]),
 			);
+		}
+		const analytics = subPath.match(/^\/apps\/([^/]+)\/analytics$/);
+		if (analytics && request.method === 'GET') {
+			return this.getAppAnalytics(decodeURIComponent(analytics[1]), url);
 		}
 		const buildEnv = subPath.match(/^\/apps\/([^/]+)\/build-env$/);
 		if (buildEnv && request.method === 'GET') {
@@ -1166,5 +1172,203 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			}
 		}
 		return { vars, secrets };
+	}
+
+	// --- Analytics ------------------------------------------------------------
+
+	private analyticsCache: {
+		key: string;
+		expiresAt: number;
+		data: Record<string, unknown>;
+	} | null = null;
+
+	private get waeConfig(): { accountId: string; token: string; dataset: string } | null {
+		const accountId = this.env.CF_ACCOUNT_ID;
+		const token = this.env.CF_ANALYTICS_API_TOKEN;
+		const dataset = this.env.WAE_DATASET;
+		return accountId && token && dataset ? { accountId, token, dataset } : null;
+	}
+
+	private async analyticsSql<T>(query: string): Promise<T[]> {
+		const config = this.waeConfig;
+		if (!config) return [];
+		const response = await fetch(
+			`https://api.cloudflare.com/client/v4/accounts/${config.accountId}/analytics_engine/sql`,
+			{
+				method: 'POST',
+				headers: { authorization: `Bearer ${config.token}` },
+				body: `${query} FORMAT JSON`,
+			},
+		);
+		if (!response.ok) {
+			throw new Error(`Analytics Engine query failed (${response.status})`);
+		}
+		const result = analyticsApiResponseSchema.parse(await response.json());
+		return (result.data ?? []) as T[];
+	}
+
+	/**
+	 * Per-app requests/errors: daily buckets plus totals, from Analytics Engine
+	 * (or the local D1 stand-in). Errors never 5xx the route - a broken
+	 * analytics token would otherwise read as "the app is down" forever; the
+	 * chart answers zeroed with `engine.status: 'error'` instead (the auth
+	 * agent's rule).
+	 */
+	private async getAppAnalytics(appName: string, url: URL): Promise<Response> {
+		if (!appNameSchema.safeParse(appName).success) {
+			return Response.json({ error: 'invalid app name' }, { status: 400 });
+		}
+		const wanted = Number(url.searchParams.get('days'));
+		const days = wanted === 30 || wanted === 90 ? wanted : 7;
+		const [app] = await this.db.select().from(apps).where(eq(apps.name, appName)).limit(1);
+		if (!app) return Response.json({ error: 'no such app' }, { status: 404 });
+
+		const cacheKey = `${appName}:${days}`;
+		if (
+			this.analyticsCache &&
+			this.analyticsCache.key === cacheKey &&
+			this.analyticsCache.expiresAt > Date.now()
+		) {
+			return Response.json(this.analyticsCache.data);
+		}
+
+		let analyticsError: string | undefined;
+		let byDay: { day: string; requests: number; errors: number }[] = [];
+		let totals = { requests: 0, errors: 0, avgDurationMs: 0 };
+		const config = this.waeConfig;
+		try {
+			if (config) {
+				const series = await this.queryWaeSeries(config, app.subdomain, days);
+				byDay = series.byDay;
+				totals = series.totals;
+			} else if (this.env.LOCAL_ANALYTICS) {
+				const series = await this.queryLocalSeries(app.subdomain, days);
+				byDay = series.byDay;
+				totals = series.totals;
+			}
+		} catch (cause) {
+			analyticsError = cause instanceof Error ? cause.message : 'Analytics Engine query failed';
+			Sentry.captureException(cause, {
+				tags: { operation: 'hosting-analytics', projectId: this.name },
+			});
+			byDay = [];
+			totals = { requests: 0, errors: 0, avgDurationMs: 0 };
+		}
+
+		const data = {
+			appName,
+			subdomain: app.subdomain,
+			days,
+			totals,
+			byDay,
+			engine: {
+				dataset: this.env.WAE_DATASET ?? 'cloudflarebase_hosting_requests',
+				enabled: config !== null || !!this.env.LOCAL_ANALYTICS,
+				status: analyticsError
+					? ('error' as const)
+					: config
+						? ('connected' as const)
+						: this.env.LOCAL_ANALYTICS
+							? ('local' as const)
+							: ('write-only' as const),
+				...(analyticsError ? { error: analyticsError } : {}),
+			},
+		};
+		this.analyticsCache = { key: cacheKey, expiresAt: Date.now() + ANALYTICS_CACHE_MS, data };
+		return Response.json(data);
+	}
+
+	private async queryWaeSeries(
+		config: { accountId: string; token: string; dataset: string },
+		subdomain: string,
+		days: number,
+	): Promise<{
+		byDay: { day: string; requests: number; errors: number }[];
+		totals: { requests: number; errors: number; avgDurationMs: number };
+	}> {
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(config.dataset)) {
+			throw new Error('WAE_DATASET must be a valid Analytics Engine identifier');
+		}
+		const sub = subdomain.replaceAll("'", "''");
+		const from = `FROM ${config.dataset} WHERE index1 = '${sub}' AND timestamp > NOW() - INTERVAL '${days}' DAY`;
+		// Status rides blob1 as a 3-digit string, so 5xx is a lexicographic range.
+		const [requests, errors, sums] = await Promise.all([
+			this.analyticsSql<{ day: string; n: number | string }>(
+				`SELECT formatDateTime(timestamp, '%Y-%m-%d') AS day, SUM(_sample_interval) AS n ${from} GROUP BY day ORDER BY day`,
+			),
+			this.analyticsSql<{ day: string; n: number | string }>(
+				`SELECT formatDateTime(timestamp, '%Y-%m-%d') AS day, SUM(_sample_interval) AS n ${from} AND blob1 >= '500' AND blob1 <= '599' GROUP BY day ORDER BY day`,
+			),
+			this.analyticsSql<{ n: number | string; duration: number | string }>(
+				`SELECT SUM(_sample_interval) AS n, SUM(double1 * _sample_interval) AS duration ${from}`,
+			),
+		]);
+		const dayMap = new Map<string, { day: string; requests: number; errors: number }>();
+		const entry = (day: string) => {
+			let value = dayMap.get(day);
+			if (!value) {
+				value = { day, requests: 0, errors: 0 };
+				dayMap.set(day, value);
+			}
+			return value;
+		};
+		for (const row of requests) entry(row.day.slice(0, 10)).requests += Number(row.n);
+		for (const row of errors) entry(row.day.slice(0, 10)).errors += Number(row.n);
+		const byDay = [...dayMap.values()].sort((a, b) => a.day.localeCompare(b.day));
+		const totalRequests = Number(sums[0]?.n ?? 0);
+		const totalDuration = Number(sums[0]?.duration ?? 0);
+		return {
+			byDay,
+			totals: {
+				requests: totalRequests,
+				errors: byDay.reduce((sum, row) => sum + row.errors, 0),
+				avgDurationMs: totalRequests ? totalDuration / totalRequests : 0,
+			},
+		};
+	}
+
+	private async queryLocalSeries(
+		subdomain: string,
+		days: number,
+	): Promise<{
+		byDay: { day: string; requests: number; errors: number }[];
+		totals: { requests: number; errors: number; avgDurationMs: number };
+	}> {
+		const db = this.env.LOCAL_ANALYTICS!;
+		const since = Date.now() - days * 86_400_000;
+		// The serve path (src/index.ts) creates the table on first write; the
+		// CREATE here covers reading an app nothing has ever requested.
+		const [, , rows, sums] = await db.batch([
+			db.prepare(
+				`CREATE TABLE IF NOT EXISTS hosting_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, subdomain TEXT NOT NULL, timestamp INTEGER NOT NULL, status INTEGER NOT NULL, duration_ms REAL NOT NULL)`,
+			),
+			db.prepare(
+				`CREATE INDEX IF NOT EXISTS hosting_requests_sub_time ON hosting_requests(subdomain, timestamp)`,
+			),
+			db
+				.prepare(
+					`SELECT strftime('%Y-%m-%d', timestamp / 1000, 'unixepoch') AS day, COUNT(*) AS requests, SUM(CASE WHEN status BETWEEN 500 AND 599 THEN 1 ELSE 0 END) AS errors FROM hosting_requests WHERE subdomain = ? AND timestamp > ? GROUP BY day ORDER BY day`,
+				)
+				.bind(subdomain, since),
+			db
+				.prepare(
+					`SELECT COUNT(*) AS requests, SUM(CASE WHEN status BETWEEN 500 AND 599 THEN 1 ELSE 0 END) AS errors, AVG(duration_ms) AS avg FROM hosting_requests WHERE subdomain = ? AND timestamp > ?`,
+				)
+				.bind(subdomain, since),
+		]);
+		const byDay = (rows.results as { day: string; requests: number; errors: number | null }[]).map(
+			(row) => ({ day: row.day, requests: Number(row.requests), errors: Number(row.errors ?? 0) }),
+		);
+		const total = (
+			sums.results as { requests: number; errors: number | null; avg: number | null }[]
+		)[0];
+		return {
+			byDay,
+			totals: {
+				requests: Number(total?.requests ?? 0),
+				errors: Number(total?.errors ?? 0),
+				avgDurationMs: Number(total?.avg ?? 0),
+			},
+		};
 	}
 }

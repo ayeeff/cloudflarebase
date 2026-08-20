@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import {
+	hostingAppAnalyticsPath,
 	hostingAppPath,
 	hostingClaimsPath,
 	hostingDeployPath,
@@ -156,6 +157,55 @@ test.describe('hosting deploys (stubbed)', () => {
 		expect(body.subdomain).toBe(`${appName}-stg`);
 	});
 
+	test('served requests land in the analytics tab (local mode)', async ({
+		request,
+		playwright
+	}) => {
+		// The serve path is only dialable on the local stack.
+		test.skip(!!process.env.BASE_URL, 'direct agent access needs the local stack');
+
+		// One request through the wildcard host mints one data point; the test
+		// env has no read credentials, so it lands in the LOCAL_ANALYTICS D1 and
+		// the analytics endpoint reads it back as `status: 'local'`.
+		const agent = await playwright.request.newContext({ baseURL: 'http://localhost:8800' });
+		try {
+			const served = await agent.get('/', {
+				headers: { 'x-cfbase-host': `${appName}.cfbase.dev` }
+			});
+			expect(served.status(), await served.text()).toBe(200);
+		} finally {
+			await agent.dispose();
+		}
+
+		// The write rides waitUntil and the read has a 5s cache - poll past both.
+		await expect
+			.poll(
+				async () => {
+					const analytics = await request.get(hostingAppAnalyticsPath(rootId, appName));
+					if (analytics.status() !== 200) return { status: analytics.status() };
+					const body = (await analytics.json()) as {
+						totals: { requests: number };
+						engine: { status: string };
+					};
+					return { status: 200, engine: body.engine.status, requests: body.totals.requests };
+				},
+				{ timeout: 15_000 }
+			)
+			.toMatchObject({ status: 200, engine: 'local', requests: expect.any(Number) });
+
+		const analytics = await request.get(hostingAppAnalyticsPath(rootId, appName));
+		const body = (await analytics.json()) as {
+			appName: string;
+			subdomain: string;
+			totals: { requests: number };
+			byDay: { day: string; requests: number }[];
+		};
+		expect(body.appName).toBe(appName);
+		expect(body.subdomain).toBe(appName);
+		expect(body.totals.requests).toBeGreaterThanOrEqual(1);
+		expect(body.byDay.length).toBeGreaterThanOrEqual(1);
+	});
+
 	test('demo projects get the 403 upsell, never a deploy', async ({ request }) => {
 		const deploy = await request.post(
 			hostingDeployPath('demo-abcdef123456', appName),
@@ -298,6 +348,7 @@ test.describe('hosting guard', () => {
 			['GET', hostingTokensPath(rootId)],
 			['POST', hostingTokensPath(rootId)],
 			['POST', hostingDeployPath(rootId, appName)],
+			['GET', hostingAppAnalyticsPath(rootId, appName)],
 			// App deletion is session-only by design: a deploy token that can
 			// ship code must never be able to erase an app, and the guard's
 			// token surface admits POST deploys/branches alone.

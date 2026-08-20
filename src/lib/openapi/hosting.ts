@@ -3,6 +3,7 @@ import {
 	githubConnectionPatchSchema,
 	githubConnectionSchema,
 	githubConnectRequestSchema,
+	hostingAnalyticsSchema,
 	hostingBuildEnvBundleSchema,
 	hostingBuildEnvSchema,
 	hostingBuildSecretRequestSchema,
@@ -64,6 +65,7 @@ export const hostingOpenApi: AgentOpenApiModule = {
 		hostingBuildEnvSchema,
 		hostingBuildEnvBundleSchema,
 		hostingBuildSecretRequestSchema,
+		hostingAnalyticsSchema,
 		deployTokenSchema,
 		mintDeployTokenSchema,
 		mintedDeployTokenSchema,
@@ -208,6 +210,24 @@ export const hostingOpenApi: AgentOpenApiModule = {
 					'200': { description: 'Deleted (or was already gone).' },
 					'401': UNAUTHORIZED,
 					'502': { description: 'Cloudflare refused the deletion; the secret is still set.' }
+				}
+			}
+		},
+		'/hosting/apps/{app}/analytics': {
+			get: {
+				tags: [HOSTING_TAG],
+				summary: 'App request analytics',
+				description:
+					'Daily requests and 5xx errors for one app, from Analytics Engine. Degrades honestly: `engine.status` reports connected/local/write-only/error and the route never 5xxes on a query failure.',
+				security: [{ sessionCookie: [] }],
+				parameters: [
+					appParam,
+					{ name: 'days', in: 'query', schema: { type: 'integer', enum: [7, 30, 90] } }
+				],
+				responses: {
+					'200': jsonResponse(hostingAnalyticsSchema, 'The series and totals.'),
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such app (deploy first).' }
 				}
 			}
 		},

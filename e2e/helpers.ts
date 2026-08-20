@@ -271,6 +271,10 @@ export function hostingBuildSecretPath(projectId: string, app: string, name: str
 	return `/api/projects/${projectId}/hosting/apps/${encodeURIComponent(app)}/build-secrets/${encodeURIComponent(name)}`;
 }
 
+export function hostingAppAnalyticsPath(projectId: string, app: string, days = 7): string {
+	return `/api/projects/${projectId}/hosting/apps/${encodeURIComponent(app)}/analytics?days=${days}`;
+}
+
 export function hostingTokensPath(projectId: string): string {
 	return `/api/projects/${projectId}/hosting/tokens`;
 }

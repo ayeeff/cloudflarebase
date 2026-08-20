@@ -35,6 +35,35 @@ function isDurableObjectReset(error: unknown): boolean {
 	return DO_RESET_PATTERN.test(error instanceof Error ? error.message : String(error));
 }
 
+/**
+ * Local-dev stand-in for Analytics Engine, ensured once per isolate. Keyed on
+ * the binding (the control-plane getDb precedent) so tests that swap
+ * databases still bootstrap the new one; a failure clears the cache so the
+ * next request retries instead of wedging analytics for the isolate.
+ */
+const localAnalyticsReady = new WeakMap<D1Database, Promise<void>>();
+function ensureHostingRequestsTable(db: D1Database): Promise<void> {
+	let pending = localAnalyticsReady.get(db);
+	if (!pending) {
+		pending = db
+			.batch([
+				db.prepare(
+					`CREATE TABLE IF NOT EXISTS hosting_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, subdomain TEXT NOT NULL, timestamp INTEGER NOT NULL, status INTEGER NOT NULL, duration_ms REAL NOT NULL)`,
+				),
+				db.prepare(
+					`CREATE INDEX IF NOT EXISTS hosting_requests_sub_time ON hosting_requests(subdomain, timestamp)`,
+				),
+			])
+			.then(() => undefined)
+			.catch((cause: unknown) => {
+				localAnalyticsReady.delete(db);
+				throw cause;
+			});
+		localAnalyticsReady.set(db, pending);
+	}
+	return pending;
+}
+
 async function drainUnusedBody(request: Request): Promise<void> {
 	try {
 		if (request.body && !request.bodyUsed) await request.body.cancel();
@@ -272,6 +301,9 @@ class HostingService extends WorkerEntrypoint<Env> {
 		}
 
 		if (this.env.HOSTING_STUB === 'true') {
+			// The stub records too - that is what makes the analytics tab real in
+			// local dev and e2e.
+			this.recordRequest(label, 200, 0);
 			return stubPage(label, domain);
 		}
 		if (!this.env.DISPATCH) {
@@ -289,14 +321,56 @@ class HostingService extends WorkerEntrypoint<Env> {
 			options.outbound = { subdomain: label };
 		}
 
+		const startedAt = Date.now();
 		try {
 			const worker = this.env.DISPATCH.get(label, {}, options);
-			return await worker.fetch(request);
+			const response = await worker.fetch(request);
+			this.recordRequest(label, response.status, Date.now() - startedAt);
+			return response;
 		} catch (error) {
 			if (/worker not found/i.test(error instanceof Error ? error.message : String(error))) {
+				// Unclaimed subdomains are deliberately NOT recorded - a scanner
+				// walking names would otherwise write a data point per probe.
 				return brandedNotFound(label, domain);
 			}
 			throw error;
+		}
+	}
+
+	/**
+	 * One data point per served request: subdomain (the index - it IS the
+	 * script name, so the DO joins it back to an app for free), status, and
+	 * duration. Never allowed to affect the response; with no Analytics Engine
+	 * read credentials the local D1 stand-in records instead, which is what
+	 * the local/e2e stacks read back.
+	 */
+	private recordRequest(subdomain: string, status: number, durationMs: number): void {
+		try {
+			this.env.HOSTING_REQUESTS?.writeDataPoint({
+				indexes: [subdomain],
+				blobs: [String(status)],
+				doubles: [durationMs],
+			});
+		} catch {
+			// metrics failure must never affect the serve path
+		}
+		const readable =
+			this.env.CF_ACCOUNT_ID && this.env.CF_ANALYTICS_API_TOKEN && this.env.WAE_DATASET;
+		const local = this.env.LOCAL_ANALYTICS;
+		if (!readable && local) {
+			this.ctx.waitUntil(
+				ensureHostingRequestsTable(local)
+					.then(() =>
+						local
+							.prepare(
+								`INSERT INTO hosting_requests (subdomain, timestamp, status, duration_ms) VALUES (?, ?, ?, ?)`,
+							)
+							.bind(subdomain, Date.now(), status, durationMs)
+							.run(),
+					)
+					.then(() => undefined)
+					.catch(() => undefined),
+			);
 		}
 	}
 
