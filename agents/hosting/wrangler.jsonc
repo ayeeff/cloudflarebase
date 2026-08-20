@@ -211,7 +211,11 @@
 				"HOSTING_APEX_REDIRECT": "https://cloudflarebase.com",
 			},
 			"secrets": {
-				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN", "HOSTING_MASTER_KEY"],
+				// HOSTING_MASTER_KEY is deliberately NOT listed: build secrets are an
+				// optional capability (writes answer 503 until the key is set), and
+				// `required` would misdeclare that to typegen and every fork's dev
+				// validation. Set it with `wrangler secret put HOSTING_MASTER_KEY`.
+				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN"],
 			},
 		},
 		"preview": {
@@ -262,8 +266,9 @@
 			// (the RUN_HOSTING_E2E spec depends on it), so it needs the same
 			// credentials production requires - without this block a preview
 			// deploy succeeds silently and every real upload fails at the API.
+			// HOSTING_MASTER_KEY stays unlisted, same as production.
 			"secrets": {
-				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN", "HOSTING_MASTER_KEY"],
+				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN"],
 			},
 		},
 	},

@@ -169,9 +169,11 @@ production.
 
 Push `preview`, verify against the preview stack, then merge to `main`.
 
-New **required secrets** are the one thing CI cannot mint: set them on the
-target workers (dashboard or `wrangler secret put`) BEFORE pushing a commit
-whose wrangler config requires them, or the deploy fails.
+Secrets never gate a deploy: wrangler's `secrets.required` only drives
+typegen and local-dev warnings, and every agent degrades without its optional
+secrets. But a capability gated on a secret stays off until someone runs
+`wrangler secret put` on the target worker - CI cannot mint secrets - so set
+them around the release, not inside it.
 
 ## Commits
 
