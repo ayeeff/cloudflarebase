@@ -30,15 +30,28 @@ import {
 	MAX_GATEWAY_SIBLINGS,
 	MAX_IMPORT_BYTES,
 	MAX_IMPORT_DOCS,
+	MAX_REMOTE_CONFIG_PARAMETERS,
 	MAX_RESTORE_POINTS,
+	PLATFORM_SHARD_PREFIX,
+	REMOTE_CONFIG_COLUMNS,
+	REMOTE_CONFIG_TABLE,
 	SIBLING_SPAWN_SOCKETS,
+	isPlatformShard,
+	remoteConfigKeySchema,
+	remoteConfigParameterInputSchema,
+	remoteConfigValueIssue,
+	remoteConfigPending,
+	remoteConfigStateSchema,
+	remoteConfigValueTypeSchema,
 	type AccessMode,
 	type BookmarkOutcome,
 	type CollectionConfig,
 	type CollectionValidator,
 	type DbDocument,
+	type DbRow,
 	type ImportLine,
 	type ImportReport,
+	type RemoteConfigParameter,
 	type RestoreOutcome,
 	type RestorePoint,
 	type RestoreRequest,
@@ -216,7 +229,8 @@ export interface DbActivityEvent {
 		| 'rows.imported'
 		| 'view.created'
 		| 'view.configured'
-		| 'view.deleted';
+		| 'view.deleted'
+		| 'remote-config.changed';
 	message: string;
 	at: string;
 }
@@ -609,6 +623,64 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			return this.updateSettings(request);
 		}
 
+		// Platform-owned shards (`cfb_*`) are created and configured by the
+		// feature that owns them, never through the generic routes. Remote
+		// Config's parameter table is closed on both sides, and the Tables page
+		// would otherwise be one dropdown away from opening it to public writes -
+		// which hands every client the ability to rewrite their own feature
+		// flags. Reads are deliberately untouched: this is the operator's
+		// project, and hiding storage from them would be worse than reserving it.
+		const shardMutation = subPath.match(/^\/admin\/(?:collections|tables|views)\/([^/]+)$/);
+		if (shardMutation && (request.method === 'PUT' || request.method === 'DELETE')) {
+			const name = decodeURIComponent(shardMutation[1]);
+			if (isPlatformShard(name)) {
+				return Response.json(
+					{
+						error:
+							`"${name}" belongs to Cloudflarebase - the "${PLATFORM_SHARD_PREFIX}" prefix is ` +
+							`reserved for shards the platform owns. Manage it from the feature that created it.`,
+					},
+					{ status: 403 },
+				);
+			}
+		}
+
+		if (subPath === '/admin/remote-config' && request.method === 'GET') {
+			return this.remoteConfigList();
+		}
+		if (subPath === '/admin/remote-config' && request.method === 'DELETE') {
+			// The way back out. Reserving the `cfb_` prefix makes the parameter
+			// table undeletable through the Tables page - which is the point - but
+			// a project that stops using Remote Config must not be stuck with the
+			// shard forever. The feature that owns a platform shard owns removing
+			// it, so the teardown lives HERE rather than being an exception carved
+			// into the generic route.
+			if (!(await this.tableRow(REMOTE_CONFIG_TABLE))) {
+				return Response.json({ deleted: false });
+			}
+			return this.deleteTable(REMOTE_CONFIG_TABLE);
+		}
+		if (subPath === '/admin/remote-config/publish' && request.method === 'POST') {
+			return this.remoteConfigPublish(request);
+		}
+		if (subPath === '/admin/remote-config/discard' && request.method === 'POST') {
+			return this.remoteConfigDiscard();
+		}
+		if (subPath === '/admin/remote-config/versions' && request.method === 'GET') {
+			await this.ensureRemoteConfigTable();
+			return this.adminRestorePoints('table', REMOTE_CONFIG_TABLE);
+		}
+		if (subPath === '/admin/remote-config/restore' && request.method === 'POST') {
+			await this.ensureRemoteConfigTable();
+			return this.adminRestore(request, 'table', REMOTE_CONFIG_TABLE);
+		}
+		const remoteConfigKey = subPath.match(/^\/admin\/remote-config\/([^/]+)$/);
+		if (remoteConfigKey) {
+			const key = decodeURIComponent(remoteConfigKey[1]);
+			if (request.method === 'PUT') return this.remoteConfigPut(request, key);
+			if (request.method === 'DELETE') return this.remoteConfigDelete(key);
+		}
+
 		const collectionDoc = subPath.match(/^\/admin\/collections\/([^/]+)\/documents\/([^/]+)$/);
 		if (collectionDoc) {
 			return this.adminDocumentWrite(
@@ -744,6 +816,287 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 			await this.ctx.storage.put('agent-location', { ...probed, probedAt: Date.now() });
 		}
 		return probed;
+	}
+
+	// -------------------------------------------------------------------------
+	// Remote Config (RC1)
+	//
+	// The first Cloudflarebase feature whose storage is the platform's own
+	// primitive rather than a private table. Parameters live in a real DbTable,
+	// so publish is a PITR checkpoint, rollback is a restore, and export is a
+	// config backup - none of which had to be written here.
+	//
+	// Every operator route below funnels through `ensureRemoteConfigTable`, so
+	// the console needs no setup step and a project that never opens the page
+	// never pays for a shard.
+
+	/**
+	 * The parameter table, created on first touch.
+	 *
+	 * It goes through `configureTable` rather than inserting a registry row
+	 * directly - a synthetic Request is a small ugliness next to a second copy
+	 * of DDL planning, rollback-on-failure, event recording, and state sync that
+	 * would then have to be kept in step with the real one.
+	 */
+	private async ensureRemoteConfigTable(): Promise<void> {
+		const existing = await this.tableRow(REMOTE_CONFIG_TABLE);
+		if (existing) return;
+		const body = {
+			// Closed on BOTH sides. Nothing public reads the parameter table
+			// itself: RC2 serves an EVALUATED endpoint that reads it from in
+			// here, so the raw rules - which cohorts exist, what the rollout
+			// percentages are - never leave the server.
+			readAccess: 'none',
+			writeAccess: 'none',
+			replication: 'auto',
+			columns: REMOTE_CONFIG_COLUMNS,
+		};
+		const response = await this.configureTable(
+			new Request('https://db-agent/internal/remote-config', {
+				method: 'PUT',
+				body: JSON.stringify(body),
+			}),
+			REMOTE_CONFIG_TABLE,
+			{ platform: true },
+		);
+		if (!response.ok) {
+			throw new Error(`remote config table could not be provisioned: ${await response.text()}`);
+		}
+	}
+
+	private remoteConfigRow(row: DbRow): RemoteConfigParameter {
+		const data = row.data as Record<string, unknown>;
+		const state = remoteConfigStateSchema.catch('published').parse(data.state);
+		const draftValue = data.draft_value ?? null;
+		const publishedValue = data.published_value ?? null;
+		return {
+			key: row.id,
+			valueType: remoteConfigValueTypeSchema.catch('json').parse(data.value_type),
+			draftValue,
+			publishedValue,
+			state,
+			pending: remoteConfigPending({ state, draftValue, publishedValue }),
+			description: typeof data.description === 'string' ? data.description : null,
+			updatedBy: typeof data.updated_by === 'string' ? data.updated_by : null,
+			updatedAt: row.updatedAt,
+		};
+	}
+
+	private async remoteConfigRows(): Promise<DbRow[]> {
+		const child = this.tableStub(REMOTE_CONFIG_TABLE);
+		const { docs } = (await child.adminQuery({
+			limit: MAX_REMOTE_CONFIG_PARAMETERS,
+		})) as unknown as { docs: DbRow[] };
+		return docs;
+	}
+
+	private async remoteConfigList(): Promise<Response> {
+		await this.ensureRemoteConfigTable();
+		const parameters = (await this.remoteConfigRows())
+			.map((row) => this.remoteConfigRow(row))
+			.sort((a, b) => a.key.localeCompare(b.key));
+		return Response.json({
+			parameters,
+			pendingChanges: parameters.filter((parameter) => parameter.pending).length,
+			/** Whether anything has EVER been published - the empty-state copy
+			 * needs to tell those two cases apart. */
+			everPublished: parameters.some((parameter) => parameter.state !== 'draft'),
+			limit: MAX_REMOTE_CONFIG_PARAMETERS,
+		});
+	}
+
+	private async remoteConfigPut(request: Request, key: string): Promise<Response> {
+		const validKey = remoteConfigKeySchema.safeParse(key);
+		if (!validKey.success) {
+			return Response.json(
+				{ error: validKey.error.issues[0]?.message ?? 'invalid parameter key' },
+				{ status: 400 },
+			);
+		}
+		const body = remoteConfigParameterInputSchema.safeParse(await request.json().catch(() => null));
+		if (!body.success) {
+			return Response.json(
+				{ error: 'invalid parameter', issues: body.error.issues },
+				{ status: 400 },
+			);
+		}
+		const issue = remoteConfigValueIssue(body.data.valueType, body.data.defaultValue);
+		if (issue) return Response.json({ error: issue }, { status: 400 });
+
+		await this.ensureRemoteConfigTable();
+		const child = this.tableStub(REMOTE_CONFIG_TABLE);
+
+		// The ceiling is checked on CREATE only, so an install already at the
+		// limit can still edit and delete its way back under it.
+		const existing = (await child.adminGet(key)) as unknown as DbRow | null;
+		if (!existing) {
+			const { docs } = (await child.adminQuery({
+				limit: MAX_REMOTE_CONFIG_PARAMETERS,
+			})) as unknown as { docs: DbRow[] };
+			if (docs.length >= MAX_REMOTE_CONFIG_PARAMETERS) {
+				return Response.json(
+					{ error: `a project is limited to ${MAX_REMOTE_CONFIG_PARAMETERS} parameters` },
+					{ status: 409 },
+				);
+			}
+		}
+
+		// An edit only ever touches the DRAFT. `published_value` and the state
+		// transition to `published` belong to publish alone, which is what makes
+		// editing safe to do in the open.
+		const previous = existing?.data as Record<string, unknown> | undefined;
+		const result = (await child.adminPut(
+			key,
+			{
+				value_type: body.data.valueType,
+				draft_value: body.data.defaultValue ?? null,
+				published_value: previous?.published_value ?? null,
+				// An edit to a parameter marked for deletion revives it: the
+				// operator is plainly no longer removing it.
+				state: previous && previous.state !== 'draft' ? 'published' : 'draft',
+				description: body.data.description ?? null,
+				updated_by: request.headers.get('cfb-operator') ?? null,
+			},
+			false,
+		)) as unknown as DbRow | { invalid: string[] };
+
+		if ('invalid' in result) {
+			return Response.json(
+				{ error: 'parameter failed validation', issues: result.invalid },
+				{ status: 400 },
+			);
+		}
+		this.recordEvent(
+			'remote-config.changed',
+			`remote config "${key}" ${existing ? 'edited' : 'added'} (draft)`,
+		);
+		return Response.json(this.remoteConfigRow(result));
+	}
+
+	/**
+	 * Removing a parameter is itself a draft change.
+	 *
+	 * A parameter clients have never seen just goes; one that is live is MARKED
+	 * and keeps being served until the next publish. Deleting it outright would
+	 * make removal the one edit that takes effect immediately - the exact
+	 * surprise the draft model exists to prevent.
+	 */
+	private async remoteConfigDelete(key: string): Promise<Response> {
+		await this.ensureRemoteConfigTable();
+		const child = this.tableStub(REMOTE_CONFIG_TABLE);
+		const existing = (await child.adminGet(key)) as unknown as DbRow | null;
+		if (!existing) return Response.json({ error: 'no such parameter' }, { status: 404 });
+
+		const data = existing.data as Record<string, unknown>;
+		if (data.state === 'draft') {
+			await child.adminDelete(key);
+			this.recordEvent('remote-config.changed', `remote config "${key}" discarded`);
+			return Response.json({ deleted: true, pendingPublish: false });
+		}
+
+		await child.adminPut(key, { ...data, state: 'deleting' }, false);
+		this.recordEvent('remote-config.changed', `remote config "${key}" marked for removal`);
+		return Response.json({ deleted: false, pendingPublish: true });
+	}
+
+	/**
+	 * Publish: drafts become what clients get, in one step, then a named PITR
+	 * checkpoint records the result.
+	 *
+	 * The checkpoint is why there is no version store to build. A version IS a
+	 * restore point on this table, so the history list and one-click rollback
+	 * are the shard's own machinery - Firebase's change history for the cost of
+	 * calling something that already existed.
+	 */
+	private async remoteConfigPublish(request: Request): Promise<Response> {
+		await this.ensureRemoteConfigTable();
+		const body = (await request.json().catch(() => null)) as { reason?: unknown } | null;
+		const reason =
+			typeof body?.reason === 'string' && body.reason.trim()
+				? body.reason.trim().slice(0, 80)
+				: 'publish';
+
+		const child = this.tableStub(REMOTE_CONFIG_TABLE);
+		const rows = await this.remoteConfigRows();
+		let published = 0;
+		let removed = 0;
+		for (const row of rows) {
+			const data = row.data as Record<string, unknown>;
+			if (data.state === 'deleting') {
+				await child.adminDelete(row.id);
+				removed++;
+				continue;
+			}
+			const parameter = this.remoteConfigRow(row);
+			if (!parameter.pending) continue;
+			await child.adminPut(
+				row.id,
+				{ ...data, published_value: data.draft_value ?? null, state: 'published' },
+				false,
+			);
+			published++;
+		}
+
+		if (!published && !removed) {
+			return Response.json({ error: 'there is nothing to publish' }, { status: 409 });
+		}
+
+		// The checkpoint is captured AFTER the flip, so restoring a version puts
+		// back a config that was actually served rather than the draft that
+		// preceded it.
+		const checkpoint = await this.adminCheckpoint(
+			new Request('https://db-agent/internal/remote-config/publish', {
+				method: 'POST',
+				body: JSON.stringify({ reason: `${reason} (${published + removed})` }),
+			}),
+			'table',
+			REMOTE_CONFIG_TABLE,
+		);
+		this.recordEvent(
+			'remote-config.changed',
+			`remote config published (${published} changed, ${removed} removed)`,
+		);
+		// A checkpoint failure is not a publish failure - the flip already
+		// happened, and reporting it as failed would invite a second publish.
+		return Response.json({
+			published,
+			removed,
+			versionCaptured: checkpoint.ok,
+		});
+	}
+
+	/**
+	 * Discard: put every draft back to what clients are being served.
+	 *
+	 * The counterpart publish needs. Without it an operator who edits five
+	 * parameters and thinks better of it has no way back except re-typing the
+	 * old values from memory - and the old values are right there in
+	 * `published_value`.
+	 */
+	private async remoteConfigDiscard(): Promise<Response> {
+		await this.ensureRemoteConfigTable();
+		const child = this.tableStub(REMOTE_CONFIG_TABLE);
+		let discarded = 0;
+		for (const row of await this.remoteConfigRows()) {
+			const data = row.data as Record<string, unknown>;
+			const parameter = this.remoteConfigRow(row);
+			if (!parameter.pending) continue;
+			if (data.state === 'draft') {
+				// Never published: there is no earlier value to return to.
+				await child.adminDelete(row.id);
+			} else {
+				await child.adminPut(
+					row.id,
+					{ ...data, draft_value: data.published_value ?? null, state: 'published' },
+					false,
+				);
+			}
+			discarded++;
+		}
+		if (discarded) {
+			this.recordEvent('remote-config.changed', `remote config drafts discarded (${discarded})`);
+		}
+		return Response.json({ discarded });
 	}
 
 	async getOverview(): Promise<DbOverview> {
@@ -1473,7 +1826,20 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 	 * claiming columns that never applied: the row reverts and the SQLite
 	 * message surfaces as the 409.
 	 */
-	private async configureTable(request: Request, name: string): Promise<Response> {
+	/**
+	 * `options.platform` marks a shard the PLATFORM owns rather than the
+	 * operator: it is how Remote Config declares its own table through the very
+	 * same path an operator's table takes (so the two can never drift on DDL
+	 * planning or failure rollback), and it exempts that table from the
+	 * per-project shard cap - the platform's storage is not the operator's
+	 * quota. The `cfb_` reservation itself is enforced at the ROUTE, so this
+	 * flag is unreachable from outside.
+	 */
+	private async configureTable(
+		request: Request,
+		name: string,
+		options: { platform?: boolean } = {},
+	): Promise<Response> {
 		if (!collectionNameSchema.safeParse(name).success) {
 			return Response.json(
 				{ error: 'table names are lowercase letters, digits, _ and - (max 64 chars)' },
@@ -1505,7 +1871,7 @@ export class DbAgent extends Agent<Env, DbAgentState> {
 		if (existing && existing.kind !== 'table') {
 			return Response.json({ error: `"${name}" is already a collection` }, { status: 409 });
 		}
-		if (!existing) {
+		if (!existing && !options.platform) {
 			const denied = this.checkShardCap();
 			if (denied) return denied;
 		}

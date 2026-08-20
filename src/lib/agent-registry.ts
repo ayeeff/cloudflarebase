@@ -87,7 +87,16 @@ export const agentManifestSchema = z.strictObject({
 				title: z.string().min(1),
 				testId: z.string().min(1),
 				/** Per-page lucide icon name; omitted pages inherit the agent icon. */
-				icon: z.string().min(1).optional()
+				icon: z.string().min(1).optional(),
+				/**
+				 * Sidebar section this page belongs to, when it is not the agent's
+				 * own. An agent is a PACKAGE, not a product boundary: Remote Config
+				 * is stored by the db agent because building it on the database was
+				 * the point, but to an operator it is its own feature - and filing
+				 * it under "Database" would bury a feature-flag console where
+				 * nobody looks for one.
+				 */
+				section: z.string().min(1).optional()
 			})
 		)
 	})
@@ -189,23 +198,26 @@ export function buildConsoleNav(projectId: string): ConsoleNavSection[] {
 		// shipped agent has pages today, which is why nothing advertises a
 		// primitive as coming soon any more, here or on the landing page.
 		if (!manifest.console.pages.length) continue;
-		const section = sections.get(manifest.console.section) ?? {
-			section: manifest.console.section,
-			peek: 1,
-			items: []
-		};
-		// Two agents sharing a section name share one peek: the widest wins, so
-		// neither agent's lead page can be folded away by the other's default.
-		section.peek = Math.max(section.peek, manifest.console.peek ?? 1);
 		for (const page of manifest.console.pages) {
+			// A page may name its own section (see the manifest schema): the agent
+			// that STORES a feature is not always the product it belongs to.
+			const name = page.section ?? manifest.console.section;
+			const section = sections.get(name) ?? { section: name, peek: 1, items: [] };
+			// Two agents sharing a section name share one peek: the widest wins, so
+			// neither agent's lead page can be folded away by the other's default.
+			// A page in a section of its own keeps the default 1 - the agent's peek
+			// counts its own pages, not the ones it lent elsewhere.
+			if (!page.section) {
+				section.peek = Math.max(section.peek, manifest.console.peek ?? 1);
+			}
 			section.items.push({
 				href: `/dashboard/${projectId}${page.path}`,
 				title: page.title,
 				icon: page.icon ?? manifest.console.icon,
 				testId: page.testId
 			});
+			sections.set(name, section);
 		}
-		sections.set(manifest.console.section, section);
 	}
 	return [...sections.values()];
 }

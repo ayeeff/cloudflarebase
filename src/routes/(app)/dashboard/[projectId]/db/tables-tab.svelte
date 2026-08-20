@@ -344,10 +344,21 @@
 		if (!selected || rowPage === 0) return;
 		void loadRows(selected, rowPage - 1);
 	}
+	/**
+	 * Platform-owned shards (`cfb_*`) are left out of this list.
+	 *
+	 * Not hidden - the SQL editor still reaches them and the agent still reports
+	 * them - but they are not tables the operator manages HERE: Remote Config's
+	 * parameter table is created, configured, and dropped by the Remote Config
+	 * page, and the agent refuses those operations through the generic routes.
+	 * Listing it beside real tables would offer a designer and a delete button
+	 * that can only ever answer 403.
+	 */
+	const ownedTables = $derived(tables.filter((table) => !table.name.startsWith('cfb_')));
 	const visibleTables = $derived(
 		tableFilter.trim()
-			? tables.filter((table) => table.name.includes(tableFilter.trim().toLowerCase()))
-			: tables
+			? ownedTables.filter((table) => table.name.includes(tableFilter.trim().toLowerCase()))
+			: ownedTables
 	);
 	const visibleRows = $derived.by(() => {
 		const needle = rowFilter.trim().toLowerCase();

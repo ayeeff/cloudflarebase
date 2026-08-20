@@ -67,6 +67,13 @@
 				"title": "Integration",
 				"testId": "nav-db-integration",
 				"icon": "plug"
+			},
+			{
+				"path": "/config",
+				"title": "Remote Config",
+				"testId": "nav-remote-config",
+				"icon": "sliders-horizontal",
+				"section": "Remote Config"
 			}
 		]
 	}

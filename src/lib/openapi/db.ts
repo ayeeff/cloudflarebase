@@ -12,6 +12,9 @@ import {
 	dbQuerySchema,
 	dbReplicaSchema,
 	dbReplicationStatusSchema,
+	dbRemoteConfigParameterInputSchema,
+	dbRemoteConfigParameterSchema,
+	dbRemoteConfigSchema,
 	dbRestorePointSchema,
 	dbRestorePointsSchema,
 	dbRestoreRequestSchema,
@@ -110,6 +113,9 @@ export const dbOpenApi: AgentOpenApiModule = {
 		dbRestoreResultSchema,
 		dbRestorePointSchema,
 		dbRestorePointsSchema,
+		dbRemoteConfigParameterInputSchema,
+		dbRemoteConfigParameterSchema,
+		dbRemoteConfigSchema,
 		dbReplicaSchema,
 		dbReplicationStatusSchema,
 		dbBookmarkResolutionSchema,
@@ -514,6 +520,128 @@ export const dbOpenApi: AgentOpenApiModule = {
 					'400': { description: 'Invalid request, or the platform refused the restore.' },
 					'401': UNAUTHORIZED,
 					'404': { description: 'No such collection.' },
+					'501': { description: 'This environment has no point-in-time recovery.' }
+				}
+			}
+		},
+		'/db/admin/remote-config': {
+			get: {
+				tags: [DB_TAG],
+				summary: 'List Remote Config parameters',
+				description:
+					'Server-controlled values an app reads at startup - feature flags, kill switches, tuning values. Editing is a DRAFT: `draftValue` is what the console shows, `publishedValue` is what clients are being served, and `pending` marks the difference. The parameter table is provisioned on the first call, so a project that never uses Remote Config never pays for one.',
+				security: OPERATOR_SECURITY,
+				responses: {
+					'200': jsonResponse(dbRemoteConfigSchema, 'Parameters, sorted by key.'),
+					'401': UNAUTHORIZED
+				}
+			},
+			delete: {
+				tags: [DB_TAG],
+				summary: 'Remove Remote Config entirely',
+				description:
+					'Drops the parameter table and everything in it. The way back out: the `cfb_` prefix reserves the table from the generic routes, so the feature that owns it owns removing it. It is recreated empty on the next read.',
+				security: OPERATOR_SECURITY,
+				responses: {
+					'200': { description: 'Removed, or nothing to remove.' },
+					'401': UNAUTHORIZED
+				}
+			}
+		},
+		'/db/admin/remote-config/{key}': {
+			put: {
+				tags: [DB_TAG],
+				summary: 'Add or edit a parameter (draft)',
+				description:
+					'Writes the DRAFT only. Nothing reaches clients until publish, which is what lets several parameters move together instead of leaking half a config change.',
+				security: OPERATOR_SECURITY,
+				parameters: [{ name: 'key', in: 'path', required: true, schema: { type: 'string' } }],
+				requestBody: jsonBody(
+					dbRemoteConfigParameterInputSchema,
+					'The parameter to store as a draft.'
+				),
+				responses: {
+					'200': jsonResponse(dbRemoteConfigParameterSchema, 'The stored draft.'),
+					'400': { description: 'Bad key, or a value that does not match its declared type.' },
+					'401': UNAUTHORIZED,
+					'409': { description: 'The per-project parameter ceiling is reached.' }
+				}
+			},
+			delete: {
+				tags: [DB_TAG],
+				summary: 'Remove a parameter (draft)',
+				description:
+					'A parameter clients have never seen goes immediately; a live one is MARKED and keeps being served until the next publish - otherwise removal would be the one edit that takes effect before you publish it.',
+				security: OPERATOR_SECURITY,
+				parameters: [{ name: 'key', in: 'path', required: true, schema: { type: 'string' } }],
+				responses: {
+					'200': { description: '`deleted` and `pendingPublish` say which of the two happened.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such parameter.' }
+				}
+			}
+		},
+		'/db/admin/remote-config/publish': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'Publish draft changes',
+				description:
+					'Drafts become what clients get, in one step, and a named restore point records the result - so a version IS a point you can put the config back to.',
+				security: OPERATOR_SECURITY,
+				requestBody: {
+					description: 'Optional reason label, shown in the change history.',
+					required: false,
+					content: {
+						'application/json': {
+							schema: { type: 'object', properties: { reason: { type: 'string', maxLength: 80 } } }
+						}
+					}
+				},
+				responses: {
+					'200': { description: 'How many parameters changed and how many were removed.' },
+					'401': UNAUTHORIZED,
+					'409': { description: 'Nothing to publish.' }
+				}
+			}
+		},
+		'/db/admin/remote-config/discard': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'Discard draft changes',
+				description:
+					'Every unpublished edit goes back to what clients are being served; parameters added but never published are removed.',
+				security: OPERATOR_SECURITY,
+				responses: {
+					'200': { description: 'How many parameters were reverted.' },
+					'401': UNAUTHORIZED
+				}
+			}
+		},
+		'/db/admin/remote-config/versions': {
+			get: {
+				tags: [DB_TAG],
+				summary: 'Remote Config change history',
+				description:
+					"The parameter table's own restore points - one per publish. Local development has no point-in-time recovery, which `supported: false` reports rather than failing.",
+				security: OPERATOR_SECURITY,
+				responses: {
+					'200': jsonResponse(dbRestorePointsSchema, 'Support flag and captured versions.'),
+					'401': UNAUTHORIZED
+				}
+			}
+		},
+		'/db/admin/remote-config/restore': {
+			post: {
+				tags: [DB_TAG],
+				summary: 'Roll back to a version',
+				description:
+					'Puts every parameter back to how it was at that point, drafts included. The rollback itself returns the bookmark that reverses it.',
+				security: OPERATOR_SECURITY,
+				requestBody: jsonBody(dbRestoreRequestSchema, 'Exactly one of `bookmark` or `timestamp`.'),
+				responses: {
+					'200': jsonResponse(dbRestoreResultSchema, 'The bookmark that undoes this rollback.'),
+					'400': { description: 'Invalid request, or a timestamp outside the 30-day window.' },
+					'401': UNAUTHORIZED,
 					'501': { description: 'This environment has no point-in-time recovery.' }
 				}
 			}

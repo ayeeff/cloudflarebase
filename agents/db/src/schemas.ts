@@ -933,3 +933,176 @@ export const jwtClaimsSchema = z.object({
 	permissions: z.array(z.string()).optional(),
 });
 export type JwtClaims = z.infer<typeof jwtClaimsSchema>;
+
+// ---------------------------------------------------------------------------
+// Remote Config (RC1)
+
+/**
+ * The platform's own namespace inside a project's shard registry.
+ *
+ * A shard whose name starts with this is created and owned by a Cloudflarebase
+ * feature, not by the operator: the generic table and collection routes refuse
+ * to create, reconfigure, or drop one, so nobody can open Remote Config's
+ * parameter table to public writes from the Tables page and quietly hand every
+ * client the ability to rewrite their own feature flags.
+ *
+ * It is a PREFIX rather than a list because the next platform-owned shard
+ * should need no new rule. The shards stay visible in the registry and
+ * readable through the operator surfaces - this is the operator's project, and
+ * hiding storage from them would be worse than reserving it.
+ */
+export const PLATFORM_SHARD_PREFIX = 'cfb_';
+
+export function isPlatformShard(name: string): boolean {
+	return name.startsWith(PLATFORM_SHARD_PREFIX);
+}
+
+/** Remote Config's parameter table. The row id IS the parameter key, so
+ * uniqueness is the primary key rather than an index. */
+export const REMOTE_CONFIG_TABLE = 'cfb_remote_config';
+
+/**
+ * A parameter key. Deliberately the document-id grammar - the key is the row
+ * id - plus a leading-letter rule, because these are read in client code as
+ * `config.get('checkoutV2')` and a key starting with a digit reads as a typo.
+ */
+export const remoteConfigKeySchema = z
+	.string()
+	.regex(
+		/^[A-Za-z][A-Za-z0-9_-]{0,63}$/,
+		'keys start with a letter and use letters, digits, _ and - (max 64)',
+	);
+
+export const remoteConfigValueTypeSchema = z.enum(['string', 'number', 'boolean', 'json']);
+export type RemoteConfigValueType = z.infer<typeof remoteConfigValueTypeSchema>;
+
+/** A parameter's default is bounded: it ships to every client on every fetch,
+ * and a config payload is not a document store. */
+export const MAX_REMOTE_CONFIG_VALUE_BYTES = 4 * 1024;
+export const MAX_REMOTE_CONFIG_PARAMETERS = 100;
+
+/**
+ * The `PUT /admin/remote-config/:key` body.
+ *
+ * `defaultValue` is `unknown` here and checked against `valueType` by
+ * `remoteConfigValueIssue` instead: the type is data, so the check cannot be
+ * expressed as a static union without four near-identical branches, and the
+ * message a operator sees ("checkoutV2 is a boolean") is worth more than the
+ * zod union's.
+ */
+export const remoteConfigParameterInputSchema = z.strictObject({
+	valueType: remoteConfigValueTypeSchema,
+	defaultValue: z.unknown(),
+	/** Shown in the console beside the key; never sent to clients. */
+	description: z.string().trim().max(200).nullable().optional(),
+});
+export type RemoteConfigParameterInput = z.infer<typeof remoteConfigParameterInputSchema>;
+
+/** Null when the value fits its declared type, else the operator-facing why. */
+export function remoteConfigValueIssue(type: RemoteConfigValueType, value: unknown): string | null {
+	if (value === undefined) return 'a default value is required';
+	const size = JSON.stringify(value ?? null)?.length ?? 0;
+	if (size > MAX_REMOTE_CONFIG_VALUE_BYTES) {
+		return `a default value is limited to ${MAX_REMOTE_CONFIG_VALUE_BYTES} bytes`;
+	}
+	switch (type) {
+		case 'string':
+			return typeof value === 'string' ? null : 'this parameter is declared a string';
+		case 'number':
+			return typeof value === 'number' && Number.isFinite(value)
+				? null
+				: 'this parameter is declared a number';
+		case 'boolean':
+			return typeof value === 'boolean' ? null : 'this parameter is declared a boolean';
+		case 'json':
+			// Anything JSON-serializable, including null - the escape hatch for a
+			// structured value. `undefined` was already refused above.
+			return value === null || typeof value === 'object'
+				? null
+				: 'a json parameter takes an object, an array, or null - use the scalar types otherwise';
+	}
+}
+
+/**
+ * A parameter's lifecycle, and the reason there are two value columns.
+ *
+ * Editing is a DRAFT and publishing is what reaches clients - Firebase's model,
+ * and it is the right one for exactly the reason it exists there: a config
+ * change usually means several parameters moving together, and an operator
+ * halfway through editing must not be serving a half-changed config to
+ * everyone. So the console writes drafts freely, and one publish flips them
+ * atomically.
+ *
+ * - `draft`    - added but never published. Clients have never seen it.
+ * - `published` - live. `draftValue` may still differ, which is an edit pending.
+ * - `deleting` - published, and marked for removal on the next publish. Still
+ *                served until then, because it is still live for clients.
+ */
+export const remoteConfigStateSchema = z.enum(['draft', 'published', 'deleting']);
+export type RemoteConfigState = z.infer<typeof remoteConfigStateSchema>;
+
+/**
+ * The declared columns of the parameter table.
+ *
+ * Deliberately a plain `DbTable` rather than storage inside DbAgent: the table
+ * then inherits point-in-time recovery, export/import, replication, and the
+ * erase fan-out from machinery that is already tested - and a config rollback
+ * rewinds ONLY the config, where restoring the coordinator would rewind the
+ * whole shard registry with it.
+ *
+ * No `conditions` column yet. Targeting arrives in RC2 with the schema that
+ * validates it and the evaluator that reads it; a nullable column can be added
+ * to a live table then (the DDL planner allows exactly that), and declaring a
+ * field nothing validates would be worse than declaring it late.
+ */
+export const REMOTE_CONFIG_COLUMNS = [
+	{
+		name: 'value_type',
+		type: 'text',
+		nullable: false,
+		enum: ['string', 'number', 'boolean', 'json'],
+	},
+	/** What the console edits. */
+	{ name: 'draft_value', type: 'json', nullable: true },
+	/** What clients get - RC2's endpoint reads THIS column and never the draft. */
+	{ name: 'published_value', type: 'json', nullable: true },
+	{
+		name: 'state',
+		type: 'text',
+		nullable: false,
+		default: 'draft',
+		enum: ['draft', 'published', 'deleting'],
+	},
+	{ name: 'description', type: 'text', nullable: true, maxLength: 200 },
+	/** Operator user id, so a parameter has an author in the audit trail. */
+	{ name: 'updated_by', type: 'text', nullable: true },
+] as const;
+
+/** The wire shape of one parameter, as the console reads it. */
+export interface RemoteConfigParameter {
+	key: string;
+	valueType: RemoteConfigValueType;
+	/** What the editor shows. */
+	draftValue: unknown;
+	/** What clients currently get; null until first published. */
+	publishedValue: unknown;
+	state: RemoteConfigState;
+	/** Whether this parameter differs from what clients are being served. */
+	pending: boolean;
+	description: string | null;
+	updatedBy: string | null;
+	updatedAt: string;
+}
+
+/** Whether a parameter is not yet what clients are being served. */
+export function remoteConfigPending(parameter: {
+	state: RemoteConfigState;
+	draftValue: unknown;
+	publishedValue: unknown;
+}): boolean {
+	if (parameter.state !== 'published') return true;
+	return (
+		JSON.stringify(parameter.draftValue ?? null) !==
+		JSON.stringify(parameter.publishedValue ?? null)
+	);
+}

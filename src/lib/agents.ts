@@ -521,6 +521,64 @@ export const dbBookmarkResolutionSchema = z
 		description: 'The closest available bookmark for a wall-clock time, D1-restore-style.'
 	});
 
+// --- Remote Config (RC1) ---
+
+/**
+ * Server-controlled parameters an app reads at startup - feature flags, kill
+ * switches, tuning values - stored in a platform-owned DbTable that is closed
+ * on both sides, so publish is a PITR checkpoint and rollback is a restore.
+ *
+ * Mirrors agents/db/src/schemas.ts; keep the two in sync.
+ */
+export const dbRemoteConfigValueTypeSchema = z.enum(['string', 'number', 'boolean', 'json']);
+
+/** Editing is a draft; publishing is what reaches clients. */
+export const dbRemoteConfigStateSchema = z.enum(['draft', 'published', 'deleting']);
+
+export const dbRemoteConfigParameterSchema = z
+	.object({
+		key: z.string(),
+		valueType: dbRemoteConfigValueTypeSchema,
+		/** Typed by `valueType`, not by the schema: the type is data. */
+		draftValue: z.unknown(),
+		/** What clients get right now; null until first published. */
+		publishedValue: z.unknown(),
+		state: dbRemoteConfigStateSchema.catch('published'),
+		/** Differs from what clients are being served. */
+		pending: z.boolean(),
+		description: z.string().nullable().catch(null),
+		updatedBy: z.string().nullable().catch(null),
+		updatedAt: z.iso.datetime()
+	})
+	.meta({ id: 'DbRemoteConfigParameter', description: 'One Remote Config parameter.' });
+
+/** The `PUT /db/admin/remote-config/{key}` body. `defaultValue` is deliberately
+ * untyped here: it is checked against `valueType` by the agent, which can say
+ * "checkoutV2 is a boolean" where a zod union could only say "invalid". */
+export const dbRemoteConfigParameterInputSchema = z
+	.object({
+		valueType: dbRemoteConfigValueTypeSchema,
+		defaultValue: z.unknown(),
+		description: z.string().max(200).nullable().optional()
+	})
+	.meta({
+		id: 'DbRemoteConfigParameterInput',
+		description: 'A parameter to store as a draft. Nothing reaches clients until publish.'
+	});
+
+export const dbRemoteConfigSchema = z
+	.object({
+		parameters: z.array(dbRemoteConfigParameterSchema),
+		/** How many parameters are not yet what clients are being served. */
+		pendingChanges: z.number().int().catch(0),
+		everPublished: z.boolean().catch(false),
+		limit: z.number().int()
+	})
+	.meta({
+		id: 'DbRemoteConfig',
+		description: "A project's Remote Config parameters, sorted by key."
+	});
+
 // --- Join views (JOIN1) ---
 
 /** A read-only view over several member tables: one Durable Object that
@@ -914,6 +972,8 @@ export type DbAggregateRequest = z.infer<typeof dbAggregateRequestSchema>;
 export type DbImportReport = z.infer<typeof dbImportReportSchema>;
 export type DbRestoreResult = z.infer<typeof dbRestoreResultSchema>;
 export type DbRestorePoint = z.infer<typeof dbRestorePointSchema>;
+export type DbRemoteConfigParameter = z.infer<typeof dbRemoteConfigParameterSchema>;
+export type DbRemoteConfig = z.infer<typeof dbRemoteConfigSchema>;
 export type DbRestorePoints = z.infer<typeof dbRestorePointsSchema>;
 export type DbReplicationMode = z.infer<typeof dbReplicationModeSchema>;
 export type DbReplica = z.infer<typeof dbReplicaSchema>;
