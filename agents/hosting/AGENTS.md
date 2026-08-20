@@ -58,18 +58,71 @@ fully separate, same as storage.
 - **Hosting has no public routes at all.** Its whole manifest route table is
   operator: `/overview`, `/apps/*`, `/deploys`.
 
+## App environments
+
+Three stores per app, three different trust shapes — never mix them up:
+
+- **Runtime vars** (`app_vars`): plaintext at rest on purpose — they upload as
+  `plain_text` bindings anyway, and DO storage is the trust boundary. Applied
+  on every deploy as platform > stored > the CLI's `meta.vars` (the console is
+  the canonical editor), and PATCHed onto the live script on edit. The patch
+  replaces the WHOLE `plain_text` set (that is how a deletion disappears), so
+  `apps.last_deploy_vars` snapshots the CLI's vars to rebuild it without the
+  CLI present. Store-first: an edit is never lost to a transient API failure.
+- **Runtime secrets** (`app_secrets`): NAMES only. Values are write-through to
+  Cloudflare's script settings and unrecoverable by design; deploys carry
+  `keep_bindings: ['secret_text']` so they survive. Delete uses the per-script
+  secrets endpoint (404-tolerant), then drops the row — a failed CF delete
+  keeps the row, which is the honest state.
+- **Build env** (`build_vars` / `build_secrets`, ROOT project only —
+  connection-scoped): fetched by the GitHub Actions workflow via its OIDC
+  token before the build step. Build secrets are the ONE value we store AND
+  must recover, so they are AES-256-GCM under `HOSTING_MASTER_KEY`
+  (`src/crypto.ts`: `v1:<iv>:<ct>` versioned format, row-bound AAD
+  `<appName>\0<name>`). Decrypted values only ever transit the
+  service-binding-only `/internal/.../build-env` route; the operator surface
+  answers names only. No key ⇒ build-secret writes 503; encrypted rows with no
+  key ⇒ the bundle route fails loud rather than build without secrets.
+
+`eraseApp` clears all three even without an `apps` row — claim-only apps can
+be configured before their first deploy.
+
+## Analytics
+
+The serve path writes one Analytics Engine data point per dispatched request
+(`index1` = subdomain, `blob1` = status, `double1` = duration ms) — the
+subdomain IS the script name, so the DO joins it back to an app with zero
+lookups. Unclaimed-subdomain 404s are deliberately not recorded. The read
+(`GET /apps/:app/analytics`) mirrors the auth agent's ladder: `connected`
+(CF_ACCOUNT_ID + CF_ANALYTICS_API_TOKEN + WAE_DATASET) → `local` (the
+LOCAL_ANALYTICS D1 stand-in local dev and e2e read back) → `write-only` →
+`error`, and a failed query answers 200 with zeroed series, never a 5xx. The
+top-level wrangler.jsonc declares NO dataset — Analytics Engine is an
+account-level opt-in and the binding fails a fresh clone's deploy (code
+10089, the auth precedent).
+
 ## Degradation
 
 Workers for Platforms is a paid product. Without `CF_ACCOUNT_ID` +
 `CF_HOSTING_API_TOKEN` + a dispatch namespace, deploys answer 503 and the rest
 of the stack is unaffected. `HOSTING_DOMAIN` empty disables the serving path.
+`HOSTING_MASTER_KEY` unset disables only build-secret writes.
+
+Stub mode (`HOSTING_STUB=true`) stubs the Cloudflare API, never the logic:
+deploys are recorded, secrets store their names (and answer ok), build-secret
+encryption is REAL (local/test pin a dev master key as a var), and analytics
+read the local D1 — which is what lets e2e exercise every contract on every
+run. The two shapes only a live namespace proves — the settings PATCH on an
+assets-only script and the per-script secrets DELETE — are gated by the
+opt-in `RUN_HOSTING_E2E` spec; do not call those surfaces "verified" on a new
+account until it has passed.
 
 ## Commands
 
 ```bash
 npm run dev              # wrangler dev --env local, :8790
 npm run typecheck
-npm run test:unit        # route-access, tar, cloudflare
+npm run test:unit        # route-access, tar, cloudflare, crypto
 npm run deploy:outbound  # the outbound worker — needed before the agent
 npm run migrations
 ```
