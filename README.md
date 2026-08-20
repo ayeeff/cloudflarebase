@@ -161,16 +161,19 @@ posts.subscribe(
 );
 ```
 
-**Remote Config** turns hardcoded constants into flags you flip from the
-console — evaluated per caller on the server, so the targeting rules never
-reach the device:
+**Remote Config** is what your app checks on first paint — announcement
+banners, feature rollouts, plan limits — flipped from the console, evaluated
+per caller on the server so the targeting rules never reach the browser:
 
 ```ts
-const config = db.remoteConfig({ defaults: { checkoutV2: false } });
+const config = db.remoteConfig({
+	defaults: { banner: '', checkoutV2: false },
+	uid: visitorId // stable per-visitor id — rollout buckets stick to it
+});
 await config.fetch(); // never throws — offline keeps the defaults
-if (config.get('checkoutV2')) {
-	// ship the new checkout
-}
+
+showBanner(config.get('banner')); // announcement copy, changed without a deploy
+mount(config.get('checkoutV2') ? NewCheckout : Checkout); // live for 10% of DE, say
 ```
 
 **Storage** is buckets of files with per-bucket access modes:
@@ -188,6 +191,7 @@ await files.upload('me.png', file); // any size — large files go multipart aut
 
 // A URL a browser can hold — drops straight into <img src>
 const { signedUrl } = await files.createSignedUrl('me.png', { expiresIn: 3600 });
+const { objects, folders } = await files.list({ prefix: '', folders: true });
 ```
 
 **On a server** with no user to relay — a cron, queue consumer, or webhook —
