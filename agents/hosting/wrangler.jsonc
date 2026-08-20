@@ -253,7 +253,9 @@
 				"HOSTING_DOMAIN": "cfbase-preview.dev",
 				"DISPATCH_NAMESPACE": "cfbase-apps-preview",
 				"DISPATCH_OUTBOUND": "true",
-				"HOSTING_APEX_REDIRECT": "https://cloudflarebase.com",
+				// Preview's apex lands on the preview console, not production's -
+				// an operator poking the preview stack should stay on it.
+				"HOSTING_APEX_REDIRECT": "https://cloudflarebase-com-preview.cloudflarebase.workers.dev",
 				"WAE_DATASET": "cloudflarebase_hosting_requests_preview",
 			},
 			"analytics_engine_datasets": [
