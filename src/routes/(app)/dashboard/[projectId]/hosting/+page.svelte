@@ -23,6 +23,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import {
+		AppWindow,
 		Check,
 		ChevronRight,
 		Copy,
@@ -308,35 +309,61 @@
 						</p>
 					</div>
 				{:else}
-					<div class="grid gap-2">
+					<div class="grid gap-3">
 						{#each apps as app (app.name)}
-							<!-- The whole card navigates: vars, secrets, build settings,
-							     analytics, and deletion all live on the app's own page. -->
-							<a
-								href={resolve(
-									'/(app)/dashboard/[projectId]/hosting/apps/[appName]/[[tab=hostingapp]]',
-									{
-										projectId: data.projectId,
-										appName: app.name,
-										tab: undefined as unknown as string
-									}
-								)}
-								class="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent/40"
-								data-testid={`open-app-${app.name}`}
+							<!-- The card navigates to the app's own page (vars, secrets,
+							     build settings, analytics, deletion), via a stretched link
+							     on the title - the live URL underneath is its own anchor,
+							     and anchors cannot nest. The primary outline and icon tile
+							     mark it as the clickable object on this page, matching the
+							     overview's product cards. -->
+							<div
+								class="relative flex flex-wrap items-center gap-3 rounded-lg border border-primary/30 bg-card p-4 transition-colors hover:border-primary/60 hover:bg-accent/40"
 							>
+								<div
+									class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+								>
+									<AppWindow class="h-5 w-5" strokeWidth={1.8} />
+								</div>
 								<div class="min-w-0 flex-1">
-									<p class="flex items-center gap-2 truncate text-sm font-medium">
-										{app.name}
-										{#if app.deployCount === 0}
-											<!-- Claimed but never deployed: connecting a repository
-											     reserves the subdomain immediately, and the operator
-											     should see it rather than an empty card. -->
-											<Badge variant="outline" class="font-normal">Awaiting first deploy</Badge>
-										{/if}
-									</p>
-									<p class="font-mono text-xs text-muted-foreground">
-										{app.url ? app.url.replace('https://', '') : app.subdomain}
-									</p>
+									<a
+										href={resolve(
+											'/(app)/dashboard/[projectId]/hosting/apps/[appName]/[[tab=hostingapp]]',
+											{
+												projectId: data.projectId,
+												appName: app.name,
+												tab: undefined as unknown as string
+											}
+										)}
+										class="after:absolute after:inset-0"
+										data-testid={`open-app-${app.name}`}
+									>
+										<p class="flex items-center gap-2 truncate text-sm font-semibold">
+											{app.name}
+											{#if app.deployCount === 0}
+												<!-- Claimed but never deployed: connecting a repository
+												     reserves the subdomain immediately, and the operator
+												     should see it rather than an empty card. -->
+												<Badge variant="outline" class="font-normal">Awaiting first deploy</Badge>
+											{/if}
+										</p>
+									</a>
+									{#if app.url}
+										<!-- Above the stretched overlay, so the live app opens
+										     instead of the settings page. -->
+										<a
+											href={app.url}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="relative z-10 inline-flex max-w-full items-center gap-1 truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
+											data-testid={`open-app-url-${app.name}`}
+										>
+											{app.url.replace('https://', '')}
+											<ExternalLink class="h-3 w-3 shrink-0" />
+										</a>
+									{:else}
+										<p class="truncate font-mono text-xs text-muted-foreground">{app.subdomain}</p>
+									{/if}
 								</div>
 								<div class="shrink-0 text-right text-xs text-muted-foreground">
 									{#if app.deployCount === 0}
@@ -349,7 +376,7 @@
 									{/if}
 								</div>
 								<ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground" />
-							</a>
+							</div>
 						{/each}
 					</div>
 				{/if}
