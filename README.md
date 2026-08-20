@@ -161,19 +161,16 @@ posts.subscribe(
 );
 ```
 
-**Remote Config** is what your app checks on first paint — announcement
-banners, feature rollouts, plan limits — flipped from the console, evaluated
-per caller on the server so the targeting rules never reach the browser:
+**Remote Config** is the switch you reach for while production is on fire —
+flip it in the console and every client obeys, no deploy:
 
 ```ts
-const config = db.remoteConfig({
-	defaults: { banner: '', checkoutV2: false },
-	uid: visitorId // stable per-visitor id — rollout buckets stick to it
-});
+const config = db.remoteConfig({ defaults: { signupsOpen: true } });
 await config.fetch(); // never throws — offline keeps the defaults
 
-showBanner(config.get('banner')); // announcement copy, changed without a deploy
-mount(config.get('checkoutV2') ? NewCheckout : Checkout); // live for 10% of DE, say
+if (!config.get('signupsOpen')) {
+	form.replaceWith('Signups are paused — back soon.');
+}
 ```
 
 **Storage** is buckets of files with per-bucket access modes:
