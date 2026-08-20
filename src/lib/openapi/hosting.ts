@@ -4,6 +4,11 @@ import {
 	hostingClaimSchema,
 	hostingDeployPageSchema,
 	hostingOverviewSchema,
+	hostingSecretListSchema,
+	hostingSecretRequestSchema,
+	hostingVarListSchema,
+	hostingVarsUpdateSchema,
+	hostingVarsUpdatedSchema,
 	mintDeployTokenSchema,
 	mintedDeployTokenSchema
 } from '$lib/agents';
@@ -45,6 +50,11 @@ export const hostingOpenApi: AgentOpenApiModule = {
 		hostingDeployPageSchema,
 		hostingClaimSchema,
 		hostingClaimRequestSchema,
+		hostingVarListSchema,
+		hostingVarsUpdateSchema,
+		hostingVarsUpdatedSchema,
+		hostingSecretListSchema,
+		hostingSecretRequestSchema,
 		deployTokenSchema,
 		mintDeployTokenSchema,
 		mintedDeployTokenSchema
@@ -112,6 +122,80 @@ export const hostingOpenApi: AgentOpenApiModule = {
 					'403': { description: 'Demo projects cannot deploy apps.' },
 					'429': { description: 'Daily deploy limit reached.' },
 					'503': { description: 'Hosting is not configured on this install.' }
+				}
+			}
+		},
+		'/hosting/apps/{app}/vars': {
+			get: {
+				tags: [HOSTING_TAG],
+				summary: 'List runtime variables',
+				description:
+					'The stored plain-text variables for one app. They apply as bindings on every deploy; stored values win over the CLI-declared `meta.vars` of the same name.',
+				security: [{ sessionCookie: [] }],
+				parameters: [appParam],
+				responses: {
+					'200': jsonResponse(hostingVarListSchema, 'The variables.'),
+					'401': UNAUTHORIZED
+				}
+			},
+			put: {
+				tags: [HOSTING_TAG],
+				summary: 'Replace runtime variables',
+				description:
+					'Replaces the whole set - absent names are deleted. The store always succeeds; when the app has a live deploy the script is patched in place, reported by `patched` (false = the change applies at the next deploy).',
+				security: [{ sessionCookie: [] }],
+				parameters: [appParam],
+				requestBody: jsonBody(hostingVarsUpdateSchema, 'The full variable set.'),
+				responses: {
+					'200': jsonResponse(hostingVarsUpdatedSchema, 'The stored set and patch outcome.'),
+					'400': { description: 'Invalid name/value, or the 64-variable cap was exceeded.' },
+					'401': UNAUTHORIZED
+				}
+			}
+		},
+		'/hosting/apps/{app}/secrets': {
+			get: {
+				tags: [HOSTING_TAG],
+				summary: 'List secrets',
+				description: 'Names and timestamps only - values are write-through and unrecoverable.',
+				security: [{ sessionCookie: [] }],
+				parameters: [appParam],
+				responses: {
+					'200': jsonResponse(hostingSecretListSchema, 'The secret names.'),
+					'401': UNAUTHORIZED
+				}
+			},
+			post: {
+				tags: [HOSTING_TAG],
+				summary: 'Set a secret',
+				description:
+					'Writes one secret through to the deployed script (`cloudflarebase secret put`). Deploys use `keep_bindings`, so redeploys never drop it. Requires a deployed app.',
+				security: [{ sessionCookie: [] }],
+				parameters: [appParam],
+				requestBody: jsonBody(hostingSecretRequestSchema, 'The secret.'),
+				responses: {
+					'200': { description: 'Set.' },
+					'400': { description: 'Invalid body, or the 64-secret cap was exceeded.' },
+					'401': UNAUTHORIZED,
+					'404': { description: 'No such app (deploy first).' },
+					'503': { description: 'Hosting is not configured on this install.' }
+				}
+			}
+		},
+		'/hosting/apps/{app}/secrets/{name}': {
+			delete: {
+				tags: [HOSTING_TAG],
+				summary: 'Delete a secret',
+				description: 'Removes the script binding and the name record. Idempotent.',
+				security: [{ sessionCookie: [] }],
+				parameters: [
+					appParam,
+					{ name: 'name', in: 'path', required: true, schema: { type: 'string' } }
+				],
+				responses: {
+					'200': { description: 'Deleted (or was already gone).' },
+					'401': UNAUTHORIZED,
+					'502': { description: 'Cloudflare refused the deletion; the secret is still set.' }
 				}
 			}
 		},

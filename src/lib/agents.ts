@@ -861,6 +861,68 @@ export const mintedDeployTokenSchema = z
 	})
 	.meta({ id: 'MintedDeployToken' });
 
+export const hostingVarSchema = z
+	.object({
+		name: z.string(),
+		value: z.string(),
+		createdAt: z.iso.datetime(),
+		updatedAt: z.iso.datetime()
+	})
+	.meta({
+		id: 'HostingVar',
+		description:
+			'One stored runtime variable: applied as a plain_text binding on every deploy, and patched onto the live script when edited.'
+	});
+
+export const hostingVarListSchema = z
+	.object({ vars: z.array(hostingVarSchema) })
+	.meta({ id: 'HostingVarList' });
+
+export const hostingVarsUpdateSchema = z
+	.object({
+		vars: z
+			.record(z.string(), z.string())
+			.describe(
+				'The FULL set (UPPER_SNAKE names, single-line values <=5000 chars) - absent names are deleted.'
+			)
+	})
+	.meta({ id: 'HostingVarsUpdate' });
+
+export const hostingVarsUpdatedSchema = z
+	.object({
+		vars: z.array(hostingVarSchema),
+		patched: z
+			.boolean()
+			.describe(
+				'Whether the live script was updated in place; false means the change applies at the next deploy.'
+			),
+		warning: z.string().optional()
+	})
+	.meta({ id: 'HostingVarsUpdated' });
+
+export const hostingSecretMetaSchema = z
+	.object({
+		name: z.string(),
+		createdAt: z.iso.datetime(),
+		updatedAt: z.iso.datetime()
+	})
+	.meta({
+		id: 'HostingSecretMeta',
+		description:
+			'Secret name and timestamps. Values are write-through to Cloudflare and unrecoverable by design.'
+	});
+
+export const hostingSecretListSchema = z
+	.object({ secrets: z.array(hostingSecretMetaSchema) })
+	.meta({ id: 'HostingSecretList' });
+
+export const hostingSecretRequestSchema = z
+	.object({
+		name: z.string().describe('UPPER_SNAKE_CASE.'),
+		value: z.string().describe('1-5000 characters. Stored by Cloudflare, never by Cloudflarebase.')
+	})
+	.meta({ id: 'HostingSecretRequest' });
+
 // --- Storage agent (mirrors agents/storage/src/{agent,bucket,schemas}.ts) ---
 
 /** `none` closes a side to the public API entirely - operator surfaces only.
@@ -1031,6 +1093,8 @@ export type HostingClaim = z.infer<typeof hostingClaimSchema>;
 export type DeployTokenInfo = z.infer<typeof deployTokenSchema>;
 export type GithubConnectionInfo = z.infer<typeof githubConnectionSchema>;
 export type MintedDeployToken = z.infer<typeof mintedDeployTokenSchema>;
+export type HostingVar = z.infer<typeof hostingVarSchema>;
+export type HostingSecretMeta = z.infer<typeof hostingSecretMetaSchema>;
 export type StorageAccessMode = z.infer<typeof storageAccessModeSchema>;
 export type StorageBucketSummary = z.infer<typeof storageBucketSummarySchema>;
 export type StorageBucketInfo = z.infer<typeof storageBucketSchema>;

@@ -33,6 +33,10 @@ test('this agent declares no public route', () => {
 	);
 	assert.equal(routeAccess('/apps/site/deploys'), 'operator');
 	assert.equal(routeAccess('/apps/site/secrets'), 'operator');
+	assert.equal(routeAccess('/apps/site/secrets/API_KEY'), 'operator');
+	assert.equal(routeAccess('/apps/site/vars'), 'operator');
+	assert.equal(routeAccess('/apps/site/build-env'), 'operator');
+	assert.equal(routeAccess('/apps/site/analytics'), 'operator');
 	assert.equal(routeAccess('/overview'), 'operator');
 	assert.equal(routeAccess('/deploys'), 'operator');
 	assert.equal(routeAccess('/'), 'operator');

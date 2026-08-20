@@ -58,6 +58,29 @@ export const secretBodySchema = z.strictObject({
 	value: z.string().min(1).max(5000),
 });
 
+/** Env var and secret names: UPPER_SNAKE, bounded. */
+export const varNameSchema = z
+	.string()
+	.regex(/^[A-Z][A-Z0-9_]*$/)
+	.max(128);
+
+/** Stored env values are single-line on purpose: build-time env is exported
+ * line-by-line into the runner's $GITHUB_ENV, and one contract for both
+ * stores keeps the console editor honest. */
+export const varValueSchema = z
+	.string()
+	.max(5000)
+	.regex(/^[^\r\n]*$/);
+
+/** Replace-the-set body for the vars stores (runtime and build). */
+export const varsBodySchema = z.strictObject({
+	vars: z.record(varNameSchema, varValueSchema),
+});
+
+/** `apps.last_deploy_vars` is a storage read, so it gets a schema - a row
+ * written by an older version (or by hand) degrades to "no CLI vars". */
+export const storedVarsSchema = z.record(z.string(), z.string()).catch({});
+
 /** Keyset cursor for the deploy list: `<createdAtMs>:<id>`. */
 export const deployCursorSchema = z
 	.string()

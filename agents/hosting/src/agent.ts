@@ -5,9 +5,11 @@ import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlit
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import {
 	deleteScript,
+	deleteScriptSecret,
 	deployVars,
 	deleteScriptsByTag,
 	patchScriptSecret,
+	patchScriptVars,
 	putScript,
 	uploadAssets,
 	type AssetFile,
@@ -33,7 +35,10 @@ import {
 	deployMetaSchema,
 	projectIdSchema,
 	secretBodySchema,
+	storedVarsSchema,
 	subdomainSchema,
+	varNameSchema,
+	varsBodySchema,
 	type DeployMeta,
 } from './schemas';
 import { gunzip, parseTar, toAssetPaths } from './tar';
@@ -53,6 +58,8 @@ import { gunzip, parseTar, toAssetPaths } from './tar';
 
 const MAX_APPS = 10;
 const MAX_DEPLOYS_PER_DAY = 50;
+const MAX_VARS_PER_APP = 64;
+const MAX_SECRETS_PER_APP = 64;
 // Sized for framework output, not just hand-rolled Workers: an OpenNext
 // worker bundle routinely passes 10 MB uncompressed, and a Next site blows
 // 1000 files on `_next/static` alone. The DO parses deploys in memory, so
@@ -357,9 +364,26 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 		if (deploy && request.method === 'POST') {
 			return this.deployApp(decodeURIComponent(deploy[1]), request);
 		}
+		const vars = subPath.match(/^\/apps\/([^/]+)\/vars$/);
+		if (vars && request.method === 'GET') {
+			return this.listVars(decodeURIComponent(vars[1]));
+		}
+		if (vars && request.method === 'PUT') {
+			return this.putVars(decodeURIComponent(vars[1]), request);
+		}
 		const secret = subPath.match(/^\/apps\/([^/]+)\/secrets$/);
+		if (secret && request.method === 'GET') {
+			return this.listSecrets(decodeURIComponent(secret[1]));
+		}
 		if (secret && request.method === 'POST') {
 			return this.setSecret(decodeURIComponent(secret[1]), request);
+		}
+		const secretName = subPath.match(/^\/apps\/([^/]+)\/secrets\/([^/]+)$/);
+		if (secretName && request.method === 'DELETE') {
+			return this.deleteSecret(
+				decodeURIComponent(secretName[1]),
+				decodeURIComponent(secretName[2]),
+			);
 		}
 
 		return Response.json({ error: 'not found' }, { status: 404 });
@@ -557,6 +581,13 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 			return Response.json({ error: 'meta.mainModule is not among the modules' }, { status: 400 });
 		}
 
+		// Stored console vars sit between the CLI's meta.vars and the platform's:
+		// the console is the canonical editor, so its values win over a stale
+		// cloudflarebase.json, and the platform's facts stay uncontestable on top
+		// (deployVars applies them last).
+		const storedRows = await this.db.select().from(appVars).where(eq(appVars.appName, appName));
+		const storedVars = Object.fromEntries(storedRows.map((row) => [row.name, row.value]));
+
 		if (!this.stub) {
 			const api = this.cfApi();
 			if (!this.env.DISPATCH || !api) {
@@ -579,7 +610,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 					compatibilityFlags: meta.compatibilityFlags ?? [],
 					assetsJwt,
 					notFoundHandling: meta.notFoundHandling,
-					vars: deployVars(meta.vars, this.name, input.origin),
+					vars: deployVars({ ...(meta.vars ?? {}), ...storedVars }, this.name, input.origin),
 				});
 			} catch (cause) {
 				Sentry.captureException(cause, {
@@ -604,7 +635,13 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 		await this.db.insert(deploys).values(record);
 		await this.db
 			.update(apps)
-			.set({ deployCount: app.deployCount + 1, lastDeployAt: record.createdAt })
+			.set({
+				deployCount: app.deployCount + 1,
+				lastDeployAt: record.createdAt,
+				// Snapshot of what the CLI declared, so a later console var edit can
+				// rebuild the script's full plain_text set without the CLI present.
+				lastDeployVars: JSON.stringify(meta.vars ?? {}),
+			})
 			.where(eq(apps.name, appName));
 		await this.syncState();
 
@@ -688,23 +725,209 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 		if (!body.success) {
 			return Response.json({ error: 'invalid secret body' }, { status: 400 });
 		}
-		if (this.stub) {
-			// Stub deploys never reach the namespace, so there is no script to
-			// patch - honest 501, mirroring PITR in local dev.
-			return Response.json({ error: 'secrets are unavailable in stub mode' }, { status: 501 });
+		const name = body.data.name;
+
+		const [existing] = await this.db
+			.select()
+			.from(appSecrets)
+			.where(and(eq(appSecrets.appName, appName), eq(appSecrets.name, name)))
+			.limit(1);
+		if (!existing) {
+			const [{ value: secretCount }] = await this.db
+				.select({ value: count() })
+				.from(appSecrets)
+				.where(eq(appSecrets.appName, appName));
+			if (secretCount >= MAX_SECRETS_PER_APP) {
+				return Response.json(
+					{ error: `apps are limited to ${MAX_SECRETS_PER_APP} secrets` },
+					{ status: 400 },
+				);
+			}
 		}
-		const api = this.cfApi();
-		if (!api) {
-			return Response.json({ error: 'hosting is not configured' }, { status: 503 });
+
+		if (!this.stub) {
+			// Write-through: the value goes to Cloudflare's script settings and is
+			// never at rest here. Stub mode skips the call (there is no script) but
+			// still records the name, so local dev and e2e exercise the whole
+			// list/delete contract.
+			const api = this.cfApi();
+			if (!api) {
+				return Response.json({ error: 'hosting is not configured' }, { status: 503 });
+			}
+			try {
+				await patchScriptSecret(api, app.subdomain, name, body.data.value);
+			} catch (cause) {
+				Sentry.captureException(cause, {
+					tags: { operation: 'hosting-secret', projectId: this.name },
+				});
+				return Response.json({ error: 'setting the secret failed' }, { status: 502 });
+			}
 		}
-		try {
-			await patchScriptSecret(api, app.subdomain, body.data.name, body.data.value);
-		} catch (cause) {
-			Sentry.captureException(cause, {
-				tags: { operation: 'hosting-secret', projectId: this.name },
+
+		const now = new Date();
+		await this.db
+			.insert(appSecrets)
+			.values({ appName, name, createdAt: now, updatedAt: now })
+			.onConflictDoUpdate({
+				target: [appSecrets.appName, appSecrets.name],
+				set: { updatedAt: now },
 			});
-			return Response.json({ error: 'setting the secret failed' }, { status: 502 });
-		}
 		return Response.json({ ok: true });
+	}
+
+	/** Secret NAMES and timestamps - the values live at Cloudflare, not here. */
+	private async listSecrets(appName: string): Promise<Response> {
+		if (!appNameSchema.safeParse(appName).success) {
+			return Response.json({ error: 'invalid app name' }, { status: 400 });
+		}
+		const rows = await this.db
+			.select()
+			.from(appSecrets)
+			.where(eq(appSecrets.appName, appName))
+			.orderBy(appSecrets.name);
+		return Response.json({
+			secrets: rows.map((row) => ({
+				name: row.name,
+				createdAt: row.createdAt.toISOString(),
+				updatedAt: row.updatedAt.toISOString(),
+			})),
+		});
+	}
+
+	/** Idempotent: the name row goes regardless; the script binding is removed
+	 * when there is a script to remove it from (404-tolerant at the API). */
+	private async deleteSecret(appName: string, name: string): Promise<Response> {
+		if (!appNameSchema.safeParse(appName).success) {
+			return Response.json({ error: 'invalid app name' }, { status: 400 });
+		}
+		if (!varNameSchema.safeParse(name).success) {
+			return Response.json({ error: 'invalid secret name' }, { status: 400 });
+		}
+		if (!this.stub) {
+			const [app] = await this.db.select().from(apps).where(eq(apps.name, appName)).limit(1);
+			const api = this.cfApi();
+			if (app && api) {
+				try {
+					await deleteScriptSecret(api, app.subdomain, name);
+				} catch (cause) {
+					Sentry.captureException(cause, {
+						tags: { operation: 'hosting-secret-delete', projectId: this.name },
+					});
+					// The row stays - the console keeps showing a secret that is
+					// still set, which is the honest state.
+					return Response.json({ error: 'deleting the secret failed' }, { status: 502 });
+				}
+			}
+		}
+		await this.db
+			.delete(appSecrets)
+			.where(and(eq(appSecrets.appName, appName), eq(appSecrets.name, name)));
+		return Response.json({ ok: true });
+	}
+
+	/** Stored runtime vars. No `apps`-row requirement: a claim-only app can be
+	 * configured before its first deploy, which then picks the vars up. */
+	private async listVars(appName: string): Promise<Response> {
+		if (!appNameSchema.safeParse(appName).success) {
+			return Response.json({ error: 'invalid app name' }, { status: 400 });
+		}
+		return Response.json({ vars: await this.varSummaries(appName) });
+	}
+
+	private async varSummaries(
+		appName: string,
+	): Promise<{ name: string; value: string; createdAt: string; updatedAt: string }[]> {
+		const rows = await this.db
+			.select()
+			.from(appVars)
+			.where(eq(appVars.appName, appName))
+			.orderBy(appVars.name);
+		return rows.map((row) => ({
+			name: row.name,
+			value: row.value,
+			createdAt: row.createdAt.toISOString(),
+			updatedAt: row.updatedAt.toISOString(),
+		}));
+	}
+
+	/**
+	 * Replace-the-set: the console form submits the whole table, so absent
+	 * names are deletions. The store always succeeds first; patching the live
+	 * script is best-effort and reported (`patched` / `warning`), never a way
+	 * to lose an edit to a transient API failure.
+	 */
+	private async putVars(appName: string, request: Request): Promise<Response> {
+		if (!appNameSchema.safeParse(appName).success) {
+			return Response.json({ error: 'invalid app name' }, { status: 400 });
+		}
+		const body = varsBodySchema.safeParse(await request.json().catch(() => null));
+		if (!body.success) {
+			return Response.json({ error: 'invalid vars body' }, { status: 400 });
+		}
+		const wanted = body.data.vars;
+		if (Object.keys(wanted).length > MAX_VARS_PER_APP) {
+			return Response.json(
+				{ error: `apps are limited to ${MAX_VARS_PER_APP} variables` },
+				{ status: 400 },
+			);
+		}
+
+		const now = new Date();
+		const existing = await this.db.select().from(appVars).where(eq(appVars.appName, appName));
+		const current = new Map(existing.map((row) => [row.name, row]));
+		for (const row of existing) {
+			if (!(row.name in wanted)) {
+				await this.db
+					.delete(appVars)
+					.where(and(eq(appVars.appName, appName), eq(appVars.name, row.name)));
+			}
+		}
+		for (const [name, value] of Object.entries(wanted)) {
+			const row = current.get(name);
+			if (!row) {
+				await this.db
+					.insert(appVars)
+					.values({ appName, name, value, createdAt: now, updatedAt: now });
+			} else if (row.value !== value) {
+				await this.db
+					.update(appVars)
+					.set({ value, updatedAt: now })
+					.where(and(eq(appVars.appName, appName), eq(appVars.name, name)));
+			}
+		}
+
+		let patched = false;
+		let warning: string | undefined;
+		const [app] = await this.db.select().from(apps).where(eq(apps.name, appName)).limit(1);
+		const api = this.cfApi();
+		if (!this.stub && app?.lastDeployAt && api) {
+			// The last CLI-declared vars ride the stored snapshot; the platform's
+			// come out on top, same order as a deploy.
+			let cliVars: Record<string, string> = {};
+			try {
+				cliVars = storedVarsSchema.parse(JSON.parse(app.lastDeployVars ?? '{}'));
+			} catch {
+				// An unreadable snapshot degrades to "no CLI vars".
+			}
+			try {
+				await patchScriptVars(
+					api,
+					app.subdomain,
+					deployVars({ ...cliVars, ...wanted }, this.name, new URL(request.url).origin),
+				);
+				patched = true;
+			} catch (cause) {
+				Sentry.captureException(cause, {
+					tags: { operation: 'hosting-vars', projectId: this.name },
+				});
+				warning = 'saved, but updating the live script failed - the next deploy applies them';
+			}
+		}
+
+		return Response.json({
+			vars: await this.varSummaries(appName),
+			patched,
+			...(warning ? { warning } : {}),
+		});
 	}
 }

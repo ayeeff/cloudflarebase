@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deployVars, wrapEntry } from './cloudflare';
+import { deleteScriptSecret, deployVars, patchScriptVars, wrapEntry } from './cloudflare';
 
 /**
  * The shim entry only matters against a REAL dispatch namespace (untrusted
@@ -86,4 +86,83 @@ test('deployVars: an app cannot point itself at another project', () => {
 	);
 	assert.equal(vars.CLOUDFLAREBASE_PROJECT, 'acme');
 	assert.equal(vars.CLOUDFLAREBASE_URL, 'https://console.example');
+});
+
+/**
+ * The settings PATCH shapes are pinned here for the same reason as the shim:
+ * they only run against a REAL dispatch namespace, which the e2e stub never
+ * dials. A captured fetch is the whole harness.
+ */
+
+const API = { accountId: 'acct', apiToken: 'tok', namespace: 'ns' };
+
+async function withFetchCapture<T>(
+	response: Response,
+	run: () => Promise<T>,
+): Promise<{ url: string; init: RequestInit }> {
+	const original = globalThis.fetch;
+	let captured: { url: string; init: RequestInit } | undefined;
+	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		captured = { url: String(input), init: init ?? {} };
+		return response;
+	}) as typeof fetch;
+	try {
+		await run();
+	} finally {
+		globalThis.fetch = original;
+	}
+	assert.ok(captured, 'fetch was never called');
+	return captured!;
+}
+
+const ok = () => new Response(JSON.stringify({ success: true, result: {} }), { status: 200 });
+
+test('patchScriptVars replaces the plain_text set and keeps everything else', async () => {
+	const { url, init } = await withFetchCapture(ok(), () =>
+		patchScriptVars(API, 'site', { A: '1', B: '2' }),
+	);
+	assert.equal(
+		url,
+		'https://api.cloudflare.com/client/v4/accounts/acct/workers/dispatch/namespaces/ns/scripts/site/settings',
+	);
+	assert.equal(init.method, 'PATCH');
+	const part = (init.body as FormData).get('settings') as Blob;
+	const settings = JSON.parse(await part.text()) as {
+		bindings: { type: string; name: string; text: string }[];
+		keep_bindings: string[];
+		keep_assets: boolean;
+	};
+	assert.deepEqual(settings.bindings, [
+		{ type: 'plain_text', name: 'A', text: '1' },
+		{ type: 'plain_text', name: 'B', text: '2' },
+	]);
+	// NOT 'plain_text': replacing the whole set is how a deleted var actually
+	// disappears from the live script.
+	assert.deepEqual(settings.keep_bindings, ['secret_text', 'assets']);
+	assert.equal(settings.keep_assets, true);
+});
+
+test('deleteScriptSecret dials the per-script secret and tolerates 404', async () => {
+	const { url, init } = await withFetchCapture(ok(), () =>
+		deleteScriptSecret(API, 'site', 'API_KEY'),
+	);
+	assert.equal(
+		url,
+		'https://api.cloudflare.com/client/v4/accounts/acct/workers/dispatch/namespaces/ns/scripts/site/secrets/API_KEY',
+	);
+	assert.equal(init.method, 'DELETE');
+
+	// Already gone is not an error - the row deletion must proceed.
+	await withFetchCapture(new Response('', { status: 404 }), () =>
+		deleteScriptSecret(API, 'site', 'API_KEY'),
+	);
+
+	// Anything else is.
+	const original = globalThis.fetch;
+	globalThis.fetch = (async () => new Response('', { status: 500 })) as typeof fetch;
+	try {
+		await assert.rejects(deleteScriptSecret(API, 'site', 'API_KEY'), /HTTP 500/);
+	} finally {
+		globalThis.fetch = original;
+	}
 });

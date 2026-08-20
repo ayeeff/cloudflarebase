@@ -359,6 +359,66 @@ export async function patchScriptSecret(
 }
 
 /**
+ * Replaces the script's WHOLE `plain_text` set in one settings PATCH; secrets
+ * and assets stay. Callers pass the FULL effective set (platform over stored
+ * over the last deploy's CLI vars) - replacement, not addition, is how a
+ * deleted var actually disappears from the live script.
+ */
+export async function patchScriptVars(
+	api: CfApi,
+	scriptName: string,
+	vars: Record<string, string>,
+): Promise<void> {
+	const form = new FormData();
+	form.append(
+		'settings',
+		new Blob(
+			[
+				JSON.stringify({
+					bindings: Object.entries(vars).map(([name, text]) => ({
+						type: 'plain_text',
+						name,
+						text,
+					})),
+					// Deliberately NOT 'plain_text': this call replaces that set.
+					keep_bindings: ['secret_text', 'assets'],
+					keep_assets: true,
+				}),
+			],
+			{ type: 'application/json' },
+		),
+		'settings',
+	);
+	await cfFetch(
+		api,
+		`/workers/dispatch/namespaces/${api.namespace}/scripts/${scriptName}/settings`,
+		{
+			method: 'PATCH',
+			body: form,
+		},
+	);
+}
+
+/** Deletes one secret from a namespaced script. 404-tolerant: a secret set
+ * before name-tracking existed, or already gone, is not an error. */
+export async function deleteScriptSecret(
+	api: CfApi,
+	scriptName: string,
+	name: string,
+): Promise<void> {
+	const response = await fetch(
+		`${API_BASE}/accounts/${api.accountId}/workers/dispatch/namespaces/${api.namespace}/scripts/${scriptName}/secrets/${encodeURIComponent(name)}`,
+		{
+			method: 'DELETE',
+			headers: { authorization: `Bearer ${api.apiToken}` },
+		},
+	);
+	if (!response.ok && response.status !== 404) {
+		throw new Error(`deleting secret ${name} failed - HTTP ${response.status}`);
+	}
+}
+
+/**
  * The plain-text vars a deployed app is born with.
  *
  * The customer's declared vars come first and the platform's are applied over
