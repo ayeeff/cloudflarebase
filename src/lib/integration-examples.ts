@@ -301,15 +301,17 @@ const db = createDbClient({ baseUrl: '${url}', getToken });
 // Ship the defaults your code was written against: they render before the
 // first fetch answers, and keep working if it never does.
 const config = db.remoteConfig({
-  defaults: { checkoutV2: false, maxItems: 25 },
+  defaults: { signupsOpen: true, maxUploadMb: 25 },
   uid: installId,      // stable per-install id - keeps rollout buckets stable
   appVersion: '2.1.0'  // what appVersion rules match against
 });
 
 await config.fetch(); // never throws - offline keeps the previous values
 
-if (config.get('checkoutV2', false)) {
-  // ship the new checkout
+// The kill switch: flip signupsOpen in the console and every client obeys,
+// no deploy while production is on fire.
+if (!config.get('signupsOpen')) {
+  form.replaceWith('Signups are paused - back soon.');
 }
 
 // Revalidation, not a push: polls with If-None-Match (a 304 when nothing
@@ -329,8 +331,8 @@ const response = await fetch(
 );
 const { params } = await response.json();
 
-if (params.checkoutV2) {
-  // ship the new checkout
+if (!params.signupsOpen) {
+  form.replaceWith('Signups are paused - back soon.');
 }
 
 // Poll cheaply: replay the ETag and an unchanged config answers 304.
@@ -342,7 +344,7 @@ await fetch('${url}/remote-config', { headers: { 'if-none-match': etag } });`
 			label: 'cURL',
 			lang: 'bash',
 			code: `curl '${url}/remote-config?uid=install-42&appVersion=2.1.0'
-# -> { "params": { "checkoutV2": true, "maxItems": 25 }, "fetchedAt": "…" }
+# -> { "params": { "signupsOpen": true, "maxUploadMb": 25 }, "fetchedAt": "…" }
 
 # Replay the ETag; an unchanged config answers 304 with no body
 curl -H 'if-none-match: <etag>' '${url}/remote-config'`
