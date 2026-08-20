@@ -1678,7 +1678,15 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 					headers: sessionHeaders,
 				}),
 			)
-			.catch(() => null);
+			.catch((cause: unknown) => {
+				// The swallowed shape here is what made a five-day escalation read
+				// as one constant 503 in Sentry - the INNER failure must be named.
+				Sentry.captureException(cause, {
+					level: 'error',
+					tags: { operation: 'console-me', projectId: this.name },
+				});
+				return null;
+			});
 		// "Signed out" and "could not verify" are DIFFERENT answers and must not
 		// collapse into one. Better Auth answers a signed-out lookup with 200 and
 		// a null body (401/403 is the other ordinary form); a 429 from the rate
@@ -1689,6 +1697,22 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		if (!sessionResponse) return this.consoleMeUnavailable();
 		if (!sessionResponse.ok) {
 			if (sessionResponse.status !== 401 && sessionResponse.status !== 403) {
+				// Same reason as the catch above: the outer 503 is constant, so the
+				// inner status and body are the only place the real cause survives.
+				const body = await sessionResponse
+					.clone()
+					.text()
+					.then((value) => value.slice(0, 512))
+					.catch(() => '<unavailable>');
+				Sentry.captureMessage(`console/me inner get-session responded ${sessionResponse.status}`, {
+					level: 'error',
+					tags: {
+						operation: 'console-me',
+						innerStatus: String(sessionResponse.status),
+						projectId: this.name,
+					},
+					contexts: { response: { body } },
+				});
 				return this.consoleMeUnavailable();
 			}
 			return Response.json(null);
