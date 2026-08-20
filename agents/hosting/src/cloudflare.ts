@@ -357,3 +357,31 @@ export async function patchScriptSecret(
 		},
 	);
 }
+
+/**
+ * The plain-text vars a deployed app is born with.
+ *
+ * The customer's declared vars come first and the platform's are applied over
+ * them, deliberately: which project an app belongs to is the platform's fact,
+ * not a value the app gets to disagree with. An app that could point
+ * `CLOUDFLAREBASE_PROJECT` at another project would be reaching into another
+ * tenant's data plane by editing a config file.
+ *
+ * `CLOUDFLAREBASE_PROJECT` + `CLOUDFLAREBASE_URL` are exactly the names the
+ * admin SDKs resolve from, so `createDbAdmin()` with no arguments works inside
+ * a hosted Worker and `db.remoteConfig()` needs no setup. `PROJECT_ID` predates
+ * them and is kept because apps already deployed against it would otherwise
+ * break for nothing.
+ */
+export function deployVars(
+	declared: Record<string, string> | undefined,
+	projectId: string,
+	consoleOrigin: string,
+): Record<string, string> {
+	return {
+		...(declared ?? {}),
+		CLOUDFLAREBASE_PROJECT: projectId,
+		PROJECT_ID: projectId,
+		CLOUDFLAREBASE_URL: consoleOrigin,
+	};
+}

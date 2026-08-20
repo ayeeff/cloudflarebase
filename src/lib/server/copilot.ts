@@ -4,20 +4,18 @@
  * The loop runs in the dashboard Worker (this is the control plane, and the
  * only place that can see EVERY agent) and answers from live project data by
  * calling the auth and db agents over their service bindings. Conversation
- * history is control-plane state in D1 - the old per-agent transcript in the
- * auth Durable Object is deliberately not migrated.
+ * history lives in the CONSOLE project's own db agent (`./copilot-store`) -
+ * Cloudflarebase's dashboard eating its own database, the way it already eats
+ * its own auth.
  *
  * The response contract mirrors the auth agent's retired /chat surface
  * exactly (AgentChatMessage / AgentChatReply, 400 / 429 / 502 shapes), so the
  * dashboard pane and the e2e specs keep working unchanged.
  */
-import { and, count, desc, eq, gte, lt } from 'drizzle-orm';
 import { z } from 'zod';
 import { AGENT_REGISTRY, type AppAgentEntry } from '$lib/agent-registry';
 import { dbQuerySchema, type AgentChatMessage } from '$lib/agents';
 import { agentSegment, agentUrl, requireAgent } from '$lib/server/agents';
-import { chatMessage } from '$lib/server/db/schema';
-import type { ControlPlaneDatabase } from '$lib/server/db';
 import type { RequestEvent } from '@sveltejs/kit';
 
 const DEFAULT_CHAT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
@@ -30,9 +28,6 @@ const TOOL_RESULT_MAX_CHARS = 6_000;
 
 /** Mirrors the auth agent's demo ceiling: neurons are an account-level quota. */
 export const DEMO_MAX_CHAT_PER_DAY = 50;
-
-/** Demo DOs self-erase; this is the matching retention backstop for D1 rows. */
-const DEMO_CHAT_RETENTION_DAYS = 30;
 
 /**
  * Identifies a conversation thread. Operators converse under their user id
@@ -57,72 +52,6 @@ export async function chatClientKey(event: RequestEvent, projectId: string): Pro
 		new TextEncoder().encode(`${projectId}:${address}`)
 	);
 	return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-/** Last `limit` messages for the thread, oldest first. */
-export async function getChatHistory(
-	db: ControlPlaneDatabase,
-	projectId: string,
-	clientKey: string,
-	limit = 50
-): Promise<AgentChatMessage[]> {
-	const rows = await db
-		.select()
-		.from(chatMessage)
-		.where(and(eq(chatMessage.projectId, projectId), eq(chatMessage.clientKey, clientKey)))
-		.orderBy(desc(chatMessage.createdAt))
-		.limit(limit);
-	return rows.reverse().map((message) => ({
-		id: message.id,
-		role: message.role,
-		content: message.content,
-		createdAt: message.createdAt.toISOString()
-	}));
-}
-
-export async function saveChatMessage(
-	db: ControlPlaneDatabase,
-	projectId: string,
-	clientKey: string,
-	role: AgentChatMessage['role'],
-	content: string,
-	createdAt: Date
-): Promise<AgentChatMessage> {
-	const message = { id: crypto.randomUUID(), projectId, clientKey, role, content, createdAt };
-	await db.insert(chatMessage).values(message);
-	return { id: message.id, role, content, createdAt: createdAt.toISOString() };
-}
-
-/**
- * Demo ceiling + retention, both keyed on the project. Purges rows older than
- * the retention window (demo Durable Objects self-erase but D1 rows would
- * outlive them), then counts today's questions against the daily cap.
- */
-export async function demoChatExhausted(
-	db: ControlPlaneDatabase,
-	projectId: string
-): Promise<boolean> {
-	await db
-		.delete(chatMessage)
-		.where(
-			and(
-				eq(chatMessage.projectId, projectId),
-				lt(chatMessage.createdAt, new Date(Date.now() - DEMO_CHAT_RETENTION_DAYS * 86_400_000))
-			)
-		);
-
-	const startOfUtcDay = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`);
-	const [row] = await db
-		.select({ questions: count() })
-		.from(chatMessage)
-		.where(
-			and(
-				eq(chatMessage.projectId, projectId),
-				eq(chatMessage.role, 'user'),
-				gte(chatMessage.createdAt, startOfUtcDay)
-			)
-		);
-	return Number(row?.questions ?? 0) >= DEMO_MAX_CHAT_PER_DAY;
 }
 
 // ---------------------------------------------------------------------------

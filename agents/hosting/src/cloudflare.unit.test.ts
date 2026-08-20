@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { wrapEntry } from './cloudflare';
+import { deployVars, wrapEntry } from './cloudflare';
 
 /**
  * The shim entry only matters against a REAL dispatch namespace (untrusted
@@ -60,4 +60,30 @@ test('customer modules of the generated names are never shadowed', () => {
 	// The customer's own files are uploaded untouched.
 	assert.equal(sourceOf(result.modules, '__cfbase_runtime.js'), 'export default {};');
 	assert.match(sourceOf(result.modules, '__cfbase_entry_2.js'), /__cfbase_runtime_2\.js/);
+});
+
+test('deployVars: the platform is authoritative about which project an app is', () => {
+	const vars = deployVars({ API_BASE: 'https://api.example' }, 'acme', 'https://console.example');
+	// The customer's own vars survive untouched.
+	assert.equal(vars.API_BASE, 'https://api.example');
+	// And the app is born knowing its project: these are exactly the names
+	// createDbAdmin()/createStorageAdmin() resolve from, so a hosted Worker
+	// self-configures with no setup step.
+	assert.equal(vars.CLOUDFLAREBASE_PROJECT, 'acme');
+	assert.equal(vars.CLOUDFLAREBASE_URL, 'https://console.example');
+	// Kept for apps already deployed against it.
+	assert.equal(vars.PROJECT_ID, 'acme');
+});
+
+test('deployVars: an app cannot point itself at another project', () => {
+	// Which project an app belongs to is the platform's fact, not a value the
+	// app gets to disagree with - otherwise editing a config file would reach
+	// into another tenant's data plane.
+	const vars = deployVars(
+		{ CLOUDFLAREBASE_PROJECT: 'someone-else', CLOUDFLAREBASE_URL: 'https://evil.example' },
+		'acme',
+		'https://console.example',
+	);
+	assert.equal(vars.CLOUDFLAREBASE_PROJECT, 'acme');
+	assert.equal(vars.CLOUDFLAREBASE_URL, 'https://console.example');
 });

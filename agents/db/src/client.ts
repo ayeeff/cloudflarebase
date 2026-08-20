@@ -11,6 +11,14 @@ import {
 	type ShardAddress,
 } from './schemas';
 import { orderComparator } from './query';
+import { createRemoteConfig, type RemoteConfigOptions } from './remote-config-client';
+
+export type {
+	RemoteConfigClient,
+	RemoteConfigFetchResult,
+	RemoteConfigOptions,
+	RemoteConfigValue,
+} from './remote-config-client';
 
 /**
  * Thin isomorphic client for the db agent (browsers and Node >= 22, which
@@ -98,6 +106,21 @@ export function createDbClient(options: DbClientOptions) {
 		 */
 		table<T extends Record<string, unknown> = Record<string, unknown>>(name: string) {
 			return new TableHandle<T>(baseUrl, name, options, transport);
+		},
+
+		/**
+		 * Remote Config: server-controlled values this app reads at startup.
+		 *
+		 * Nothing about it rides the shard machinery above - it is one GET to an
+		 * endpoint that answers with values already evaluated for this caller -
+		 * so it lives in its own module and simply borrows this client's
+		 * `baseUrl` and token source.
+		 *
+		 * Declare `defaults` for everything you read. They are what runs before
+		 * the first fetch answers and what keeps running if it never does.
+		 */
+		remoteConfig(config: Omit<RemoteConfigOptions, 'baseUrl' | 'getToken' | 'fetch'> = {}) {
+			return createRemoteConfig({ ...config, baseUrl, getToken: options.getToken });
 		},
 	};
 }

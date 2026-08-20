@@ -638,11 +638,19 @@ export async function deleteProject(
  * owner is not you (src/lib/server/console-setup.ts). Only ever reached with a
  * setup token, which needs Cloudflare account credentials to set.
  *
- * The AUTH agent only, not the usual fan-out. The console is not a project: it
- * holds operator accounts and nothing else, so the db and hosting agents have
- * no instance under that id - and asking them anyway made a reset that had
- * ALREADY destroyed the accounts answer 502 because an unrelated agent was
- * unreachable. A destructive call must not report failure for work it did.
+ * NOT the usual fan-out. The console is not a project, so most agents have no
+ * instance under that id - and asking them anyway made a reset that had ALREADY
+ * destroyed the accounts answer 502 because an unrelated agent was unreachable.
+ * A destructive call must not report failure for work it did.
+ *
+ * Two agents do hold console state, and both are wiped: AUTH carries the
+ * operator accounts, and DB carries the copilot transcripts those operators
+ * wrote (`$lib/server/copilot-store`). Leaving the transcripts behind would
+ * hand the next owner of a reclaimed console the previous one's conversations.
+ * The auth erase is the one whose failure aborts the reset - accounts are what
+ * "reset" means; the transcript wipe is best-effort behind it, because a
+ * console that could not be reclaimed is worse than one whose chat history
+ * outlived a hiccup.
  *
  * The org release is the other half of the recovery, not a side effect: every
  * account in the console dies with the instance, so registry rows stamped with
@@ -658,6 +666,8 @@ export async function resetConsoleOperators(
 	if (!(await eraseAgentProject(platform, AGENT_REGISTRY.auth, CONSOLE_PROJECT_ID))) {
 		return { erased: false, projectsReleased: 0 };
 	}
+	// Best-effort, and deliberately not allowed to fail the reset: see above.
+	await eraseAgentProject(platform, AGENT_REGISTRY.db, CONSOLE_PROJECT_ID);
 
 	const released = await (
 		await getDb(platform)

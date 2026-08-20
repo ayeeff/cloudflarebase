@@ -5,6 +5,7 @@ import { drizzle, type DrizzleSqliteDODatabase } from 'drizzle-orm/durable-sqlit
 import { migrate } from 'drizzle-orm/durable-sqlite/migrator';
 import {
 	deleteScript,
+	deployVars,
 	deleteScriptsByTag,
 	patchScriptSecret,
 	putScript,
@@ -562,12 +563,7 @@ export class HostingAgent extends Agent<Env, HostingAgentState> {
 					compatibilityFlags: meta.compatibilityFlags ?? [],
 					assetsJwt,
 					notFoundHandling: meta.notFoundHandling,
-					vars: {
-						...meta.vars,
-						// Injected last so the SDK vars always win.
-						PROJECT_ID: this.name,
-						CLOUDFLAREBASE_URL: input.origin,
-					},
+					vars: deployVars(meta.vars, this.name, input.origin),
 				});
 			} catch (cause) {
 				Sentry.captureException(cause, {
