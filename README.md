@@ -57,7 +57,7 @@ cloudflarebase deploy    # -> https://<app>.cfbase.dev
 
 Or connect the GitHub repo from the Hosting page and every push deploys.
 Branches serve at `<app>-<branch>.cfbase.dev`. Limits: 5 projects per org,
-5 branches per project, 2 apps per project.
+5 branches per project, 10 apps per project.
 
 ## Self-host
 
@@ -113,7 +113,9 @@ adds a type assertion so a missing binding fails at compile time.
 
 ## Use it from your app
 
-**Auth** is Better Auth, so its client works unmodified:
+### Auth
+
+Better Auth, per project — so its client works unmodified:
 
 ```ts
 const authClient = createAuthClient({ baseURL: `${baseUrl}/auth` });
@@ -122,6 +124,8 @@ await authClient.signUp.email({ name, email, password });
 
 Browsers get a cookie; everything else uses the `set-auth-token` bearer. That
 signed-in user's token is what the other agents verify — no ambient API key.
+
+### Database
 
 **Documents** need no schema; a collection exists the moment you write to it:
 
@@ -161,8 +165,10 @@ posts.subscribe(
 );
 ```
 
-**Remote Config** is the switch you reach for while production is on fire —
-flip it in the console and every client obeys, no deploy:
+### Remote Config
+
+The switch you reach for while production is on fire — flip it in the console
+and every client obeys, no deploy:
 
 ```ts
 const config = db.remoteConfig({ defaults: { signupsOpen: true } });
@@ -173,7 +179,9 @@ if (!config.get('signupsOpen')) {
 }
 ```
 
-**Storage** is buckets of files with per-bucket access modes:
+### Storage
+
+Buckets of files with per-bucket access modes:
 
 ```ts
 import { createStorageClient } from '@cloudflarebase/storage/client';
@@ -191,8 +199,10 @@ const { signedUrl } = await files.createSignedUrl('me.png', { expiresIn: 3600 })
 const { objects, folders } = await files.list({ prefix: '', folders: true });
 ```
 
-**On a server** with no user to relay — a cron, queue consumer, or webhook —
-mint a **service key** (`cloudflarebase key create`, or the project's Settings
+### On a server
+
+With no user to relay — a cron, queue consumer, or webhook — mint a
+**service key** (`cloudflarebase key create`, or the project's Settings
 page). Each agent ships an `./admin` client over it:
 
 ```ts
