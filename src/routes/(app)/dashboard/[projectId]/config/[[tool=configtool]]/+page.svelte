@@ -89,7 +89,7 @@
 
 	let editorOpen = $state(false);
 	let confirmDiscard = $state(false);
-	let rollbackTarget = $state<DbRestorePoint | null>(null);
+	let rollbackTarget = $state<RollbackPlan | null>(null);
 
 	/** The key being edited; empty means this is a new parameter. */
 	let editingKey = $state('');
@@ -456,7 +456,40 @@
 		}
 	}
 
-	async function rollback(point: DbRestorePoint) {
+	/**
+	 * Every history entry's bookmark is the state AFTER the event it names -
+	 * that is what makes a restored version one that was actually served. But
+	 * an operator reads a row labeled "removed test" as a CHANGE, and expects
+	 * the button to undo it - restoring that row's own snapshot would re-apply
+	 * the removal. So a publish row's action is UNDO: it targets the PREVIOUS
+	 * entry's snapshot, the state just before the change (which also undoes
+	 * everything newer). A `before rollback` row is the opposite kind of thing
+	 * - a saved snapshot of the state a rollback stepped away from - so its
+	 * action is RESTORE, targeting its own bookmark; that is what keeps a
+	 * rollback itself reversible.
+	 */
+	type RollbackPlan = {
+		/** The row the operator clicked - what the dialog names. */
+		entry: DbRestorePoint;
+		/** The snapshot actually restored. */
+		target: DbRestorePoint;
+		kind: 'undo' | 'restore';
+		/** Newer entries above the clicked row - undone along with it. */
+		newer: number;
+	};
+
+	function planRollback(point: DbRestorePoint): RollbackPlan | null {
+		const index = versions.indexOf(point);
+		if (point.reason.startsWith('before rollback')) {
+			return { entry: point, target: point, kind: 'restore', newer: index };
+		}
+		const previous = versions[index + 1];
+		// The first publish has no earlier snapshot to return to.
+		if (!previous) return null;
+		return { entry: point, target: previous, kind: 'undo', newer: index };
+	}
+
+	async function rollback(plan: RollbackPlan) {
 		busy = true;
 		error = '';
 		notice = '';
@@ -464,9 +497,14 @@
 		try {
 			const result = await send(`${base}/restore`, {
 				method: 'POST',
-				body: JSON.stringify({ bookmark: point.bookmark })
+				body: JSON.stringify({ bookmark: plan.target.bookmark })
 			});
-			if (result) notice = `Rolled back to ${new Date(point.capturedAt).toLocaleString()}.`;
+			if (result) {
+				notice =
+					plan.kind === 'undo'
+						? `Undid "${plan.entry.reason}".`
+						: `Restored the state saved ${new Date(plan.entry.capturedAt).toLocaleString()}.`;
+			}
 			await load();
 		} finally {
 			busy = false;
@@ -778,8 +816,9 @@
 					<History class="h-4 w-4 text-muted-foreground" /> Change history
 				</Card.Title>
 				<Card.Description>
-					Every publish captures a restore point. Rolling back puts the parameters exactly as they
-					were - and itself becomes a point you can undo.
+					Every publish is a change you can undo - parameters return to how they were just before
+					it, and every newer change is undone with it. A rollback saves the state it stepped away
+					from as its own entry, so it can be restored too.
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>
@@ -797,20 +836,31 @@
 				{:else}
 					<ul class="divide-y" data-testid="config-versions">
 						{#each versions as point (point.bookmark)}
+							{@const plan = planRollback(point)}
 							<li class="flex items-center justify-between gap-4 py-2.5">
 								<div class="min-w-0">
 									<p class="text-sm font-medium">{new Date(point.capturedAt).toLocaleString()}</p>
 									<p class="truncate text-xs text-muted-foreground">{point.reason}</p>
 								</div>
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={busy}
-									onclick={() => (rollbackTarget = point)}
-									data-testid={`config-rollback-${point.bookmark}`}
-								>
-									<RotateCcw class="mr-1.5 h-3.5 w-3.5" /> Roll back
-								</Button>
+								{#if plan}
+									<Button
+										variant="outline"
+										size="sm"
+										disabled={busy}
+										onclick={() => (rollbackTarget = plan)}
+										data-testid={`config-rollback-${point.bookmark}`}
+									>
+										{#if plan.kind === 'undo'}
+											<Undo2 class="mr-1.5 h-3.5 w-3.5" /> Undo
+										{:else}
+											<RotateCcw class="mr-1.5 h-3.5 w-3.5" /> Restore
+										{/if}
+									</Button>
+								{:else}
+									<!-- The first publish: no earlier snapshot exists to return
+									     to, and a disabled button would promise one. -->
+									<span class="shrink-0 text-xs text-muted-foreground">first version</span>
+								{/if}
 							</li>
 						{/each}
 					</ul>
@@ -1090,20 +1140,30 @@
 >
 	<AlertDialog.Content>
 		<AlertDialog.Header>
-			<AlertDialog.Title>Roll back to this version?</AlertDialog.Title>
+			<AlertDialog.Title>
+				{rollbackTarget?.kind === 'undo' ? 'Undo this change?' : 'Restore this state?'}
+			</AlertDialog.Title>
 			<AlertDialog.Description>
 				{#if rollbackTarget}
-					{@const stepsOver = versions.indexOf(rollbackTarget)}
-					Every parameter goes back to how it was at
-					{new Date(rollbackTarget.capturedAt).toLocaleString()}, drafts included — the version
-					published as
-					<span class="font-medium text-foreground" data-testid="config-rollback-summary"
-						>{rollbackTarget.reason}</span
-					>.
-					{#if stepsOver > 0}
-						This steps back over {stepsOver} newer {stepsOver === 1 ? 'entry' : 'entries'}.
+					{#if rollbackTarget.kind === 'undo'}
+						Every parameter goes back to how it was before
+						<span class="font-medium text-foreground" data-testid="config-rollback-summary"
+							>{rollbackTarget.entry.reason}</span
+						>
+						— the state of {new Date(rollbackTarget.target.capturedAt).toLocaleString()}, drafts
+						included.
+						{#if rollbackTarget.newer > 0}
+							The {rollbackTarget.newer} newer {rollbackTarget.newer === 1 ? 'change' : 'changes'} above
+							it {rollbackTarget.newer === 1 ? 'is' : 'are'} undone too.
+						{/if}
+					{:else}
+						Every parameter returns to the state saved
+						{new Date(rollbackTarget.entry.capturedAt).toLocaleString()}
+						(<span class="font-medium text-foreground" data-testid="config-rollback-summary"
+							>{rollbackTarget.entry.reason}</span
+						>), drafts included.
 					{/if}
-					The rollback itself becomes a point you can undo.
+					The action itself becomes an entry you can undo.
 				{/if}
 			</AlertDialog.Description>
 		</AlertDialog.Header>
@@ -1113,7 +1173,7 @@
 				onclick={() => rollbackTarget && rollback(rollbackTarget)}
 				data-testid="config-rollback-confirm"
 			>
-				Roll back
+				{rollbackTarget?.kind === 'undo' ? 'Undo' : 'Restore'}
 			</AlertDialog.Action>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
