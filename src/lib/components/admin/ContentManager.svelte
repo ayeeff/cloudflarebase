@@ -71,7 +71,7 @@
 								<form method="POST" action="?/delete" use:enhance>
 									<input type="hidden" name="slug" value={row.slug} />
 									{#if row.uuid}<input type="hidden" name="uuid" value={row.uuid} />{/if}
-									<Button size="sm" variant="destructive" type="submit">Hide</Button>
+									<Button size="sm" variant="destructive" type="submit">Delete</Button>
 								</form>
 							{/if}
 						</Table.Cell>
