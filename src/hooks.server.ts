@@ -721,12 +721,18 @@ const csrfHandle: Handle = async ({ event, resolve }) => {
 	const { request, url } = event;
 	const method = request.method;
 	if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
-		// A bearer is not ambient - see above. This is the only relaxation.
-		if (!/^Bearer\s+\S/i.test(request.headers.get('authorization') ?? '')) {
-			const type = (request.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
-			const origin = request.headers.get('origin');
-			if (FORM_CONTENT_TYPES.includes(type) && origin !== url.origin) {
-				return new Response('Cross-site form submissions are forbidden', { status: 403 });
+		// Admin console login/logout are password-gated and submit as JSON, so
+		// they are exempt from the ambient-cookie CSRF check (the password is the
+		// credential and the endpoints accept no ambient state).
+		const isAdminAuth = url.pathname === '/admin/login' || url.pathname === '/admin/logout';
+		if (!isAdminAuth) {
+			// A bearer is not ambient - see above. This is the only relaxation.
+			if (!/^Bearer\s+\S/i.test(request.headers.get('authorization') ?? '')) {
+				const type = (request.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+				const origin = request.headers.get('origin');
+				if (FORM_CONTENT_TYPES.includes(type) && origin !== url.origin) {
+					return new Response('Cross-site form submissions are forbidden', { status: 403 });
+				}
 			}
 		}
 	}

@@ -13,11 +13,17 @@ export const POST: RequestHandler = async ({ request, cookies, platform }) => {
     });
   }
   let password = '';
+  const ct = (request.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
   try {
-    const form = await request.formData();
-    password = String(form.get('password') ?? '');
+    if (ct === 'application/json') {
+      const j = (await request.json()) as { password?: string };
+      password = String(j.password ?? '');
+    } else {
+      const form = await request.formData();
+      password = String(form.get('password') ?? '');
+    }
   } catch {
-    return new Response(JSON.stringify({ error: 'Invalid form body.' }), {
+    return new Response(JSON.stringify({ error: 'Invalid body.' }), {
       status: 400,
       headers: { 'content-type': 'application/json' }
     });

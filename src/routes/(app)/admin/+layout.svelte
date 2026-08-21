@@ -1,16 +1,53 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { Folder, Map, FileText, LayoutTemplate, Shield, LogOut } from '@lucide/svelte';
-	import { enhance } from '$app/forms';
 
 	let { data, children } = $props();
+
+	let loginError = $state('');
+	let loggingIn = $state(false);
+
+	async function submitLogin(event: SubmitEvent) {
+		event.preventDefault();
+		loginError = '';
+		loggingIn = true;
+		const form = event.currentTarget as HTMLFormElement;
+		const password = (new FormData(form).get('password') ?? '').toString();
+		try {
+			const res = await fetch('/admin/login', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ password })
+			});
+			const loc = res.headers.get('location');
+			if (res.status === 303 || loc) {
+				window.location.href = loc ?? '/admin/maps';
+				return;
+			}
+			const j = (await res.json().catch(() => ({}))) as { error?: string };
+			loginError = j.error ?? 'Login failed.';
+		} catch {
+			loginError = 'Network error during login.';
+		} finally {
+			loggingIn = false;
+		}
+	}
+
+	async function logout() {
+		await fetch('/admin/logout', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: '{}'
+		});
+		window.location.href = '/admin';
+	}
 
 	const navItems = [
 		{ href: '/admin', label: 'Fleet', icon: Shield },
 		{ href: '/admin/categories', label: 'Categories', icon: Folder },
 		{ href: '/admin/maps', label: 'Maps', icon: Map },
 		{ href: '/admin/blog', label: 'Blog Posts', icon: FileText },
-		{ href: '/admin/templates', label: 'Templates', icon: LayoutTemplate },
+		{ href: '/admin/templates', label: 'Templates', icon: LayoutTemplate }
 	];
 
 	const isActive = (href: string) =>
@@ -30,7 +67,7 @@
 					Set the ADMIN_SECRET var and redeploy.
 				</p>
 			{:else}
-				<form method="POST" action="/admin/login" use:enhance class="flex flex-col gap-3">
+				<form onsubmit={submitLogin} class="flex flex-col gap-3">
 					<label class="text-sm font-medium" for="password">Admin password</label>
 					<input
 						id="password"
@@ -40,14 +77,15 @@
 						class="rounded-md border border-border bg-background px-3 py-2 text-sm"
 						required
 					/>
-					{#if (page.form as any)?.error}
-						<p class="text-xs text-destructive">{(page.form as any).error}</p>
+					{#if loginError}
+						<p class="text-xs text-destructive">{loginError}</p>
 					{/if}
 					<button
 						type="submit"
+						disabled={loggingIn}
 						class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
 					>
-						Sign in
+						{loggingIn ? 'Signing in…' : 'Sign in'}
 					</button>
 				</form>
 			{/if}
@@ -62,11 +100,9 @@
 					<Shield class="size-4 text-muted-foreground" />
 					<span class="text-sm font-semibold">Geo Admin</span>
 				</span>
-				<form method="POST" action="/admin/logout" use:enhance>
-					<button type="submit" title="Sign out" class="text-muted-foreground hover:text-foreground">
-						<LogOut class="size-4" />
-					</button>
-				</form>
+				<button type="button" onclick={logout} title="Sign out" class="text-muted-foreground hover:text-foreground">
+					<LogOut class="size-4" />
+				</button>
 			</div>
 			<nav class="flex flex-row gap-1 px-2 pb-2 sm:flex-col">
 				{#each navItems as item}
