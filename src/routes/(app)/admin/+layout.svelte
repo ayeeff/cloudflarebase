@@ -16,8 +16,8 @@
 		try {
 			const res = await fetch('/admin/login', {
 				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ password })
+				headers: { 'content-type': 'application/x-www-form-urlencoded' },
+				body: new URLSearchParams({ password }).toString()
 			});
 			const loc = res.headers.get('location');
 			if (res.status === 303 || loc) {
@@ -36,8 +36,8 @@
 	async function logout() {
 		await fetch('/admin/logout', {
 			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: '{}'
+			headers: { 'content-type': 'application/x-www-form-urlencoded' },
+			body: ''
 		});
 		window.location.href = '/admin';
 	}
