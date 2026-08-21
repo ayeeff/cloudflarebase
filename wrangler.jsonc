@@ -79,7 +79,7 @@
 	"services": [
 		{ "binding": "AUTH_AGENT", "service": "auth-agent" },
 		{ "binding": "DB_AGENT", "service": "db-agent" },
-		{ "binding": "HOSTING_AGENT", "service": "hosting-agent" },
+		
 		{ "binding": "STORAGE_AGENT", "service": "storage-agent" }
 	],
 
@@ -171,7 +171,7 @@
 			"services": [
 				{ "binding": "AUTH_AGENT", "service": "auth-agent-local" },
 				{ "binding": "DB_AGENT", "service": "db-agent-local" },
-				{ "binding": "HOSTING_AGENT", "service": "hosting-agent-local" },
+				
 				{ "binding": "STORAGE_AGENT", "service": "storage-agent-local" }
 			],
 			"ratelimits": [
@@ -218,7 +218,7 @@
 			"services": [
 				{ "binding": "AUTH_AGENT", "service": "auth-agent-test" },
 				{ "binding": "DB_AGENT", "service": "db-agent-test" },
-				{ "binding": "HOSTING_AGENT", "service": "hosting-agent-test" },
+				
 				{ "binding": "STORAGE_AGENT", "service": "storage-agent-test" }
 			],
 			"ratelimits": [
@@ -265,7 +265,7 @@
 			"services": [
 				{ "binding": "AUTH_AGENT", "service": "auth-agent" },
 				{ "binding": "DB_AGENT", "service": "db-agent" },
-				{ "binding": "HOSTING_AGENT", "service": "hosting-agent" },
+				
 				{ "binding": "STORAGE_AGENT", "service": "storage-agent" }
 			],
 			"ratelimits": [
