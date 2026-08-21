@@ -1,4 +1,5 @@
 import { buildContentLoad, buildContentActions } from '$lib/server/admin-content';
+import type { PageServerLoad, Actions } from './$types';
 
-export const load = buildContentLoad('blog', '/api/admin/blog');
-export const actions = buildContentActions('/api/admin/blog');
+export const load: PageServerLoad = (event) => buildContentLoad(event, 'blog');
+export const actions: Actions = buildContentActions('blog');

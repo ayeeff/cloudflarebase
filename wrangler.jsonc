@@ -80,6 +80,7 @@
 	"services": [
 		{ "binding": "AUTH_AGENT", "service": "auth-agent" },
 		{ "binding": "DB_AGENT", "service": "db-agent" },
+		{ "binding": "GEO_ASTRO", "service": "geo-astro-site" },
 		
 		
 	],
@@ -325,12 +326,13 @@
 					"database_name": "cloudflarebase-control-plane-preview"
 				}
 			],
-			"services": [
-				{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" },
-				{ "binding": "DB_AGENT", "service": "db-agent-preview" },
-				
-				
-			]
+		"services": [
+			{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" },
+			{ "binding": "DB_AGENT", "service": "db-agent-preview" },
+			{ "binding": "GEO_ASTRO", "service": "geo-astro-site" },
+			
+			
+		]
 		}
 	}
 

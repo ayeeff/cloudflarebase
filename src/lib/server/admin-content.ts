@@ -1,90 +1,109 @@
-import { serverError } from '$lib/server/agents';
-import { fail } from '@sveltejs/kit';
-import type { PageServerLoad, Actions } from '@sveltejs/kit';
+// src/lib/server/admin-content.ts
+//
+// Shared load + action builders for the content-management admin pages
+// (/admin/maps already has its own; /admin/articles, /admin/blog, /admin/write
+// use these). They talk to geo-astro-site's Worker-compatible admin APIs over a
+// SERVICE BINDING (GEO_ASTRO) — never a relative fetch, which would resolve to
+// the cloudflarebase origin and 404, and never an absolute workers.dev HTTP
+// fetch, which Cloudflare's edge blocks (502).
 
+import { geoAstroFetch } from '$lib/server/geo-astro';
+import type { ContentType } from '$lib/types/admin';
+
+const ADMIN_API = '/api/admin';
 const GEO_ASTRO_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 
-export type ContentType = 'article' | 'blog' | 'write';
+// geo-astro-site stores the denylist under /api/admin/<kind> (articles | blog |
+// write | maps). The content listing lives under /api/admin/content?type=.
+const KIND: Record<ContentType, string> = {
+	article: 'articles',
+	blog: 'blog',
+	write: 'write',
+};
 
 function deniedKeyFor(type: ContentType, e: any): string {
 	if (type === 'article') return e.slug;
 	return e.uuid ? `${e.uuid}/${e.slug}` : e.slug;
 }
 
-export function buildContentLoad(type: ContentType, deniedEndpoint: string): PageServerLoad {
-	return async ({ fetch, platform }) => {
-		const adminKey = platform?.env?.ADMIN_SECRET;
-		const authHeaders = {
-			'content-type': 'application/json',
-			...(adminKey ? { 'x-admin-key': adminKey } : {})
-		};
+export async function buildContentLoad(event: any, type: ContentType) {
+	const adminKey = event.platform?.env?.ADMIN_SECRET;
+	const authHeaders: Record<string, string> = { 'content-type': 'application/json' };
+	if (adminKey) authHeaders['x-admin-key'] = adminKey;
+	const kind = KIND[type];
 
-		const [listRes, deniedRes] = await Promise.all([
-			fetch(`${GEO_ASTRO_BASE}/api/admin/content?action=list&type=${type}`, { headers: authHeaders }),
-			fetch(`${GEO_ASTRO_BASE}${deniedEndpoint}`, {
-				method: 'POST',
-				headers: authHeaders,
-				body: JSON.stringify({ action: 'list' })
-			})
-		]);
+	const [listRes, deniedRes] = await Promise.all([
+		geoAstroFetch(event.platform, `${ADMIN_API}/content?action=list&type=${type}`, {
+			headers: { 'content-type': 'application/json' },
+		}),
+		geoAstroFetch(event.platform, `${ADMIN_API}/${kind}`, {
+			method: 'POST',
+			headers: authHeaders,
+			body: JSON.stringify({ action: 'list' }),
+		}),
+	]);
 
-		if (!listRes.ok) serverError(502, `geo-astro-site /api/admin/content responded ${listRes.status}`);
-		const listJson: any = await listRes.json();
-		const entries: any[] = Array.isArray(listJson) ? listJson : listJson.entries ?? [];
+	const entries: any[] = listRes.ok ? ((await listRes.json()).entries ?? []) : [];
+	const deniedList: any[] = deniedRes.ok ? ((await deniedRes.json()).denied ?? []) : [];
+	const deniedKeys = new Set(
+		deniedList.map((d: any) => d.key ?? (d.uuid ? `${d.uuid}/${d.slug}` : d.slug)),
+	);
 
-		let denied: any[] = [];
-		if (deniedRes.ok) denied = (await deniedRes.json()).denied ?? [];
-
-		const deniedSet = new Set(
-			denied.map((d: any) => (type === 'article' ? d.slug : (d.key ?? `${d.uuid ?? ''}/${d.slug}`)))
-		);
-
-		const rows = entries.map((e: any) => {
-			const pathKey = deniedKeyFor(type, e);
-			return {
-				slug: e.slug,
-				title: e.title || e.slug,
-				uuid: type === 'article' ? null : (e.uuid ?? null),
-				url: e.url,
-				pathKey,
-				denied: deniedSet.has(pathKey)
-			};
-		});
-
+	const rows = entries.map((e: any) => {
+		const key = deniedKeyFor(type, e);
 		return {
-			type,
-			rows,
-			denied,
-			count: rows.length,
-			deniedCount: denied.length,
-			base: GEO_ASTRO_BASE
+			...e,
+			pathKey: key,
+			denied: deniedKeys.has(key),
+			url: e.url ?? `/${type}/${e.slug}`,
 		};
+	});
+
+	return {
+		type,
+		base: GEO_ASTRO_BASE,
+		rows,
+		count: rows.length,
+		denied: deniedList,
+		deniedCount: deniedList.length,
 	};
 }
 
-export function buildContentActions(deniedEndpoint: string): Actions {
-	async function run(action: 'delete' | 'restore', request: Request, fetchFn: any, platform: any) {
-		const adminKey = platform?.env?.ADMIN_SECRET;
-		const form = await request.formData();
-		const slug = String(form.get('slug') ?? '');
-		const uuid = form.get('uuid') ? String(form.get('uuid')) : undefined;
-		if (!slug) return fail(400, { error: 'slug required' });
-		const res = await fetchFn(`${GEO_ASTRO_BASE}${deniedEndpoint}`, {
-			method: 'POST',
-			headers: { 'content-type': 'application/json', ...(adminKey ? { 'x-admin-key': adminKey } : {}) },
-			body: JSON.stringify({ action, slug, uuid })
-		});
-		if (!res.ok) {
-			let msg = `geo-astro-site responded ${res.status}`;
-			try {
-				msg = (await res.json()).error ?? msg;
-			} catch {}
-			return fail(res.status, { error: msg });
-		}
-		return { success: true };
-	}
+export function buildContentActions(kind: string) {
 	return {
-		delete: ({ request, fetch, platform }) => run('delete', request, fetch, platform),
-		restore: ({ request, fetch, platform }) => run('restore', request, fetch, platform)
+		delete: async (event: any) => {
+			const { request, platform } = event;
+			const adminKey = platform?.env?.ADMIN_SECRET;
+			const authHeaders: Record<string, string> = { 'content-type': 'application/json' };
+			if (adminKey) authHeaders['x-admin-key'] = adminKey;
+			const form = await request.formData();
+			const slug = String(form.get('slug') ?? '');
+			const uuid = form.get('uuid') ? String(form.get('uuid')) : undefined;
+			if (!slug) return { error: 'slug required' };
+			const res = await geoAstroFetch(platform, `${ADMIN_API}/${kind}`, {
+				method: 'POST',
+				headers: authHeaders,
+				body: JSON.stringify({ action: 'delete', slug, uuid }),
+			});
+			if (!res.ok) return { error: `geo-astro-site responded ${res.status}` };
+			return { success: true };
+		},
+		restore: async (event: any) => {
+			const { request, platform } = event;
+			const adminKey = platform?.env?.ADMIN_SECRET;
+			const authHeaders: Record<string, string> = { 'content-type': 'application/json' };
+			if (adminKey) authHeaders['x-admin-key'] = adminKey;
+			const form = await request.formData();
+			const slug = String(form.get('slug') ?? '');
+			const uuid = form.get('uuid') ? String(form.get('uuid')) : undefined;
+			if (!slug) return { error: 'slug required' };
+			const res = await geoAstroFetch(platform, `${ADMIN_API}/${kind}`, {
+				method: 'POST',
+				headers: authHeaders,
+				body: JSON.stringify({ action: 'restore', slug, uuid }),
+			});
+			if (!res.ok) return { error: `geo-astro-site responded ${res.status}` };
+			return { success: true };
+		},
 	};
 }

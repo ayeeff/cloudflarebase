@@ -1,10 +1,11 @@
 import { serverError } from '$lib/server/agents';
 import { fail } from '@sveltejs/kit';
+import { geoAstroFetch } from '$lib/server/geo-astro';
 import type { PageServerLoad, Actions } from './$types';
 
 const GEO_ASTRO_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 
-export const load: PageServerLoad = async ({ fetch, platform }) => {
+export const load: PageServerLoad = async ({ platform }) => {
 	const adminKey = platform?.env?.ADMIN_SECRET;
 	const authHeaders = {
 		'content-type': 'application/json',
@@ -14,10 +15,11 @@ export const load: PageServerLoad = async ({ fetch, platform }) => {
 	// Map list comes from the Worker-compatible index (build-time JSON + live R2
 	// scan). The legacy /api/adminpanel list-maps reads src/pages/maps off disk,
 	// which does not exist in the deployed Worker bundle, so it always returns
-	// empty there.
+	// empty there. We reach geo-astro-site over the GEO_ASTRO SERVICE BINDING
+	// (not an HTTP fetch to *.workers.dev, which Cloudflare's edge blocks -> 502).
 	const [indexRes, deniedRes] = await Promise.all([
-		fetch(`${GEO_ASTRO_BASE}/api/map-index.json`),
-		fetch(`${GEO_ASTRO_BASE}/api/admin/maps`, {
+		geoAstroFetch(platform, '/api/map-index.json'),
+		geoAstroFetch(platform, '/api/admin/maps', {
 			method: 'POST',
 			headers: authHeaders,
 			body: JSON.stringify({ action: 'list' })
@@ -61,29 +63,37 @@ export const load: PageServerLoad = async ({ fetch, platform }) => {
 };
 
 export const actions: Actions = {
-	delete: async ({ request, fetch, platform }) => {
+	delete: async ({ request, platform }) => {
 		const adminKey = platform?.env?.ADMIN_SECRET;
+		const authHeaders = {
+			'content-type': 'application/json',
+			...(adminKey ? { 'x-admin-key': adminKey } : {})
+		};
 		const form = await request.formData();
 		const slug = String(form.get('slug') ?? '');
 		const uuid = form.get('uuid') ? String(form.get('uuid')) : undefined;
 		if (!slug) return fail(400, { error: 'slug required' });
-		const res = await fetch(`${GEO_ASTRO_BASE}/api/admin/maps`, {
+		const res = await geoAstroFetch(platform, '/api/admin/maps', {
 			method: 'POST',
-			headers: { 'content-type': 'application/json', ...(adminKey ? { 'x-admin-key': adminKey } : {}) },
+			headers: authHeaders,
 			body: JSON.stringify({ action: 'delete', slug, uuid })
 		});
 		if (!res.ok) return fail(res.status, { error: `geo-astro-site responded ${res.status}` });
 		return { success: true };
 	},
-	restore: async ({ request, fetch, platform }) => {
+	restore: async ({ request, platform }) => {
 		const adminKey = platform?.env?.ADMIN_SECRET;
+		const authHeaders = {
+			'content-type': 'application/json',
+			...(adminKey ? { 'x-admin-key': adminKey } : {})
+		};
 		const form = await request.formData();
 		const slug = String(form.get('slug') ?? '');
 		const uuid = form.get('uuid') ? String(form.get('uuid')) : undefined;
 		if (!slug) return fail(400, { error: 'slug required' });
-		const res = await fetch(`${GEO_ASTRO_BASE}/api/admin/maps`, {
+		const res = await geoAstroFetch(platform, '/api/admin/maps', {
 			method: 'POST',
-			headers: { 'content-type': 'application/json', ...(adminKey ? { 'x-admin-key': adminKey } : {}) },
+			headers: authHeaders,
 			body: JSON.stringify({ action: 'restore', slug, uuid })
 		});
 		if (!res.ok) return fail(res.status, { error: `geo-astro-site responded ${res.status}` });
