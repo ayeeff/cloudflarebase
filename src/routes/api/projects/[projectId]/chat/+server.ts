@@ -4,14 +4,8 @@ import { dev } from '$app/environment';
 import { isDemoProjectId } from '$lib/console';
 import { chatRequestSchema } from '$lib/schemas/auth';
 import { assertProjectId } from '$lib/server/agents';
-import {
-	chatClientKey,
-	demoChatExhausted,
-	getChatHistory,
-	runCopilot,
-	saveChatMessage
-} from '$lib/server/copilot';
-import { getDb } from '$lib/server/db';
+import { chatClientKey, DEMO_MAX_CHAT_PER_DAY, runCopilot } from '$lib/server/copilot';
+import { demoChatExhausted, getChatHistory, saveChatMessage } from '$lib/server/copilot-store';
 import type { AgentChatReply } from '$lib/agents';
 import type { RequestHandler } from './$types';
 
@@ -19,15 +13,17 @@ import type { RequestHandler } from './$types';
  * The project copilot's chat endpoint. Formerly a proxy onto the auth agent's
  * /chat; the tool-calling loop now runs here in the dashboard Worker so it can
  * ground answers in BOTH agents (auth and db) over their service bindings.
- * History lives in control-plane D1, keyed per project and per client. The
+ * History lives in the console project's own db agent, keyed per project and
+ * per client. The
  * response contract is unchanged: `{ messages }` on GET, AgentChatReply on
  * POST, 400 / 429 / 502 with the same error strings as before.
  */
 export const GET: RequestHandler = async (event) => {
 	const projectId = assertProjectId(event.params.projectId);
-	const db = await getDb(event.platform);
 	const clientKey = await chatClientKey(event, projectId);
-	return json({ messages: await getChatHistory(db, projectId, clientKey) });
+	return json({
+		messages: await getChatHistory(event.platform, event.url.origin, projectId, clientKey)
+	});
 };
 
 export const POST: RequestHandler = async (event) => {
@@ -37,13 +33,13 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: 'question is required' }, { status: 400 });
 	}
 
-	const db = await getDb(event.platform);
-
 	// Demo ceiling: /chat is the only route that spends Workers AI neurons and
 	// demo projects need no authentication, so one visitor could otherwise
 	// starve the whole deployment. Named projects are never capped.
 	if (event.locals.demoMode && isDemoProjectId(projectId)) {
-		if (await demoChatExhausted(db, projectId)) {
+		if (
+			await demoChatExhausted(event.platform, event.url.origin, projectId, DEMO_MAX_CHAT_PER_DAY)
+		) {
 			return json(
 				{ error: 'this demo project has reached its daily AI limit - it resets tomorrow' },
 				{ status: 429 }
@@ -66,7 +62,7 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	const clientKey = await chatClientKey(event, projectId);
-	const history = await getChatHistory(db, projectId, clientKey, 10);
+	const history = await getChatHistory(event.platform, event.url.origin, projectId, clientKey, 10);
 
 	let outcome;
 	try {
@@ -100,7 +96,8 @@ export const POST: RequestHandler = async (event) => {
 
 	const createdAt = Date.now();
 	const userMessage = await saveChatMessage(
-		db,
+		event.platform,
+		event.url.origin,
 		projectId,
 		clientKey,
 		'user',
@@ -108,7 +105,8 @@ export const POST: RequestHandler = async (event) => {
 		new Date(createdAt)
 	);
 	const agentMessage = await saveChatMessage(
-		db,
+		event.platform,
+		event.url.origin,
 		projectId,
 		clientKey,
 		'agent',

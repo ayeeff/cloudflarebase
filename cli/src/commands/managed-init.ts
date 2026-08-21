@@ -6,7 +6,7 @@ import { APP_NAME, writeManagedConfig } from '../lib/managed.js';
 
 /**
  * Bare `cloudflarebase init` - connect the CURRENT directory to a managed
- * console project (docs/managed-service-design.md, Phase B). `init <name>`
+ * console project (Phase B). `init <name>`
  * stays the self-hosted scaffold; the wrangler/Netlify-style bare form is
  * "initialize cloudflarebase here": pick (or create) a project, claim an app
  * subdomain - showing the auto-numbered suggestion first when the wanted

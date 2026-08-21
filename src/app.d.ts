@@ -19,7 +19,7 @@ declare global {
 			demoMode: boolean;
 			/**
 			 * Deploy-token grant when the request authenticated with a `cfbd_`
-			 * bearer (docs/managed-service-design.md, Phase B). Only ever set on
+			 * bearer (Phase B). Only ever set on
 			 * the deploy and branch-create endpoints; never a session.
 			 */
 			deployToken: import('$lib/server/hosting').DeployTokenGrant | null;
@@ -31,7 +31,7 @@ declare global {
 			githubDeploy: import('$lib/server/github-connect').GithubDeployGrant | null;
 			/**
 			 * Grant when the request authenticated with a `cfbs_` service key
-			 * (docs/service-keys-design.md). Set only on its own project's DATA
+			 *. Set only on its own project's DATA
 			 * plane, and only when the request carried no `Origin` - a service
 			 * key is a server credential and must never work from a browser.
 			 */

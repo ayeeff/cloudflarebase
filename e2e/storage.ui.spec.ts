@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer';
 import { ensureProject, storageAdminObjectPath, storageBucketPath } from './helpers';
 
 /**
- * The storage console pages (docs/storage-agent-plan.md, "Console pages").
+ * The storage console pages ("Console pages").
  *
  * Files is the table-editor shape: a permanent bucket rail beside a full-bleed
  * browser whose breadcrumb walks the DELIMITED listing - folders being virtual,

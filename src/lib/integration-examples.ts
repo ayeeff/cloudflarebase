@@ -282,6 +282,77 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 }
 
 /**
+ * Remote Config snippets targeting `url` (a project's db base - the config
+ * endpoint lives on the db agent). One public endpoint, already evaluated for
+ * the caller: the targeting rules never leave the server.
+ */
+export function buildRemoteConfigIntegrationExamples(url: string): CodeExample[] {
+	return [
+		{
+			id: 'config-sdk',
+			label: 'Client SDK',
+			lang: 'typescript',
+			code: `import { createDbClient } from '@cloudflarebase/db/client';
+
+// getToken is optional - a signed-in user's project JWT is what enables
+// role and permission targeting. Anonymous callers just omit it.
+const db = createDbClient({ baseUrl: '${url}', getToken });
+
+// Ship the defaults your code was written against: they render before the
+// first fetch answers, and keep working if it never does.
+const config = db.remoteConfig({
+  defaults: { signupsOpen: true, maxUploadMb: 25 },
+  uid: installId,      // stable per-install id - keeps rollout buckets stable
+  appVersion: '2.1.0'  // what appVersion rules match against
+});
+
+await config.fetch(); // never throws - offline keeps the previous values
+
+// The kill switch: flip signupsOpen in the console and every client obeys,
+// no deploy while production is on fire.
+if (!config.get('signupsOpen')) {
+  form.replaceWith('Signups are paused - back soon.');
+}
+
+// Revalidation, not a push: polls with If-None-Match (a 304 when nothing
+// changed) and fires only when a value actually moves.
+const stop = config.subscribe((values) => applyFlags(values));`
+		},
+		{
+			id: 'config-rest',
+			label: 'REST',
+			lang: 'javascript',
+			code: `// Values arrive evaluated for THIS caller - no rules in the payload.
+const response = await fetch(
+  '${url}/remote-config?uid=install-42&appVersion=2.1.0',
+  // Optional: a project JWT from the auth agent enables role and
+  // permission targeting. Without it the caller is anonymous.
+  { headers: { authorization: \`Bearer \${token}\` } }
+);
+const { params } = await response.json();
+
+if (!params.signupsOpen) {
+  form.replaceWith('Signups are paused - back soon.');
+}
+
+// Poll cheaply: replay the ETag and an unchanged config answers 304.
+const etag = response.headers.get('etag');
+await fetch('${url}/remote-config', { headers: { 'if-none-match': etag } });`
+		},
+		{
+			id: 'config-curl',
+			label: 'cURL',
+			lang: 'bash',
+			code: `curl '${url}/remote-config?uid=install-42&appVersion=2.1.0'
+# -> { "params": { "signupsOpen": true, "maxUploadMb": 25 }, "fetchedAt": "…" }
+
+# Replay the ETag; an unchanged config answers 304 with no body
+curl -H 'if-none-match: <etag>' '${url}/remote-config'`
+		}
+	];
+}
+
+/**
  * Ready-to-paste storage snippets. `agentBase` is the project's storage AGENT
  * base (`<origin>/agents/storage-agent/<projectId>`) - the public object paths
  * live there, not under the console proxy, which mirrors the operator surface

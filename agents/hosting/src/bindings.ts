@@ -37,6 +37,21 @@ export interface HostingAgentBindings {
 	/** Record deploys and serve a stub page instead of calling Cloudflare -
 	 * local dev and e2e, where dynamic upload has no simulator. */
 	HOSTING_STUB?: 'true';
+	/** Master key for build secrets (AES-GCM at rest, src/crypto.ts). Optional:
+	 * without it build-secret writes answer 503 and everything else works. */
+	HOSTING_MASTER_KEY?: string;
+	/** Per-request analytics writes from the serve path. Optional: Analytics
+	 * Engine is an account-level opt-in (see wrangler.jsonc); unset, writes
+	 * are skipped and nothing else changes. */
+	HOSTING_REQUESTS?: AnalyticsEngineDataset;
+	/** Dataset NAME for the SQL read API - the binding does not reveal it. */
+	WAE_DATASET?: string;
+	/** Account Analytics Read token; with CF_ACCOUNT_ID it unlocks the
+	 * analytics tab's reads. Optional - without it the tab reports write-only. */
+	CF_ANALYTICS_API_TOKEN?: string;
+	/** Local-dev stand-in: with no read credentials, served requests land in
+	 * this D1 and the analytics endpoint reads them back. */
+	LOCAL_ANALYTICS?: D1Database;
 	SENTRY_DSN?: string;
 	SENTRY_ENV?: string;
 

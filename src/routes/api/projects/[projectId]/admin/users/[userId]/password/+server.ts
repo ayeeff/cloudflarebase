@@ -9,7 +9,7 @@ import type { RequestHandler } from './$types';
 
 /**
  * Set an account's password without an emailed token
- * (docs/admin-sdk-design.md 5.2) - migrations off another provider and support
+ * - migrations off another provider and support
  * flows both need it, and Better Auth's `request-password-reset` cannot serve
  * either (it requires the user's own mailbox).
  *

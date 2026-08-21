@@ -1,6 +1,6 @@
 {
 	"name": "@cloudflarebase/hosting",
-	"version": "0.6.1",
+	"version": "0.7.0",
 	"description": "Apps and functions on Cloudflare Workers for Platforms - static assets and server code in one deploy, one Durable Object orchestrator per project - the hosting primitive behind Cloudflarebase.",
 	"license": "Apache-2.0",
 	"type": "module",
@@ -44,7 +44,7 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json",
 		"typecheck": "tsc --noEmit",
-		"test:unit": "node --import tsx --test src/route-access.unit.test.ts src/tar.unit.test.ts src/cloudflare.unit.test.ts",
+		"test:unit": "node --import tsx --test src/route-access.unit.test.ts src/tar.unit.test.ts src/cloudflare.unit.test.ts src/crypto.unit.test.ts src/build-env.unit.test.ts",
 		"prepublishOnly": "npm run build",
 		"deploy": "wrangler deploy",
 		"deploy:outbound": "wrangler deploy --config wrangler.outbound.jsonc",

@@ -7,7 +7,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
- * Hosting control plane (docs/managed-service-design.md, Phase B): subdomain
+ * Hosting control plane (Phase B): subdomain
  * claims on the global `*.cfbase.dev` namespace, and project-scoped deploy
  * tokens. Both live HERE and not in the hosting agent because they are
  * installation-wide state - the agent contract's rule that no agent owns
@@ -60,7 +60,7 @@ export const appNameSchema = z
 /** Deploy-token secret shape: `cfbd_` + 32 random bytes hex. */
 export const DEPLOY_TOKEN_PATTERN = /^cfbd_[0-9a-f]{64}$/;
 
-const MAX_APPS_PER_PROJECT = 2;
+const MAX_APPS_PER_PROJECT = 10;
 const MAX_DEPLOY_TOKENS_PER_PROJECT = 10;
 /** How far auto-numbering searches before giving up (squatting backstop). */
 const MAX_AUTO_NUMBER = 50;
@@ -407,4 +407,16 @@ export function isDeployTokenSurface(pathname: string, method: string): boolean 
 		/^\/api\/projects\/[^/]+\/hosting\/apps\/[^/]+\/deploys$/.test(pathname) ||
 		/^\/api\/projects\/[^/]+\/branches$/.test(pathname)
 	);
+}
+
+/**
+ * The one surface a GitHub Actions OIDC bearer may READ: the build-env fetch
+ * its workflow runs before the build step. Deliberately NOT part of
+ * isDeployTokenSurface - a `cfbd_` deploy token is a long-lived credential
+ * that lives in repository settings, and it must never read build secrets;
+ * the OIDC token is minted per run and dies with it.
+ */
+export function isBuildEnvSurface(pathname: string, method: string): boolean {
+	if (method !== 'GET') return false;
+	return /^\/api\/projects\/[^/]+\/hosting\/apps\/[^/]+\/build-env$/.test(pathname);
 }

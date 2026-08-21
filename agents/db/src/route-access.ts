@@ -24,7 +24,7 @@
  * control-plane-only. Two properties matter:
  *
  * - Default deny. An undeclared route is operator, which is the same default
- *   `docs/agent-contract.md` states for the console guard. Drift between
+ *   the agent contract states for the console guard. Drift between
  *   this table and the manifest can therefore only ever close something that
  *   should be open - a loud, testable failure - never open something that
  *   should be closed.
@@ -55,6 +55,11 @@ export const ROUTES: readonly RouteRule[] = [
 	{ path: '/views/*', access: 'public' },
 	{ path: '/realtime', access: 'public' },
 	{ path: '/config', access: 'public' },
+	// Remote Config, evaluated. Public by design and by necessity: config has
+	// to resolve for a logged-out first run, which is the moment it exists for.
+	// A token is READ when present (role and permission targeting) but never
+	// required, and the response carries resolved values only - never the rules.
+	{ path: '/remote-config', access: 'public' },
 	{ path: '/overview', access: 'operator' },
 	{ path: '/admin/*', access: 'operator' },
 ];

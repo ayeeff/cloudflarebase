@@ -4,7 +4,7 @@ import { listServiceKeys, mintServiceKey } from '$lib/server/service-keys';
 import type { RequestHandler } from './$types';
 
 /**
- * Project service keys (docs/service-keys-design.md).
+ * Project service keys.
  *
  * Operator-only by guard default, and deliberately NOT on the service-key
  * surface itself (`isServiceKeySurface`): a key must never be able to mint or

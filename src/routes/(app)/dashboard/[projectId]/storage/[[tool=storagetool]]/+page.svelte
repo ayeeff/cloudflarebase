@@ -46,6 +46,7 @@
 		Lock,
 		Music2,
 		Plus,
+		ShieldBan,
 		Trash2,
 		TriangleAlert,
 		Upload,
@@ -408,9 +409,9 @@
 	let newBucketWrite = $state<StorageAccessMode>('auth');
 	let bucketError = $state('');
 	let bucketBusy = $state(false);
-	const accessModes: StorageAccessMode[] = ['public', 'auth', 'owner'];
+	const accessModes: StorageAccessMode[] = ['public', 'auth', 'owner', 'none'];
 	function toAccessMode(value: string): StorageAccessMode {
-		return value === 'public' || value === 'owner' ? value : 'auth';
+		return value === 'public' || value === 'owner' || value === 'none' ? value : 'auth';
 	}
 
 	const bucketPath = (name: string) =>
@@ -652,6 +653,10 @@
 		<Globe class="h-3.5 w-3.5" />
 	{:else if mode === 'owner'}
 		<Users class="h-3.5 w-3.5" />
+	{:else if mode === 'none'}
+		<!-- Distinct from `auth`'s padlock on purpose: `auth` means "bring a
+		     token", `none` means no token opens this at all. -->
+		<ShieldBan class="h-3.5 w-3.5" />
 	{:else}
 		<Lock class="h-3.5 w-3.5" />
 	{/if}

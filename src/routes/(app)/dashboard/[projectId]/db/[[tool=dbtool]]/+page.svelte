@@ -356,7 +356,7 @@
 
 	// Collection create / access-mode configuration. Both go through the same
 	// PUT /admin/collections/:name upsert on the agent.
-	const accessModes: DbAccessMode[] = ['public', 'auth', 'owner'];
+	const accessModes: DbAccessMode[] = ['public', 'auth', 'owner', 'none'];
 
 	// Permission keys actually granted by this project's roles (Auth > Roles):
 	// the permission selects offer real grants instead of free-typed text.
@@ -498,13 +498,17 @@
 				? 'anyone can read every document'
 				: pending.readAccess === 'auth'
 					? `any signed-in user${withKey(pending.readPermission)} can read every document`
-					: `signed-in users${withKey(pending.readPermission)} can read only documents they created`;
+					: pending.readAccess === 'none'
+						? 'nothing can read this from your app - only this console, a service key, or the admin SDK'
+						: `signed-in users${withKey(pending.readPermission)} can read only documents they created`;
 		const write =
 			pending.writeAccess === 'public'
 				? 'anyone can create, edit, and delete documents'
 				: pending.writeAccess === 'auth'
 					? `any signed-in user${withKey(pending.writePermission)} can create, edit, and delete any document`
-					: `signed-in users${withKey(pending.writePermission)} can create documents but edit or delete only their own`;
+					: pending.writeAccess === 'none'
+						? 'nothing can write from your app - this collection is read-only except from this console, a service key, or the admin SDK'
+						: `signed-in users${withKey(pending.writePermission)} can create documents but edit or delete only their own`;
 		const replication =
 			pending.replication === 'auto'
 				? ' Reads are served from a replica in the reader’s region.'
@@ -1055,9 +1059,11 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 
 <svelte:head>
 	<title>{data.projectId} · Database · Cloudflarebase</title>
+	<!-- No project id: the console is noindex, so the only consumer of this is a
+	     link unfurler, and that card must not name a project. -->
 	<meta
 		name="description"
-		content="Browse collections and documents, tune access modes, and connect apps to project {data.projectId}'s database."
+		content="Browse collections and documents, tune access modes, and connect apps to your database."
 	/>
 </svelte:head>
 
@@ -1803,14 +1809,20 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 													<Select.Trigger
 														class="min-w-32 font-mono"
 														size="sm"
-														disabled={busy || pending.readAccess === 'public'}
+														disabled={busy ||
+															pending.readAccess === 'public' ||
+															pending.readAccess === 'none'}
 														aria-label={`Read permission for ${collection.name}`}
 														data-testid={`db-perm-read-${collection.name}`}
 													>
-														{pending.readPermission || 'none'}
+														{pending.readPermission || 'not required'}
 													</Select.Trigger>
 													<Select.Content>
-														<Select.Item value={NO_PERMISSION} label="none" class="font-mono" />
+														<Select.Item
+															value={NO_PERMISSION}
+															label="not required"
+															class="font-mono"
+														/>
 														{#each permissionOptions(pending.readPermission) as key (key)}
 															<Select.Item value={key} label={key} class="font-mono" />
 														{/each}
@@ -1831,14 +1843,20 @@ ws.onmessage = (event) => console.log(JSON.parse(event.data));
 													<Select.Trigger
 														class="min-w-32 font-mono"
 														size="sm"
-														disabled={busy || pending.writeAccess === 'public'}
+														disabled={busy ||
+															pending.writeAccess === 'public' ||
+															pending.writeAccess === 'none'}
 														aria-label={`Write permission for ${collection.name}`}
 														data-testid={`db-perm-write-${collection.name}`}
 													>
-														{pending.writePermission || 'none'}
+														{pending.writePermission || 'not required'}
 													</Select.Trigger>
 													<Select.Content>
-														<Select.Item value={NO_PERMISSION} label="none" class="font-mono" />
+														<Select.Item
+															value={NO_PERMISSION}
+															label="not required"
+															class="font-mono"
+														/>
 														{#each permissionOptions(pending.writePermission) as key (key)}
 															<Select.Item value={key} label={key} class="font-mono" />
 														{/each}

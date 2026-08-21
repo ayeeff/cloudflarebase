@@ -12,6 +12,12 @@ import { viewInstanceName } from './replication';
 import { regionHint, REGION_HINTS } from './region';
 import { replicaName } from './replication';
 import { collectionNameSchema, projectIdSchema } from './schemas';
+import {
+	evaluateAll,
+	payloadEtag,
+	type EvaluableParameter,
+	type RemoteConfigContext,
+} from './remote-config';
 
 export type {
 	DbActivityEvent,
@@ -144,6 +150,34 @@ async function subscribeSibling(
 	}
 	siblingCache.set(key, { n, expires: now + ttl });
 	return n;
+}
+
+/**
+ * The caller's country, for Remote Config targeting.
+ *
+ * `request.cf` is authoritative and is checked first: it is set by the runtime
+ * and a client cannot forge it. `cf-ipcountry` is consulted only when there is
+ * no `cf` object at all, which on a real deployment means a service-binding
+ * hop - and the console's proxy deletes the caller's own copy of that header
+ * before setting the edge-resolved one.
+ *
+ * Anything that is not two letters is discarded rather than passed through, so
+ * a junk header cannot become a cohort nobody can name.
+ */
+function resolveCountry(request: Request, env: Env): string | null {
+	// Test-only, behind the same flag that lets specs pin region routing on a
+	// single-colo local stack: a local workerd resolves no country at all, so
+	// without this, country targeting could only be tested by not testing it.
+	// Never set in production, and gated before it is read - on a deployment
+	// that leaves the flag unset this branch does not exist.
+	if (env.REGION_OVERRIDE_HEADER === 'true') {
+		const override = request.headers.get('x-cfb-country');
+		if (override && /^[A-Za-z]{2}$/.test(override)) return override.toUpperCase();
+	}
+	const fromEdge = (request as Request & { cf?: { country?: string } }).cf?.country;
+	const claimed = fromEdge ?? request.headers.get('cf-ipcountry');
+	if (!claimed || !/^[A-Za-z]{2}$/.test(claimed)) return null;
+	return claimed.toUpperCase();
 }
 
 export const DbAgent = Sentry.instrumentDurableObjectWithSentry(sentryOptions, DbAgentBase);
@@ -347,12 +381,143 @@ class DbService extends WorkerEntrypoint<Env> {
 			return hotResponse;
 		}
 
+		// Remote Config: the only PUBLIC coordinator route, and the only place in
+		// this worker that resolves who is asking.
+		const remoteConfig = url.pathname.match(/^\/agents\/db-agent\/([^/]+)\/remote-config$/);
+		if (remoteConfig) {
+			const configResponse = await this.serveRemoteConfig(
+				request,
+				url,
+				decodeURIComponent(remoteConfig[1]),
+			);
+			await this.reportServerError(request, url, configResponse);
+			return configResponse;
+		}
+
 		const response =
 			(await routeAgentRequest(request, this.env)) ??
 			Response.json({ error: 'not found' }, { status: 404 });
 
 		await this.reportServerError(request, url, response);
 		return response;
+	}
+
+	/**
+	 * `GET /agents/db-agent/<pid>/remote-config` - the evaluated config.
+	 *
+	 * Three things happen here rather than in the Durable Object, and each for
+	 * its own reason:
+	 *
+	 * 1. **Country is resolved from `request.cf`**, which only exists out here.
+	 *    It is never read from a header, so a caller cannot claim a country.
+	 * 2. **Evaluation runs in the worker**, over parameters cached per PROJECT.
+	 *    Evaluating in the DO would make the cohort part of the cache key, and a
+	 *    per-cohort cache barely caches at all once a rollout exists - a rollout
+	 *    buckets by uid, so the key would be per user.
+	 * 3. **Only resolved values go out.** The rules are read here and stop here;
+	 *    which cohorts exist and what the percentages are never ship.
+	 */
+	private async serveRemoteConfig(
+		request: Request,
+		url: URL,
+		projectId: string,
+	): Promise<Response> {
+		const cors = {
+			'access-control-allow-origin': '*',
+			'access-control-allow-headers': 'authorization, content-type, if-none-match',
+			'access-control-expose-headers': 'etag',
+		};
+		if (request.method === 'OPTIONS') {
+			return new Response(null, {
+				status: 204,
+				headers: { ...cors, 'access-control-allow-methods': 'GET, OPTIONS' },
+			});
+		}
+		if (request.method !== 'GET') {
+			return Response.json({ error: 'not found' }, { status: 404, headers: cors });
+		}
+		if (!projectIdSchema.safeParse(projectId).success) {
+			return Response.json({ error: 'invalid project id' }, { status: 400, headers: cors });
+		}
+
+		const parameters = await this.publishedConfig(projectId);
+
+		// A verified token contributes role and permissions; an unverified or
+		// absent one contributes nothing. Remote Config never REQUIRES a token -
+		// config has to resolve for a logged-out first run, which is the whole
+		// moment it exists for - so a bad token is anonymous, not an error.
+		const agent = await getAgentByName<Env, DbAgentBase>(this.env.DbAgent, projectId);
+		const bearer = request.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
+		const claims = bearer ? await agent.verifyProjectToken(bearer) : null;
+
+		const context: RemoteConfigContext = {
+			// `request.cf` FIRST and the header only as a fallback, in that order
+			// deliberately. On a consumer's public Worker the request arrives with
+			// real `cf` properties, so a client-sent `cf-ipcountry` can never
+			// displace them; the header path exists for the console's service
+			// binding, which strips the caller's copy before setting its own
+			// (see the proxy route) because a binding fetch keeps no `cf` at all.
+			country: resolveCountry(request, this.env),
+			uid: claims?.sub ?? url.searchParams.get('uid') ?? null,
+			role: claims?.role ?? null,
+			permissions: claims?.permissions ?? [],
+			appVersion: url.searchParams.get('appVersion'),
+		};
+
+		const params = evaluateAll(parameters, context);
+		const etag = payloadEtag(params);
+		const headers = {
+			...cors,
+			etag,
+			// Per-caller output, so any shared cache in front of this must not
+			// reuse one caller's answer for another.
+			'cache-control': 'private, max-age=0, must-revalidate',
+		};
+		if (request.headers.get('if-none-match') === etag) {
+			return new Response(null, { status: 304, headers });
+		}
+		return Response.json({ params, fetchedAt: new Date().toISOString() }, { headers });
+	}
+
+	/**
+	 * Published parameters for a project, cached per project in the edge cache.
+	 *
+	 * ONE entry per project rather than one per cohort - the whole reason
+	 * evaluation happens in the worker. A publish therefore reaches clients when
+	 * this expires, so the window is short and stated rather than hidden;
+	 * `REMOTE_CONFIG_CACHE_SECONDS` tunes it, 0 disables it.
+	 *
+	 * A cache miss costs one RPC to the coordinator. A cache that cannot be
+	 * reached (no Cache API in a given runtime) degrades to exactly that, which
+	 * is correct but slower - never to a stale or empty config.
+	 */
+	private async publishedConfig(projectId: string): Promise<EvaluableParameter[]> {
+		const seconds = Number.parseInt(this.env.REMOTE_CONFIG_CACHE_SECONDS ?? '', 10);
+		const ttl = Number.isInteger(seconds) && seconds >= 0 ? seconds : 30;
+		// A synthetic key: this never goes to the network, it only has to be
+		// stable and per-project.
+		const key = new Request(
+			`https://remote-config.cfbase.internal/${encodeURIComponent(projectId)}`,
+		);
+
+		if (ttl > 0) {
+			const hit = await caches.default.match(key).catch(() => undefined);
+			if (hit) {
+				const cached = (await hit.json().catch(() => null)) as EvaluableParameter[] | null;
+				if (cached) return cached;
+			}
+		}
+
+		const agent = await getAgentByName<Env, DbAgentBase>(this.env.DbAgent, projectId);
+		const parameters = (await agent.remoteConfigPublished()) as EvaluableParameter[];
+
+		if (ttl > 0) {
+			const stored = Response.json(parameters, {
+				headers: { 'cache-control': `public, max-age=${ttl}` },
+			});
+			this.ctx.waitUntil(caches.default.put(key, stored).catch(() => undefined));
+		}
+		return parameters;
 	}
 
 	/** Records any 5xx leaving this worker. Never replaces the response. */

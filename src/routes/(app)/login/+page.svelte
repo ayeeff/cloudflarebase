@@ -626,7 +626,7 @@
 							</button>
 						{:else}
 							<!-- Claimed consoles admit invited emails - teams without open
-						     registration (docs/managed-service-design.md). -->
+						     registration. -->
 							Invited to an organization?
 							<button
 								type="button"

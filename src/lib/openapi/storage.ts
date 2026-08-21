@@ -15,7 +15,7 @@ import {
 } from './shared';
 
 /**
- * Storage agent module (docs/storage-agent-plan.md, S1). Only the
+ * Storage agent module (S1). Only the
  * operator-plane endpoints are path items: the OBJECT paths live on the
  * direct agent base (`/agents/storage-agent/<pid>/buckets/...`, because
  * bytes must not transit the JSON proxy, whose handlers buffer bodies) -

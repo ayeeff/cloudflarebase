@@ -36,7 +36,7 @@ import {
 import type { DbTable } from './table';
 
 /**
- * `DbView` - the join view (JOIN1, docs/db-join-design.md).
+ * `DbView` - the join view (JOIN1).
  *
  * A region replica is a Durable Object that follows ONE primary's change log
  * into a copy of ONE table. A view is the same machinery pointed at SEVERAL:
@@ -346,6 +346,20 @@ export class DbView extends DurableObject<Env> {
 					{
 						success: false,
 						error: `"${member.row.table}" is owner-scoped - it cannot be read through a view`,
+					},
+					{ status: 403 },
+				);
+			}
+			// The parent refuses this pairing when a view is declared or a member
+			// reconfigured, so reaching it means the member closed AFTER the view
+			// was built and the feed delivered the new config. Refusing here too
+			// is what stops a join serving rows the member's own gate refuses -
+			// the config arrives by replication, so there is a window.
+			if (memberConfig.readAccess === 'none') {
+				return Response.json(
+					{
+						success: false,
+						error: `"${member.row.table}" is not readable over the public API - it cannot be read through a view`,
 					},
 					{ status: 403 },
 				);

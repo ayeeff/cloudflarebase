@@ -6,7 +6,7 @@ import { blank, bold, dim, info, step, success, UserError } from '../lib/log.js'
 
 /**
  * `cloudflarebase login <console-url>` - authenticate the CLI against a
- * console (docs/schema-cli-design.md).
+ * console.
  *
  * Default is the wrangler-style browser hand-off: the CLI listens on a
  * localhost port with a one-time code and opens `<origin>/cli-auth`; the

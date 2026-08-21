@@ -2,7 +2,7 @@ import type { RequestHandler } from './$types';
 
 /**
  * Hands the signed-in operator their own session token for CLI use
- * (docs/schema-cli-design.md). The console guard already required a session
+ *. The console guard already required a session
  * to reach this route; the response is simply the session cookie's value,
  * which the auth agent accepts as `Authorization: Bearer` - the documented
  * external-client path. No new token store: the CLI holds an ordinary

@@ -13,7 +13,7 @@ import {
 } from './helpers';
 
 /**
- * GitHub push-to-deploy (docs/managed-service-design.md, Phase B).
+ * GitHub push-to-deploy (Phase B).
  *
  * This stack configures NO GitHub App, which is the self-hosted default and
  * the important half of the contract to pin: adding push-to-deploy must not
@@ -82,6 +82,28 @@ test.describe('github connect', () => {
 		expect(removed.status(), await removed.text()).toBe(404);
 	});
 
+	test('build settings validate before the connection is even looked up', async ({ request }) => {
+		// Charset-limited because these values embed into workflow YAML.
+		for (const data of [
+			{ ignoredBranches: ["quo'te"] },
+			{ ignoredBranches: ['two words'] },
+			{ productionBranch: 'no spaces here' },
+			{ buildCommand: 'line one\nline two' },
+			{ unknownField: true }
+		]) {
+			const patched = await request.patch(githubConnectionPath(rootId, 'never-connected'), {
+				data
+			});
+			expect(patched.status(), JSON.stringify(data)).toBe(400);
+		}
+
+		// A valid body against a missing connection is the honest 404.
+		const missing = await request.patch(githubConnectionPath(rootId, 'never-connected'), {
+			data: { productionBranch: 'release' }
+		});
+		expect(missing.status(), await missing.text()).toBe(404);
+	});
+
 	test('every github surface requires an operator session', async ({ baseURL }) => {
 		const guest = await anonymous(baseURL);
 		try {
@@ -101,6 +123,10 @@ test.describe('github connect', () => {
 				data: { installationId: 1, repoFullName: 'acme/site', appName: 'site', mode: 'build' }
 			});
 			expect(connect.status(), 'connecting must require an operator').toBe(401);
+			const patched = await guest.patch(githubConnectionPath(rootId, 'site'), {
+				data: { productionBranch: 'release' }
+			});
+			expect(patched.status(), 'editing build settings must require an operator').toBe(401);
 			const removed = await guest.delete(githubConnectionPath(rootId, 'site'));
 			expect(removed.status(), 'disconnecting must require an operator').toBe(401);
 		} finally {

@@ -357,3 +357,91 @@ export async function patchScriptSecret(
 		},
 	);
 }
+
+/**
+ * Replaces the script's WHOLE `plain_text` set in one settings PATCH; secrets
+ * and assets stay. Callers pass the FULL effective set (platform over stored
+ * over the last deploy's CLI vars) - replacement, not addition, is how a
+ * deleted var actually disappears from the live script.
+ */
+export async function patchScriptVars(
+	api: CfApi,
+	scriptName: string,
+	vars: Record<string, string>,
+): Promise<void> {
+	const form = new FormData();
+	form.append(
+		'settings',
+		new Blob(
+			[
+				JSON.stringify({
+					bindings: Object.entries(vars).map(([name, text]) => ({
+						type: 'plain_text',
+						name,
+						text,
+					})),
+					// Deliberately NOT 'plain_text': this call replaces that set.
+					keep_bindings: ['secret_text', 'assets'],
+					keep_assets: true,
+				}),
+			],
+			{ type: 'application/json' },
+		),
+		'settings',
+	);
+	await cfFetch(
+		api,
+		`/workers/dispatch/namespaces/${api.namespace}/scripts/${scriptName}/settings`,
+		{
+			method: 'PATCH',
+			body: form,
+		},
+	);
+}
+
+/** Deletes one secret from a namespaced script. 404-tolerant: a secret set
+ * before name-tracking existed, or already gone, is not an error. */
+export async function deleteScriptSecret(
+	api: CfApi,
+	scriptName: string,
+	name: string,
+): Promise<void> {
+	const response = await fetch(
+		`${API_BASE}/accounts/${api.accountId}/workers/dispatch/namespaces/${api.namespace}/scripts/${scriptName}/secrets/${encodeURIComponent(name)}`,
+		{
+			method: 'DELETE',
+			headers: { authorization: `Bearer ${api.apiToken}` },
+		},
+	);
+	if (!response.ok && response.status !== 404) {
+		throw new Error(`deleting secret ${name} failed - HTTP ${response.status}`);
+	}
+}
+
+/**
+ * The plain-text vars a deployed app is born with.
+ *
+ * The customer's declared vars come first and the platform's are applied over
+ * them, deliberately: which project an app belongs to is the platform's fact,
+ * not a value the app gets to disagree with. An app that could point
+ * `CLOUDFLAREBASE_PROJECT` at another project would be reaching into another
+ * tenant's data plane by editing a config file.
+ *
+ * `CLOUDFLAREBASE_PROJECT` + `CLOUDFLAREBASE_URL` are exactly the names the
+ * admin SDKs resolve from, so `createDbAdmin()` with no arguments works inside
+ * a hosted Worker and `db.remoteConfig()` needs no setup. `PROJECT_ID` predates
+ * them and is kept because apps already deployed against it would otherwise
+ * break for nothing.
+ */
+export function deployVars(
+	declared: Record<string, string> | undefined,
+	projectId: string,
+	consoleOrigin: string,
+): Record<string, string> {
+	return {
+		...(declared ?? {}),
+		CLOUDFLAREBASE_PROJECT: projectId,
+		PROJECT_ID: projectId,
+		CLOUDFLAREBASE_URL: consoleOrigin,
+	};
+}

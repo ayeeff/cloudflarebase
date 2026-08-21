@@ -185,7 +185,7 @@ export interface DbDocument {
 }
 
 // ---------------------------------------------------------------------------
-// Replication (phase REP1 of docs/db-scale-plan.md; docs/db-replication-design.md)
+// Replication (phase REP1)
 
 export const replicationModeSchema = z.enum(['off', 'auto']);
 export type ReplicationMode = z.infer<typeof replicationModeSchema>;
@@ -238,7 +238,7 @@ export type RepPullResult =
  * whole reason the pattern is not just `r:`:
  *
  * - `r:<region>:<n>` - a region replica of THIS shard (REP1/REP2).
- * - `v:<view>:<region>:<n>` - a join view (docs/db-join-design.md), which
+ * - `v:<view>:<region>:<n>` - a join view, which
  *   follows SEVERAL primaries into one SQLite. It registers in each member's
  *   `replicas` table like any other follower, so the erase fan-out reaches it.
  *
@@ -308,7 +308,26 @@ export interface RepStatus {
 // ---------------------------------------------------------------------------
 // Collection configuration
 
-export const accessModeSchema = z.enum(['public', 'auth', 'owner']);
+/**
+ * Who may reach a shard over the PUBLIC API, per side (read and write are set
+ * independently).
+ *
+ * `none` is the closed one, and it exists because there was previously no way
+ * to say "nobody writes this from a client". That is the shape of every
+ * server-owned dataset - feature flags, pricing tiers, a country list, a
+ * product catalog - and the closest approximation was `auth` plus a permission
+ * key nobody's token carries, which works by accident and is one role edit
+ * away from being wrong.
+ *
+ * `writeAccess: 'none'` is a read-only collection or table: Firestore's
+ * `allow write: if false` expressed against the operator bypass that already
+ * exists (console, `cfbs_` service key, admin SDK - none of which pass through
+ * this gate at all). `readAccess: 'none'` falls out for free and is genuinely
+ * useful: append-only ingest that clients may write but never read back.
+ *
+ * Widening an enum is backward-compatible - every stored config still parses.
+ */
+export const accessModeSchema = z.enum(['public', 'auth', 'owner', 'none']);
 export type AccessMode = z.infer<typeof accessModeSchema>;
 
 /**
@@ -387,7 +406,7 @@ export const settingsRequestSchema = z.strictObject({
 });
 
 // ---------------------------------------------------------------------------
-// Tables: the typed-column DSL (phase T1 of docs/db-scale-plan.md)
+// Tables: the typed-column DSL (phase T1)
 
 /** Table names are DO name suffixes exactly like collection names; the
  * physical SQLite table inside the instance is always `rows`. */
@@ -631,7 +650,7 @@ export type TableSqlResponse =
 	| { success: false; error: string };
 
 // ---------------------------------------------------------------------------
-// Join views (JOIN1; docs/db-join-design.md)
+// Join views (JOIN1)
 
 /** A view name is a registry name like any other - unique ACROSS kinds, and
  * a Durable Object name segment, so the same tame grammar applies. */
@@ -757,6 +776,66 @@ export const MAX_RESTORE_POINTS = 200;
 export const checkpointRequestSchema = z.strictObject({
 	reason: z.string().trim().min(1).max(80).optional(),
 });
+
+/**
+ * The human line a publish's restore point carries: which keys were added,
+ * edited, and removed, in words - the version list and the rollback dialog
+ * are where an operator decides what a version IS, and "publish (3)" told
+ * them nothing. Keys are listed until the checkpoint reason's 80-char cap
+ * would clip them, then the tail collapses to a count; a publish with no
+ * pending work (never reachable today) answers plain "publish".
+ */
+export function remoteConfigPublishSummary(delta: {
+	added: string[];
+	edited: string[];
+	removed: string[];
+}): string {
+	const groups = (['added', 'edited', 'removed'] as const)
+		.filter((verb) => delta[verb].length)
+		.map((verb) => ({ verb, keys: delta[verb] }));
+	if (!groups.length) return 'publish';
+
+	// Longest first keeps the label meaningful as it degrades: full key lists,
+	// then per-group counts from the back.
+	for (let collapsed = 0; collapsed <= groups.length; collapsed++) {
+		const line = groups
+			.map((group, index) => {
+				const asCount = index >= groups.length - collapsed;
+				return asCount
+					? `${group.verb} ${group.keys.length}`
+					: `${group.verb} ${group.keys.join(', ')}`;
+			})
+			.join(' · ');
+		if (line.length <= 80) return line;
+	}
+	return groups
+		.map((group) => `${group.verb} ${group.keys.length}`)
+		.join(' · ')
+		.slice(0, 80);
+}
+
+/**
+ * Ids of restore-point rows that repeat an earlier row's bookmark.
+ *
+ * Capturing with no writes since the last capture yields the SAME bookmark -
+ * publish checkpoints, then an immediate "before rollback" capture, is the
+ * ordinary way to get there. Two rows for one bookmark list a single storage
+ * state twice, and the dashboard keys its version list by bookmark, so the
+ * duplicate breaks the very page it appears on. Rows arrive newest-first;
+ * the OLDEST row per bookmark is the keeper - it carries the label the state
+ * was created under (usually the publish), not the label of whatever
+ * captured it again.
+ */
+export function duplicateRestorePointIds(rows: { id: number; bookmark: string }[]): number[] {
+	const keeperByBookmark = new Map<string, number>();
+	for (const row of rows) {
+		const held = keeperByBookmark.get(row.bookmark);
+		// Autoincrement ids: the smallest id is the oldest capture.
+		if (held === undefined || row.id < held) keeperByBookmark.set(row.bookmark, row.id);
+	}
+	const keepers = new Set(keeperByBookmark.values());
+	return rows.filter((row) => !keepers.has(row.id)).map((row) => row.id);
+}
 
 export interface RestorePoint {
 	bookmark: string;
@@ -914,3 +993,277 @@ export const jwtClaimsSchema = z.object({
 	permissions: z.array(z.string()).optional(),
 });
 export type JwtClaims = z.infer<typeof jwtClaimsSchema>;
+
+// ---------------------------------------------------------------------------
+// Remote Config (RC1)
+
+/**
+ * The platform's own namespace inside a project's shard registry.
+ *
+ * A shard whose name starts with this is created and owned by a Cloudflarebase
+ * feature, not by the operator: the generic table and collection routes refuse
+ * to create, reconfigure, or drop one, so nobody can open Remote Config's
+ * parameter table to public writes from the Tables page and quietly hand every
+ * client the ability to rewrite their own feature flags.
+ *
+ * It is a PREFIX rather than a list because the next platform-owned shard
+ * should need no new rule. The shards stay visible in the registry and
+ * readable through the operator surfaces - this is the operator's project, and
+ * hiding storage from them would be worse than reserving it.
+ */
+export const PLATFORM_SHARD_PREFIX = 'cfb_';
+
+export function isPlatformShard(name: string): boolean {
+	return name.startsWith(PLATFORM_SHARD_PREFIX);
+}
+
+/** Remote Config's parameter table. The row id IS the parameter key, so
+ * uniqueness is the primary key rather than an index. */
+export const REMOTE_CONFIG_TABLE = 'cfb_remote_config';
+
+/**
+ * A parameter key. Deliberately the document-id grammar - the key is the row
+ * id - plus a leading-letter rule, because these are read in client code as
+ * `config.get('checkoutV2')` and a key starting with a digit reads as a typo.
+ */
+export const remoteConfigKeySchema = z
+	.string()
+	.regex(
+		/^[A-Za-z][A-Za-z0-9_-]{0,63}$/,
+		'keys start with a letter and use letters, digits, _ and - (max 64)',
+	);
+
+export const remoteConfigValueTypeSchema = z.enum(['string', 'number', 'boolean', 'json']);
+export type RemoteConfigValueType = z.infer<typeof remoteConfigValueTypeSchema>;
+
+/** A parameter's default is bounded: it ships to every client on every fetch,
+ * and a config payload is not a document store. */
+export const MAX_REMOTE_CONFIG_VALUE_BYTES = 4 * 1024;
+export const MAX_REMOTE_CONFIG_PARAMETERS = 100;
+
+/**
+ * The `PUT /admin/remote-config/:key` body.
+ *
+ * `defaultValue` is `unknown` here and checked against `valueType` by
+ * `remoteConfigValueIssue` instead: the type is data, so the check cannot be
+ * expressed as a static union without four near-identical branches, and the
+ * message a operator sees ("checkoutV2 is a boolean") is worth more than the
+ * zod union's.
+ */
+export const remoteConfigParameterInputSchema = z.strictObject({
+	valueType: remoteConfigValueTypeSchema,
+	defaultValue: z.unknown(),
+	/** Shown in the console beside the key; never sent to clients. */
+	description: z.string().trim().max(200).nullable().optional(),
+	/** Ordered overrides; omitted leaves them unchanged, null clears them -
+	 * the three-state rule the shard config schemas already use. */
+	conditions: z
+		.array(z.lazy(() => remoteConfigConditionSchema))
+		.max(5)
+		.nullable()
+		.optional(),
+});
+export type RemoteConfigParameterInput = z.infer<typeof remoteConfigParameterInputSchema>;
+
+// --- Targeting (RC2) -------------------------------------------------------
+
+/**
+ * ISO 3166-1 alpha-2, as `request.cf.country` reports it. Uppercase only, so a
+ * rule cannot silently fail to match because someone typed `de`.
+ */
+const countryCodeSchema = z.string().regex(/^[A-Z]{2}$/, 'use an uppercase 2-letter country code');
+
+/** `1.2.3`, `2.0`, or `4` - what an app actually reports as its version. */
+export const appVersionSchema = z.string().regex(/^\d{1,6}(\.\d{1,6}){0,3}$/);
+
+export const MAX_REMOTE_CONFIG_CONDITIONS = 5;
+
+/**
+ * One targeting predicate. Every field present must match (AND); a field
+ * listing values matches if any of them do (OR within the field).
+ *
+ * Four predicates and no more, chosen by what the edge can establish rather
+ * than by what would look complete on a feature list:
+ *
+ * - `country` comes from `request.cf` and the client never supplies it, so it
+ *   is the only one an end user cannot influence at all.
+ * - `role` and `permission` come from a VERIFIED project JWT. No token means
+ *   they simply do not match - never a match by default.
+ * - `appVersion` is client-reported, and honestly so: it targets a build, and
+ *   a build that lies about its version is one you shipped.
+ * - `rollout` buckets a caller by `uid`. Advisory by construction (see
+ *   `rolloutBucket`), which is why the console says so next to the control.
+ *
+ * The absence of an `else`/priority language is deliberate: conditions are an
+ * ordered list and the FIRST match wins, which is the whole evaluation rule.
+ */
+export const remoteConfigConditionSchema = z.strictObject({
+	/** Shown in the console so a rule reads as something other than JSON. */
+	label: z.string().trim().max(60).optional(),
+	when: z
+		.strictObject({
+			country: z.array(countryCodeSchema).min(1).max(20).optional(),
+			role: z.array(z.string().trim().min(1).max(64)).min(1).max(10).optional(),
+			permission: permissionKeySchema.optional(),
+			appVersion: z
+				.strictObject({
+					gte: appVersionSchema.optional(),
+					lt: appVersionSchema.optional(),
+				})
+				.refine(
+					(range) => range.gte !== undefined || range.lt !== undefined,
+					'an appVersion rule needs gte, lt, or both',
+				)
+				.optional(),
+			rollout: z
+				.strictObject({
+					/** 1-99: 0 and 100 are a rule that should just be deleted or
+					 * made the default, and accepting them invites both. */
+					percent: z.number().int().min(1).max(99),
+					/** Two 10% rollouts with different salts hit DIFFERENT tenths -
+					 * without it every rollout targets the same unlucky cohort. */
+					salt: z.string().trim().min(1).max(64),
+				})
+				.optional(),
+		})
+		.refine(
+			(when) => Object.keys(when).length > 0,
+			'a condition needs at least one rule, or it matches everyone',
+		),
+	value: z.unknown(),
+});
+export type RemoteConfigCondition = z.infer<typeof remoteConfigConditionSchema>;
+
+/** Parses what came back out of the json column; unreadable = no targeting. */
+export const storedConditionsSchema = z
+	.array(remoteConfigConditionSchema)
+	.max(MAX_REMOTE_CONFIG_CONDITIONS)
+	.nullable()
+	.catch(null);
+
+/** Null when the value fits its declared type, else the operator-facing why. */
+export function remoteConfigValueIssue(type: RemoteConfigValueType, value: unknown): string | null {
+	if (value === undefined) return 'a default value is required';
+	const size = JSON.stringify(value ?? null)?.length ?? 0;
+	if (size > MAX_REMOTE_CONFIG_VALUE_BYTES) {
+		return `a default value is limited to ${MAX_REMOTE_CONFIG_VALUE_BYTES} bytes`;
+	}
+	switch (type) {
+		case 'string':
+			return typeof value === 'string' ? null : 'this parameter is declared a string';
+		case 'number':
+			return typeof value === 'number' && Number.isFinite(value)
+				? null
+				: 'this parameter is declared a number';
+		case 'boolean':
+			return typeof value === 'boolean' ? null : 'this parameter is declared a boolean';
+		case 'json':
+			// Anything JSON-serializable, including null - the escape hatch for a
+			// structured value. `undefined` was already refused above.
+			return value === null || typeof value === 'object'
+				? null
+				: 'a json parameter takes an object, an array, or null - use the scalar types otherwise';
+	}
+}
+
+/**
+ * A parameter's lifecycle, and the reason there are two value columns.
+ *
+ * Editing is a DRAFT and publishing is what reaches clients - Firebase's model,
+ * and it is the right one for exactly the reason it exists there: a config
+ * change usually means several parameters moving together, and an operator
+ * halfway through editing must not be serving a half-changed config to
+ * everyone. So the console writes drafts freely, and one publish flips them
+ * atomically.
+ *
+ * - `draft`    - added but never published. Clients have never seen it.
+ * - `published` - live. `draftValue` may still differ, which is an edit pending.
+ * - `deleting` - published, and marked for removal on the next publish. Still
+ *                served until then, because it is still live for clients.
+ */
+export const remoteConfigStateSchema = z.enum(['draft', 'published', 'deleting']);
+export type RemoteConfigState = z.infer<typeof remoteConfigStateSchema>;
+
+/**
+ * The declared columns of the parameter table.
+ *
+ * Deliberately a plain `DbTable` rather than storage inside DbAgent: the table
+ * then inherits point-in-time recovery, export/import, replication, and the
+ * erase fan-out from machinery that is already tested - and a config rollback
+ * rewinds ONLY the config, where restoring the coordinator would rewind the
+ * whole shard registry with it.
+ *
+ * No `conditions` column yet. Targeting arrives in RC2 with the schema that
+ * validates it and the evaluator that reads it; a nullable column can be added
+ * to a live table then (the DDL planner allows exactly that), and declaring a
+ * field nothing validates would be worse than declaring it late.
+ */
+export const REMOTE_CONFIG_COLUMNS = [
+	{
+		name: 'value_type',
+		type: 'text',
+		nullable: false,
+		enum: ['string', 'number', 'boolean', 'json'],
+	},
+	/** What the console edits. */
+	{ name: 'draft_value', type: 'json', nullable: true },
+	/** What clients get - the public endpoint reads THIS column, never the draft. */
+	{ name: 'published_value', type: 'json', nullable: true },
+	/** Targeting rules, drafted and published in step with the values they
+	 * override. Added in RC2 as nullable columns, which the DDL planner applies
+	 * to a live table - a project provisioned by RC1 gains them on next touch. */
+	{ name: 'draft_conditions', type: 'json', nullable: true },
+	{ name: 'published_conditions', type: 'json', nullable: true },
+	{
+		name: 'state',
+		type: 'text',
+		nullable: false,
+		default: 'draft',
+		enum: ['draft', 'published', 'deleting'],
+	},
+	{ name: 'description', type: 'text', nullable: true, maxLength: 200 },
+	/** Operator user id, so a parameter has an author in the audit trail. */
+	{ name: 'updated_by', type: 'text', nullable: true },
+] as const;
+
+/** The wire shape of one parameter, as the console reads it. */
+export interface RemoteConfigParameter {
+	key: string;
+	valueType: RemoteConfigValueType;
+	/** What the editor shows. */
+	draftValue: unknown;
+	/** What clients currently get; null until first published. */
+	publishedValue: unknown;
+	/** Targeting, drafted and published in step with the values. */
+	draftConditions: RemoteConfigCondition[] | null;
+	publishedConditions: RemoteConfigCondition[] | null;
+	state: RemoteConfigState;
+	/** Whether this parameter differs from what clients are being served. */
+	pending: boolean;
+	description: string | null;
+	updatedBy: string | null;
+	updatedAt: string;
+}
+
+/** Whether a parameter is not yet what clients are being served - value AND
+ * targeting, since a changed rule changes what someone receives just as much as
+ * a changed value does. */
+export function remoteConfigPending(parameter: {
+	state: RemoteConfigState;
+	draftValue: unknown;
+	publishedValue: unknown;
+	draftConditions?: unknown;
+	publishedConditions?: unknown;
+}): boolean {
+	if (parameter.state !== 'published') return true;
+	if (
+		JSON.stringify(parameter.draftValue ?? null) !==
+		JSON.stringify(parameter.publishedValue ?? null)
+	) {
+		return true;
+	}
+	return (
+		JSON.stringify(parameter.draftConditions ?? null) !==
+		JSON.stringify(parameter.publishedConditions ?? null)
+	);
+}

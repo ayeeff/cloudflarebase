@@ -1,6 +1,6 @@
 /**
  * The ADMIN client for `@cloudflarebase/storage` - buckets and object bytes
- * from a server (docs/admin-sdk-design.md).
+ * from a server.
  *
  * The twin of the db and auth admin clients: it targets the CONSOLE (a `cfbs_`
  * service key is verified in the console guard and never reaches this agent as

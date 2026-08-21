@@ -384,17 +384,12 @@ export async function writeWorkflowFile(
 	installationId: number,
 	repoFullName: string,
 	branch: string,
-	yaml: string
+	yaml: string,
+	/** Per-app path for new connections; legacy rows pass WORKFLOW_FILENAME. */
+	path: string = WORKFLOW_FILENAME,
+	message = 'Add Cloudflarebase deploy workflow'
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
-	return writeRepoFile(
-		config,
-		installationId,
-		repoFullName,
-		branch,
-		WORKFLOW_FILENAME,
-		yaml,
-		'Add Cloudflarebase deploy workflow'
-	);
+	return writeRepoFile(config, installationId, repoFullName, branch, path, yaml, message);
 }
 
 /**
@@ -429,12 +424,15 @@ export async function deleteWorkflowFile(
 	config: GithubAppConfig,
 	installationId: number,
 	repoFullName: string,
-	branch: string
+	branch: string,
+	/** The path the connection actually committed (its `workflowPath` column);
+	 * legacy rows fall back to the shared filename. */
+	workflowPath: string = WORKFLOW_FILENAME
 ): Promise<boolean> {
 	const token = await installationToken(config, installationId);
 	if (!token) return false;
 
-	const path = `/repos/${repoFullName}/contents/${WORKFLOW_FILENAME}`;
+	const path = `/repos/${repoFullName}/contents/${workflowPath}`;
 	const existing = await githubFetch(token, 'GET', `${path}?ref=${encodeURIComponent(branch)}`);
 	const sha = (existing.body as { sha?: string } | null)?.sha;
 	if (!existing.ok || !sha) return false;

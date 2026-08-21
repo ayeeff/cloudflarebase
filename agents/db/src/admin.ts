@@ -4,7 +4,7 @@ import type { Typed } from './client';
 
 /**
  * The ADMIN client - the credential a server holds, with a real API in front
- * of it (docs/admin-sdk-design.md).
+ * of it.
  *
  * Distinct from `./client` in three ways that matter:
  *
@@ -93,8 +93,7 @@ export class DbAdminError extends Error {
  *
  * The agent's own misses answer `{ error: 'no such ...' }`. A 404 without that
  * shape came from routing, so it is reported as this instead of as an absent
- * record. See docs/admin-sdk-design.md 8 - the third time deploy ordering has
- * bitten this codebase.
+ * record. The third time deploy ordering has bitten this codebase.
  */
 export class DbAgentTooOldError extends Error {
 	constructor(path: string) {

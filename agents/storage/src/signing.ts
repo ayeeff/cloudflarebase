@@ -1,5 +1,5 @@
 /**
- * Signed download URLs (docs/storage-agent-plan.md, "The byte paths").
+ * Signed download URLs ("The byte paths").
  *
  * A signed URL is the answer to "I need a plain URL for a private object" -
  * the thing an `<img src>` can hold, with no Authorization header available.

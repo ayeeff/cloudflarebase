@@ -22,7 +22,7 @@ export const project = sqliteTable(
 	{
 		/** Becomes the Durable Object name and the API base path. Immutable.
 		 * A BRANCH row's id is `<parentId>--<branchName>` - the derived id IS
-		 * the isolation (docs/branches-design.md): every agent already keys on
+		 * the isolation: every agent already keys on
 		 * project id, so a branch gets its own instances, keys, and replicas
 		 * with zero agent changes. */
 		id: text('id').primaryKey(),
@@ -34,7 +34,7 @@ export const project = sqliteTable(
 		/** The branch's short name (`staging`); null on roots (`main`). */
 		branchName: text('branch_name'),
 		/** Owning organization - a row in the console AuthAgent's org tables
-		 * (docs/managed-service-design.md). The registry knows which org owns a
+		 *. The registry knows which org owns a
 		 * project; the agent knows who is in the org; the guard joins the two
 		 * per request. Null = legacy/self-hosted row, visible to any operator -
 		 * exactly the pre-Phase-A behaviour, so a claimed-mode install never
@@ -72,29 +72,7 @@ export const demoProject = sqliteTable(
 );
 
 /**
- * Copilot conversation history. The tool-calling loop runs in this Worker (it
- * reads BOTH agents over the service bindings), so its transcript is
- * control-plane state, not any one agent's. `client_key` is the operator's
- * user id, or a project-scoped SHA-256 of the connecting IP for anonymous
- * demo visitors - raw IPs are never stored.
- */
-export const chatMessage = sqliteTable(
-	'chat_message',
-	{
-		id: text('id').primaryKey(),
-		projectId: text('project_id').notNull(),
-		clientKey: text('client_key').notNull(),
-		role: text('role').$type<'user' | 'agent'>().notNull(),
-		content: text('content').notNull(),
-		createdAt: integer('created_at', { mode: 'timestamp_ms' })
-			.notNull()
-			.default(sql`(unixepoch() * 1000)`)
-	},
-	(table) => [index('chat_message_thread').on(table.projectId, table.clientKey, table.createdAt)]
-);
-
-/**
- * Hosting subdomain claims (docs/managed-service-design.md, Phase B). The
+ * Hosting subdomain claims (Phase B). The
  * dispatch namespace is global, so claims are control-plane state - no agent
  * may own the namespace without every project depending on that one instance.
  * One row per project+app: `project_id` is the FULL registry id (a branch is
@@ -121,7 +99,7 @@ export const app = sqliteTable(
 export type AppRow = typeof app.$inferSelect;
 
 /**
- * Project-scoped deploy tokens (docs/managed-service-design.md, Phase B) -
+ * Project-scoped deploy tokens (Phase B) -
  * the durable credential CI deploys ride, minted on ROOT projects and valid
  * for the root and its branches. Only the SHA-256 digest is stored, so a
  * control-plane leak never yields a working credential; the guard accepts
@@ -148,7 +126,7 @@ export const deployToken = sqliteTable(
 export type DeployTokenRow = typeof deployToken.$inferSelect;
 
 /**
- * Project service keys (docs/service-keys-design.md) - the credential a SERVER
+ * Project service keys - the credential a SERVER
  * can hold, for the cases with no user to relay: crons, queue consumers,
  * webhook handlers, seed scripts, and backends we do not host.
  *
@@ -251,6 +229,21 @@ export const githubConnection = sqliteTable(
 		/** Build mode: monorepo root - install/build/deploy run here.
 		 * Null = repository root. */
 		rootDir: text('root_dir'),
+		/** Branch that deploys the ROOT project; null = the repo's default
+		 * branch. Any other branch still deploys `<root>--<branch>`. */
+		productionBranch: text('production_branch'),
+		/** JSON array of branch names and simple `*` globs; pushes to a matching
+		 * branch never deploy (webhook skip, workflow branches-ignore, and OIDC
+		 * grant refusal - all three enforce it). */
+		ignoredBranches: text('ignored_branches'),
+		/** Workflow file this connection committed (per-app names fix the
+		 * two-apps-one-repo collision); null = the legacy
+		 * `.github/workflows/cloudflarebase.yml`. */
+		workflowPath: text('workflow_path'),
+		/** Package manager detected at connect (npm/pnpm/yarn/bun), persisted so
+		 * a build-settings edit can re-render the workflow's install steps.
+		 * Null (legacy rows) = generic npm steps. */
+		packageManager: text('package_manager'),
 		createdAt: integer('created_at', { mode: 'timestamp_ms' })
 			.notNull()
 			.default(sql`(unixepoch() * 1000)`),

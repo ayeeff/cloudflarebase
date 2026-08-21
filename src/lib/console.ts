@@ -136,3 +136,21 @@ export function activeOrg(identity: ConsoleIdentity): ConsoleOrgMembership | nul
 		null
 	);
 }
+
+/**
+ * Surfaces that must never be indexed, and must never describe themselves in a
+ * link preview.
+ *
+ * Two consumers, one list, deliberately: `hooks.server.ts` sets
+ * `x-robots-tag: noindex` from it, and the root layout suppresses
+ * page-specific Open Graph from it. Splitting them is what produced the bug
+ * this exists to prevent - the header was right while the markup still told
+ * every scraper the page was `demo-19a63aad9478`.
+ */
+export const PRIVATE_SURFACES = ['/dashboard', '/login', '/cli-auth', '/api', '/agents'];
+
+export function isPrivateSurface(pathname: string): boolean {
+	return PRIVATE_SURFACES.some(
+		(prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+	);
+}

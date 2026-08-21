@@ -241,7 +241,7 @@ export class DbTable extends LiveShard {
 	}
 
 	/**
-	 * Operator read by id - the collection twin (docs/admin-sdk-design.md 5.1).
+	 * Operator read by id - the collection twin.
 	 *
 	 * Tables could already do this through `POST /admin/tables/:name/sql`
 	 * (`SELECT * FROM t WHERE id = ?`), but only because they happen to have a
@@ -1108,13 +1108,29 @@ export class DbTable extends LiveShard {
 			prepared.push({ ...gate, params: statement.params ?? [] });
 		}
 
+		// A batch carrying ANY write is judged on the write side - a mixed batch
+		// is a write.
 		const wantsWrite = prepared.some((statement) => statement.kind !== 'select');
-		if (
-			(wantsWrite && config.writeAccess === 'owner') ||
-			(!wantsWrite && config.readAccess === 'owner')
-		) {
+		const mode = wantsWrite ? config.writeAccess : config.readAccess;
+
+		// This path deliberately does NOT go through checkAccess (raw SQL always
+		// demands a token, whatever the mode says), so every mode the gate
+		// refuses has to be refused again HERE. Miss one and raw SQL becomes the
+		// way around it - which is exactly the bypass `none` exists to prevent.
+		if (mode === 'owner') {
 			return Response.json(
 				{ success: false, error: 'owner-scoped tables refuse raw SQL - use the typed API' },
+				{ status: 403 },
+			);
+		}
+		if (mode === 'none') {
+			return Response.json(
+				{
+					success: false,
+					error: wantsWrite
+						? 'this table is read-only over the public API'
+						: 'this table is not readable over the public API',
+				},
 				{ status: 403 },
 			);
 		}

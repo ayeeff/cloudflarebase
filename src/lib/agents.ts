@@ -198,7 +198,9 @@ export const projectBranchesSchema = z
 // agents/db/src/agent.ts - deliberately copied, never imported (the agent is
 // its own TypeScript project with its own generated Env).
 
-export const dbAccessModeSchema = z.enum(['public', 'auth', 'owner']);
+/** `none` closes a side to the public API entirely - operator surfaces only.
+ * A read-only collection is `writeAccess: 'none'`. */
+export const dbAccessModeSchema = z.enum(['public', 'auth', 'owner', 'none']);
 
 const dbFieldPath = z
 	.string()
@@ -346,14 +348,15 @@ export const dbActivityEventSchema = z
 			'rows.imported',
 			'view.created',
 			'view.configured',
-			'view.deleted'
+			'view.deleted',
+			'remote-config.changed'
 		]),
 		message: z.string(),
 		at: z.iso.datetime()
 	})
 	.meta({ id: 'DbActivityEvent' });
 
-// --- Tables (phase T1 of docs/db-scale-plan.md) ---
+// --- Tables (phase T1) ---
 
 export const dbColumnTypeSchema = z.enum(['text', 'integer', 'real', 'boolean', 'json']);
 
@@ -519,7 +522,109 @@ export const dbBookmarkResolutionSchema = z
 		description: 'The closest available bookmark for a wall-clock time, D1-restore-style.'
 	});
 
-// --- Join views (JOIN1 of docs/db-join-design.md) ---
+// --- Remote Config (RC1) ---
+
+/**
+ * Server-controlled parameters an app reads at startup - feature flags, kill
+ * switches, tuning values - stored in a platform-owned DbTable that is closed
+ * on both sides, so publish is a PITR checkpoint and rollback is a restore.
+ *
+ * Mirrors agents/db/src/schemas.ts; keep the two in sync.
+ */
+export const dbRemoteConfigValueTypeSchema = z.enum(['string', 'number', 'boolean', 'json']);
+
+/** Editing is a draft; publishing is what reaches clients. */
+export const dbRemoteConfigStateSchema = z.enum(['draft', 'published', 'deleting']);
+
+/**
+ * One targeting rule. Every field present must match; a field listing values
+ * matches if any do. Conditions are an ordered list and the FIRST match wins -
+ * there is no priority field and no else.
+ *
+ * `country` is resolved at the edge and cannot be claimed by a caller; `role`
+ * and `permission` come from a verified project JWT; `appVersion` is
+ * client-reported; `rollout` buckets by uid and is advisory, not an
+ * entitlement. Mirrors agents/db/src/schemas.ts.
+ */
+export const dbRemoteConfigConditionSchema = z
+	.object({
+		label: z.string().max(60).optional(),
+		when: z.object({
+			country: z.array(z.string()).optional(),
+			role: z.array(z.string()).optional(),
+			permission: z.string().optional(),
+			appVersion: z.object({ gte: z.string().optional(), lt: z.string().optional() }).optional(),
+			rollout: z.object({ percent: z.number().int(), salt: z.string() }).optional()
+		}),
+		value: z.unknown()
+	})
+	.meta({
+		id: 'DbRemoteConfigCondition',
+		description: 'An ordered override. First match wins; no match yields the default.'
+	});
+
+export const dbRemoteConfigParameterSchema = z
+	.object({
+		key: z.string(),
+		valueType: dbRemoteConfigValueTypeSchema,
+		/** Typed by `valueType`, not by the schema: the type is data. */
+		draftValue: z.unknown(),
+		/** What clients get right now; null until first published. */
+		publishedValue: z.unknown(),
+		/** Targeting, drafted and published in step with the values. */
+		draftConditions: z.array(dbRemoteConfigConditionSchema).nullable().catch(null),
+		publishedConditions: z.array(dbRemoteConfigConditionSchema).nullable().catch(null),
+		state: dbRemoteConfigStateSchema.catch('published'),
+		/** Differs from what clients are being served. */
+		pending: z.boolean(),
+		description: z.string().nullable().catch(null),
+		updatedBy: z.string().nullable().catch(null),
+		updatedAt: z.iso.datetime()
+	})
+	.meta({ id: 'DbRemoteConfigParameter', description: 'One Remote Config parameter.' });
+
+/** The `PUT /db/admin/remote-config/{key}` body. `defaultValue` is deliberately
+ * untyped here: it is checked against `valueType` by the agent, which can say
+ * "checkoutV2 is a boolean" where a zod union could only say "invalid". */
+export const dbRemoteConfigParameterInputSchema = z
+	.object({
+		valueType: dbRemoteConfigValueTypeSchema,
+		defaultValue: z.unknown(),
+		description: z.string().max(200).nullable().optional(),
+		/** Omitted leaves the drafted rules alone; null clears them. */
+		conditions: z.array(dbRemoteConfigConditionSchema).nullable().optional()
+	})
+	.meta({
+		id: 'DbRemoteConfigParameterInput',
+		description: 'A parameter to store as a draft. Nothing reaches clients until publish.'
+	});
+
+/** The PUBLIC endpoint's answer: resolved values, and nothing else. */
+export const dbRemoteConfigResolvedSchema = z
+	.object({
+		params: z.record(z.string(), z.unknown()),
+		fetchedAt: z.iso.datetime()
+	})
+	.meta({
+		id: 'DbRemoteConfigResolved',
+		description:
+			'Evaluated Remote Config for the calling app. Values only - the rules that produced them never leave the server.'
+	});
+
+export const dbRemoteConfigSchema = z
+	.object({
+		parameters: z.array(dbRemoteConfigParameterSchema),
+		/** How many parameters are not yet what clients are being served. */
+		pendingChanges: z.number().int().catch(0),
+		everPublished: z.boolean().catch(false),
+		limit: z.number().int()
+	})
+	.meta({
+		id: 'DbRemoteConfig',
+		description: "A project's Remote Config parameters, sorted by key."
+	});
+
+// --- Join views (JOIN1) ---
 
 /** A read-only view over several member tables: one Durable Object that
  * follows each member's change log into one SQLite, so a SELECT can join
@@ -570,7 +675,11 @@ export const dbAgentStateSchema = z
 		rev: z.number(),
 		totalEvents: z.number(),
 		lastEventAt: z.iso.datetime().nullable(),
-		events: z.array(dbActivityEventSchema)
+		// `.catch([])` because the event-type enum is the one place a NEW agent
+		// feature widens this state: Remote Config's first event 502'd the whole
+		// db page until this mirror learned the type. An unknown event must cost
+		// the activity feed, never the page.
+		events: z.array(dbActivityEventSchema).catch([])
 	})
 	.meta({
 		id: 'DbAgentState',
@@ -738,14 +847,54 @@ export const githubConnectionSchema = z
 		assetsDir: z
 			.string()
 			.nullable()
-			.describe('Direct mode only: repo-relative directory published as assets.'),
+			.describe(
+				'Direct mode: repo-relative directory published as assets. Build mode: where the build lands.'
+			),
+		buildCommand: z
+			.string()
+			.nullable()
+			.describe('Build mode: the workflow build command; null = the generic default.'),
+		rootDir: z
+			.string()
+			.nullable()
+			.describe('Build mode: monorepo root the build runs in; null = repository root.'),
+		productionBranch: z
+			.string()
+			.nullable()
+			.describe("Branch that deploys the root project; null = the repository's default branch."),
+		ignoredBranches: z
+			.array(z.string())
+			.describe('Branch names and `*` globs whose pushes never deploy.'),
+		packageManager: z.string().nullable(),
 		createdAt: z.iso.datetime(),
 		lastEventAt: z.iso.datetime().nullable()
 	})
 	.meta({
 		id: 'GithubConnection',
 		description:
-			'A repository connected to one project+app. Made on a ROOT project; a push to the default branch deploys the root and any other branch deploys `<root>--<branch>`.'
+			'A repository connected to one project+app. Made on a ROOT project; a push to the production branch deploys the root and any other branch deploys `<root>--<branch>`.'
+	});
+
+export const githubConnectionPatchSchema = z
+	.object({
+		buildCommand: z.string().nullable().optional().describe('Null resets to the generic default.'),
+		rootDir: z.string().nullable().optional(),
+		assetsDir: z.string().nullable().optional(),
+		productionBranch: z
+			.string()
+			.nullable()
+			.optional()
+			.describe("Null resets to the repository's default branch."),
+		ignoredBranches: z
+			.array(z.string())
+			.max(20)
+			.optional()
+			.describe('Branch names or simple `*` globs (e.g. `renovate/*`).')
+	})
+	.meta({
+		id: 'GithubConnectionPatch',
+		description:
+			'Editable build settings. Absent fields keep their value; null resets to the default. On a build-mode connection, saving rewrites the workflow file in the repository.'
 	});
 
 export const mintedDeployTokenSchema = z
@@ -757,9 +906,153 @@ export const mintedDeployTokenSchema = z
 	})
 	.meta({ id: 'MintedDeployToken' });
 
+export const githubConnectRequestSchema = z
+	.object({
+		installationId: z.number().int().positive(),
+		repoFullName: z.string().describe('`owner/repository`.'),
+		appName: z.string(),
+		mode: z.enum(['build', 'direct']),
+		assetsDir: z
+			.string()
+			.optional()
+			.describe('Direct: the published directory. Build: where the build lands.'),
+		buildCommand: z.string().optional(),
+		rootDir: z.string().optional().describe('Monorepo root (build mode).'),
+		packageManager: z.enum(['npm', 'pnpm', 'yarn', 'bun']).optional(),
+		wranglerTemplate: z
+			.string()
+			.optional()
+			.describe('A known wrangler.jsonc template id to commit for a repo that has none.')
+	})
+	.meta({ id: 'GithubConnectRequest' });
+
+export const hostingVarSchema = z
+	.object({
+		name: z.string(),
+		value: z.string(),
+		createdAt: z.iso.datetime(),
+		updatedAt: z.iso.datetime()
+	})
+	.meta({
+		id: 'HostingVar',
+		description:
+			'One stored runtime variable: applied as a plain_text binding on every deploy, and patched onto the live script when edited.'
+	});
+
+export const hostingVarListSchema = z
+	.object({ vars: z.array(hostingVarSchema) })
+	.meta({ id: 'HostingVarList' });
+
+export const hostingVarsUpdateSchema = z
+	.object({
+		vars: z
+			.record(z.string(), z.string())
+			.describe(
+				'The FULL set (UPPER_SNAKE names, single-line values <=5000 chars) - absent names are deleted.'
+			)
+	})
+	.meta({ id: 'HostingVarsUpdate' });
+
+export const hostingVarsUpdatedSchema = z
+	.object({
+		vars: z.array(hostingVarSchema),
+		patched: z
+			.boolean()
+			.describe(
+				'Whether the live script was updated in place; false means the change applies at the next deploy.'
+			),
+		warning: z.string().optional()
+	})
+	.meta({ id: 'HostingVarsUpdated' });
+
+export const hostingSecretMetaSchema = z
+	.object({
+		name: z.string(),
+		createdAt: z.iso.datetime(),
+		updatedAt: z.iso.datetime()
+	})
+	.meta({
+		id: 'HostingSecretMeta',
+		description:
+			'Secret name and timestamps. Values are write-through to Cloudflare and unrecoverable by design.'
+	});
+
+export const hostingSecretListSchema = z
+	.object({ secrets: z.array(hostingSecretMetaSchema) })
+	.meta({ id: 'HostingSecretList' });
+
+export const hostingSecretRequestSchema = z
+	.object({
+		name: z.string().describe('UPPER_SNAKE_CASE.'),
+		value: z.string().describe('1-5000 characters. Stored by Cloudflare, never by Cloudflarebase.')
+	})
+	.meta({ id: 'HostingSecretRequest' });
+
+export const hostingBuildEnvSchema = z
+	.object({
+		vars: z.array(hostingVarSchema),
+		secrets: z.array(hostingSecretMetaSchema),
+		encryptionConfigured: z
+			.boolean()
+			.describe('Whether this install can store build secrets (HOSTING_MASTER_KEY is set).')
+	})
+	.meta({
+		id: 'HostingBuildEnv',
+		description:
+			"The operator view of an app's build-time environment: vars with values, secret names only - decrypted values never cross the operator surface."
+	});
+
+export const hostingBuildEnvBundleSchema = z
+	.object({
+		vars: z.record(z.string(), z.string()),
+		secrets: z.record(z.string(), z.string())
+	})
+	.meta({
+		id: 'HostingBuildEnvBundle',
+		description:
+			'The decrypted bundle a GitHub Actions runner exports before its build step. Served only to a verified OIDC bearer of the connection that owns the app.'
+	});
+
+export const hostingBuildSecretRequestSchema = z
+	.object({
+		value: z
+			.string()
+			.describe("1-5000 characters, single-line. Encrypted at rest under the install's master key.")
+	})
+	.meta({ id: 'HostingBuildSecretRequest' });
+
+export const hostingAnalyticsSchema = z
+	.object({
+		appName: z.string(),
+		subdomain: z.string(),
+		days: z.number().int().describe('The window that was queried: 7, 30, or 90.'),
+		totals: z.object({
+			requests: z.number(),
+			errors: z.number().describe('Responses with a 5xx status.'),
+			avgDurationMs: z.number()
+		}),
+		byDay: z.array(z.object({ day: z.string(), requests: z.number(), errors: z.number() })),
+		engine: z.object({
+			dataset: z.string(),
+			enabled: z.boolean(),
+			status: z
+				.enum(['connected', 'local', 'write-only', 'error'])
+				.describe(
+					'connected = Analytics Engine reads work; local = the dev stand-in; write-only = events are recorded but reads need CF_ANALYTICS_API_TOKEN; error = the query failed (see `error`).'
+				),
+			error: z.string().optional()
+		})
+	})
+	.meta({
+		id: 'HostingAnalytics',
+		description: 'Per-app request analytics: daily requests/errors and totals.'
+	});
+
 // --- Storage agent (mirrors agents/storage/src/{agent,bucket,schemas}.ts) ---
 
-export const storageAccessModeSchema = z.enum(['public', 'auth', 'owner']);
+/** `none` closes a side to the public API entirely - operator surfaces only.
+ * A read-only bucket is `write: 'none'`. */
+export const storageAccessModeSchema = z.enum(['public', 'auth', 'owner', 'none']);
 
 export const storageBucketSummarySchema = z
 	.object({
@@ -910,6 +1203,9 @@ export type DbAggregateRequest = z.infer<typeof dbAggregateRequestSchema>;
 export type DbImportReport = z.infer<typeof dbImportReportSchema>;
 export type DbRestoreResult = z.infer<typeof dbRestoreResultSchema>;
 export type DbRestorePoint = z.infer<typeof dbRestorePointSchema>;
+export type DbRemoteConfigParameter = z.infer<typeof dbRemoteConfigParameterSchema>;
+export type DbRemoteConfig = z.infer<typeof dbRemoteConfigSchema>;
+export type DbRemoteConfigCondition = z.infer<typeof dbRemoteConfigConditionSchema>;
 export type DbRestorePoints = z.infer<typeof dbRestorePointsSchema>;
 export type DbReplicationMode = z.infer<typeof dbReplicationModeSchema>;
 export type DbReplica = z.infer<typeof dbReplicaSchema>;
@@ -922,6 +1218,9 @@ export type HostingClaim = z.infer<typeof hostingClaimSchema>;
 export type DeployTokenInfo = z.infer<typeof deployTokenSchema>;
 export type GithubConnectionInfo = z.infer<typeof githubConnectionSchema>;
 export type MintedDeployToken = z.infer<typeof mintedDeployTokenSchema>;
+export type HostingVar = z.infer<typeof hostingVarSchema>;
+export type HostingSecretMeta = z.infer<typeof hostingSecretMetaSchema>;
+export type HostingAnalytics = z.infer<typeof hostingAnalyticsSchema>;
 export type StorageAccessMode = z.infer<typeof storageAccessModeSchema>;
 export type StorageBucketSummary = z.infer<typeof storageBucketSummarySchema>;
 export type StorageBucketInfo = z.infer<typeof storageBucketSchema>;

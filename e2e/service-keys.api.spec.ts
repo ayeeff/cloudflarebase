@@ -13,7 +13,7 @@ import {
 } from './helpers';
 
 /**
- * Project service keys (docs/service-keys-design.md, SK1).
+ * Project service keys (SK1).
  *
  * A key is admin-grade on its project's DATA plane, so the tests that matter
  * most are the ones proving what it CANNOT do. In order of how badly each
@@ -124,7 +124,7 @@ test.describe('service keys', () => {
 	});
 
 	/**
-	 * Storage OBJECTS, not just bucket config (docs/admin-sdk-design.md 5.3).
+	 * Storage OBJECTS, not just bucket config.
 	 *
 	 * Bucket metadata always worked. The BYTES did not and could not: the object
 	 * routes existed only under `/agents/*`, which a service key is refused on,
@@ -155,7 +155,7 @@ test.describe('service keys', () => {
 			// check runs before any hook and forbids PUT with a FORM content type
 			// (text/plain, multipart/form-data, x-www-form-urlencoded) when the
 			// request carries no Origin - which is exactly what a service key is.
-			// Tracked in docs/admin-sdk-design.md 5.3; everything else passes.
+			// Known and accepted; everything else on this surface passes.
 			const put = await server.put(storageProxyObjectPath(KEY_PROJECT, bucket, objectKey), {
 				headers: { ...auth, 'content-type': 'application/octet-stream' },
 				data: body
@@ -189,7 +189,7 @@ test.describe('service keys', () => {
 	});
 
 	/**
-	 * Reading and merging ONE record by id (docs/admin-sdk-design.md 5.1).
+	 * Reading and merging ONE record by id.
 	 *
 	 * The admin surface used to be write-only per record: PUT and DELETE
 	 * existed, GET and PATCH did not, and `/admin/query` cannot stand in -
@@ -295,7 +295,7 @@ test.describe('service keys', () => {
 	});
 
 	/**
-	 * User management with no sign-up flow (docs/admin-sdk-design.md 5.2).
+	 * User management with no sign-up flow.
 	 *
 	 * The auth admin surface could list, re-role, and delete. It could not
 	 * CREATE an account, read one by id, update one, or set a password - so

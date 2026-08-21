@@ -22,7 +22,7 @@
  * control-plane-only. Two properties matter:
  *
  * - Default deny. An undeclared route is operator, the same default
- *   `docs/agent-contract.md` states for the console guard. Drift between
+ *   the agent contract states for the console guard. Drift between
  *   this table and the manifest can only ever close something that should be
  *   open - a loud, testable failure - never open something that should be
  *   closed.

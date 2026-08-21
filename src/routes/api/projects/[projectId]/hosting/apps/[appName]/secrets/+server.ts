@@ -8,6 +8,22 @@ import {
 } from '$lib/server/agents';
 import type { RequestHandler } from './$types';
 
+/** Operator proxy: list an app's secret NAMES - the values live at Cloudflare
+ * and are unrecoverable by design. */
+export const GET: RequestHandler = async ({ params, url, platform }) => {
+	const projectId = assertProjectId(params.projectId);
+	const entry = AGENT_REGISTRY.hosting;
+	const agent = requireAgent(platform, entry);
+	const target = agentUrl(
+		url.origin,
+		entry,
+		projectId,
+		`/apps/${agentSegment(params.appName)}/secrets`
+	);
+	const response = await agent.fetch(target);
+	return toNativeResponse(response as unknown as Response);
+};
+
 /** Operator proxy: set one secret on a deployed app (`cloudflarebase secret put`). */
 export const POST: RequestHandler = async ({ params, request, url, platform }) => {
 	const projectId = assertProjectId(params.projectId);

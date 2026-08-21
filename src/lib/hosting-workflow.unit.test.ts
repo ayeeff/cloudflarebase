@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { connectedWorkflowYaml, deployWorkflowYaml } from './hosting-workflow';
+import {
+	connectedWorkflowYaml,
+	deployWorkflowYaml,
+	WORKFLOW_FILENAME,
+	workflowPathFor
+} from './hosting-workflow';
 
 const base = { origin: 'https://cloudflarebase.com', projectId: 'demo-app', appName: 'landmatch' };
 
@@ -74,6 +79,70 @@ test('no root directory means no working-directory lines at all', () => {
 	const yaml = connectedWorkflowYaml(base);
 	assert.doesNotMatch(yaml, /working-directory/);
 	assert.doesNotMatch(yaml, /cache-dependency-path/);
+});
+
+test('per-app workflow paths never collide with the legacy shared file', () => {
+	assert.equal(workflowPathFor('landmatch'), '.github/workflows/cloudflarebase-landmatch.yml');
+	assert.notEqual(workflowPathFor('landmatch'), workflowPathFor('docs'));
+	assert.notEqual(workflowPathFor('landmatch'), WORKFLOW_FILENAME);
+});
+
+test('the trigger emits branches XOR branches-ignore, never both', () => {
+	// GitHub refuses a push trigger that carries both keys.
+	const open = connectedWorkflowYaml(base);
+	assert.match(open, /branches: \['\*\*'\]/);
+	assert.doesNotMatch(open, /branches-ignore/);
+
+	const filtered = connectedWorkflowYaml({ ...base, ignoredBranches: ['tmp', 'renovate/*'] });
+	assert.match(filtered, /branches-ignore: \['tmp', 'renovate\/\*'\]/);
+	assert.doesNotMatch(filtered, /branches: \['\*\*'\]/);
+});
+
+test('a user-set production branch becomes the literal DEFAULT_BRANCH', () => {
+	// The CLI resolves root-vs-branch by comparing GIT_BRANCH against
+	// DEFAULT_BRANCH, so the literal is the whole mechanism - no CLI change.
+	const yaml = connectedWorkflowYaml({ ...base, productionBranch: 'release' });
+	assert.match(yaml, /CLOUDFLAREBASE_DEFAULT_BRANCH: release\n/);
+	assert.doesNotMatch(yaml, /github\.event\.repository\.default_branch/);
+
+	const dynamic = connectedWorkflowYaml(base);
+	assert.match(
+		dynamic,
+		/CLOUDFLAREBASE_DEFAULT_BRANCH: \$\{\{ github\.event\.repository\.default_branch \}\}/
+	);
+});
+
+test('the build-env fetch runs before the build and masks secrets', () => {
+	const yaml = connectedWorkflowYaml(base);
+	assert.match(yaml, /- name: Fetch build environment/);
+	// Order is the contract: env must exist before the build step reads it.
+	assert.ok(yaml.indexOf('Fetch build environment') < yaml.indexOf('- name: Build'));
+	// Secrets are masked BEFORE they land in $GITHUB_ENV, so they never print.
+	assert.ok(yaml.indexOf('::add-mask::') < yaml.indexOf('>> "$GITHUB_ENV"'));
+	// The OIDC audience is the console origin, same as the deploy step's token.
+	assert.match(yaml, /audience=\$CLOUDFLAREBASE_URL/);
+	// -sSf: a failed fetch fails the step - a build silently missing its
+	// secrets is worse than one that fails attributed.
+	assert.match(yaml, /curl -sSf/);
+});
+
+test('a fully-optioned workflow carries every setting at once', () => {
+	const yaml = connectedWorkflowYaml({
+		...base,
+		packageManager: 'pnpm',
+		buildCommand: 'pnpm run build',
+		outputDir: 'dist',
+		rootDir: 'apps/web',
+		productionBranch: 'release/stable',
+		ignoredBranches: ['tmp', 'wip-*']
+	});
+	assert.match(yaml, /branches-ignore: \['tmp', 'wip-\*'\]/);
+	assert.match(yaml, /CLOUDFLAREBASE_DEFAULT_BRANCH: release\/stable\n/);
+	assert.match(yaml, /CLOUDFLAREBASE_ASSETS: dist\n/);
+	assert.match(yaml, /pnpm run build/);
+	assert.match(yaml, /name: Deploy to Cloudflarebase \(landmatch\)/);
+	// Two apps in one repo must not cancel each other's runs.
+	assert.match(yaml, /group: cloudflarebase-landmatch-\$\{\{ github\.ref \}\}/);
 });
 
 test('YAML stays tab-free and the run blocks stay indented', () => {

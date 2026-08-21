@@ -32,6 +32,7 @@
 		{ "path": "/views/*", "access": "public" },
 		{ "path": "/realtime", "access": "public" },
 		{ "path": "/config", "access": "public" },
+		{ "path": "/remote-config", "access": "public" },
 		{ "path": "/overview", "access": "operator" },
 		{ "path": "/admin/*", "access": "operator" }
 	],
@@ -67,6 +68,20 @@
 				"title": "Integration",
 				"testId": "nav-db-integration",
 				"icon": "plug"
+			},
+			{
+				"path": "/config",
+				"title": "Parameters",
+				"testId": "nav-remote-config",
+				"icon": "sliders-horizontal",
+				"section": "Remote Config"
+			},
+			{
+				"path": "/config/integration",
+				"title": "Integration",
+				"testId": "nav-config-integration",
+				"icon": "plug",
+				"section": "Remote Config"
 			}
 		]
 	}

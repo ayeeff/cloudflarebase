@@ -72,6 +72,27 @@
 		// the namespace exists.
 		"required": [],
 	},
+
+	/**
+	 * NO analytics_engine_datasets at the top level, deliberately - this is the
+	 * self-hosted default and it has to deploy on a fresh account.
+	 *
+	 * Analytics Engine is an account-level opt-in that only the Cloudflare
+	 * dashboard can grant: no API, no Wrangler flag. Declaring the binding here
+	 * would fail a fresh clone's deploy with `no_access_to_analytics_engine`
+	 * (code 10089) - the script upload is refused, so no code ever runs (the
+	 * auth agent learned this the hard way). Unset, every request write is
+	 * skipped and nothing else changes; READING additionally needs
+	 * CF_ACCOUNT_ID + CF_ANALYTICS_API_TOKEN.
+	 *
+	 * To turn hosting analytics on: enable Analytics Engine in the dashboard,
+	 * then add both of these back (the dataset auto-creates on first write):
+	 *
+	 *   "analytics_engine_datasets": [
+	 *     { "binding": "HOSTING_REQUESTS", "dataset": "cloudflarebase_hosting_requests" }
+	 *   ],
+	 *   "vars": { "WAE_DATASET": "cloudflarebase_hosting_requests" }
+	 */
 	"env": {
 		"local": {
 			"name": "hosting-agent-local",
@@ -87,7 +108,27 @@
 				"HOSTING_STUB": "true",
 				"HOSTING_DOMAIN": "cfbase.dev",
 				"DISPATCH_NAMESPACE": "",
+				// Pinned dev key (a var, not a secret) so build-secret encryption is
+				// REAL in local dev - stub mode stubs the Cloudflare API, never the
+				// crypto. Worthless outside this machine.
+				"HOSTING_MASTER_KEY": "local-dev-master-key-not-a-secret",
+				"WAE_DATASET": "cloudflarebase_hosting_requests_local",
 			},
+			"analytics_engine_datasets": [
+				{
+					"binding": "HOSTING_REQUESTS",
+					"dataset": "cloudflarebase_hosting_requests_local",
+				},
+			],
+			// With no read credentials locally, served requests land HERE and the
+			// analytics endpoint reads them back (`engine.status: 'local'`).
+			"d1_databases": [
+				{
+					"binding": "LOCAL_ANALYTICS",
+					"database_name": "cloudflarebase-hosting-analytics-local",
+					"database_id": "33333333-3333-4333-8333-333333333333",
+				},
+			],
 		},
 		"test": {
 			"name": "hosting-agent-test",
@@ -104,7 +145,24 @@
 				"HOSTING_STUB": "true",
 				"HOSTING_DOMAIN": "cfbase.dev",
 				"DISPATCH_NAMESPACE": "",
+				// Same pinned dev key as env.local: e2e exercises real
+				// encrypt/decrypt against the stub stack.
+				"HOSTING_MASTER_KEY": "local-dev-master-key-not-a-secret",
+				"WAE_DATASET": "cloudflarebase_hosting_requests_test",
 			},
+			"analytics_engine_datasets": [
+				{
+					"binding": "HOSTING_REQUESTS",
+					"dataset": "cloudflarebase_hosting_requests_test",
+				},
+			],
+			"d1_databases": [
+				{
+					"binding": "LOCAL_ANALYTICS",
+					"database_name": "cloudflarebase-hosting-analytics-test",
+					"database_id": "44444444-4444-4444-8444-444444444444",
+				},
+			],
 		},
 		"production": {
 			// Pinned name: the web Worker's HOSTING_AGENT service binding and the
@@ -119,6 +177,12 @@
 			// dispatches by host label. Deploying this env requires the zone to
 			// exist on the account first (Phase B launch checklist).
 			"routes": [{ "pattern": "*.cfbase.dev/*", "zone_name": "cfbase.dev" }],
+			"analytics_engine_datasets": [
+				{
+					"binding": "HOSTING_REQUESTS",
+					"dataset": "cloudflarebase_hosting_requests",
+				},
+			],
 			"dispatch_namespaces": [
 				{
 					"binding": "DISPATCH",
@@ -139,6 +203,7 @@
 				"SENTRY_ENV": "production",
 				"HOSTING_DOMAIN": "cfbase.dev",
 				"DISPATCH_NAMESPACE": "cfbase-apps",
+				"WAE_DATASET": "cloudflarebase_hosting_requests",
 				// Set only alongside an `outbound` block above: tells the serve path
 				// to pass outbound parameters, which throw when the binding has none.
 				"DISPATCH_OUTBOUND": "true",
@@ -146,6 +211,10 @@
 				"HOSTING_APEX_REDIRECT": "https://cloudflarebase.com",
 			},
 			"secrets": {
+				// HOSTING_MASTER_KEY is deliberately NOT listed: build secrets are an
+				// optional capability (writes answer 503 until the key is set), and
+				// `required` would misdeclare that to typegen and every fork's dev
+				// validation. Set it with `wrangler secret put HOSTING_MASTER_KEY`.
 				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN"],
 			},
 		},
@@ -184,12 +253,22 @@
 				"HOSTING_DOMAIN": "cfbase-preview.dev",
 				"DISPATCH_NAMESPACE": "cfbase-apps-preview",
 				"DISPATCH_OUTBOUND": "true",
-				"HOSTING_APEX_REDIRECT": "https://cloudflarebase.com",
+				// Preview's apex lands on the preview console, not production's -
+				// an operator poking the preview stack should stay on it.
+				"HOSTING_APEX_REDIRECT": "https://cloudflarebase-com-preview.cloudflarebase.workers.dev",
+				"WAE_DATASET": "cloudflarebase_hosting_requests_preview",
 			},
+			"analytics_engine_datasets": [
+				{
+					"binding": "HOSTING_REQUESTS",
+					"dataset": "cloudflarebase_hosting_requests_preview",
+				},
+			],
 			// Preview drives the REAL Cloudflare API against cfbase-apps-preview
 			// (the RUN_HOSTING_E2E spec depends on it), so it needs the same
 			// credentials production requires - without this block a preview
 			// deploy succeeds silently and every real upload fails at the API.
+			// HOSTING_MASTER_KEY stays unlisted, same as production.
 			"secrets": {
 				"required": ["CF_ACCOUNT_ID", "CF_HOSTING_API_TOKEN"],
 			},

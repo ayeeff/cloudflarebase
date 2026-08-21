@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { configPath, consoleAuthPath, overviewPath, uniqueEmail } from './helpers';
 
 /**
- * Phase A of the managed service (docs/managed-service-design.md): accounts,
+ * Phase A of the managed service: accounts,
  * organizations, and ownership on the console instance.
  *
  * The e2e stack runs the CLAIMED mode (CONSOLE_SIGNUPS unset), so this file

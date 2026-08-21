@@ -54,6 +54,11 @@ A new primitive is its own npm project shipping a manifest, plus one entry in
 [src/lib/agent-registry.ts](src/lib/agent-registry.ts) and one in
 [cli/src/lib/agents.ts](cli/src/lib/agents.ts).
 
+**An agent is a package, not a product boundary.** A console page may name its
+own sidebar `section`, so a feature can live where an operator looks for it
+rather than under whichever agent happens to store it — Remote Config is served
+by the db agent and sits in a section of its own.
+
 ## Access control is two layers, and both must hold
 
 **Layer 1 — the console guard** (`src/hooks.server.ts`). Every external request
@@ -103,6 +108,13 @@ cd agents/db && npx tsc --noEmit && npm run test:unit
 - **Validation is zod, everywhere.** Route inputs and anything crossing a
   service binding get parsed, not cast. The OpenAPI document is generated from
   those same schemas.
+- **A new route is not done until it is in the OpenAPI document.** Add the path
+  to `src/lib/openapi/<agent>.ts` and register every schema it references in
+  that module's `schemas` array — the registry throws at import on a schema
+  without `.meta({ id })`, but nothing at all fails for a route that simply is
+  not there. The document is the public contract and the API reference page
+  renders straight from it, so a missing entry is an endpoint nobody can
+  discover.
 - **Schema changes need a migration.** Edit the agent's `src/db/schema.ts`, then
   `npm run migrations` in that agent — it generates the SQL and inlines it into
   `src/migrations.ts`. Never hand-edit either; the inlining is what lets agents
@@ -148,15 +160,20 @@ These are expensive to rediscover.
 
 ## Releasing
 
-Deploy the agent workers **by hand before pushing**. Workers Builds races the
-service binding: a pushed commit can rebuild the dashboard against an agent that
-has not deployed yet.
+Releases ride CI, not hands. Bump the changed packages' `package.json`
+versions in the release commit — the release workflow treats the npm registry
+as the ledger and publishes any package whose local version is not on it; an
+unbumped version merges to main and publishes nothing. Workers deploy through
+Workers Builds on push: `preview` builds the preview stack, `main` builds
+production.
 
-```bash
-npm run deploy:all    # auth, db, storage, hosting, then the dashboard
-```
+Push `preview`, verify against the preview stack, then merge to `main`.
 
-Then push `preview`, verify, and merge to `main`.
+Secrets never gate a deploy: wrangler's `secrets.required` only drives
+typegen and local-dev warnings, and every agent degrades without its optional
+secrets. But a capability gated on a secret stays off until someone runs
+`wrangler secret put` on the target worker - CI cannot mint secrets - so set
+them around the release, not inside it.
 
 ## Commits
 

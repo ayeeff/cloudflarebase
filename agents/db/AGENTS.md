@@ -105,6 +105,24 @@ compiler/matcher parity can be pinned by a unit test at all.
   dies with hibernation exactly when delivery must happen.
 - **Views are eventually consistent (~3s).** Built for reporting reads, not
   invariants.
+- **Remote Config gets versioning for free because a table is a Durable
+  Object.** Its parameters live in a `DbTable` (`cfb_remote_config`), so publish
+  is a PITR checkpoint on that instance, the change history is its restore
+  points, and rollback is a restore that rewinds *only the config*. That is the
+  whole reason the feature stores nothing of its own — and the reason it must
+  never move into `DbAgent`, whose storage is the shard registry: restoring
+  there would rewind every collection and table declaration with it.
+- **A new `DbActivityEvent` type must reach the console mirror
+  (`src/lib/agents.ts`) in the same commit.** The console parses agent state on
+  every db page load; RC1's first `remote-config.changed` event 502'd the whole
+  db workspace because only this side's union grew. The mirror now backstops
+  unknown types by dropping the feed — still mirror it, or the event renders
+  nowhere.
+- **`cfb_` is the platform's namespace.** Shards named that way are created and
+  configured by the feature that owns them; the generic collection/table/view
+  routes refuse to touch one. The prefix is deliberate so the next platform-
+  owned shard needs no new rule, and the owning feature must offer a teardown —
+  reserving a name without a way to remove it is a trap.
 
 ## Routes
 

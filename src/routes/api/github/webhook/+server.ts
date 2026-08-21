@@ -4,7 +4,7 @@ import { handlePush, type PushPayload } from '$lib/server/github-deploy';
 import type { RequestHandler } from './$types';
 
 /**
- * GitHub's webhook endpoint (docs/managed-service-design.md, Phase B).
+ * GitHub's webhook endpoint (Phase B).
  *
  * PUBLIC BY EXCEPTION, and the only route under `/api` that is: GitHub has no
  * session and never will. The HMAC signature IS the authentication - it is

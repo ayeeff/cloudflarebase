@@ -124,7 +124,7 @@ export const rolesUpdateSchema = z
 	.meta({ id: 'RolesUpdateRequest' });
 
 /**
- * Admin user management (docs/admin-sdk-design.md 5.2). Mirrors the agent's
+ * Admin user management. Mirrors the agent's
  * createUser/updateUser/setPassword schemas in agents/auth/src/schemas.ts -
  * deliberate copies, kept in sync by hand like every other DTO here.
  */

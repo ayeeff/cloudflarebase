@@ -35,10 +35,12 @@
 
 <svelte:head>
 	<title>{data.projectId} · Project Overview · Cloudflarebase</title>
-	<meta
-		name="description"
-		content="Manage the Cloudflarebase backend for project {data.projectId}."
-	/>
+	<!-- The TITLE names the project, because that is the browser tab and an
+	     operator with six of them open needs it. The description deliberately
+	     does not: the console is noindex, so its only real consumer is a chat
+	     client unfurling a pasted link, and that card must never name somebody's
+	     project. See src/routes/+layout.svelte. -->
+	<meta name="description" content="Manage your Cloudflarebase backend." />
 </svelte:head>
 
 <div class="mx-auto max-w-6xl space-y-6 px-3 py-5 sm:space-y-8 sm:px-6 sm:py-8">
@@ -115,7 +117,7 @@
 					sign-in.
 				</Card.Description>
 			</Card.Header>
-			<Card.Content class="mt-auto flex flex-nowrap items-end justify-between gap-4">
+			<Card.Content class="@container mt-auto flex flex-wrap items-end justify-between gap-4">
 				<div class="flex gap-6">
 					<div>
 						<p class="text-2xl font-semibold tabular-nums" data-testid="overview-users-count">
@@ -130,9 +132,11 @@
 						<p class="text-xs text-muted-foreground">sessions</p>
 					</div>
 				</div>
-				<div class="flex shrink-0 gap-2">
+				<div class="ml-auto flex shrink-0 gap-2">
 					<Button href={`${authHref}/integration`} size="sm" variant="outline">
-						<CodeXml class="mr-1 h-3.5 w-3.5" /> Integration
+						<CodeXml class="mr-1 h-3.5 w-3.5 @max-[26rem]:mr-0" /><span class="@max-[26rem]:sr-only"
+							>Integration</span
+						>
 					</Button>
 					<Button href={authHref} size="sm" variant="outline">
 						Open <ArrowRight class="ml-1 h-3.5 w-3.5" />
@@ -161,7 +165,7 @@
 					per collection or table, pushed to subscribers as writes happen.
 				</Card.Description>
 			</Card.Header>
-			<Card.Content class="mt-auto flex flex-nowrap items-end justify-between gap-4">
+			<Card.Content class="@container mt-auto flex flex-wrap items-end justify-between gap-4">
 				<div class="flex gap-6">
 					<div>
 						<p class="text-2xl font-semibold tabular-nums" data-testid="overview-collections-count">
@@ -176,9 +180,11 @@
 						<p class="text-xs text-muted-foreground">documents</p>
 					</div>
 				</div>
-				<div class="flex shrink-0 gap-2">
+				<div class="ml-auto flex shrink-0 gap-2">
 					<Button href={`${dbHref}/integration`} size="sm" variant="outline">
-						<CodeXml class="mr-1 h-3.5 w-3.5" /> Integration
+						<CodeXml class="mr-1 h-3.5 w-3.5 @max-[26rem]:mr-0" /><span class="@max-[26rem]:sr-only"
+							>Integration</span
+						>
 					</Button>
 					<Button href={dbHref} size="sm" variant="outline">
 						Open <ArrowRight class="ml-1 h-3.5 w-3.5" />

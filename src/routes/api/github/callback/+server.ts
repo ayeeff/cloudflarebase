@@ -12,8 +12,7 @@ import { redirect } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 /**
- * Where GitHub returns after an App install (docs/managed-service-design.md,
- * Phase B).
+ * Where GitHub returns after an App install (* Phase B).
  *
  * This is the ONE moment an `installation_id` is trustworthy, and recording
  * the binding here is what every later connect checks instead of trusting the

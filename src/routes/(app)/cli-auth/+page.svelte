@@ -6,7 +6,7 @@
 	import { TerminalSquare } from '@lucide/svelte';
 
 	// The CLI's localhost listener and its one-time code, from
-	// `cloudflarebase login` (docs/schema-cli-design.md). The guard already
+	// `cloudflarebase login`. The guard already
 	// required an operator session to render this page.
 	const port = $derived.by(() => {
 		const raw = Number(page.url.searchParams.get('port'));

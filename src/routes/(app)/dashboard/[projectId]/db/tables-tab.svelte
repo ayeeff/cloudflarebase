@@ -72,7 +72,14 @@
 	} = $props();
 
 	const NO_PERMISSION = '__none__';
-	const accessModes = ['public', 'auth', 'owner'] as const;
+	const accessModes = ['public', 'auth', 'owner', 'none'] as const;
+
+	/** Only token-bearing modes can carry a permission key: `public` reads no
+	 * token and `none` refuses before it reads one, so offering a key there
+	 * would suggest a gate that never runs. */
+	function takesPermission(mode: string): boolean {
+		return mode === 'auth' || mode === 'owner';
+	}
 	const columnTypes: DbColumnType[] = ['text', 'integer', 'real', 'boolean', 'json'];
 	const typeIcons = {
 		text: Type,
@@ -221,13 +228,17 @@
 				? 'anyone can read every row'
 				: designerRead === 'auth'
 					? `any signed-in user${withKey(designerReadPermission)} can read every row`
-					: `signed-in users${withKey(designerReadPermission)} can read only rows they created`;
+					: designerRead === 'none'
+						? 'nothing can read this from your app - only this console, a service key, or the admin SDK'
+						: `signed-in users${withKey(designerReadPermission)} can read only rows they created`;
 		const write =
 			designerWrite === 'public'
 				? 'anyone can insert, edit, and delete rows'
 				: designerWrite === 'auth'
 					? `any signed-in user${withKey(designerWritePermission)} can insert, edit, and delete any row`
-					: `signed-in users${withKey(designerWritePermission)} can insert rows but edit or delete only their own`;
+					: designerWrite === 'none'
+						? 'nothing can write from your app - this table is read-only except from this console, a service key, or the admin SDK'
+						: `signed-in users${withKey(designerWritePermission)} can insert rows but edit or delete only their own`;
 		const replication =
 			designerReplication === 'auto'
 				? 'Reads are served from a replica in the reader’s region.'
@@ -333,10 +344,21 @@
 		if (!selected || rowPage === 0) return;
 		void loadRows(selected, rowPage - 1);
 	}
+	/**
+	 * Platform-owned shards (`cfb_*`) are left out of this list.
+	 *
+	 * Not hidden - the SQL editor still reaches them and the agent still reports
+	 * them - but they are not tables the operator manages HERE: Remote Config's
+	 * parameter table is created, configured, and dropped by the Remote Config
+	 * page, and the agent refuses those operations through the generic routes.
+	 * Listing it beside real tables would offer a designer and a delete button
+	 * that can only ever answer 403.
+	 */
+	const ownedTables = $derived(tables.filter((table) => !table.name.startsWith('cfb_')));
 	const visibleTables = $derived(
 		tableFilter.trim()
-			? tables.filter((table) => table.name.includes(tableFilter.trim().toLowerCase()))
-			: tables
+			? ownedTables.filter((table) => table.name.includes(tableFilter.trim().toLowerCase()))
+			: ownedTables
 	);
 	const visibleRows = $derived.by(() => {
 		const needle = rowFilter.trim().toLowerCase();
@@ -1598,9 +1620,9 @@
 					</Select.Root>
 				</div>
 
-				{#if designerRead !== 'public' || designerWrite !== 'public'}
+				{#if takesPermission(designerRead) || takesPermission(designerWrite)}
 					<div class="grid grid-cols-2 gap-2">
-						{#if designerRead !== 'public'}
+						{#if takesPermission(designerRead)}
 							<div class="space-y-1.5">
 								<Label class="text-xs">Read permission</Label>
 								<Select.Root
@@ -1611,10 +1633,10 @@
 									}}
 								>
 									<Select.Trigger class="w-full text-xs">
-										{designerReadPermission || 'none'}
+										{designerReadPermission || 'not required'}
 									</Select.Trigger>
 									<Select.Content>
-										<Select.Item value={NO_PERMISSION}>none</Select.Item>
+										<Select.Item value={NO_PERMISSION}>not required</Select.Item>
 										{#each permissionOptions(designerReadPermission) as key (key)}
 											<Select.Item value={key}>{key}</Select.Item>
 										{/each}
@@ -1622,7 +1644,7 @@
 								</Select.Root>
 							</div>
 						{/if}
-						{#if designerWrite !== 'public'}
+						{#if takesPermission(designerWrite)}
 							<div class="space-y-1.5">
 								<Label class="text-xs">Write permission</Label>
 								<Select.Root
@@ -1633,10 +1655,10 @@
 									}}
 								>
 									<Select.Trigger class="w-full text-xs">
-										{designerWritePermission || 'none'}
+										{designerWritePermission || 'not required'}
 									</Select.Trigger>
 									<Select.Content>
-										<Select.Item value={NO_PERMISSION}>none</Select.Item>
+										<Select.Item value={NO_PERMISSION}>not required</Select.Item>
 										{#each permissionOptions(designerWritePermission) as key (key)}
 											<Select.Item value={key}>{key}</Select.Item>
 										{/each}

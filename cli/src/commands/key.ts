@@ -5,8 +5,7 @@ import { blank, bold, dim, info, success, UserError, warn } from '../lib/log.js'
 import { hostingFetch, readManagedConfig, targetProjectId } from '../lib/managed.js';
 
 /**
- * `cloudflarebase key create|list|revoke` - project service keys
- * (docs/service-keys-design.md SK3, docs/admin-sdk-design.md).
+ * `cloudflarebase key create|list|revoke` - project service keys.
  *
  * The credential a SERVER holds when there is no signed-in user to relay. The
  * console can mint one too; this exists so the whole loop - link a directory,

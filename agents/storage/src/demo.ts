@@ -1,5 +1,5 @@
 /**
- * Synthetic demo storage (docs/storage-agent-plan.md, "Demo storage").
+ * Synthetic demo storage ("Demo storage").
  *
  * Demo projects get ONE read-only bucket that never touches R2 at all: the
  * bytes are in this module, the index rows are generated, and the timestamps

@@ -10,7 +10,7 @@ import {
 } from './helpers';
 
 /**
- * Project branches (docs/branches-design.md): a branch is a full registry row
+ * Project branches: a branch is a full registry row
  * whose id is `<root>--<branch>`, and the derived id IS the isolation - every
  * agent keys on project id, so a branch gets its own Durable Objects, users,
  * collections, and JWKS with zero agent involvement. These tests prove the

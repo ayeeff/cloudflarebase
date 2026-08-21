@@ -15,6 +15,7 @@
 		Radio,
 		Rocket,
 		ShieldCheck,
+		SlidersHorizontal,
 		Trash2,
 		Upload
 	} from '@lucide/svelte';
@@ -37,7 +38,8 @@
 		'rows.imported': Upload,
 		'view.created': Combine,
 		'view.configured': ShieldCheck,
-		'view.deleted': Trash2
+		'view.deleted': Trash2,
+		'remote-config.changed': SlidersHorizontal
 	} as const;
 
 	function timeAgo(iso: string): string {

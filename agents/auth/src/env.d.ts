@@ -14,6 +14,6 @@ interface Env {
 	CF_ANALYTICS_API_TOKEN?: string;
 }
 // CONSOLE_SIGNUPS is not augmented here: env.local declares it, so it lives
-// in the generated worker-configuration.d.ts (docs/managed-service-design.md
-// - unset/claimed = invitation-only, open = public sign-ups, and open only
-// takes effect while the EMAIL binding + EMAIL_FROM are configured).
+// in the generated worker-configuration.d.ts. Unset/claimed = invitation-only,
+// open = public sign-ups, and open only takes effect while the EMAIL binding
+// + EMAIL_FROM are configured.

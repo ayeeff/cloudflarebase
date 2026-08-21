@@ -60,9 +60,9 @@ export interface ConsoleAuthConfig {
 
 /**
  * The console auth instance's public /config, narrowed to what the login page
- * needs: which social buttons to offer and whether public sign-up is open
- * (docs/managed-service-design.md - the agent reports the effective mode, so
- * a misconfigured `open` never renders a doomed sign-up form).
+ * needs: which social buttons to offer and whether public sign-up is open.
+ * The agent reports the EFFECTIVE mode, so a misconfigured `open` never
+ * renders a doomed sign-up form.
  */
 export async function consoleAuthConfig(
 	platform: App.Platform | undefined,
@@ -258,16 +258,34 @@ export async function resolveConsoleIdentity(
 	const headers = sessionLookupHeaders(origin, cookie, authorization, clientIp);
 
 	const agent = requireAuthAgent(platform);
-	const response = await agent
-		.fetch(agentUrl(origin, CONSOLE_PROJECT_ID, '/console/me'), { method: 'GET', headers })
-		.catch((cause: unknown) => {
-			Sentry.captureException(cause, {
-				level: 'error',
-				tags: { operation: 'console-identity' },
-				extra: { note: 'the console guard cannot verify sessions - the auth agent is unreachable' }
+	const attempt = () =>
+		agent
+			.fetch(agentUrl(origin, CONSOLE_PROJECT_ID, '/console/me'), { method: 'GET', headers })
+			.catch((cause: unknown) => {
+				Sentry.captureException(cause, {
+					level: 'error',
+					tags: { operation: 'console-identity' },
+					extra: {
+						note: 'the console guard cannot verify sessions - the auth agent is unreachable'
+					}
+				});
+				return null;
 			});
-			return null;
-		});
+
+	let response = await attempt();
+	// A Durable Object reset is a ONE-SHOT event: a storage timeout or a
+	// deploy eviction kills the instance mid-request, and the very next call
+	// lands on a fresh one. Retrying once absorbs that whole class - the
+	// operator never sees the 503 page for a blip the platform already
+	// recovered from. Only the outage shapes are retried: 401/403 are real
+	// answers, 404 is the old-agent fallback, and a 429 must never be fed
+	// another request.
+	const outage = (value: typeof response) =>
+		!value || (!value.ok && ![401, 403, 404, 429].includes(value.status));
+	if (outage(response)) {
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		response = await attempt();
+	}
 
 	if (!response) return UNAVAILABLE;
 	if (response.status === 404) {

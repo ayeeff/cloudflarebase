@@ -70,6 +70,28 @@ test('sql gate: internal storage is unreachable, whatever the casing', () => {
 	refused(`SELECT * FROM todos WHERE title = 'changelog'`, 'bind it as a parameter');
 });
 
+test('sql gate: DML targets this table whether or not the name is quoted', () => {
+	// Every DML test below this one wrote the name unquoted, which is exactly
+	// how `DELETE FROM "todos"` - what drizzle and every other ORM emits -
+	// stayed refused by the target check for as long as it did.
+	for (const sql of [
+		'INSERT INTO "todos" (id, title) VALUES (?, ?)',
+		'UPDATE "todos" SET votes = 1 WHERE id = ?',
+		'DELETE FROM "todos" WHERE votes < ?',
+		'DELETE FROM "todos"',
+	]) {
+		assert.match(ok(sql).sql, /RETURNING/, sql);
+	}
+
+	// Unbalanced quotes are not a name, and a longer name that merely starts
+	// with this one is a different table - a hyphen is a word boundary, so the
+	// guard cannot be `\b`.
+	refused('INSERT INTO "todos (id) VALUES (?)', 'must target "todos"');
+	refused('DELETE FROM todos"', 'must target "todos"');
+	refused('DELETE FROM todos-archive', 'must target "todos"');
+	refused('UPDATE todos_backup SET x = 1', 'must target "todos"');
+});
+
 test('sql gate: DML must target this table; RETURNING is ours to add', () => {
 	refused('INSERT INTO other (id) VALUES (?)', 'must target "todos"');
 	refused('UPDATE elsewhere SET x = 1', 'must target "todos"');

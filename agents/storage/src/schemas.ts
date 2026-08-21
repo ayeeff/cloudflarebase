@@ -28,7 +28,18 @@ export const DEMO_PROJECT_PATTERN = /^demo-[a-f0-9]{12,20}(?:--[a-z0-9][a-z0-9-]
  */
 export const bucketNameSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/);
 
-export const accessModeSchema = z.enum(['public', 'auth', 'owner']);
+/**
+ * Mirrors the db agent's `accessModeSchema` - the gate below is a copy of its
+ * `access.ts`, so the mode set has to match or the two drift.
+ *
+ * `none` closes a side of a bucket to the public API entirely: `write: 'none'`
+ * is a read-only bucket (assets only an operator uploads - a marketing site's
+ * images, a published price list), `read: 'none'` an ingest bucket clients may
+ * write but never enumerate or fetch back. Operator surfaces (`/admin/*`, a
+ * `cfbs_` service key) never pass through this gate, so `none` closes the
+ * public plane without closing the bucket.
+ */
+export const accessModeSchema = z.enum(['public', 'auth', 'owner', 'none']);
 export type AccessMode = z.infer<typeof accessModeSchema>;
 
 /** Permission keys follow the auth agent grammar: `resource:action` or `*`. */
@@ -100,7 +111,7 @@ export const objectCursorSchema = z.string().max(1024).optional().catch(undefine
  * call takes either `key` or `keys`.
  *
  * GET and HEAD only: a signed URL bypasses the bucket's read mode, and write
- * capabilities have a protocol of their own (docs/storage-agent-plan.md).
+ * capabilities have a protocol of their own.
  */
 export const signedUrlRequestSchema = z
 	.strictObject({

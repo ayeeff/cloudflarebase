@@ -15,6 +15,20 @@ const journal = {
 			tag: '0000_red_la_nuit',
 			breakpoints: true,
 		},
+		{
+			idx: 1,
+			version: '6',
+			when: 1787197325964,
+			tag: '0001_slippery_prism',
+			breakpoints: true,
+		},
+		{
+			idx: 2,
+			version: '6',
+			when: 1787253423135,
+			tag: '0002_amazing_kronos',
+			breakpoints: true,
+		},
 	],
 };
 
@@ -39,9 +53,50 @@ CREATE TABLE \`deploys\` (
 );
 `;
 
+const m0001 = `CREATE TABLE \`app_secrets\` (
+	\`app_name\` text NOT NULL,
+	\`name\` text NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL,
+	PRIMARY KEY(\`app_name\`, \`name\`)
+);
+--> statement-breakpoint
+CREATE TABLE \`app_vars\` (
+	\`app_name\` text NOT NULL,
+	\`name\` text NOT NULL,
+	\`value\` text NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL,
+	PRIMARY KEY(\`app_name\`, \`name\`)
+);
+--> statement-breakpoint
+CREATE TABLE \`build_secrets\` (
+	\`app_name\` text NOT NULL,
+	\`name\` text NOT NULL,
+	\`ciphertext\` text NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL,
+	PRIMARY KEY(\`app_name\`, \`name\`)
+);
+--> statement-breakpoint
+CREATE TABLE \`build_vars\` (
+	\`app_name\` text NOT NULL,
+	\`name\` text NOT NULL,
+	\`value\` text NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`updated_at\` integer NOT NULL,
+	PRIMARY KEY(\`app_name\`, \`name\`)
+);
+--> statement-breakpoint
+ALTER TABLE \`apps\` ADD \`last_deploy_vars\` text;`;
+
+const m0002 = `ALTER TABLE \`app_secrets\` ADD \`ciphertext\` text;`;
+
 export default {
 	journal,
 	migrations: {
 		m0000,
+		m0001,
+		m0002,
 	},
 };

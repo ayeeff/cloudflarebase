@@ -1,6 +1,11 @@
 import { dev } from '$app/environment';
 import { agentByApiPrefix, agentByWorkerSegment, routeAccess } from '$lib/agent-registry';
-import { CONSOLE_DASHBOARD_PAGES, CONSOLE_PROJECT_ID, RESERVED_PROJECT_IDS } from '$lib/console';
+import {
+	CONSOLE_DASHBOARD_PAGES,
+	CONSOLE_PROJECT_ID,
+	isPrivateSurface,
+	RESERVED_PROJECT_IDS
+} from '$lib/console';
 import { projectIdSchema } from '$lib/schemas/auth';
 import { agentFetcher, agentUrl, serverError } from '$lib/server/agents';
 import { isDemoMode, isDemoProjectId, resolveConsoleIdentity } from '$lib/server/console';
@@ -8,6 +13,7 @@ import { guardConsoleClaim } from '$lib/server/console-setup';
 import { verifyGithubDeployGrant } from '$lib/server/github-connect';
 import {
 	deployTokenCoversProject,
+	isBuildEnvSurface,
 	isDeployTokenSurface,
 	verifyDeployToken
 } from '$lib/server/hosting';
@@ -115,13 +121,16 @@ const applicationHandle: Handle = async ({ event, resolve }) => {
  * `noindex` in the markup would never be seen and an already-indexed URL would
  * stay indexed forever. This is served on every response, including the guard's
  * redirects and 401s, which is what lets Google drop what it already has.
+ *
+ * `noindex` is not the whole job, though: it governs SEARCH, and a link preview
+ * is not a search engine - WhatsApp, iMessage, and every chat client that
+ * unfurls a URL ignore it entirely. The same surface list therefore also drives
+ * the root layout's Open Graph, which is what stops a shared `/dashboard` link
+ * previewing as somebody's throwaway demo project.
  */
-const PRIVATE_SURFACES = ['/dashboard', '/login', '/cli-auth', '/api', '/agents'];
-
 const noindexHandle: Handle = async ({ event, resolve }) => {
 	const response = await resolve(event);
-	const { pathname } = event.url;
-	if (PRIVATE_SURFACES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) {
+	if (isPrivateSurface(event.url.pathname)) {
 		// Responses proxied from an agent carry immutable headers; the console
 		// pages this actually targets do not, and a crawler never reaches those.
 		try {
@@ -425,7 +434,7 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		return noSuchProject(access.kind);
 	}
 
-	// Deploy tokens (docs/managed-service-design.md, Phase B): a `cfbd_` bearer
+	// Deploy tokens (Phase B): a `cfbd_` bearer
 	// is CI's durable credential, accepted SOLELY on the deploy and
 	// branch-create endpoints for the token's root project and its branches.
 	// Any other use of one - wrong surface, wrong project, revoked - is a
@@ -452,7 +461,7 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		return Response.json({ error: 'invalid deploy token' }, { status: 401 });
 	}
 
-	// Service keys (docs/service-keys-design.md, SK1): a `cfbs_` bearer is the
+	// Service keys (SK1): a `cfbs_` bearer is the
 	// credential a SERVER holds for the cases with no user to relay - crons,
 	// queue consumers, webhook handlers, seed scripts. It reaches the DATA
 	// plane of its own project and nothing else (isServiceKeySurface), so it
@@ -506,17 +515,22 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		return Response.json({ error: 'invalid service key' }, { status: 401 });
 	}
 
-	// GitHub Actions OIDC (docs/managed-service-design.md, Phase B): a
+	// GitHub Actions OIDC (Phase B): a
 	// `build`-mode connection deploys with NO stored credential at all - the
 	// workflow presents a short-lived token GitHub signed, describing the
 	// repository it ran in, and the connection table says which project that
 	// repository may deploy to. Same surfaces and same all-or-nothing contract
-	// as a deploy token: never a fall-through to session resolution.
+	// as a deploy token: never a fall-through to session resolution. The
+	// build-env GET is the one read the bearer also opens - the workflow
+	// fetches its build vars and secrets before the build step - and it is
+	// deliberately NOT a deploy-token surface (see isBuildEnvSurface).
 	//
-	// Only attempted on the deploy surfaces, so a three-segment console session
+	// Only attempted on those surfaces, so a three-segment console session
 	// bearer on any other route still reaches the session path below.
 	const oidcBearer =
-		access.projectId && isDeployTokenSurface(event.url.pathname, event.request.method)
+		access.projectId &&
+		(isDeployTokenSurface(event.url.pathname, event.request.method) ||
+			isBuildEnvSurface(event.url.pathname, event.request.method))
 			? event.request.headers
 					.get('authorization')
 					?.match(/^Bearer\s+([\w-]+\.[\w-]+\.[\w-]+)$/)?.[1]

@@ -80,7 +80,7 @@ Miniflare service bindings need `binding.fetch(url, init)` rather than a
 `Request`, and why a Durable Object that aborts after replying can make a
 completed operation look like a failure.
 
-New primitives follow [docs/agent-contract.md](docs/agent-contract.md): a new
+New primitives follow the agent contract in [AGENTS.md](AGENTS.md): a new
 agent is its own npm project shipping a `cloudflarebase.agent.json`, plus one
 entry in `src/lib/agent-registry.ts` (which drives the console guard,
 dispatch, proxies, sidebar, and delete fan-out) and one in

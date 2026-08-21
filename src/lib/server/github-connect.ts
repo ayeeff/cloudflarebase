@@ -1,6 +1,12 @@
 import * as Sentry from '@sentry/sveltekit';
 import { isDemoProjectId } from '$lib/console';
-import { connectedWorkflowYaml } from '$lib/hosting-workflow';
+import {
+	branchFilterSchema,
+	branchIsIgnored,
+	gitBranchSchema,
+	parseIgnoredBranches
+} from '$lib/branch-match';
+import { connectedWorkflowYaml, workflowPathFor, WORKFLOW_FILENAME } from '$lib/hosting-workflow';
 import { getDb, type ControlPlaneDatabase } from '$lib/server/db';
 import { githubConnection, githubInstallation, project } from '$lib/server/db/schema';
 import { forgetInstallationToken, githubAppConfig, REPO_FULL_NAME } from '$lib/server/github';
@@ -41,6 +47,16 @@ export interface Connection {
 	assetsDir: string | null;
 	buildCommand: string | null;
 	rootDir: string | null;
+	/** Branch that deploys the root project; null = the repo's default branch. */
+	productionBranch: string | null;
+	/** Filters whose pushes never deploy (names or `*` globs). */
+	ignoredBranches: string[];
+	/** The workflow file this connection committed; null = the legacy shared
+	 * `.github/workflows/cloudflarebase.yml` (pre-per-app-filename rows). */
+	workflowPath: string | null;
+	/** Detected at connect; re-renders the workflow's install steps on PATCH.
+	 * Null (legacy rows) = the generic npm steps. */
+	packageManager: string | null;
 	createdAt: string;
 	lastEventAt: string | null;
 }
@@ -58,6 +74,10 @@ function toConnection(row: typeof githubConnection.$inferSelect): Connection {
 		assetsDir: row.assetsDir,
 		buildCommand: row.buildCommand,
 		rootDir: row.rootDir,
+		productionBranch: row.productionBranch,
+		ignoredBranches: parseIgnoredBranches(row.ignoredBranches),
+		workflowPath: row.workflowPath,
+		packageManager: row.packageManager,
 		createdAt: row.createdAt.toISOString(),
 		lastEventAt: row.lastEventAt?.toISOString() ?? null
 	};
@@ -116,6 +136,8 @@ export interface SaveConnectionInput {
 	assetsDir: string | null;
 	buildCommand: string | null;
 	rootDir: string | null;
+	workflowPath: string | null;
+	packageManager: string | null;
 }
 
 /** Upserts the connection for a project+app - reconnecting replaces. */
@@ -418,6 +440,24 @@ export async function connectRepository(
 	const claim = await resolveAppClaim(platform, projectId, appName);
 	if (!claim.ok) return { ok: false, status: claim.status, error: claim.error };
 
+	// Reconnecting an app whose old row committed a DIFFERENT workflow file
+	// (the pre-per-app-filename layout) must remove that file, or both would
+	// keep triggering and every push would deploy twice. Best effort - the
+	// old repo may be gone entirely.
+	const previous = await getConnection(platform, projectId, claim.appName);
+	if (previous?.mode === 'build') {
+		const oldPath = previous.workflowPath ?? WORKFLOW_FILENAME;
+		if (oldPath !== workflowPathFor(claim.appName)) {
+			await deleteWorkflowFile(
+				config,
+				previous.installationId,
+				previous.repoFullName,
+				previous.defaultBranch,
+				oldPath
+			);
+		}
+	}
+
 	// The framework preset travels INTO the workflow at write time; the CLI
 	// reads CLOUDFLAREBASE_ASSETS back out, so reconnecting with different
 	// settings is a rewrite, never a migration.
@@ -455,8 +495,12 @@ export async function connectRepository(
 		}
 	}
 
+	// Per-app filename, so a second app connected to the same repository can
+	// never overwrite the first one's workflow. The path is persisted on the
+	// row - rewrites and disconnect target what was ACTUALLY committed.
+	const workflowPath = mode === 'build' ? workflowPathFor(claim.appName) : null;
 	let workflowWritten = false;
-	if (mode === 'build') {
+	if (mode === 'build' && workflowPath) {
 		const written = await writeWorkflowFile(
 			config,
 			installationId,
@@ -470,7 +514,8 @@ export async function connectRepository(
 				buildCommand,
 				outputDir,
 				rootDir
-			})
+			}),
+			workflowPath
 		);
 		if (!written.ok) return { ok: false, status: written.status, error: written.error };
 		workflowWritten = true;
@@ -488,9 +533,149 @@ export async function connectRepository(
 		// the build lands (null = the CLI autodetects at deploy time).
 		assetsDir: mode === 'direct' ? (parsed.data.assetsDir ?? '') : outputDir,
 		buildCommand,
-		rootDir
+		rootDir,
+		workflowPath,
+		packageManager: mode === 'build' ? (parsed.data.packageManager ?? null) : null
 	});
 	return { ok: true, connection, subdomain: claim.subdomain, workflowWritten, wranglerWritten };
+}
+
+/**
+ * What an operator may edit after connecting. Everything optional: absent =
+ * keep, null = reset to the default. Mode is deliberately not here -
+ * switching build/direct changes what exists in the repository, which is
+ * reconnect territory.
+ */
+export const connectionPatchSchema = z.strictObject({
+	buildCommand: buildCommandSchema.nullable().optional(),
+	rootDir: assetsDirSchema.nullable().optional(),
+	/** Direct: the published directory. Build: where the build lands. */
+	assetsDir: assetsDirSchema.nullable().optional(),
+	/** Null = the repository's default branch. */
+	productionBranch: gitBranchSchema.nullable().optional(),
+	ignoredBranches: z.array(branchFilterSchema).max(20).optional()
+});
+
+export type ConnectionPatchResult =
+	| { ok: true; connection: Connection; workflowRewritten: boolean }
+	| { ok: false; status: number; error: string };
+
+/**
+ * Edits a connection's build settings at any time.
+ *
+ * For a `build` connection the settings LIVE in the committed workflow file
+ * (the build command, the trigger's ignore list, the production branch env),
+ * so the rewrite is not a courtesy - it is the change. GitHub is written
+ * FIRST and the row only after it succeeds: settings and YAML must never
+ * diverge, and a failed commit leaves both exactly as they were.
+ */
+export async function updateConnectionSettings(
+	platform: App.Platform | undefined,
+	projectId: string,
+	appName: string,
+	input: unknown,
+	origin: string
+): Promise<ConnectionPatchResult> {
+	const parsed = connectionPatchSchema.safeParse(input);
+	if (!parsed.success) {
+		return { ok: false, status: 400, error: parsed.error.issues[0]?.message ?? 'invalid request' };
+	}
+	const connection = await getConnection(platform, projectId, appName);
+	if (!connection) return { ok: false, status: 404, error: 'no such connection' };
+
+	if (
+		connection.mode === 'direct' &&
+		(parsed.data.buildCommand !== undefined || parsed.data.rootDir !== undefined)
+	) {
+		return {
+			ok: false,
+			status: 400,
+			error: 'this connection has no build step - reconnect to change the mode'
+		};
+	}
+
+	const next = {
+		buildCommand:
+			parsed.data.buildCommand === undefined ? connection.buildCommand : parsed.data.buildCommand,
+		rootDir:
+			parsed.data.rootDir === undefined
+				? connection.rootDir
+				: parsed.data.rootDir?.trim().replace(/^\/+|\/+$/g, '') || null,
+		assetsDir:
+			parsed.data.assetsDir === undefined
+				? connection.assetsDir
+				: connection.mode === 'direct'
+					? (parsed.data.assetsDir ?? '')
+					: parsed.data.assetsDir?.trim() || null,
+		productionBranch:
+			parsed.data.productionBranch === undefined
+				? connection.productionBranch
+				: parsed.data.productionBranch,
+		ignoredBranches: parsed.data.ignoredBranches ?? connection.ignoredBranches
+	};
+
+	// A production branch every push ignores would quietly stop all production
+	// deploys - refuse the combination rather than let it be discovered live.
+	const production = next.productionBranch ?? connection.defaultBranch;
+	if (branchIsIgnored(next.ignoredBranches, production)) {
+		return { ok: false, status: 400, error: 'the production branch cannot be ignored' };
+	}
+
+	let workflowRewritten = false;
+	const changed =
+		next.buildCommand !== connection.buildCommand ||
+		next.rootDir !== connection.rootDir ||
+		next.assetsDir !== connection.assetsDir ||
+		next.productionBranch !== connection.productionBranch ||
+		JSON.stringify(next.ignoredBranches) !== JSON.stringify(connection.ignoredBranches);
+	if (!changed) return { ok: true, connection, workflowRewritten: false };
+
+	if (connection.mode === 'build') {
+		const config = githubAppConfig(platform);
+		if (!config) {
+			return { ok: false, status: 503, error: 'no GitHub App is configured on this console' };
+		}
+		const packageManager = ['npm', 'pnpm', 'yarn', 'bun'].includes(connection.packageManager ?? '')
+			? (connection.packageManager as 'npm' | 'pnpm' | 'yarn' | 'bun')
+			: undefined;
+		const written = await writeWorkflowFile(
+			config,
+			connection.installationId,
+			connection.repoFullName,
+			connection.defaultBranch,
+			connectedWorkflowYaml({
+				origin,
+				projectId,
+				appName: connection.appName,
+				packageManager,
+				buildCommand: next.buildCommand,
+				outputDir: next.assetsDir,
+				rootDir: next.rootDir,
+				productionBranch: next.productionBranch,
+				ignoredBranches: next.ignoredBranches
+			}),
+			connection.workflowPath ?? WORKFLOW_FILENAME,
+			'Update Cloudflarebase build settings'
+		);
+		if (!written.ok) return { ok: false, status: written.status, error: written.error };
+		workflowRewritten = true;
+	}
+
+	// UPDATE in place - saveConnection's delete+reinsert is the reconnect
+	// path; an edit must preserve the row's identity and history.
+	const db = await getDb(platform);
+	const [updated] = await db
+		.update(githubConnection)
+		.set({
+			buildCommand: next.buildCommand,
+			rootDir: next.rootDir,
+			assetsDir: next.assetsDir,
+			productionBranch: next.productionBranch,
+			ignoredBranches: next.ignoredBranches.length ? JSON.stringify(next.ignoredBranches) : null
+		})
+		.where(eq(githubConnection.id, connection.id))
+		.returning();
+	return { ok: true, connection: toConnection(updated), workflowRewritten };
 }
 
 /**
@@ -513,7 +698,8 @@ export async function disconnectRepository(
 			config,
 			connection.installationId,
 			connection.repoFullName,
-			connection.defaultBranch
+			connection.defaultBranch,
+			connection.workflowPath ?? WORKFLOW_FILENAME
 		);
 	}
 	return { ok: await deleteConnection(platform, projectId, appName), workflowRemoved };
@@ -554,10 +740,19 @@ export async function verifyGithubDeployGrant(
 	try {
 		const claims = await verifyOidcToken(token, audience);
 		if (!claims) return null;
+		// Tags and PR refs never deploy - the workflow only triggers on push,
+		// so anything else here is a hand-rolled run presenting a real token.
+		if (!claims.ref.startsWith('refs/heads/')) return null;
+		const branch = claims.ref.slice('refs/heads/'.length);
 
 		const connections = await getConnectionsByRepo(platform, claims.repositoryId);
 		for (const connection of connections) {
 			if (connection.mode !== 'build') continue;
+			// Server-side half of branch exclusion: the committed YAML's
+			// branches-ignore can be stale (or hand-edited), so the grant itself
+			// refuses ignored branches - for the deploy POST and the build-env
+			// GET alike.
+			if (branchIsIgnored(connection.ignoredBranches, branch)) continue;
 			// The name is re-synced on every webhook; a mismatch here means the
 			// repo was renamed with no push since, so compare on id (already
 			// matched by the lookup) and keep the claim check as a tripwire.

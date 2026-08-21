@@ -3,7 +3,7 @@ import { listDeployTokens, mintDeployToken } from '$lib/server/hosting';
 import type { RequestHandler } from './$types';
 
 /**
- * Deploy tokens, console-plane (docs/managed-service-design.md, Phase B).
+ * Deploy tokens, console-plane (Phase B).
  * Minted on ROOT projects from the Hosting page; the secret appears exactly
  * once in the mint response and only its SHA-256 digest is stored.
  */

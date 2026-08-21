@@ -2,6 +2,7 @@ import { expect, request as requestFactory, test as setup } from '@playwright/te
 import {
 	analyticsPath,
 	authPath,
+	CONFIG_PROJECT,
 	DB_PROJECT,
 	ensureProject,
 	overviewPath,
@@ -23,7 +24,7 @@ setup('seed baseline auth data', async ({ request }) => {
 	// any id without a registry row - reaching one used to mint a backend by
 	// URL - so a project the suite never registered is a project the suite
 	// cannot read, exactly as in production.
-	for (const projectId of [SEED_PROJECT, SCRATCH_PROJECT, DB_PROJECT]) {
+	for (const projectId of [SEED_PROJECT, SCRATCH_PROJECT, DB_PROJECT, CONFIG_PROJECT]) {
 		await ensureProject(request, projectId);
 	}
 

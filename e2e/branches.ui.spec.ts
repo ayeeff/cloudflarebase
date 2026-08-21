@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 /**
  * The header branch switcher and the grouped projects overview
- * (docs/branches-design.md). The e2e seed projects are deliberately not
+ *. The e2e seed projects are deliberately not
  * registry rows, so the first test pins that the control hides there; the
  * rest work a registered root end to end. Tests in this file are sequential
  * and share the run's root project.

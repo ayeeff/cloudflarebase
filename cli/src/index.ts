@@ -25,7 +25,7 @@ const usage = (): void => {
 		`  cloudflarebase deploy         ${dim('deploy - managed once initialized, wrangler otherwise')}`
 	);
 	info(
-		`  cloudflarebase secret put <N> ${dim('set a secret on the deployed app (kept across deploys)')}`
+		`  cloudflarebase secret <cmd>   ${dim('put | list | delete a secret on the deployed app')}`
 	);
 	info(`  cloudflarebase key <cmd>      ${dim('create | list | revoke a project service key')}`);
 	info(

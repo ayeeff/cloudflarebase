@@ -4,7 +4,7 @@ import { jsonBody, jsonResponse, ref, UNAUTHORIZED, type AgentOpenApiModule } fr
 
 /**
  * The console's own (control-plane) contribution to the per-project document:
- * project branches (docs/branches-design.md). Branches are minted by the
+ * project branches. Branches are minted by the
  * registry, not by an agent - a branch is a full project whose id is
  * `<root>--<branch>`, so every other endpoint in this document works on a
  * branch by swapping the project id in the base URL.
