@@ -1,12 +1,20 @@
-import { redirect } from '@sveltejs/kit';
+import { serverError } from '$lib/server/agents';
 import { fail } from '@sveltejs/kit';
 import { geoAstroFetch } from '$lib/server/geo-astro';
 import type { PageServerLoad, Actions } from './$types';
 
 const GEO_ASTRO_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 
-export const load: PageServerLoad = () => {
-	throw redirect(307, '/dashboard/geo-site/content/categories');
+export const load: PageServerLoad = async ({ platform }) => {
+	const adminKey = platform?.env?.ADMIN_SECRET;
+	const authHeaders = {
+		'content-type': 'application/json',
+		...(adminKey ? { 'x-admin-key': adminKey } : {})
+	};
+	const res = await geoAstroFetch(platform, '/api/catmanager?action=list', { headers: authHeaders });
+	if (!res.ok) serverError(502, `geo-astro-site /api/catmanager responded ${res.status}`);
+	const json: any = await res.json();
+	return { categories: json.categories ?? [], count: json.count ?? 0, base: GEO_ASTRO_BASE };
 };
 
 export const actions: Actions = {

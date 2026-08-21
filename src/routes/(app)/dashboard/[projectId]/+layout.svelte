@@ -812,11 +812,11 @@
 				</p>
 				<div class="space-y-0.5 pl-0">
 					<a
-						href="/admin/maps"
+						href="/dashboard/geo-site/content/maps"
 						data-testid="nav-content-maps"
 						class={[
 							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-							navActive('/admin/maps')
+							navActive('/dashboard/geo-site/content/maps')
 								? 'bg-primary/10 text-primary'
 								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 						]}
@@ -825,11 +825,11 @@
 						Maps
 					</a>
 					<a
-						href="/admin/articles"
+						href="/dashboard/geo-site/content/articles"
 						data-testid="nav-content-articles"
 						class={[
 							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-							navActive('/admin/articles')
+							navActive('/dashboard/geo-site/content/articles')
 								? 'bg-primary/10 text-primary'
 								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 						]}
@@ -838,11 +838,11 @@
 						Articles
 					</a>
 					<a
-						href="/admin/blog"
+						href="/dashboard/geo-site/content/blog"
 						data-testid="nav-content-blog"
 						class={[
 							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-							navActive('/admin/blog')
+							navActive('/dashboard/geo-site/content/blog')
 								? 'bg-primary/10 text-primary'
 								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 						]}
@@ -851,11 +851,11 @@
 						Blog Posts
 					</a>
 					<a
-						href="/admin/write"
+						href="/dashboard/geo-site/content/write"
 						data-testid="nav-content-write"
 						class={[
 							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-							navActive('/admin/write')
+							navActive('/dashboard/geo-site/content/write')
 								? 'bg-primary/10 text-primary'
 								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 						]}
@@ -864,11 +864,11 @@
 						Write
 					</a>
 					<a
-						href="/admin/categories"
+						href="/dashboard/geo-site/content/categories"
 						data-testid="nav-content-categories"
 						class={[
 							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-							navActive('/admin/categories')
+							navActive('/dashboard/geo-site/content/categories')
 								? 'bg-primary/10 text-primary'
 								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 						]}

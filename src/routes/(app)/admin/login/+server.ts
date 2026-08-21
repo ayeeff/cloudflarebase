@@ -35,5 +35,10 @@ export const POST: RequestHandler = async ({ request, cookies, platform }) => {
     httpOnly: true,
     sameSite: 'lax'
   });
-  return new Response(null, { status: 303, headers: { location: '/admin/maps' } });
+		const target = new URL(request.url).searchParams.get('redirect');
+		const safe = target && target.startsWith('/') && !target.startsWith('//') ? target : '/admin/maps';
+		return new Response(null, {
+			status: 303,
+			headers: { location: safe }
+		});
 };

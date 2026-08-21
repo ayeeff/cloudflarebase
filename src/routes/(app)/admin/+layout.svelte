@@ -14,7 +14,10 @@
 		const form = event.currentTarget as HTMLFormElement;
 		const password = (new FormData(form).get('password') ?? '').toString();
 		try {
-			const res = await fetch('/admin/login', {
+			// Preserve any ?redirect= the content gate handed us (gate sends users
+			// here from /dashboard/geo-site/content/* when they aren't authed).
+			const redirectParam = window.location.search || '';
+			const res = await fetch('/admin/login' + redirectParam, {
 				method: 'POST',
 				headers: { 'content-type': 'application/x-www-form-urlencoded' },
 				body: new URLSearchParams({ password }).toString()
