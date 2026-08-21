@@ -33,7 +33,7 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="mx-auto max-w-6xl space-y-6 px-3 py-5 sm:px-6 sm:py-8">
+<div class="mx-auto max-w-full space-y-6 px-3 py-5 sm:px-6 sm:py-8">
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-2xl font-bold tracking-tight">Maps</h1>
@@ -50,16 +50,16 @@
 	{/if}
 
 	<div class="rounded-lg border">
-		<Table.Root>
+		<Table.Root class="w-full table-fixed">
 			<Table.Header>
 				<Table.Row>
-					<Table.Head class="w-[80px]">Screenshot</Table.Head>
-					<Table.Head>Slug</Table.Head>
-					<Table.Head>Title</Table.Head>
-					<Table.Head class="w-[80px]">UUID</Table.Head>
-					<Table.Head class="w-[60px]">Type</Table.Head>
-					<Table.Head class="w-[80px]">Data</Table.Head>
-					<Table.Head class="w-[120px]">Actions</Table.Head>
+					<Table.Head class="w-[72px]">Screenshot</Table.Head>
+					<Table.Head class="w-[24%]">Slug</Table.Head>
+					<Table.Head class="w-[34%]">Title</Table.Head>
+					<Table.Head class="w-[92px]">UUID</Table.Head>
+					<Table.Head class="w-[68px]">Type</Table.Head>
+					<Table.Head class="w-[64px]">Data</Table.Head>
+					<Table.Head class="w-[150px]">Actions</Table.Head>
 				</Table.Row>
 			</Table.Header>
 			<Table.Body>
@@ -70,7 +70,7 @@
 								<img
 									src={shotUrl(map)}
 									alt={map.slug}
-									class="h-12 w-20 rounded border object-cover"
+									class="h-10 w-[56px] rounded border object-cover"
 									loading="lazy"
 								/>
 							{:else}
@@ -78,17 +78,19 @@
 							{/if}
 						</Table.Cell>
 						<Table.Cell class="font-mono text-xs">
-							<a
-								href="{base}/maps/{map.uuid ? map.uuid + '/' : ''}{map.slug}"
-								class="text-blue-500 hover:underline"
-								target="_blank"
-								rel="noopener">{map.slug}</a>
-							{#if map.denied}
-								<Badge variant="destructive" class="ml-1 text-[10px]">hidden</Badge>
-							{/if}
+							<div class="flex items-center gap-1 truncate">
+								<a
+									href="{base}/maps/{map.uuid ? map.uuid + '/' : ''}{map.slug}"
+									class="truncate text-blue-500 hover:underline"
+									target="_blank"
+									rel="noopener">{map.slug}</a>
+								{#if map.denied}
+									<Badge variant="destructive" class="ml-1 shrink-0 text-[10px]">hidden</Badge>
+								{/if}
+							</div>
 						</Table.Cell>
-						<Table.Cell class="font-medium">{map.title || map.slug}</Table.Cell>
-						<Table.Cell class="font-mono text-xs">{map.uuid || '—'}</Table.Cell>
+						<Table.Cell class="truncate font-medium">{map.title || map.slug}</Table.Cell>
+						<Table.Cell class="truncate font-mono text-xs">{map.uuid || '—'}</Table.Cell>
 						<Table.Cell>
 							<Badge variant="secondary">{map.type || 'flat'}</Badge>
 						</Table.Cell>
@@ -135,18 +137,18 @@
 					These return 404 on the live site until restored.
 				</p>
 			</div>
-			<Table.Root>
+			<Table.Root class="w-full table-fixed">
 				<Table.Header>
 					<Table.Row>
 						<Table.Head>Path</Table.Head>
-						<Table.Head class="w-[180px]">Denied at</Table.Head>
+						<Table.Head class="w-[160px]">Denied at</Table.Head>
 						<Table.Head class="w-[120px]">Actions</Table.Head>
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
 					{#each data.denied as d (d.key)}
 						<Table.Row>
-							<Table.Cell class="font-mono text-xs">{d.key}</Table.Cell>
+							<Table.Cell class="truncate font-mono text-xs">{d.key}</Table.Cell>
 							<Table.Cell class="text-xs text-muted-foreground">
 								{d.deniedAt ? new Date(d.deniedAt).toLocaleString() : '—'}
 							</Table.Cell>
