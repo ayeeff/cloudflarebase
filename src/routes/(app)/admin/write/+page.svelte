@@ -3,4 +3,4 @@
 	let { data, form } = $props();
 </script>
 
-<ContentManager {data} {form} title="Blog Posts" />
+<ContentManager {data} {form} title="Write Posts" />

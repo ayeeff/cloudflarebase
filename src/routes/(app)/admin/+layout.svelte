@@ -46,7 +46,9 @@
 		{ href: '/admin', label: 'Fleet', icon: Shield },
 		{ href: '/admin/categories', label: 'Categories', icon: Folder },
 		{ href: '/admin/maps', label: 'Maps', icon: Map },
+		{ href: '/admin/articles', label: 'Articles', icon: FileText },
 		{ href: '/admin/blog', label: 'Blog Posts', icon: FileText },
+		{ href: '/admin/write', label: 'Write', icon: FileText },
 		{ href: '/admin/templates', label: 'Templates', icon: LayoutTemplate }
 	];
 
