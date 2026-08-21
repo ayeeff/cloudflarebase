@@ -96,5 +96,26 @@ export const actions: Actions = {
 		});
 		if (!res.ok) return fail(res.status, { error: `geo-astro-site responded ${res.status}` });
 		return { success: true };
+	},
+	'delete-permanent': async ({ request, platform }) => {
+		const adminKey = platform?.env?.ADMIN_SECRET;
+		const authHeaders = {
+			'content-type': 'application/json',
+			...(adminKey ? { 'x-admin-key': adminKey } : {})
+		};
+		const form = await request.formData();
+		const slug = String(form.get('slug') ?? '');
+		const uuid = form.get('uuid') ? String(form.get('uuid')) : undefined;
+		if (!slug) return fail(400, { error: 'slug required' });
+		const res = await geoAstroFetch(platform, '/api/adminpanel', {
+			method: 'POST',
+			headers: authHeaders,
+			body: JSON.stringify({ action: 'delete-map', slug, categoryUuid: uuid })
+		});
+		if (!res.ok) {
+			const err = (await res.json().catch(() => null)) as any;
+			return fail(res.status, { error: err?.error ?? `geo-astro-site responded ${res.status}` });
+		}
+		return { success: true };
 	}
 };
