@@ -81,7 +81,7 @@
 		{ "binding": "AUTH_AGENT", "service": "auth-agent" },
 		{ "binding": "DB_AGENT", "service": "db-agent" },
 		
-		{ "binding": "STORAGE_AGENT", "service": "storage-agent" }
+		
 	],
 
 	// Control plane: the project registry. `database_id` is deliberately
@@ -173,7 +173,7 @@
 				{ "binding": "AUTH_AGENT", "service": "auth-agent-local" },
 				{ "binding": "DB_AGENT", "service": "db-agent-local" },
 				
-				{ "binding": "STORAGE_AGENT", "service": "storage-agent-local" }
+				
 			],
 			"ratelimits": [
 				{
@@ -220,7 +220,7 @@
 				{ "binding": "AUTH_AGENT", "service": "auth-agent-test" },
 				{ "binding": "DB_AGENT", "service": "db-agent-test" },
 				
-				{ "binding": "STORAGE_AGENT", "service": "storage-agent-test" }
+				
 			],
 			"ratelimits": [
 				{
@@ -267,7 +267,7 @@
 				{ "binding": "AUTH_AGENT", "service": "auth-agent" },
 				{ "binding": "DB_AGENT", "service": "db-agent" },
 				
-				{ "binding": "STORAGE_AGENT", "service": "storage-agent" }
+				
 			],
 			"ratelimits": [
 				{
@@ -328,8 +328,8 @@
 			"services": [
 				{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" },
 				{ "binding": "DB_AGENT", "service": "db-agent-preview" },
-				{ "binding": "HOSTING_AGENT", "service": "hosting-agent-preview" },
-				{ "binding": "STORAGE_AGENT", "service": "storage-agent-preview" }
+				
+				
 			]
 		}
 	}
