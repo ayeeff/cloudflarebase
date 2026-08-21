@@ -30,7 +30,7 @@
 					Set the ADMIN_SECRET var and redeploy.
 				</p>
 			{:else}
-				<form method="POST" action="?/login" use:enhance class="flex flex-col gap-3">
+				<form method="POST" action="/admin?/login" use:enhance class="flex flex-col gap-3">
 					<label class="text-sm font-medium" for="password">Admin password</label>
 					<input
 						id="password"
@@ -62,7 +62,7 @@
 					<Shield class="size-4 text-muted-foreground" />
 					<span class="text-sm font-semibold">Geo Admin</span>
 				</span>
-				<form method="POST" action="?/logout" use:enhance>
+				<form method="POST" action="/admin?/logout" use:enhance>
 					<button type="submit" title="Sign out" class="text-muted-foreground hover:text-foreground">
 						<LogOut class="size-4" />
 					</button>
