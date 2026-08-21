@@ -2,6 +2,7 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { enhance } from '$app/forms';
 
 	let { data, form } = $props();
@@ -10,6 +11,20 @@
 
 	function shotUrl(map: any): string | null {
 		return map.screenshotUrl ?? null;
+	}
+
+	// Confirmation dialog targets
+	let hideTarget: any = $state(null);
+	let deleteTarget: any = $state(null);
+	let restoreTarget: any = $state(null);
+
+	function formId(prefix: string, item: any): string {
+		return `${prefix}-${item.slug}`;
+	}
+
+	function submitForm(prefix: string, item: any) {
+		const el = document.getElementById(formId(prefix, item)) as HTMLFormElement | null;
+		el?.requestSubmit();
 	}
 </script>
 
@@ -86,17 +101,24 @@
 						</Table.Cell>
 						<Table.Cell>
 							{#if map.denied}
-								<form method="POST" action="?/restore" use:enhance>
+								<form id={formId('restore', map)} method="POST" action="?/restore" use:enhance class="hidden">
 									<input type="hidden" name="slug" value={map.slug} />
 									{#if map.uuid}<input type="hidden" name="uuid" value={map.uuid} />{/if}
-									<Button size="sm" variant="outline" type="submit">Restore</Button>
 								</form>
+								<Button size="sm" variant="outline" type="button" onclick={() => (restoreTarget = map)}>Restore</Button>
 							{:else}
-								<form method="POST" action="?/delete" use:enhance>
+								<form id={formId('hide', map)} method="POST" action="?/delete" use:enhance class="hidden">
 									<input type="hidden" name="slug" value={map.slug} />
 									{#if map.uuid}<input type="hidden" name="uuid" value={map.uuid} />{/if}
-									<Button size="sm" variant="destructive" type="submit">Hide</Button>
 								</form>
+								<form id={formId('del', map)} method="POST" action="?/delete-permanent" use:enhance class="hidden">
+									<input type="hidden" name="slug" value={map.slug} />
+									{#if map.uuid}<input type="hidden" name="uuid" value={map.uuid} />{/if}
+								</form>
+								<div class="flex gap-1">
+									<Button size="sm" variant="outline" type="button" onclick={() => (hideTarget = map)}>Hide</Button>
+									<Button size="sm" variant="destructive" type="button" onclick={() => (deleteTarget = map)} data-testid="delete-{map.slug}">Delete</Button>
+								</div>
 							{/if}
 						</Table.Cell>
 					</Table.Row>
@@ -129,11 +151,11 @@
 								{d.deniedAt ? new Date(d.deniedAt).toLocaleString() : '—'}
 							</Table.Cell>
 							<Table.Cell>
-								<form method="POST" action="?/restore" use:enhance>
+								<form id={formId('restore-denied', d)} method="POST" action="?/restore" use:enhance class="hidden">
 									<input type="hidden" name="slug" value={d.slug} />
 									{#if d.uuid}<input type="hidden" name="uuid" value={d.uuid} />{/if}
-									<Button size="sm" variant="outline" type="submit">Restore</Button>
 								</form>
+								<Button size="sm" variant="outline" type="button" onclick={() => (restoreTarget = d)}>Restore</Button>
 							</Table.Cell>
 						</Table.Row>
 					{/each}
@@ -142,3 +164,61 @@
 		</div>
 	{/if}
 </div>
+
+<!-- Confirm: Hide (reversible denylist) -->
+<AlertDialog.Root open={!!hideTarget} onOpenChange={(o) => !o && (hideTarget = null)}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Hide “{hideTarget?.slug}”?</AlertDialog.Title>
+			<AlertDialog.Description>
+				The map will return 404 on the live site until restored. This is reversible from the
+				hidden list below.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action
+				onclick={() => submitForm('hide', hideTarget)}
+				data-testid="confirm-hide">Hide</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+
+<!-- Confirm: Delete (permanent filesystem removal) -->
+<AlertDialog.Root open={!!deleteTarget} onOpenChange={(o) => !o && (deleteTarget = null)}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Permanently delete “{deleteTarget?.slug}”?</AlertDialog.Title>
+			<AlertDialog.Description>
+				This removes the map's page, data and screenshot files. On Cloudflare Workers this
+				requires filesystem access and only works from a local dev checkout — if it fails here,
+				use <span class="font-medium">Hide</span> instead, or delete in dev.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action
+				variant="destructive"
+				onclick={() => submitForm('del', deleteTarget)}
+				data-testid="confirm-delete">Delete</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+
+<!-- Confirm: Restore -->
+<AlertDialog.Root open={!!restoreTarget} onOpenChange={(o) => !o && (restoreTarget = null)}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Restore “{restoreTarget?.slug}”?</AlertDialog.Title>
+			<AlertDialog.Description>
+				The map will be removed from the denylist and live again on the site.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action
+				onclick={() => submitForm(restoreTarget && restoreTarget.deniedAt ? 'restore-denied' : 'restore', restoreTarget)}
+				data-testid="confirm-restore">Restore</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>
