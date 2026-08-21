@@ -47,7 +47,8 @@
 	"vars": {
 		"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 		"PUBLIC_SENTRY_DSN": "",
-		"PUBLIC_SENTRY_ENV": "production"
+		"PUBLIC_SENTRY_ENV": "production",
+		"ADMIN_SECRET": "0x4AAAAAAEJ_VwA6_G2-99vgHc02jWYUaYg"
 	},
 
 	// The project copilot: the tool-calling loop runs in this Worker's chat
@@ -297,11 +298,12 @@
 			"preview_urls": true,
 			"routes": [],
 			"vars": {
-				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-				"DEMO_MODE": "true",
-				"PUBLIC_SENTRY_DSN": "https://093f7505d223a871223f9a15130ef116@o4510375271530496.ingest.de.sentry.io/4511764377043024",
-				"PUBLIC_SENTRY_ENV": "preview"
-			},
+			"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+			"DEMO_MODE": "true",
+			"PUBLIC_SENTRY_DSN": "https://093f7505d223a871223f9a15130ef116@o4510375271530496.ingest.de.sentry.io/4511764377043024",
+			"PUBLIC_SENTRY_ENV": "preview",
+			"ADMIN_SECRET": "0x4AAAAAAEJ_VwA6_G2-99vgHc02jWYUaYg"
+		},
 			"ai": {
 				"binding": "AI"
 			},
