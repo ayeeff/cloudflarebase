@@ -241,6 +241,16 @@ type Access =
 function classifyAccess(pathname: string): Access {
 	const segments = pathname.split('/').filter(Boolean);
 
+	// The content-management tools mounted under /dashboard/geo-site/content/*
+	// are gated by their own ADMIN_SECRET check (content/+layout.server.ts),
+	// not by the console operator session. Exempt this subtree from the
+	// dashboard auth guard so the admin password is the only gate - identical
+	// to the legacy /admin/* routes. They still render inside the dashboard
+	// shell (the [projectId] layout) and stay noindex via isPrivateSurface.
+	if (pathname.startsWith('/dashboard/geo-site/content/')) {
+		return { scope: 'open' };
+	}
+
 	// /agents/<worker>/<projectId>/<subPath...>
 	if (segments[0] === 'agents') {
 		const entry = agentByWorkerSegment(segments[1] ?? '');
