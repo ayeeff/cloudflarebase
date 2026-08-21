@@ -14,21 +14,27 @@
 		const form = event.currentTarget as HTMLFormElement;
 		const password = (new FormData(form).get('password') ?? '').toString();
 		try {
-			// Preserve any ?redirect= the content gate handed us (gate sends users
-			// here from /dashboard/geo-site/content/* when they aren't authed).
-			const redirectParam = window.location.search || '';
-			const res = await fetch('/admin/login' + redirectParam, {
-				method: 'POST',
-				headers: { 'content-type': 'application/x-www-form-urlencoded' },
-				body: new URLSearchParams({ password }).toString()
-			});
-			const loc = res.headers.get('location');
-			if (res.status === 303 || loc) {
-				window.location.href = loc ?? '/admin/maps';
-				return;
-			}
-			const j = (await res.json().catch(() => ({}))) as { error?: string };
-			loginError = j.error ?? 'Login failed.';
+		// Preserve any ?redirect= the content gate handed us (gate sends users
+		// here from /dashboard/geo-site/content/* when they aren't authed).
+		const redirectParam = window.location.search || '';
+		// redirect:'manual' so we see the 303 instead of letting fetch follow it
+		// to the target page (which would leave us parsing HTML as JSON and
+		// wrongly reporting "Login failed." even though the cookie was set).
+		const res = await fetch('/admin/login' + redirectParam, {
+			method: 'POST',
+			headers: { 'content-type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({ password }).toString(),
+			redirect: 'manual'
+		});
+		if (res.type === 'opaqueredirect' || res.status === 0) {
+			const target =
+				new URLSearchParams(redirectParam.replace(/^\?/, '')).get('redirect') ||
+				'/admin/maps';
+			window.location.href = target;
+			return;
+		}
+		const j = (await res.json().catch(() => ({}))) as { error?: string };
+		loginError = j.error ?? 'Login failed.';
 		} catch {
 			loginError = 'Network error during login.';
 		} finally {
