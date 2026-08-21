@@ -6,23 +6,28 @@ const GEO_ASTRO_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 
 export const load: PageServerLoad = async ({ fetch, platform }) => {
 	const adminKey = platform?.env?.ADMIN_SECRET;
-	const headers = { 'content-type': 'application/json', ...(adminKey ? { 'x-admin-key': adminKey } : {}) };
+	const authHeaders = {
+		'content-type': 'application/json',
+		...(adminKey ? { 'x-admin-key': adminKey } : {})
+	};
 
-	const [mapsRes, deniedRes] = await Promise.all([
-		fetch(`${GEO_ASTRO_BASE}/api/adminpanel`, {
-			method: 'POST',
-			headers,
-			body: JSON.stringify({ action: 'list-maps' })
-		}),
+	// Map list comes from the Worker-compatible index (build-time JSON + live R2
+	// scan). The legacy /api/adminpanel list-maps reads src/pages/maps off disk,
+	// which does not exist in the deployed Worker bundle, so it always returns
+	// empty there.
+	const [indexRes, deniedRes] = await Promise.all([
+		fetch(`${GEO_ASTRO_BASE}/api/map-index.json`),
 		fetch(`${GEO_ASTRO_BASE}/api/admin/maps`, {
 			method: 'POST',
-			headers,
+			headers: authHeaders,
 			body: JSON.stringify({ action: 'list' })
 		})
 	]);
 
-	if (!mapsRes.ok) serverError(502, `geo-astro-site /api/adminpanel responded ${mapsRes.status}`);
-	const mapsData = await mapsRes.json();
+	if (!indexRes.ok) serverError(502, `geo-astro-site /api/map-index.json responded ${indexRes.status}`);
+	const indexJson: any = await indexRes.json();
+	const rawMaps: any[] = Array.isArray(indexJson) ? indexJson : indexJson.maps ?? [];
+
 	let denied: any[] = [];
 	if (deniedRes.ok) {
 		const d = await deniedRes.json();
@@ -30,14 +35,25 @@ export const load: PageServerLoad = async ({ fetch, platform }) => {
 	}
 	const deniedKeys = new Set(denied.map((d: any) => d.key));
 
-	const maps = (mapsData.maps ?? []).map((m: any) => {
-		const key = m.uuid ? `${m.uuid}/${m.slug}` : m.slug;
-		return { ...m, pathKey: key, denied: deniedKeys.has(key) };
+	const maps = rawMaps.map((m: any) => {
+		const uuid = m.categoryUuid ?? m.uuid ?? null;
+		const pathKey = uuid ? `${uuid}/${m.slug}` : m.slug;
+		const screenshotUrl = m.screenshot ? `${GEO_ASTRO_BASE}${m.screenshot}` : null;
+		return {
+			slug: m.slug,
+			title: m.title || m.slug,
+			uuid,
+			type: m.type || 'flat',
+			screenshotUrl,
+			hasScreenshot: !!m.screenshot,
+			pathKey,
+			denied: deniedKeys.has(pathKey)
+		};
 	});
 
 	return {
 		maps,
-		count: mapsData.count ?? 0,
+		count: maps.length,
 		denied,
 		deniedCount: denied.length,
 		base: GEO_ASTRO_BASE

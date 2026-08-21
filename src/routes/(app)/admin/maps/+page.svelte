@@ -9,12 +9,7 @@
 	const base = data.base ?? 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 
 	function shotUrl(map: any): string | null {
-		if (!map.hasScreenshot && !map.hasPublicScreenshot) return null;
-		// Public screenshots mirror the page layout: /api/screenshots/map/<uuid>/<slug>
-		// or /api/screenshots/map/<slug>.
-		return map.uuid
-			? `${base}/api/screenshots/map/${map.uuid}/${encodeURIComponent(map.slug)}.png`
-			: `${base}/api/screenshots/map/${encodeURIComponent(map.slug)}.png`;
+		return map.screenshotUrl ?? null;
 	}
 </script>
 
@@ -33,9 +28,9 @@
 		</div>
 	</div>
 
-	{#if form?.error}
+	{#if (form as any)?.error}
 		<p class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-			{form.error}
+			{(form as any).error}
 		</p>
 	{/if}
 

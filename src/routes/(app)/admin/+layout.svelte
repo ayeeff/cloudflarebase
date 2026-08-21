@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { resolve } from '$app/paths';
-	import { Folder, Map, FileText, LayoutTemplate, Shield } from '@lucide/svelte';
+	import { Folder, Map, FileText, LayoutTemplate, Shield, LogOut } from '@lucide/svelte';
+	import { enhance } from '$app/forms';
 
 	let { data, children } = $props();
 
@@ -17,29 +17,74 @@
 		href === '/admin' ? page.url.pathname === '/admin' : page.url.pathname.startsWith(href);
 </script>
 
-<div class="flex min-h-screen flex-col sm:flex-row">
-	<!-- Sidebar -->
-	<aside class="flex shrink-0 flex-col border-b border-border/40 bg-muted/30 sm:w-56 sm:border-b-0 sm:border-r">
-		<div class="flex items-center gap-2 px-4 py-4">
-			<Shield class="size-4 text-muted-foreground" />
-			<span class="text-sm font-semibold">Geo Admin</span>
+{#if !data.authed}
+	<div class="flex min-h-screen items-center justify-center bg-muted/30 p-4">
+		<div class="w-full max-w-sm rounded-lg border border-border/40 bg-background p-6 shadow-sm">
+			<div class="mb-4 flex items-center gap-2">
+				<Shield class="size-4 text-muted-foreground" />
+				<span class="text-sm font-semibold">Geo Admin</span>
+			</div>
+			{#if !data.configured}
+				<p class="text-sm text-destructive">
+					ADMIN_SECRET is not configured on this deployment, so the admin console is locked.
+					Set the ADMIN_SECRET var and redeploy.
+				</p>
+			{:else}
+				<form method="POST" action="?/login" use:enhance class="flex flex-col gap-3">
+					<label class="text-sm font-medium" for="password">Admin password</label>
+					<input
+						id="password"
+						name="password"
+						type="password"
+						autocomplete="current-password"
+						class="rounded-md border border-border bg-background px-3 py-2 text-sm"
+						required
+					/>
+					{#if (page.form as any)?.error}
+						<p class="text-xs text-destructive">{(page.form as any).error}</p>
+					{/if}
+					<button
+						type="submit"
+						class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+					>
+						Sign in
+					</button>
+				</form>
+			{/if}
 		</div>
-		<nav class="flex flex-row gap-1 px-2 pb-2 sm:flex-col">
-			{#each navItems as item}
-				<a
-					href={item.href}
-					class="flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-muted
-					{isActive(item.href) ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}"
-				>
-					<item.icon class="size-4" />
-					<span>{item.label}</span>
-				</a>
-			{/each}
-		</nav>
-	</aside>
+	</div>
+{:else}
+	<div class="flex min-h-screen flex-col sm:flex-row">
+		<!-- Sidebar -->
+		<aside class="flex shrink-0 flex-col border-b border-border/40 bg-muted/30 sm:w-56 sm:border-b-0 sm:border-r">
+			<div class="flex items-center justify-between px-4 py-4">
+				<span class="flex items-center gap-2">
+					<Shield class="size-4 text-muted-foreground" />
+					<span class="text-sm font-semibold">Geo Admin</span>
+				</span>
+				<form method="POST" action="?/logout" use:enhance>
+					<button type="submit" title="Sign out" class="text-muted-foreground hover:text-foreground">
+						<LogOut class="size-4" />
+					</button>
+				</form>
+			</div>
+			<nav class="flex flex-row gap-1 px-2 pb-2 sm:flex-col">
+				{#each navItems as item}
+					<a
+						href={item.href}
+						class="flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-muted
+						{isActive(item.href) ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}"
+					>
+						<item.icon class="size-4" />
+						<span>{item.label}</span>
+					</a>
+				{/each}
+			</nav>
+		</aside>
 
-	<!-- Content -->
-	<main class="flex-1 overflow-auto">
-		{@render children()}
-	</main>
-</div>
+		<!-- Content -->
+		<main class="flex-1 overflow-auto">
+			{@render children()}
+		</main>
+	</div>
+{/if}
