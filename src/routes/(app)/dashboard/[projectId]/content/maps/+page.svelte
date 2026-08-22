@@ -26,6 +26,51 @@
 		const el = document.getElementById(formId(prefix, item)) as HTMLFormElement | null;
 		el?.requestSubmit();
 	}
+
+	// ── Sorting ──
+	type SortKey = 'slug' | 'title' | 'uuid' | 'type' | 'views' | 'likes' | 'comments';
+	let sortKey = $state<SortKey | ''>('');
+	let sortDir = $state<'asc' | 'desc'>('desc');
+
+	function toggleSort(key: SortKey) {
+		if (sortKey === key) {
+			sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+		} else {
+			sortKey = key;
+			sortDir = key === 'slug' || key === 'title' || key === 'uuid' || key === 'type' ? 'asc' : 'desc';
+		}
+		page = 1;
+	}
+
+	const sortedMaps = $derived.by(() => {
+		if (!sortKey) return data.maps;
+		const dir = sortDir === 'asc' ? 1 : -1;
+		return [...data.maps].sort((a: any, b: any) => {
+			let av: any = a[sortKey];
+			let bv: any = b[sortKey];
+			if (typeof av === 'string' || typeof bv === 'string') {
+				return String(av ?? '').localeCompare(String(bv ?? '')) * dir;
+			}
+			av = Number(av) || 0;
+			bv = Number(bv) || 0;
+			return (av - bv) * dir;
+		});
+	});
+
+	// ── Pagination (50 / page) ──
+	const PER_PAGE = 50;
+	let page = $state(1);
+	const totalPages = $derived(Math.max(1, Math.ceil(sortedMaps.length / PER_PAGE)));
+	const pageMaps = $derived(sortedMaps.slice((page - 1) * PER_PAGE, page * PER_PAGE));
+
+	function gotoPage(p: number) {
+		page = Math.min(totalPages, Math.max(1, p));
+	}
+
+	function caret(key: SortKey): string {
+		if (sortKey !== key) return '';
+		return sortDir === 'asc' ? ' ▲' : ' ▼';
+	}
 </script>
 
 <svelte:head>
@@ -41,6 +86,9 @@
 				{data.count} generated maps · {data.deniedCount} hidden
 			</p>
 		</div>
+		{#if totalPages > 1}
+			<p class="text-xs text-muted-foreground">Page {page} / {totalPages}</p>
+		{/if}
 	</div>
 
 	{#if (form as any)?.error}
@@ -54,16 +102,19 @@
 			<Table.Header>
 				<Table.Row>
 					<Table.Head class="w-[72px]">Screenshot</Table.Head>
-					<Table.Head class="w-[24%]">Slug</Table.Head>
-					<Table.Head class="w-[34%]">Title</Table.Head>
-					<Table.Head class="w-[92px]">UUID</Table.Head>
-					<Table.Head class="w-[68px]">Type</Table.Head>
-					<Table.Head class="w-[64px]">Data</Table.Head>
+					<Table.Head class="w-[18%] cursor-pointer select-none" onclick={() => toggleSort('slug')}>Slug{caret('slug')}</Table.Head>
+					<Table.Head class="w-[20%] cursor-pointer select-none" onclick={() => toggleSort('title')}>Title{caret('title')}</Table.Head>
+					<Table.Head class="w-[80px] cursor-pointer select-none" onclick={() => toggleSort('views')}>Views{caret('views')}</Table.Head>
+					<Table.Head class="w-[68px] cursor-pointer select-none" onclick={() => toggleSort('likes')}>Likes{caret('likes')}</Table.Head>
+					<Table.Head class="w-[84px] cursor-pointer select-none" onclick={() => toggleSort('comments')}>Comments{caret('comments')}</Table.Head>
+					<Table.Head class="w-[80px] cursor-pointer select-none" onclick={() => toggleSort('uuid')}>UUID{caret('uuid')}</Table.Head>
+					<Table.Head class="w-[64px] cursor-pointer select-none" onclick={() => toggleSort('type')}>Type{caret('type')}</Table.Head>
+					<Table.Head class="w-[56px]">Data</Table.Head>
 					<Table.Head class="w-[150px]">Actions</Table.Head>
 				</Table.Row>
 			</Table.Header>
 			<Table.Body>
-				{#each data.maps as map (map.pathKey)}
+				{#each pageMaps as map (map.pathKey)}
 					<Table.Row class={map.denied ? 'opacity-60' : ''}>
 						<Table.Cell>
 							{#if shotUrl(map)}
@@ -90,6 +141,9 @@
 							</div>
 						</Table.Cell>
 						<Table.Cell class="truncate font-medium">{map.title || map.slug}</Table.Cell>
+						<Table.Cell class="text-right tabular-nums">{map.views}</Table.Cell>
+						<Table.Cell class="text-right tabular-nums">{map.likes}</Table.Cell>
+						<Table.Cell class="text-right tabular-nums">{map.comments}</Table.Cell>
 						<Table.Cell class="truncate font-mono text-xs">{map.uuid || '—'}</Table.Cell>
 						<Table.Cell>
 							<Badge variant="secondary">{map.type || 'flat'}</Badge>
@@ -128,6 +182,14 @@
 			</Table.Body>
 		</Table.Root>
 	</div>
+
+	{#if totalPages > 1}
+		<div class="flex items-center justify-center gap-2">
+			<Button size="sm" variant="outline" type="button" onclick={() => gotoPage(page - 1)} disabled={page <= 1}>Prev</Button>
+			<span class="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
+			<Button size="sm" variant="outline" type="button" onclick={() => gotoPage(page + 1)} disabled={page >= totalPages}>Next</Button>
+		</div>
+	{/if}
 
 	{#if data.deniedCount > 0}
 		<div class="rounded-lg border border-dashed">

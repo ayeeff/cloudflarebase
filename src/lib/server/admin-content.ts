@@ -32,7 +32,7 @@ export async function buildContentLoad(event: any, type: ContentType) {
 	if (adminKey) authHeaders['x-admin-key'] = adminKey;
 	const kind = KIND[type];
 
-	const [listRes, deniedRes] = await Promise.all([
+	const [listRes, deniedRes, statsRes] = await Promise.all([
 		geoAstroFetch(event.platform, `${ADMIN_API}/content?action=list&type=${type}`, {
 			headers: { 'content-type': 'application/json' },
 		}),
@@ -41,13 +41,26 @@ export async function buildContentLoad(event: any, type: ContentType) {
 			headers: authHeaders,
 			body: JSON.stringify({ action: 'list' }),
 		}),
+		geoAstroFetch(event.platform, '/api/social-stats.json', {
+			headers: { 'content-type': 'application/json' },
+		}),
 	]);
 
 	const entries: any[] = listRes.ok ? ((await listRes.json()).entries ?? []) : [];
 	const deniedList: any[] = deniedRes.ok ? ((await deniedRes.json()).denied ?? []) : [];
+	const stats: any = statsRes.ok
+		? await statsRes.json()
+		: { likes: {}, comments: {}, saves: {}, views: {} };
 	const deniedKeys = new Set(
 		deniedList.map((d: any) => d.key ?? (d.uuid ? `${d.uuid}/${d.slug}` : d.slug)),
 	);
+
+	const countFor = (e: any, metric: string): number => {
+		// SocialHarness keys engagement by the slug's last path segment.
+		const s = e.slug ?? e.pathKey;
+		const v = stats[metric]?.[s];
+		return typeof v === 'number' ? v : Number(v ?? 0) || 0;
+	};
 
 	const rows = entries.map((e: any) => {
 		const key = deniedKeyFor(type, e);
@@ -56,6 +69,9 @@ export async function buildContentLoad(event: any, type: ContentType) {
 			pathKey: key,
 			denied: deniedKeys.has(key),
 			url: e.url ?? `/${type}/${e.slug}`,
+			views: countFor(e, 'views'),
+			likes: countFor(e, 'likes'),
+			comments: countFor(e, 'comments'),
 		};
 	});
 

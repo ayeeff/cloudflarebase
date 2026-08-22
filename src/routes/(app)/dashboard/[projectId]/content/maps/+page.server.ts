@@ -15,12 +15,15 @@ export const load: PageServerLoad = async ({ platform }) => {
 	// Map list comes from the Worker-compatible index (build-time JSON + live R2
 	// scan). We reach geo-astro-site over the GEO_ASTRO SERVICE BINDING (not an
 	// HTTP fetch to *.workers.dev, which Cloudflare's edge blocks -> 502).
-	const [indexRes, deniedRes] = await Promise.all([
+	const [indexRes, deniedRes, statsRes] = await Promise.all([
 		geoAstroFetch(platform, '/api/map-index.json'),
 		geoAstroFetch(platform, '/api/admin/maps', {
 			method: 'POST',
 			headers: authHeaders,
 			body: JSON.stringify({ action: 'list' })
+		}),
+		geoAstroFetch(platform, '/api/social-stats.json', {
+			headers: { 'content-type': 'application/json' }
 		})
 	]);
 
@@ -35,10 +38,15 @@ export const load: PageServerLoad = async ({ platform }) => {
 	}
 	const deniedKeys = new Set(denied.map((d: any) => d.key));
 
+	const stats: any = statsRes.ok
+		? await statsRes.json()
+		: { likes: {}, comments: {}, saves: {}, views: {} };
+
 	const maps = rawMaps.map((m: any) => {
 		const uuid = m.categoryUuid ?? m.uuid ?? null;
 		const pathKey = uuid ? `${uuid}/${m.slug}` : m.slug;
 		const screenshotUrl = m.screenshot ? `${GEO_ASTRO_BASE}${m.screenshot}` : null;
+		const s = m.slug;
 		return {
 			slug: m.slug,
 			title: m.title || m.slug,
@@ -47,7 +55,10 @@ export const load: PageServerLoad = async ({ platform }) => {
 			screenshotUrl,
 			hasScreenshot: !!m.screenshot,
 			pathKey,
-			denied: deniedKeys.has(pathKey)
+			denied: deniedKeys.has(pathKey),
+			views: typeof stats.views?.[s] === 'number' ? stats.views[s] : Number(stats.views?.[s] ?? 0) || 0,
+			likes: typeof stats.likes?.[s] === 'number' ? stats.likes[s] : Number(stats.likes?.[s] ?? 0) || 0,
+			comments: typeof stats.comments?.[s] === 'number' ? stats.comments[s] : Number(stats.comments?.[s] ?? 0) || 0
 		};
 	});
 
