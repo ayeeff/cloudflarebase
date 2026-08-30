@@ -18,7 +18,7 @@ function isAtlasEntry(m: any): boolean {
 // Collection taxonomy — the per-city atlas families plus everything else.
 // Mirrors the AtlasNavigator dial (City / Schools / Universities / Religious /
 // Metro) with the thematic one-offs bucketed together.
-export const COLLECTIONS: { id: string; label: string; re: RegExp | null }[] = [
+const COLLECTIONS: { id: string; label: string; re: RegExp | null }[] = [
 	{ id: 'city', label: 'City', re: /-city-atlas$/i },
 	{ id: 'metro', label: 'Metro & Train', re: /-metro-train-atlas$/i },
 	{ id: 'worship', label: 'Worship', re: /-worship-atlas$/i },
