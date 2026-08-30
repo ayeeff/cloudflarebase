@@ -167,7 +167,11 @@ unbumped version merges to main and publishes nothing. Workers deploy through
 Workers Builds on push: `preview` builds the preview stack, `main` builds
 production.
 
-Push `preview`, verify against the preview stack, then merge to `main`.
+Push directly to `main` on the `fork` remote (`git push fork main`) — this
+deployment treats `main` as the working branch and Workers Builds deploys it
+straight to production. (The upstream `origin` remote is read-only for us;
+pushing there 403s.) The `preview` branch is optional; don't route dashboard
+edits through it.
 
 Secrets never gate a deploy: wrangler's `secrets.required` only drives
 typegen and local-dev warnings, and every agent degrades without its optional
