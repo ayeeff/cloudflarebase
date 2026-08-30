@@ -39,7 +39,9 @@
 		History,
 		House,
 		KeyRound,
+		Layers,
 		LayoutGrid,
+		Link2,
 		Menu,
 		Plug,
 		Plus,
@@ -877,17 +879,30 @@
 						Write
 					</a>
 					<a
-						href="/dashboard/geo-site/content/categories"
-						data-testid="nav-content-categories"
+						href="/dashboard/geo-site/content/webrings"
+						data-testid="nav-content-webrings"
 						class={[
 							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-							navActive('/dashboard/geo-site/content/categories')
+							navActive('/dashboard/geo-site/content/webrings')
 								? 'bg-primary/10 text-primary'
 								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 						]}
 					>
-						<FolderTree class="h-4 w-4" />
-						Categories
+						<Link2 class="h-4 w-4" />
+						Webrings
+					</a>
+					<a
+						href="/dashboard/geo-site/content/collections"
+						data-testid="nav-content-collections"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive('/dashboard/geo-site/content/collections')
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<Layers class="h-4 w-4" />
+						Collections
 					</a>
 				</div>
 			</div>
