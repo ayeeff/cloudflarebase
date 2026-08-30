@@ -27,6 +27,27 @@
 		el?.requestSubmit();
 	}
 
+	// ── Collection tabs ──
+	// All | City | Metro & Train | Worship | Schools | Universities | Thematic
+	const collectionLabels: Record<string, string> = { all: 'All' };
+	for (const c of data.collections ?? []) collectionLabels[c.id] = c.label;
+	let collection = $state<string>('all');
+	const collectionCounts = $derived.by(() => {
+		const counts: Record<string, number> = { all: data.maps.length };
+		for (const m of data.maps) counts[m.type] = (counts[m.type] ?? 0) + 1;
+		return counts;
+	});
+	const collectionOrder = $derived(
+		(data.collections ?? []).map((c: any) => c.id).filter((id: string) => (collectionCounts[id] ?? 0) > 0)
+	);
+	function setCollection(id: string) {
+		collection = id;
+		page = 1;
+	}
+	const visibleMaps = $derived(
+		collection === 'all' ? data.maps : data.maps.filter((m: any) => m.type === collection)
+	);
+
 	// ── Sorting ──
 	type SortKey = 'slug' | 'title' | 'type' | 'views' | 'likes' | 'comments';
 	let sortKey = $state<SortKey | ''>('');
@@ -43,9 +64,9 @@
 	}
 
 	const sortedMaps = $derived.by(() => {
-		if (!sortKey) return data.maps;
+		if (!sortKey) return visibleMaps;
 		const dir = sortDir === 'asc' ? 1 : -1;
-		return [...data.maps].sort((a: any, b: any) => {
+		return [...visibleMaps].sort((a: any, b: any) => {
 			let av: any = a[sortKey];
 			let bv: any = b[sortKey];
 			if (typeof av === 'string' || typeof bv === 'string') {
@@ -97,6 +118,38 @@
 		</p>
 	{/if}
 
+	<!-- Collection tabs: All | City | Metro & Train | Worship | Schools | Universities | Thematic -->
+	<div class="flex flex-wrap items-center gap-1.5" data-testid="atlas-collection-tabs">
+		<button
+			type="button"
+			onclick={() => setCollection('all')}
+			class={[
+				'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+				collection === 'all'
+					? 'border-primary bg-primary/10 text-primary'
+					: 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+			]}
+		>
+			All <span class="ml-1 opacity-70">{collectionCounts.all ?? 0}</span>
+		</button>
+		{#each collectionOrder as id (id)}
+			<button
+				type="button"
+				onclick={() => setCollection(id)}
+				data-testid="tab-{id}"
+				class={[
+					'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+					collection === id
+						? 'border-primary bg-primary/10 text-primary'
+						: 'border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+				]}
+			>
+				{collectionLabels[id] ?? id}
+				<span class="ml-1 opacity-70">{collectionCounts[id] ?? 0}</span>
+			</button>
+		{/each}
+	</div>
+
 	<div class="rounded-lg border">
 		<Table.Root class="w-full table-fixed">
 			<Table.Header>
@@ -107,7 +160,7 @@
 					<Table.Head class="w-[80px] cursor-pointer select-none" onclick={() => toggleSort('views')}>Views{caret('views')}</Table.Head>
 					<Table.Head class="w-[68px] cursor-pointer select-none" onclick={() => toggleSort('likes')}>Likes{caret('likes')}</Table.Head>
 					<Table.Head class="w-[84px] cursor-pointer select-none" onclick={() => toggleSort('comments')}>Comments{caret('comments')}</Table.Head>
-					<Table.Head class="w-[76px] cursor-pointer select-none" onclick={() => toggleSort('type')}>Type{caret('type')}</Table.Head>
+					<Table.Head class="w-[100px] cursor-pointer select-none" onclick={() => toggleSort('type')}>Collection{caret('type')}</Table.Head>
 					<Table.Head class="w-[150px]">Actions</Table.Head>
 				</Table.Row>
 			</Table.Header>
@@ -143,7 +196,7 @@
 						<Table.Cell class="text-right tabular-nums">{map.likes}</Table.Cell>
 						<Table.Cell class="text-right tabular-nums">{map.comments}</Table.Cell>
 						<Table.Cell>
-							<Badge variant="secondary">{map.type || 'atlas'}</Badge>
+							<Badge variant="secondary">{collectionLabels[map.type] ?? map.type}</Badge>
 						</Table.Cell>
 						<Table.Cell>
 							{#if map.denied}

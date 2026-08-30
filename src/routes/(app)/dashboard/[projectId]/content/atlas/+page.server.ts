@@ -15,6 +15,23 @@ function isAtlasEntry(m: any): boolean {
 	return !(m.categoryUuid ?? m.uuid ?? null);
 }
 
+// Collection taxonomy — the per-city atlas families plus everything else.
+// Mirrors the AtlasNavigator dial (City / Schools / Universities / Religious /
+// Metro) with the thematic one-offs bucketed together.
+export const COLLECTIONS: { id: string; label: string; re: RegExp | null }[] = [
+	{ id: 'city', label: 'City', re: /-city-atlas$/i },
+	{ id: 'metro', label: 'Metro & Train', re: /-metro-train-atlas$/i },
+	{ id: 'worship', label: 'Worship', re: /-worship-atlas$/i },
+	{ id: 'schools', label: 'Schools', re: /-schools-atlas$/i },
+	{ id: 'universities', label: 'Universities', re: /-universities-atlas$/i },
+	{ id: 'thematic', label: 'Thematic', re: null } // everything else
+];
+
+function collectionOf(slug: string): string {
+	for (const c of COLLECTIONS) if (c.re?.test(slug)) return c.id;
+	return 'thematic';
+}
+
 export const load: PageServerLoad = async ({ platform }) => {
 	const adminKey = platform?.env?.ADMIN_SECRET;
 	const authHeaders = {
@@ -59,7 +76,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 				slug: m.slug,
 				title: m.title || m.slug,
 				uuid: null,
-				type: m.type || 'atlas',
+				type: collectionOf(m.slug),
 				screenshotUrl,
 				hasScreenshot: !!m.screenshot,
 				pathKey: m.slug,
@@ -73,6 +90,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 	return {
 		maps,
 		count: maps.length,
+		collections: COLLECTIONS.map(({ id, label }) => ({ id, label })),
 		denied: denied.filter((d: any) => !d.uuid),
 		deniedCount: denied.filter((d: any) => !d.uuid).length,
 		base: GEO_ASTRO_BASE
