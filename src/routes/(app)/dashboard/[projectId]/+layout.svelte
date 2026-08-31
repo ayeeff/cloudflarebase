@@ -42,6 +42,7 @@
 		Layers,
 		LayoutGrid,
 		Link2,
+		ListTree,
 		Menu,
 		Plug,
 		Plus,
@@ -812,6 +813,7 @@
 				>
 					Content
 				</p>
+				<!-- eslint-disable svelte/no-navigation-without-resolve -- geo-site admin tool pages are hard-coded cross-project paths outside this project's resolve() scope -->
 				<div class="space-y-0.5 pl-0">
 					<a
 						href="/dashboard/geo-site/content/maps"
@@ -901,11 +903,25 @@
 								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 						]}
 					>
-					<Layers class="h-4 w-4" />
-					Collections
-				</a>
+						<Layers class="h-4 w-4" />
+						Collections
+					</a>
+					<a
+						href="/dashboard/geo-site/content/sitemap"
+						data-testid="nav-content-sitemap"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive('/dashboard/geo-site/content/sitemap')
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<ListTree class="h-4 w-4" />
+						Sitemap
+					</a>
+				</div>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			</div>
-		</div>
 
 			<div>
 				<p
