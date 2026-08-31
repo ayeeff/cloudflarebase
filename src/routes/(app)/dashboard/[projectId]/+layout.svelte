@@ -901,24 +901,11 @@
 								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 						]}
 					>
-						<Layers class="h-4 w-4" />
-						Collections
-					</a>
-					<a
-						href="/dashboard/geo-site/content/webrings"
-						data-testid="nav-content-webrings"
-						class={[
-							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-							navActive('/dashboard/geo-site/content/webrings')
-								? 'bg-primary/10 text-primary'
-								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-						]}
-					>
-						<Link2 class="h-4 w-4" />
-						Webrings
-					</a>
-				</div>
+					<Layers class="h-4 w-4" />
+					Collections
+				</a>
 			</div>
+		</div>
 
 			<div>
 				<p
