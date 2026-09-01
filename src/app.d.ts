@@ -47,6 +47,18 @@ declare global {
 				/** Service binding to the hosting-agent worker (fetch-only interface). */
 				HOSTING_AGENT: Fetcher;
 				/**
+				 * Service binding to the geo-astro-site Worker — reaches the geo-site
+				 * admin APIs for the /dashboard/geo-site/content/* pages without the
+				 * edge-blocked workers.dev subrequest.
+				 */
+				GEO_ASTRO: Fetcher;
+				/**
+				 * Service binding to the `update` Worker (the weekly World Bank refresh
+				 * cron for /maps/global-population + /maps/global-gdp) — powers the
+				 * /admin/update tab's status panel and manual-refresh button.
+				 */
+				UPDATE_WORKER: Fetcher;
+				/**
 				 * Optional per-tenant ceiling overrides (registry.ts defaults both
 				 * to 5). Not in any deployed config's vars, so they are typed here
 				 * instead of the generated worker-configuration.d.ts; the e2e stack

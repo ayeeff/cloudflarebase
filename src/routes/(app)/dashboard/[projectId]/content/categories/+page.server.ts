@@ -11,7 +11,9 @@ export const load: PageServerLoad = async ({ platform }) => {
 		'content-type': 'application/json',
 		...(adminKey ? { 'x-admin-key': adminKey } : {})
 	};
-	const res = await geoAstroFetch(platform, '/api/catmanager?action=list', { headers: authHeaders });
+	const res = await geoAstroFetch(platform, '/api/catmanager?action=list', {
+		headers: authHeaders
+	});
 	if (!res.ok) serverError(502, `geo-astro-site /api/catmanager responded ${res.status}`);
 	const json: any = await res.json();
 	return { categories: json.categories ?? [], count: json.count ?? 0, base: GEO_ASTRO_BASE };
@@ -37,7 +39,7 @@ export const actions: Actions = {
 		if (!res.ok) {
 			let msg = `geo-astro-site responded ${res.status}`;
 			try {
-				msg = (await res.json()).error ?? msg;
+				msg = ((await res.json()) as { error?: string }).error ?? msg;
 			} catch {}
 			return fail(res.status, { error: msg, uuid });
 		}
@@ -60,7 +62,7 @@ export const actions: Actions = {
 		if (!res.ok) {
 			let msg = `geo-astro-site responded ${res.status}`;
 			try {
-				msg = (await res.json()).error ?? msg;
+				msg = ((await res.json()) as { error?: string }).error ?? msg;
 			} catch {}
 			return fail(res.status, { error: msg, uuid });
 		}
@@ -83,7 +85,7 @@ export const actions: Actions = {
 		if (!res.ok) {
 			let msg = `geo-astro-site responded ${res.status}`;
 			try {
-				msg = (await res.json()).error ?? msg;
+				msg = ((await res.json()) as { error?: string }).error ?? msg;
 			} catch {}
 			return fail(res.status, { error: msg });
 		}

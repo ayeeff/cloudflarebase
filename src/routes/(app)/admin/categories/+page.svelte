@@ -4,7 +4,10 @@
 	import { Button } from '$lib/components/ui/button';
 	import { enhance } from '$app/forms';
 
-	let { data, form } = $props();
+	// load() on this route only throws a redirect to /dashboard/geo-site/content/categories,
+	// so generated PageData is never — annotate to keep svelte-check quiet for
+	// this legacy (unreachable) UI.
+	let { data, form }: { data: any; form: any } = $props();
 
 	let editingUuid = $state<string | null>(null);
 
@@ -25,18 +28,24 @@
 	</div>
 
 	{#if form?.error}
-		<p class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+		<p
+			class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+		>
 			{form.error}
 		</p>
 	{/if}
 	{#if form?.success}
-		<p class="rounded-md border border-green-500/40 bg-green-500/10 px-3 py-2 text-sm text-green-600">
+		<p
+			class="rounded-md border border-green-500/40 bg-green-500/10 px-3 py-2 text-sm text-green-600"
+		>
 			Action succeeded. Category changes are build-time — a redeploy is required for them to take
 			effect on the live site.
 		</p>
 	{/if}
 
-	<div class="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+	<div
+		class="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700"
+	>
 		Add / Edit / Delete write to the geo-astro-site filesystem and only succeed in a local/dev
 		deployment. On the live Worker they return “admin write unavailable”. Run them locally, then
 		redeploy. The list below is always live (read-only).
@@ -48,7 +57,7 @@
 		<textarea
 			name="input"
 			rows="4"
-			class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+			class="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm"
 			placeholder="fitness|Fitness & Health
 tech|Tech & Gadgets"
 		></textarea>
@@ -89,14 +98,24 @@ tech|Tech & Gadgets"
 									/>
 									<div class="flex gap-1">
 										<Button size="sm" type="submit">Save</Button>
-										<Button size="sm" variant="ghost" type="button" onclick={() => (editingUuid = null)}>
+										<Button
+											size="sm"
+											variant="ghost"
+											type="button"
+											onclick={() => (editingUuid = null)}
+										>
 											Cancel
 										</Button>
 									</div>
 								</form>
 							{:else}
 								<div class="flex gap-1">
-									<Button size="sm" variant="outline" type="button" onclick={() => (editingUuid = cat.uuid)}>
+									<Button
+										size="sm"
+										variant="outline"
+										type="button"
+										onclick={() => (editingUuid = cat.uuid)}
+									>
 										Edit
 									</Button>
 									<form method="POST" action="?/delete" use:enhance>

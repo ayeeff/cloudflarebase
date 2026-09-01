@@ -4,7 +4,10 @@
 	import { Button } from '$lib/components/ui/button';
 	import { enhance } from '$app/forms';
 
-	let { data, form } = $props();
+	// load() on this route only throws a redirect to /dashboard/geo-site/content/maps,
+	// so generated PageData is never — annotate to keep svelte-check quiet for
+	// this legacy (unreachable) UI.
+	let { data, form }: { data: any; form: any } = $props();
 
 	const base = data.base ?? 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 

@@ -81,8 +81,7 @@
 		{ "binding": "AUTH_AGENT", "service": "auth-agent" },
 		{ "binding": "DB_AGENT", "service": "db-agent" },
 		{ "binding": "GEO_ASTRO", "service": "geo-astro-site" },
-		
-		
+		{ "binding": "UPDATE_WORKER", "service": "update" }
 	],
 
 	// Control plane: the project registry. `database_id` is deliberately
@@ -172,9 +171,7 @@
 
 			"services": [
 				{ "binding": "AUTH_AGENT", "service": "auth-agent-local" },
-				{ "binding": "DB_AGENT", "service": "db-agent-local" },
-				
-				
+				{ "binding": "DB_AGENT", "service": "db-agent-local" }
 			],
 			"ratelimits": [
 				{
@@ -219,9 +216,7 @@
 
 			"services": [
 				{ "binding": "AUTH_AGENT", "service": "auth-agent-test" },
-				{ "binding": "DB_AGENT", "service": "db-agent-test" },
-				
-				
+				{ "binding": "DB_AGENT", "service": "db-agent-test" }
 			],
 			"ratelimits": [
 				{
@@ -266,9 +261,7 @@
 			],
 			"services": [
 				{ "binding": "AUTH_AGENT", "service": "auth-agent" },
-				{ "binding": "DB_AGENT", "service": "db-agent" },
-				
-				
+				{ "binding": "DB_AGENT", "service": "db-agent" }
 			],
 			"ratelimits": [
 				{
@@ -299,12 +292,12 @@
 			"preview_urls": true,
 			"routes": [],
 			"vars": {
-			"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-			"DEMO_MODE": "true",
-			"PUBLIC_SENTRY_DSN": "https://093f7505d223a871223f9a15130ef116@o4510375271530496.ingest.de.sentry.io/4511764377043024",
-			"PUBLIC_SENTRY_ENV": "preview",
-			"ADMIN_SECRET": "0x4AAAAAAEJ_VwA6_G2-99vgHc02jWYUaYg"
-		},
+				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+				"DEMO_MODE": "true",
+				"PUBLIC_SENTRY_DSN": "https://093f7505d223a871223f9a15130ef116@o4510375271530496.ingest.de.sentry.io/4511764377043024",
+				"PUBLIC_SENTRY_ENV": "preview",
+				"ADMIN_SECRET": "0x4AAAAAAEJ_VwA6_G2-99vgHc02jWYUaYg"
+			},
 			"ai": {
 				"binding": "AI"
 			},
@@ -326,13 +319,12 @@
 					"database_name": "cloudflarebase-control-plane-preview"
 				}
 			],
-		"services": [
-			{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" },
-			{ "binding": "DB_AGENT", "service": "db-agent-preview" },
-			{ "binding": "GEO_ASTRO", "service": "geo-astro-site" },
-			
-			
-		]
+			"services": [
+				{ "binding": "AUTH_AGENT", "service": "auth-agent-preview" },
+				{ "binding": "DB_AGENT", "service": "db-agent-preview" },
+				{ "binding": "GEO_ASTRO", "service": "geo-astro-site" },
+				{ "binding": "UPDATE_WORKER", "service": "update" }
+			]
 		}
 	}
 

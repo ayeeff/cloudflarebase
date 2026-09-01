@@ -11,6 +11,6 @@ export const load: PageServerLoad = async ({ fetch, platform }) => {
 		body: JSON.stringify({ action: 'get-categories' })
 	});
 	if (!response.ok) serverError(502, `geo-astro-site /api/addtemplate responded ${response.status}`);
-	const data = await response.json();
+	const data: any = await response.json();
 	return { categories: data.categories ?? [], count: data.count ?? 0 };
 };

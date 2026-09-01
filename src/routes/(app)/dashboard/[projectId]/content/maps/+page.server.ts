@@ -15,7 +15,9 @@ export const load: PageServerLoad = async ({ platform }) => {
 	// Map list comes from the Worker-compatible index (build-time JSON + live R2
 	// scan). We reach geo-astro-site over the GEO_ASTRO SERVICE BINDING (not an
 	// HTTP fetch to *.workers.dev, which Cloudflare's edge blocks -> 502).
-	const [indexRes, deniedRes, statsRes] = await Promise.all([
+	// The panel list supplies the on-disk presence flags (hasDataJson etc.)
+	// that the index doesn't carry.
+	const [indexRes, deniedRes, statsRes, panelRes] = await Promise.all([
 		geoAstroFetch(platform, '/api/map-index.json'),
 		geoAstroFetch(platform, '/api/admin/maps', {
 			method: 'POST',
@@ -24,19 +26,34 @@ export const load: PageServerLoad = async ({ platform }) => {
 		}),
 		geoAstroFetch(platform, '/api/social-stats.json', {
 			headers: { 'content-type': 'application/json' }
+		}),
+		geoAstroFetch(platform, '/api/admin/panel', {
+			method: 'POST',
+			headers: authHeaders,
+			body: JSON.stringify({ action: 'list-maps' })
 		})
 	]);
 
-	if (!indexRes.ok) serverError(502, `geo-astro-site /api/map-index.json responded ${indexRes.status}`);
+	if (!indexRes.ok)
+		serverError(502, `geo-astro-site /api/map-index.json responded ${indexRes.status}`);
 	const indexJson: any = await indexRes.json();
-	const rawMaps: any[] = Array.isArray(indexJson) ? indexJson : indexJson.maps ?? [];
+	const rawMaps: any[] = Array.isArray(indexJson) ? indexJson : (indexJson.maps ?? []);
 
 	let denied: any[] = [];
 	if (deniedRes.ok) {
-		const d = await deniedRes.json();
+		const d: any = await deniedRes.json();
 		denied = d.denied ?? [];
 	}
 	const deniedKeys = new Set(denied.map((d: any) => d.key));
+
+	// Panel rows are keyed "<uuid>/<slug>" or "<slug>" — same shape as pathKey.
+	const dataJsonKeys = new Set<string>();
+	if (panelRes.ok) {
+		const p: any = await panelRes.json().catch(() => null);
+		for (const row of p?.maps ?? []) {
+			dataJsonKeys.add(row.categoryUuid ? `${row.categoryUuid}/${row.slug}` : row.slug);
+		}
+	}
 
 	const stats: any = statsRes.ok
 		? await statsRes.json()
@@ -54,11 +71,17 @@ export const load: PageServerLoad = async ({ platform }) => {
 			type: m.type || 'flat',
 			screenshotUrl,
 			hasScreenshot: !!m.screenshot,
+			hasDataJson: dataJsonKeys.has(pathKey),
 			pathKey,
 			denied: deniedKeys.has(pathKey),
-			views: typeof stats.views?.[s] === 'number' ? stats.views[s] : Number(stats.views?.[s] ?? 0) || 0,
-			likes: typeof stats.likes?.[s] === 'number' ? stats.likes[s] : Number(stats.likes?.[s] ?? 0) || 0,
-			comments: typeof stats.comments?.[s] === 'number' ? stats.comments[s] : Number(stats.comments?.[s] ?? 0) || 0
+			views:
+				typeof stats.views?.[s] === 'number' ? stats.views[s] : Number(stats.views?.[s] ?? 0) || 0,
+			likes:
+				typeof stats.likes?.[s] === 'number' ? stats.likes[s] : Number(stats.likes?.[s] ?? 0) || 0,
+			comments:
+				typeof stats.comments?.[s] === 'number'
+					? stats.comments[s]
+					: Number(stats.comments?.[s] ?? 0) || 0
 		};
 	});
 

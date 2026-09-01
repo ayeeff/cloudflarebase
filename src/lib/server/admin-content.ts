@@ -18,7 +18,7 @@ const GEO_ASTRO_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 const KIND: Record<ContentType, string> = {
 	article: 'articles',
 	blog: 'blog',
-	write: 'write',
+	write: 'write'
 };
 
 function deniedKeyFor(type: ContentType, e: any): string {
@@ -34,25 +34,25 @@ export async function buildContentLoad(event: any, type: ContentType) {
 
 	const [listRes, deniedRes, statsRes] = await Promise.all([
 		geoAstroFetch(event.platform, `${ADMIN_API}/content?action=list&type=${type}`, {
-			headers: { 'content-type': 'application/json' },
+			headers: { 'content-type': 'application/json' }
 		}),
 		geoAstroFetch(event.platform, `${ADMIN_API}/${kind}`, {
 			method: 'POST',
 			headers: authHeaders,
-			body: JSON.stringify({ action: 'list' }),
+			body: JSON.stringify({ action: 'list' })
 		}),
 		geoAstroFetch(event.platform, '/api/social-stats.json', {
-			headers: { 'content-type': 'application/json' },
-		}),
+			headers: { 'content-type': 'application/json' }
+		})
 	]);
 
-	const entries: any[] = listRes.ok ? ((await listRes.json()).entries ?? []) : [];
-	const deniedList: any[] = deniedRes.ok ? ((await deniedRes.json()).denied ?? []) : [];
+	const entries: any[] = listRes.ok ? (((await listRes.json()) as any).entries ?? []) : [];
+	const deniedList: any[] = deniedRes.ok ? (((await deniedRes.json()) as any).denied ?? []) : [];
 	const stats: any = statsRes.ok
 		? await statsRes.json()
 		: { likes: {}, comments: {}, saves: {}, views: {} };
 	const deniedKeys = new Set(
-		deniedList.map((d: any) => d.key ?? (d.uuid ? `${d.uuid}/${d.slug}` : d.slug)),
+		deniedList.map((d: any) => d.key ?? (d.uuid ? `${d.uuid}/${d.slug}` : d.slug))
 	);
 
 	const countFor = (e: any, metric: string): number => {
@@ -71,7 +71,7 @@ export async function buildContentLoad(event: any, type: ContentType) {
 			url: e.url ?? `/${type}/${e.slug}`,
 			views: countFor(e, 'views'),
 			likes: countFor(e, 'likes'),
-			comments: countFor(e, 'comments'),
+			comments: countFor(e, 'comments')
 		};
 	});
 
@@ -81,7 +81,7 @@ export async function buildContentLoad(event: any, type: ContentType) {
 		rows,
 		count: rows.length,
 		denied: deniedList,
-		deniedCount: deniedList.length,
+		deniedCount: deniedList.length
 	};
 }
 
@@ -99,7 +99,7 @@ export function buildContentActions(kind: string) {
 			const res = await geoAstroFetch(platform, `${ADMIN_API}/${kind}`, {
 				method: 'POST',
 				headers: authHeaders,
-				body: JSON.stringify({ action: 'delete', slug, uuid }),
+				body: JSON.stringify({ action: 'delete', slug, uuid })
 			});
 			if (!res.ok) return { error: `geo-astro-site responded ${res.status}` };
 			return { success: true };
@@ -116,10 +116,10 @@ export function buildContentActions(kind: string) {
 			const res = await geoAstroFetch(platform, `${ADMIN_API}/${kind}`, {
 				method: 'POST',
 				headers: authHeaders,
-				body: JSON.stringify({ action: 'restore', slug, uuid }),
+				body: JSON.stringify({ action: 'restore', slug, uuid })
 			});
 			if (!res.ok) return { error: `geo-astro-site responded ${res.status}` };
 			return { success: true };
-		},
+		}
 	};
 }

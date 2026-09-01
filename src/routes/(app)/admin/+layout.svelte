@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { Folder, Map, FileText, LayoutTemplate, Shield, LogOut } from '@lucide/svelte';
+	import { Folder, Map, FileText, LayoutTemplate, Shield, LogOut, RefreshCw } from '@lucide/svelte';
 
 	let { data, children } = $props();
 
@@ -14,27 +14,26 @@
 		const form = event.currentTarget as HTMLFormElement;
 		const password = (new FormData(form).get('password') ?? '').toString();
 		try {
-		// Preserve any ?redirect= the content gate handed us (gate sends users
-		// here from /dashboard/geo-site/content/* when they aren't authed).
-		const redirectParam = window.location.search || '';
-		// redirect:'manual' so we see the 303 instead of letting fetch follow it
-		// to the target page (which would leave us parsing HTML as JSON and
-		// wrongly reporting "Login failed." even though the cookie was set).
-		const res = await fetch('/admin/login' + redirectParam, {
-			method: 'POST',
-			headers: { 'content-type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({ password }).toString(),
-			redirect: 'manual'
-		});
-		if (res.type === 'opaqueredirect' || res.status === 0) {
-			const target =
-				new URLSearchParams(redirectParam.replace(/^\?/, '')).get('redirect') ||
-				'/admin/maps';
-			window.location.href = target;
-			return;
-		}
-		const j = (await res.json().catch(() => ({}))) as { error?: string };
-		loginError = j.error ?? 'Login failed.';
+			// Preserve any ?redirect= the content gate handed us (gate sends users
+			// here from /dashboard/geo-site/content/* when they aren't authed).
+			const redirectParam = window.location.search || '';
+			// redirect:'manual' so we see the 303 instead of letting fetch follow it
+			// to the target page (which would leave us parsing HTML as JSON and
+			// wrongly reporting "Login failed." even though the cookie was set).
+			const res = await fetch('/admin/login' + redirectParam, {
+				method: 'POST',
+				headers: { 'content-type': 'application/x-www-form-urlencoded' },
+				body: new URLSearchParams({ password }).toString(),
+				redirect: 'manual'
+			});
+			if (res.type === 'opaqueredirect' || res.status === 0) {
+				const target =
+					new URLSearchParams(redirectParam.replace(/^\?/, '')).get('redirect') || '/admin/maps';
+				window.location.href = target;
+				return;
+			}
+			const j = (await res.json().catch(() => ({}))) as { error?: string };
+			loginError = j.error ?? 'Login failed.';
 		} catch {
 			loginError = 'Network error during login.';
 		} finally {
@@ -58,7 +57,8 @@
 		{ href: '/admin/articles', label: 'Articles', icon: FileText },
 		{ href: '/admin/blog', label: 'Blog Posts', icon: FileText },
 		{ href: '/admin/write', label: 'Write', icon: FileText },
-		{ href: '/admin/templates', label: 'Templates', icon: LayoutTemplate }
+		{ href: '/admin/templates', label: 'Templates', icon: LayoutTemplate },
+		{ href: '/admin/update', label: 'Update', icon: RefreshCw }
 	];
 
 	const isActive = (href: string) =>
@@ -74,8 +74,8 @@
 			</div>
 			{#if !data.configured}
 				<p class="text-sm text-destructive">
-					ADMIN_SECRET is not configured on this deployment, so the admin console is locked.
-					Set the ADMIN_SECRET var and redeploy.
+					ADMIN_SECRET is not configured on this deployment, so the admin console is locked. Set the
+					ADMIN_SECRET var and redeploy.
 				</p>
 			{:else}
 				<form onsubmit={submitLogin} class="flex flex-col gap-3">
@@ -105,13 +105,20 @@
 {:else}
 	<div class="flex min-h-screen flex-col sm:flex-row">
 		<!-- Sidebar -->
-		<aside class="flex shrink-0 flex-col border-b border-border/40 bg-muted/30 sm:w-56 sm:border-b-0 sm:border-r">
+		<aside
+			class="flex shrink-0 flex-col border-b border-border/40 bg-muted/30 sm:w-56 sm:border-r sm:border-b-0"
+		>
 			<div class="flex items-center justify-between px-4 py-4">
 				<span class="flex items-center gap-2">
 					<Shield class="size-4 text-muted-foreground" />
 					<span class="text-sm font-semibold">Geo Admin</span>
 				</span>
-				<button type="button" onclick={logout} title="Sign out" class="text-muted-foreground hover:text-foreground">
+				<button
+					type="button"
+					onclick={logout}
+					title="Sign out"
+					class="text-muted-foreground hover:text-foreground"
+				>
 					<LogOut class="size-4" />
 				</button>
 			</div>

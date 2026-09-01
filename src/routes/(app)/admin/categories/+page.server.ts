@@ -29,7 +29,7 @@ export const actions: Actions = {
 		if (!res.ok) {
 			let msg = `geo-astro-site responded ${res.status}`;
 			try {
-				msg = (await res.json()).error ?? msg;
+				msg = ((await res.json()) as { error?: string }).error ?? msg;
 			} catch {}
 			return fail(res.status, { error: msg, uuid });
 		}
@@ -52,7 +52,7 @@ export const actions: Actions = {
 		if (!res.ok) {
 			let msg = `geo-astro-site responded ${res.status}`;
 			try {
-				msg = (await res.json()).error ?? msg;
+				msg = ((await res.json()) as { error?: string }).error ?? msg;
 			} catch {}
 			return fail(res.status, { error: msg, uuid });
 		}
@@ -75,7 +75,7 @@ export const actions: Actions = {
 		if (!res.ok) {
 			let msg = `geo-astro-site responded ${res.status}`;
 			try {
-				msg = (await res.json()).error ?? msg;
+				msg = ((await res.json()) as { error?: string }).error ?? msg;
 			} catch {}
 			return fail(res.status, { error: msg });
 		}
