@@ -46,6 +46,7 @@
 		Menu,
 		Plug,
 		Plus,
+		RefreshCw,
 		Rocket,
 		SendHorizontal,
 		Settings,
@@ -918,6 +919,19 @@
 					>
 						<ListTree class="h-4 w-4" />
 						Sitemap
+					</a>
+					<a
+						href="/dashboard/geo-site/content/update"
+						data-testid="nav-content-update"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive('/dashboard/geo-site/content/update')
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<RefreshCw class="h-4 w-4" />
+						Update
 					</a>
 				</div>
 				<!-- eslint-enable svelte/no-navigation-without-resolve -->
