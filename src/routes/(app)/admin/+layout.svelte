@@ -1,6 +1,15 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { Folder, Map, FileText, LayoutTemplate, Shield, LogOut, RefreshCw } from '@lucide/svelte';
+	import {
+		Folder,
+		Map,
+		FileText,
+		LayoutTemplate,
+		Shield,
+		LogOut,
+		RefreshCw,
+		Search
+	} from '@lucide/svelte';
 
 	let { data, children } = $props();
 
@@ -58,7 +67,8 @@
 		{ href: '/admin/blog', label: 'Blog Posts', icon: FileText },
 		{ href: '/admin/write', label: 'Write', icon: FileText },
 		{ href: '/admin/templates', label: 'Templates', icon: LayoutTemplate },
-		{ href: '/admin/update', label: 'Update', icon: RefreshCw }
+		{ href: '/admin/update', label: 'Update', icon: RefreshCw },
+		{ href: '/admin/search_index', label: 'Search Index', icon: Search }
 	];
 
 	const isActive = (href: string) =>
