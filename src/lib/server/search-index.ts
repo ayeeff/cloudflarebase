@@ -20,6 +20,9 @@ export interface SearchIndexStatus {
 	total?: number | null;
 	stage?: { type: string; offset: number; total: number | null } | null;
 	types?: Record<string, { total: number; indexed: number }>;
+	/** Result of the sitemap.xml refresh that runs when the index finishes. */
+	sitemap?: { ok: boolean; urls?: number; error?: string; at?: string } | null;
+	httpChain?: { type: string; offset: number; error?: string | null } | null;
 	schedule?: string;
 	neverRun?: boolean;
 }

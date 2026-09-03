@@ -198,6 +198,16 @@
 						{fmtTime(nextDue)}
 					{/if}
 				</dd>
+				<dt class="text-muted-foreground">Sitemap</dt>
+				<dd data-testid="search-index-sitemap">
+					{#if status.sitemap?.ok}
+						refreshed — {status.sitemap.urls?.toLocaleString() ?? '—'} URLs
+					{:else if status.sitemap?.error}
+						<span class="text-destructive">{status.sitemap.error}</span>
+					{:else}
+						—
+					{/if}
+				</dd>
 			</dl>
 			{#if status.stage}
 				<p class="mt-2 rounded bg-muted/50 px-2 py-1 text-xs text-muted-foreground">
