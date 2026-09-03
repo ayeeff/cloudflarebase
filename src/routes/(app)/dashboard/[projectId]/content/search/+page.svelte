@@ -147,6 +147,11 @@
 			<p class="mt-3 text-sm text-destructive" data-testid="search-index-load-error">
 				Could not read the index status: {loadError}
 			</p>
+		{:else if status?.running && !status?.lastRunAt}
+			<p class="mt-3 text-sm text-amber-600" data-testid="search-index-first-run">
+				First update in progress — the index is being built now (the cron drives a few hundred
+				documents every 5 minutes). "Last updated" will appear here when it finishes.
+			</p>
 		{:else if status?.lastRunAt}
 			<dl class="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
 				<dt class="text-muted-foreground">When</dt>
