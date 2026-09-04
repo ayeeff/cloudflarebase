@@ -350,6 +350,7 @@
 					<option value="write" selected={data.type === 'write'}>Write</option>
 					<option value="blog" selected={data.type === 'blog'}>Blog</option>
 					<option value="guide" selected={data.type === 'guide'}>Guides</option>
+					<option value="portal" selected={data.type === 'portal'}>Portals</option>
 				</select>
 				<button
 					type="submit"
