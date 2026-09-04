@@ -56,3 +56,81 @@ export async function triggerUpdateRun(
 		return { ok: false, error: e instanceof Error ? e.message : 'update worker unreachable' };
 	}
 }
+
+// ── Monthly atlas refresh (update Worker /atlas/* endpoints) ─────────────────
+
+export interface AtlasProgress {
+	runId: string;
+	startedAt: string;
+	trigger?: 'cron' | 'manual';
+	dry?: boolean;
+	phase: 'refresh' | 'images' | 'done';
+	cities?: string[];
+	cityIndex?: number;
+	pages?: string[];
+	pageIndex?: number;
+	citiesDone?: number;
+	totals?: Record<string, number>;
+	families?: Record<string, Record<string, number>>;
+	overtureCities?: number;
+	errors?: string[];
+	lastBatchAt?: string;
+}
+
+export interface AtlasStatus {
+	ok: boolean;
+	feature?: string;
+	schedule?: string;
+	neverRun?: boolean;
+	status?: {
+		lastRunAt?: string;
+		trigger?: 'cron' | 'manual';
+		ok?: boolean;
+		error?: string;
+		durationMs?: number;
+		dry?: boolean;
+		totals?: Record<string, number>;
+		families?: Record<string, Record<string, number>>;
+		overtureCities?: number;
+	} | null;
+	progress?: AtlasProgress | null;
+	registry?: { count: number; cities: number; generatedAt?: string } | null;
+	overture?: { stagedAt?: string; cities?: number; failed?: number } | null;
+	error?: string;
+}
+
+export async function getAtlasStatus(
+	platform: App.Platform | null | undefined
+): Promise<AtlasStatus> {
+	try {
+		const res = await updateWorkerFetch(platform, '/atlas/status');
+		return (await res.json()) as AtlasStatus;
+	} catch (e) {
+		return { ok: false, error: e instanceof Error ? e.message : 'update worker unreachable' };
+	}
+}
+
+export async function triggerAtlasRun(
+	platform: App.Platform | null | undefined,
+	dry = false
+): Promise<{ ok: boolean; runId?: string; dry?: boolean; error?: string; progress?: AtlasProgress }> {
+	try {
+		const res = await updateWorkerFetch(platform, `/atlas/run${dry ? '?dry=1' : ''}`, { method: 'POST' });
+		const body = (await res.json().catch(() => ({}))) as {
+			ok?: boolean;
+			runId?: string;
+			dry?: boolean;
+			error?: string;
+			progress?: AtlasProgress;
+		};
+		return {
+			ok: res.ok && body?.ok !== false,
+			runId: body?.runId,
+			dry: body?.dry,
+			error: body?.error ?? (res.ok ? undefined : `update worker responded ${res.status}`),
+			progress: body?.progress
+		};
+	} catch (e) {
+		return { ok: false, error: e instanceof Error ? e.message : 'update worker unreachable' };
+	}
+}
