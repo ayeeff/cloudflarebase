@@ -840,24 +840,37 @@
 								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
 						]}
 					>
-<Globe class="h-4 w-4" />
-					Atlases
-				</a>
-				<a
-					href="/dashboard/geo-site/content/atlas-dashboard"
-					data-testid="nav-content-atlas-dashboard"
-					class={[
-						'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-						navActive('/dashboard/geo-site/content/atlas-dashboard')
-							? 'bg-primary/10 text-primary'
-							: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-					]}
-				>
-					<LayoutGrid class="h-4 w-4" />
-					Atlas Coverage
-				</a>
-				<a
-					href="/dashboard/geo-site/content/articles"
+						<Globe class="h-4 w-4" />
+						Atlases
+					</a>
+					<a
+						href="/dashboard/geo-site/content/atlas-dashboard"
+						data-testid="nav-content-atlas-dashboard"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive('/dashboard/geo-site/content/atlas-dashboard')
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<LayoutGrid class="h-4 w-4" />
+						Atlas Coverage
+					</a>
+					<a
+						href="/dashboard/geo-site/content/pmtiles-dashboard"
+						data-testid="nav-content-pmtiles"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive('/dashboard/geo-site/content/pmtiles-dashboard')
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<Database class="h-4 w-4" />
+						City Basemaps
+					</a>
+					<a
+						href="/dashboard/geo-site/content/articles"
 						data-testid="nav-content-articles"
 						class={[
 							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
