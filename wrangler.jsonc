@@ -81,7 +81,8 @@
 		{ "binding": "AUTH_AGENT", "service": "auth-agent" },
 		{ "binding": "DB_AGENT", "service": "db-agent" },
 		{ "binding": "GEO_ASTRO", "service": "geo-astro-site" },
-		{ "binding": "UPDATE_WORKER", "service": "update" }
+		{ "binding": "UPDATE_WORKER", "service": "update" },
+		{ "binding": "LAYERS", "service": "layers-worker" }
 	],
 
 	// Control plane: the project registry. `database_id` is deliberately
