@@ -32,7 +32,11 @@ export const load: PageServerLoad = async () => {
 		};
 	}
 	if (!res.ok) {
-		return { dash: null, error: `layers-worker /dashboard responded ${res.status}` };
+		const detail = await res.text().catch(() => '');
+		return {
+			dash: null,
+			error: `layers-worker /dashboard responded ${res.status}: ${detail.slice(0, 200)}`
+		};
 	}
 	const body: unknown = await res.json().catch(() => null);
 	if (!body || typeof body !== 'object' || !(body as Record<string, unknown>).ok) {
