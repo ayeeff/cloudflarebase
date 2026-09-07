@@ -974,6 +974,19 @@
 						Atlas Update
 					</a>
 					<a
+						href="/dashboard/geo-site/content/layers-update"
+						data-testid="nav-content-layers-update"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive('/dashboard/geo-site/content/layers-update')
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<Layers class="h-4 w-4" />
+						Layers Update
+					</a>
+					<a
 						href="/dashboard/geo-site/content/search"
 						data-testid="nav-content-search"
 						class={[

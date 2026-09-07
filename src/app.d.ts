@@ -59,6 +59,22 @@ declare global {
 				 */
 				UPDATE_WORKER: Fetcher;
 				/**
+				 * Service binding to the `layers-worker` Worker (the city-atlas layer
+				 * PMTiles pipeline: buildings/terrain/satellite/population/transit/
+				 * power/bathymetry built straight into R2) — powers the
+				 * /dashboard/geo-site/content/layers-update page (gap matrix, workflow
+				 * runs, manifest refresh). Bearer-gated by the worker's own
+				 * LAYERS_TOKEN secret; mirrored here as an optional secret.
+				 */
+				LAYERS: Fetcher;
+				/**
+				 * The layers-worker bearer token (optional until set — the worker
+				 * leaves GET /dashboard + /gaps public but 401s everything else).
+				 * Same token as `wrangler secret put LAYERS_TOKEN` on the
+				 * layers-worker itself.
+				 */
+				LAYERS_TOKEN?: string;
+				/**
 				 * Optional per-tenant ceiling overrides (registry.ts defaults both
 				 * to 5). Not in any deployed config's vars, so they are typed here
 				 * instead of the generated worker-configuration.d.ts; the e2e stack
