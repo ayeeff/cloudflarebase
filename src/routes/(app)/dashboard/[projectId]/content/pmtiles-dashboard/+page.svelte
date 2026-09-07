@@ -16,6 +16,13 @@
 	const citiesMeta: Record<string, CityMeta> = dash?.cities ?? {};
 	const files: { name: string; size: number; modified?: string }[] = dash?.files ?? [];
 	const manifestGeneratedAt: string | null = dash?.manifestGeneratedAt ?? null;
+	// N/A registry (layer/scan-na-layers.mjs → R2 basemaps/na.json): slug → layer
+	// keys whose data is unavailable/impossible to use — greyed out, not gaps.
+	const naReasons: Record<string, string> = dash?.naReasons ?? {};
+	const naGeneratedAt: string | null = dash?.naGeneratedAt ?? null;
+	const naSets = new Map<string, Set<string>>(
+		Object.entries(dash?.na ?? {}).map(([slug, keys]) => [slug, new Set(keys)])
+	);
 
 	// ── build the city × layer matrix from the manifest file list ──
 	type Cell = { size: number; sizeMB: number; url: string; name: string };
@@ -30,6 +37,8 @@
 		have: number;
 		total: number;
 		order: number;
+		naKeys: string[];
+		naCount: number;
 	};
 
 	const rows = $derived.by<Row[]>(() => {
@@ -56,7 +65,9 @@
 				cells: {},
 				have: 0,
 				total: 0,
-				order: order++
+				order: order++,
+				naKeys: [],
+				naCount: 0
 			};
 			const sizeMB = f.size / 1048576;
 			rec.cells[layer] = {
@@ -77,6 +88,12 @@
 			rec.stores = m?.stores ?? null;
 			rec.popM = m?.popM ?? null;
 			rec.have = Object.keys(rec.cells).length;
+			// N/A only applies to layers whose file is absent (a staged file wins)
+			const naSet = naSets.get(slug);
+			rec.naKeys = naSet
+				? layers.filter((l) => naSet.has(l.key) && !rec.cells[l.key]).map((l) => l.key)
+				: [];
+			rec.naCount = rec.naKeys.length;
 		}
 		return Object.values(bySlug);
 	});
@@ -86,7 +103,8 @@
 	let hideComplete = $state(false);
 	let onlyGaps = $state(false);
 	let sort = $state('name');
-	const gapOf = (r: Row) => layers.length - r.have;
+	// effective gaps: layers that are neither staged nor N/A
+	const gapOf = (r: Row) => layers.length - r.have - r.naCount;
 
 	const visible = $derived.by(() => {
 		const query = q.trim().toLowerCase();
@@ -128,17 +146,18 @@
 	});
 
 	// ── column + overview stats ──
-	type ColStat = { present: number; missing: number; bytes: number };
+	type ColStat = { present: number; missing: number; na: number; bytes: number };
 	const colStats = $derived.by<Record<string, ColStat>>(() => {
 		const out: Record<string, ColStat> = {};
 		for (const l of layers) {
-			const s: ColStat = { present: 0, missing: 0, bytes: 0 };
+			const s: ColStat = { present: 0, missing: 0, na: 0, bytes: 0 };
 			for (const r of rows) {
 				const c = r.cells[l.key];
 				if (c) {
 					s.present++;
 					s.bytes += c.size;
-				} else s.missing++;
+				} else if (r.naKeys.includes(l.key)) s.na++;
+				else s.missing++;
 			}
 			out[l.key] = s;
 		}
@@ -148,6 +167,7 @@
 	const totalBytes = $derived(rows.reduce((acc, r) => acc + r.total, 0));
 	const completeRows = $derived(rows.filter((r) => gapOf(r) === 0).length);
 	const missingCells = $derived(rows.reduce((acc, r) => acc + gapOf(r), 0));
+	const naCells = $derived(rows.reduce((acc, r) => acc + r.naCount, 0));
 
 	function fmtBytes(n: number): string {
 		if (n >= 1073741824) return `${(n / 1073741824).toFixed(2)} GB`;
@@ -236,6 +256,7 @@
 						<span><b>{layers.length}</b>layers</span>
 						<span><b>{completeRows}</b>complete</span>
 						<span class="m"><b>{missingCells}</b>gaps</span>
+						<span class="na"><b>{naCells}</b>n/a</span>
 						<span class="p"><b>{fmtBytes(totalBytes)}</b>total</span>
 					</div>
 				</div>
@@ -245,6 +266,7 @@
 						<div class="nums">
 							<span><b>{colStats[l.key]?.present ?? 0}</b>present</span>
 							<span class="m"><b>{colStats[l.key]?.missing ?? 0}</b>missing</span>
+							<span class="na"><b>{colStats[l.key]?.na ?? 0}</b>n/a</span>
 							<span class="mm"><b>{fmtBytes(colStats[l.key]?.bytes ?? 0)}</b>bytes</span>
 						</div>
 					</div>
@@ -254,6 +276,10 @@
 			<div class="legend">
 				<span><span class="chip ok"></span> pmtiles present in R2 (click = copy URL + open)</span>
 				<span><span class="chip missing"></span> not staged</span>
+				<span>
+					<span class="chip na"></span> N/A — data unavailable / impossible to use
+					{#if naGeneratedAt}(scan {naGeneratedAt.slice(0, 10)}){/if}
+				</span>
 			</div>
 
 			<div class="controls">
@@ -293,7 +319,8 @@
 									{l.label}
 									<span class="thc"
 										><i style="color:#6fe3a1">{colStats[l.key]?.present ?? 0}</i> ok ·
-										<i style="color:#ff8fa3">{colStats[l.key]?.missing ?? 0}</i> missing</span
+										<i style="color:#ff8fa3">{colStats[l.key]?.missing ?? 0}</i> missing ·
+										<i style="color:#9aa7b5">{colStats[l.key]?.na ?? 0}</i> n/a</span
 									>
 								</th>
 							{/each}
@@ -314,9 +341,13 @@
 								</td>
 								<td>
 									<span
-										class={['badge', r.have === layers.length ? 'all' : r.have <= 2 ? 'low' : '']}
+										class={[
+											'badge',
+											r.have === layers.length - r.naCount ? 'all' : r.have <= 2 ? 'low' : ''
+										]}
 									>
-										{r.have}/{layers.length}
+										{r.have}/{layers.length - r.naCount}
+										{#if r.naCount > 0}<span class="badgena">+{r.naCount} n/a</span>{/if}
 									</span>
 								</td>
 								{#each layers as l (r.slug + l.key)}
@@ -329,6 +360,12 @@
 												onclick={() => openCell(c)}
 												data-testid="cell-{r.slug}-{l.key}"
 											></button>
+										{:else if r.naKeys.includes(l.key)}
+											<span
+												class="dot na"
+												title="N/A — {naReasons[l.key] ?? 'data unavailable / impossible to use'}"
+												data-testid="cell-{r.slug}-{l.key}-na"
+											></span>
 										{:else}
 											<button
 												class="dot missing"
@@ -350,6 +387,13 @@
 
 			<div class="foot">
 				<span class="flabel">Names resolved from the live manifest ({rows.length} city rows).</span>
+				{#if naGeneratedAt}
+					<span class="flabel">
+						N/A scan {naGeneratedAt.slice(0, 10)} via <code>layer/scan-na-layers.mjs</code> — grey cells
+						are unavailable/impossible (landlocked bathymetry, no GTFS, no street imagery) and don't count
+						as gaps.
+					</span>
+				{/if}
 			</div>
 		</div>
 
@@ -595,6 +639,23 @@
 		background: var(--missing);
 		border-color: var(--missing-border);
 	}
+	.pdash .dot.na,
+	.pdash .chip.na {
+		background: #29313c;
+		border-color: #4a5462;
+		color: #9aa7b5;
+	}
+	.pdash .dot.na {
+		cursor: default;
+		background-image: repeating-linear-gradient(
+			-45deg,
+			transparent 0 4px,
+			rgba(255, 255, 255, 0.05) 4px 8px
+		);
+	}
+	.pdash .card .nums .na b {
+		color: #9aa7b5;
+	}
 	.pdash .badge {
 		display: inline-block;
 		min-width: 34px;
@@ -614,10 +675,25 @@
 		color: #ff8fa3;
 		border-color: var(--missing-border);
 	}
+	.pdash .badge .badgena {
+		margin-left: 4px;
+		color: #9aa7b5;
+		font-weight: 400;
+	}
 	.pdash .foot {
 		margin-top: 12px;
 		font-size: 11.5px;
 		color: var(--muted);
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 18px;
+	}
+	.pdash .foot code {
+		background: var(--panel2);
+		border: 1px solid var(--border);
+		border-radius: 5px;
+		padding: 0 5px;
+		font-size: 10.5px;
 	}
 	.toast {
 		position: fixed;

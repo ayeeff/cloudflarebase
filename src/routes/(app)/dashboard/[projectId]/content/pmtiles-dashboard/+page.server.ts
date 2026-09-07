@@ -25,6 +25,11 @@ interface Dash {
 	cities: Record<string, { city: string; country: string | null }>;
 	manifestGeneratedAt: string | null;
 	files: { name: string; size: number; modified?: string }[];
+	// N/A registry (layer/scan-na-layers.mjs → R2 basemaps/na.json): slug →
+	// layer keys whose data is unavailable/impossible to use (not merely unstaged)
+	na: Record<string, string[]>;
+	naReasons: Record<string, string>;
+	naGeneratedAt: string | null;
 }
 
 export const load: PageServerLoad = async ({ platform }) => {
