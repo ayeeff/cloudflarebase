@@ -884,6 +884,19 @@
 						Street View
 					</a>
 					<a
+						href="/dashboard/geo-site/content/gaps-dashboard"
+						data-testid="nav-content-gaps"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive('/dashboard/geo-site/content/gaps-dashboard')
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<Layers class="h-4 w-4" />
+						Layer Gaps
+					</a>
+					<a
 						href="/dashboard/geo-site/content/articles"
 						data-testid="nav-content-articles"
 						class={[
