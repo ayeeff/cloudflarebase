@@ -136,13 +136,29 @@
 </svelte:head>
 
 <div class="mx-auto max-w-full space-y-5 px-3 py-5 sm:px-6 sm:py-8">
-	<div>
-		<h1 class="text-2xl font-bold tracking-tight">Atlas Coverage</h1>
-		<p class="mt-1 text-sm text-muted-foreground">
-			{data.count} manifest cities &times; {types.length} atlas families — computed live from
-			<span class="font-mono">/data/atlas-collections.json</span>
-			<span class="font-mono">/api/map-index.json</span>. Click a cell to open (and copy) the page.
-		</p>
+	<div class="flex flex-wrap items-center justify-between gap-4">
+		<div>
+			<h1 class="text-2xl font-bold tracking-tight">Atlas Coverage</h1>
+			<p class="mt-1 text-sm text-muted-foreground">
+				{data.count} manifest cities &times; {types.length} atlas families — computed live from
+				<span class="font-mono">/data/atlas-collections.json</span>
+				<span class="font-mono">/api/map-index.json</span> ({data.env === 'preview' ? 'Preview deployment' : 'Production deployment'}). Click a cell to open (and copy) the page.
+			</p>
+		</div>
+		<div class="inline-flex rounded-lg border bg-muted/60 p-1 text-xs">
+			<a
+				href="?env=production"
+				class={['rounded-md px-3 py-1 font-medium transition-all', data.env !== 'preview' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground']}
+			>
+				Production (live)
+			</a>
+			<a
+				href="?env=preview"
+				class={['rounded-md px-3 py-1 font-medium transition-all', data.env === 'preview' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground']}
+			>
+				Preview (CI)
+			</a>
+		</div>
 	</div>
 
 	<!-- ── Stat cards ── -->

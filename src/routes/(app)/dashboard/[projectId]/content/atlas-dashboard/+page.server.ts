@@ -2,7 +2,8 @@ import { serverError } from '$lib/server/agents';
 import { geoAstroFetch } from '$lib/server/geo-astro';
 import type { PageServerLoad } from './$types';
 
-const GEO_ASTRO_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
+const GEO_ASTRO_PROD_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
+const GEO_ASTRO_PREVIEW_BASE = 'https://preview-geo-astro-site.foodstarmelbourne.workers.dev';
 
 // Mirrors the atlas/manifest.json TYPE_DEFS used by the repo-local
 // atlas/generate-dashboard.cjs. Each per-city atlas family derives its slug as
@@ -19,22 +20,41 @@ const TYPE_DEFS = [
 
 const FAMILY_RE = /-atlas$|-expensive-suburbs$/i;
 
-export const load: PageServerLoad = async ({ platform }) => {
-	const [collRes, indexRes] = await Promise.all([
-		// Live manifest: build-time seed (public/data/atlas-collections.json,
-		// regenerated every geo-site build) with an R2 override first when the
-		// Collections dashboard has edited it (src/worker.ts serves the override).
-		geoAstroFetch(platform, '/data/atlas-collections.json'),
-		// Live page list: build-time radar of src/pages/maps + src/pages/atlas
-		// complemented by R2-generated /maps/<uuid>/ maps.
-		geoAstroFetch(platform, '/api/map-index.json')
-	]);
+export const load: PageServerLoad = async ({ platform, url }) => {
+	const isPreview = url.searchParams.get('env') === 'preview';
+	const base = isPreview ? GEO_ASTRO_PREVIEW_BASE : GEO_ASTRO_PROD_BASE;
+
+	let collRes: Response;
+	let indexRes: Response;
+
+	if (isPreview) {
+		[collRes, indexRes] = await Promise.all([
+			fetch(`${GEO_ASTRO_PREVIEW_BASE}/data/atlas-collections.json`, {
+				headers: { accept: 'application/json' },
+				signal: AbortSignal.timeout(15000)
+			}),
+			fetch(`${GEO_ASTRO_PREVIEW_BASE}/api/map-index.json`, {
+				headers: { accept: 'application/json' },
+				signal: AbortSignal.timeout(15000)
+			})
+		]);
+	} else {
+		[collRes, indexRes] = await Promise.all([
+			// Live manifest: build-time seed (public/data/atlas-collections.json,
+			// regenerated every geo-site build) with an R2 override first when the
+			// Collections dashboard has edited it (src/worker.ts serves the override).
+			geoAstroFetch(platform, '/data/atlas-collections.json'),
+			// Live page list: build-time radar of src/pages/maps + src/pages/atlas
+			// complemented by R2-generated /maps/<uuid>/ maps.
+			geoAstroFetch(platform, '/api/map-index.json')
+		]);
+	}
 
 	if (!collRes.ok) {
-		serverError(502, `geo-astro-site /data/atlas-collections.json responded ${collRes.status}`);
+		serverError(502, `${isPreview ? 'preview-geo-astro-site' : 'geo-astro-site'} /data/atlas-collections.json responded ${collRes.status}`);
 	}
 	if (!indexRes.ok) {
-		serverError(502, `geo-astro-site /api/map-index.json responded ${indexRes.status}`);
+		serverError(502, `${isPreview ? 'preview-geo-astro-site' : 'geo-astro-site'} /api/map-index.json responded ${indexRes.status}`);
 	}
 
 	interface AtlasEntry {
@@ -104,7 +124,8 @@ export const load: PageServerLoad = async ({ platform }) => {
 		pageOnly,
 		pageOnlyCount: pageOnly.length,
 		count: cities.length,
-		base: GEO_ASTRO_BASE,
+		base,
+		env: isPreview ? 'preview' : 'production',
 		loadedAt: new Date().toISOString()
 	};
 };
