@@ -13,7 +13,7 @@
 		Check,
 		Copy,
 		Sparkles
-	} from 'lucide-svelte';
+	} from '@lucide/svelte';
 
 	let { data } = $props();
 
