@@ -61,10 +61,12 @@
 				rel="noopener"
 				class="text-blue-500 hover:underline">global-gdp</a
 			>
-			and 22 more country choropleths (growth, fertility, emissions, tourism, migration, military spending
+			and 70+ more country choropleths (growth, fertility, emissions, tourism, migration, military spending
 			— see the cards below). Runs on the
 			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">update</code>
-			Worker via cron; values land in R2 and the main site merges them at request time.
+			Worker via cron; values land in R2 and are synchronized into the
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">geo-datalake</code>
+			Iceberg data catalog for high-performance DuckDB analytics.
 		</p>
 	</div>
 
