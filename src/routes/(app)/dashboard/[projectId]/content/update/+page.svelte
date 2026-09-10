@@ -48,7 +48,8 @@
 	<div>
 		<h1 class="text-2xl font-bold tracking-tight">Update</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
-			Weekly World Bank refresh for the dataset maps (<a
+			Weekly World Bank / Our World in Data refresh for the dataset maps —
+			<a
 				href="{geoBase}/maps/global-population"
 				target="_blank"
 				rel="noopener"
@@ -59,7 +60,10 @@
 				target="_blank"
 				rel="noopener"
 				class="text-blue-500 hover:underline">global-gdp</a
-			>). Runs on the <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">update</code>
+			>
+			and 22 more country choropleths (growth, fertility, emissions, tourism, migration, military spending
+			— see the cards below). Runs on the
+			<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">update</code>
 			Worker via cron; values land in R2 and the main site merges them at request time.
 		</p>
 	</div>

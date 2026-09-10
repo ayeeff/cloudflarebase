@@ -44,11 +44,14 @@
 			Update
 		</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
-			Weekly World Bank refresh for the dataset maps (<a
-				class="underline"
-				href="{geoBase}/maps/global-population">global-population</a
+			Weekly World Bank / Our World in Data refresh for the dataset maps —
+			<a href="{geoBase}/maps/global-population" target="_blank" rel="noopener" class="underline"
+				>global-population</a
 			>,
-			<a class="underline" href="{geoBase}/maps/global-gdp">global-gdp</a>). Runs on the
+			<a href="{geoBase}/maps/global-gdp" target="_blank" rel="noopener" class="underline"
+				>global-gdp</a
+			>
+			and 22 more country choropleths. Runs on the
 			<code class="rounded bg-muted px-1">update</code> Worker via cron; values land in R2 and the main
 			site merges them at request time.
 		</p>
