@@ -21,6 +21,7 @@
 	const summary = data.summary;
 	const datasets = data.datasets ?? [];
 	const loadError = data.error;
+	const currentEnv = data.env ?? 'production';
 
 	// Filters
 	let q = $state('');
@@ -66,7 +67,7 @@
 
 <div class="flex flex-col gap-6 p-6" data-testid="data-dashboard">
 	<!-- Header -->
-	<div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+	<div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
 		<div>
 			<div class="flex items-center gap-2">
 				<Database class="size-6 text-primary" />
@@ -76,14 +77,23 @@
 				Raw tabular datasets in <code class="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">geo-datalake</code> and PMTiles layer feeds in <code class="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">globe</code>, mapped to referencing routes across <code class="font-mono text-xs text-primary">/maps/</code>, <code class="font-mono text-xs text-primary">/atlas/</code>, <code class="font-mono text-xs text-primary">/portal/</code>, and <code class="font-mono text-xs text-primary">/guide/</code>.
 			</p>
 		</div>
-		<div class="flex items-center gap-2">
-			<a
-				href="?env=preview"
-				class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-border bg-card hover:bg-accent text-foreground transition-colors"
-			>
-				<Sparkles class="size-3.5 text-amber-400" />
-				View Preview Worker
-			</a>
+		<div class="flex items-center gap-3">
+			<!-- Environment Toggle -->
+			<div class="inline-flex rounded-lg border bg-muted/60 p-1 text-xs">
+				<a
+					href="?env=production"
+					class={['rounded-md px-3 py-1 font-medium transition-all', currentEnv !== 'preview' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground']}
+				>
+					Production (live)
+				</a>
+				<a
+					href="?env=preview"
+					class={['rounded-md px-3 py-1 font-medium transition-all', currentEnv === 'preview' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground']}
+				>
+					Preview (CI)
+				</a>
+			</div>
+
 			<a
 				href="{base}/api/data-catalog.json"
 				target="_blank"
@@ -91,7 +101,7 @@
 				class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-border bg-card hover:bg-accent text-foreground transition-colors"
 			>
 				<ExternalLink class="size-3.5" />
-				Open Catalog API JSON
+				Catalog JSON
 			</a>
 		</div>
 	</div>

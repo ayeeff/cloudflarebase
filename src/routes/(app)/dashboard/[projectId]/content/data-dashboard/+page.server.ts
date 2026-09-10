@@ -46,41 +46,62 @@ export interface CatalogResponse {
 }
 
 export const load: PageServerLoad = async ({ platform, url }) => {
-	const isPreview = url.searchParams.get('env') === 'preview';
-	const base = isPreview ? GEO_ASTRO_PREVIEW_BASE : GEO_ASTRO_PROD_BASE;
+	const reqEnv = url.searchParams.get('env');
+	const isPreviewExplicit = reqEnv === 'preview';
+	const isProductionExplicit = reqEnv === 'production';
 
 	let catalogRes: Response | null = null;
-	try {
-		if (isPreview) {
+	let activeEnv: 'preview' | 'production' = isPreviewExplicit ? 'preview' : 'production';
+	let activeBase = activeEnv === 'preview' ? GEO_ASTRO_PREVIEW_BASE : GEO_ASTRO_PROD_BASE;
+
+	// 1. If explicit preview requested, fetch directly from preview
+	if (isPreviewExplicit) {
+		try {
 			catalogRes = await fetch(`${GEO_ASTRO_PREVIEW_BASE}/api/data-catalog.json`, {
 				headers: { accept: 'application/json' },
 				signal: AbortSignal.timeout(15000)
 			});
-		} else {
-			catalogRes = await geoAstroFetch(platform, '/api/data-catalog.json');
-		}
-	} catch (err) {
+		} catch (e) {}
+	} else if (isProductionExplicit) {
+		// Explicit production requested
 		try {
-			catalogRes = await fetch(`${base}/api/data-catalog.json`, {
-				headers: { accept: 'application/json' },
-				signal: AbortSignal.timeout(15000)
-			});
+			catalogRes = await geoAstroFetch(platform, '/api/data-catalog.json');
 		} catch (e) {
-			return {
-				ok: false,
-				error: `Data catalog unreachable: ${e instanceof Error ? e.message : String(e)}`,
-				base,
-				summary: null,
-				datasets: []
-			};
+			try {
+				catalogRes = await fetch(`${GEO_ASTRO_PROD_BASE}/api/data-catalog.json`, {
+					headers: { accept: 'application/json' },
+					signal: AbortSignal.timeout(15000)
+				});
+			} catch (err) {}
+		}
+	} else {
+		// Default auto mode: try GEO_ASTRO binding (production) first
+		try {
+			catalogRes = await geoAstroFetch(platform, '/api/data-catalog.json');
+		} catch (e) {}
+
+		// If production 404s (e.g. preview branch hasn't merged to master yet), auto-fallback to preview worker
+		if (!catalogRes || !catalogRes.ok) {
+			try {
+				const previewRes = await fetch(`${GEO_ASTRO_PREVIEW_BASE}/api/data-catalog.json`, {
+					headers: { accept: 'application/json' },
+					signal: AbortSignal.timeout(15000)
+				});
+				if (previewRes.ok) {
+					catalogRes = previewRes;
+					activeEnv = 'preview';
+					activeBase = GEO_ASTRO_PREVIEW_BASE;
+				}
+			} catch (e) {}
 		}
 	}
 
 	if (!catalogRes || !catalogRes.ok) {
 		return {
 			ok: false,
-			error: `Data catalog responded with status ${catalogRes ? catalogRes.status : '500'}`,
-			base,
+			error: `Data catalog responded with status ${catalogRes ? catalogRes.status : '404'}. The /api/data-catalog.json endpoint is live on the Preview Worker (toggle "Preview (CI)" above), and will be live on production once the preview branch is merged to master.`,
+			base: activeBase,
+			env: activeEnv,
 			summary: null,
 			datasets: []
 		};
@@ -90,7 +111,8 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 
 	return {
 		ok: true,
-		base,
+		base: activeBase,
+		env: activeEnv,
 		summary: data.summary,
 		datasets: data.datasets || []
 	};
