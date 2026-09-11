@@ -1,9 +1,11 @@
 import { serverError } from '$lib/server/agents';
 import { geoAstroFetch } from '$lib/server/geo-astro';
+import { getAtlasStatus, type AtlasStatus } from '$lib/server/update-worker';
 import type { PageServerLoad } from './$types';
 
 const GEO_ASTRO_PROD_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 const GEO_ASTRO_PREVIEW_BASE = 'https://preview-geo-astro-site.foodstarmelbourne.workers.dev';
+const UPDATE_WORKER_PROD_BASE = 'https://update.foodstarmelbourne.workers.dev';
 
 // Mirrors the atlas/manifest.json TYPE_DEFS used by the repo-local
 // atlas/generate-dashboard.cjs. Each per-city atlas family derives its slug as
@@ -26,9 +28,10 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 
 	let collRes: Response;
 	let indexRes: Response;
+	let atlasStatus: AtlasStatus | null = null;
 
 	if (isPreview) {
-		[collRes, indexRes] = await Promise.all([
+		const [cRes, iRes, sRes] = await Promise.all([
 			fetch(`${GEO_ASTRO_PREVIEW_BASE}/data/atlas-collections.json`, {
 				headers: { accept: 'application/json' },
 				signal: AbortSignal.timeout(15000)
@@ -36,18 +39,31 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 			fetch(`${GEO_ASTRO_PREVIEW_BASE}/api/map-index.json`, {
 				headers: { accept: 'application/json' },
 				signal: AbortSignal.timeout(15000)
-			})
+			}),
+			fetch(`${UPDATE_WORKER_PROD_BASE}/atlas/status`, {
+				headers: { accept: 'application/json' },
+				signal: AbortSignal.timeout(10000)
+			}).catch(() => null)
 		]);
+		collRes = cRes;
+		indexRes = iRes;
+		if (sRes && sRes.ok) {
+			atlasStatus = (await sRes.json().catch(() => null)) as AtlasStatus | null;
+		}
 	} else {
-		[collRes, indexRes] = await Promise.all([
+		const [cRes, iRes, sStatus] = await Promise.all([
 			// Live manifest: build-time seed (public/data/atlas-collections.json,
 			// regenerated every geo-site build) with an R2 override first when the
 			// Collections dashboard has edited it (src/worker.ts serves the override).
 			geoAstroFetch(platform, '/data/atlas-collections.json'),
 			// Live page list: build-time radar of src/pages/maps + src/pages/atlas
 			// complemented by R2-generated /maps/<uuid>/ maps.
-			geoAstroFetch(platform, '/api/map-index.json')
+			geoAstroFetch(platform, '/api/map-index.json'),
+			getAtlasStatus(platform).catch(() => null)
 		]);
+		collRes = cRes;
+		indexRes = iRes;
+		atlasStatus = sStatus;
 	}
 
 	if (!collRes.ok) {
@@ -56,6 +72,8 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	if (!indexRes.ok) {
 		serverError(502, `${isPreview ? 'preview-geo-astro-site' : 'geo-astro-site'} /api/map-index.json responded ${indexRes.status}`);
 	}
+
+	const collLastModified = collRes.headers.get('last-modified') || collRes.headers.get('date') || null;
 
 	interface AtlasEntry {
 		slug?: string;
@@ -126,6 +144,16 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 		count: cities.length,
 		base,
 		env: isPreview ? 'preview' : 'production',
-		loadedAt: new Date().toISOString()
+		loadedAt: new Date().toISOString(),
+		lastUpdated: {
+			collections: collLastModified,
+			poiLastRun: atlasStatus?.status?.lastRunAt ?? null,
+			poiDry: atlasStatus?.status?.dry ?? null,
+			registryGeneratedAt: atlasStatus?.registry?.generatedAt ?? null,
+			inProgress: !!atlasStatus?.progress && atlasStatus.progress.phase !== 'done',
+			progressBatchAt: atlasStatus?.progress?.lastBatchAt ?? null,
+			progressCitiesDone: atlasStatus?.progress?.citiesDone ?? null,
+			progressTotalCities: atlasStatus?.progress?.cities?.length ?? 500
+		}
 	};
 };

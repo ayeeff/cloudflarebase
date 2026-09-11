@@ -128,6 +128,35 @@
 		showToast(url + '  (copied)');
 		window.open(url, '_blank');
 	}
+
+	function formatAgo(iso: string | null | undefined): string {
+		if (!iso) return '';
+		const d = new Date(iso);
+		if (isNaN(d.getTime())) return '';
+		const s = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+		return s < 90
+			? `${s}s ago`
+			: s < 3600
+				? `${Math.floor(s / 60)}m ago`
+				: s < 86400
+					? `${Math.floor(s / 3600)}h ago`
+					: `${Math.floor(s / 86400)}d ago`;
+	}
+
+	function formatDateTime(iso: string | null | undefined): string {
+		if (!iso) return '';
+		const d = new Date(iso);
+		if (isNaN(d.getTime())) return '';
+		return d.toLocaleDateString(undefined, {
+			month: 'short',
+			day: 'numeric',
+			year: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
+	}
+
+	const lastUp = $derived(data.lastUpdated);
 </script>
 
 <svelte:head>
@@ -144,6 +173,33 @@
 				<span class="font-mono">/data/atlas-collections.json</span>
 				<span class="font-mono">/api/map-index.json</span> ({data.env === 'preview' ? 'Preview deployment' : 'Production deployment'}). Click a cell to open (and copy) the page.
 			</p>
+			{#if lastUp}
+				<div class="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+					{#if lastUp.inProgress}
+						<Badge variant="outline" class="border-amber-500/40 bg-amber-500/10 text-amber-500 font-medium">
+							<span class="mr-1.5 inline-block size-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+							POI refresh in progress ({lastUp.progressCitiesDone ?? 0}/{lastUp.progressTotalCities ?? 500} cities · {formatAgo(lastUp.progressBatchAt)})
+						</Badge>
+					{:else if lastUp.poiLastRun}
+						<Badge variant="outline" class="border-emerald-500/40 bg-emerald-500/10 text-emerald-500 font-medium">
+							POI data updated: {formatDateTime(lastUp.poiLastRun)} ({formatAgo(lastUp.poiLastRun)})
+						</Badge>
+					{/if}
+					{#if lastUp.registryGeneratedAt}
+						<Badge variant="secondary" class="font-normal text-muted-foreground">
+							Registry: {formatDateTime(lastUp.registryGeneratedAt)} ({formatAgo(lastUp.registryGeneratedAt)})
+						</Badge>
+					{/if}
+					{#if lastUp.collections}
+						<Badge variant="secondary" class="font-normal text-muted-foreground">
+							Collections: {formatDateTime(lastUp.collections)} ({formatAgo(lastUp.collections)})
+						</Badge>
+					{/if}
+					<Badge variant="secondary" class="font-normal text-muted-foreground">
+						Loaded: {formatAgo(data.loadedAt)}
+					</Badge>
+				</div>
+			{/if}
 		</div>
 		<div class="inline-flex rounded-lg border bg-muted/60 p-1 text-xs">
 			<a
