@@ -44,11 +44,14 @@
 	// PUBLIC_SENTRY_DSN covers server and browser reporting alike (a DSN is
 	// not a secret; it ships in the client bundle by design). Empty because a
 	// committed DSN would make this project the sink for every fork's errors.
+	// ADMIN_SECRET is deliberately NOT a var — it is a secret set with
+	// `wrangler secret put ADMIN_SECRET` on the target worker (CI cannot mint
+	// secrets). Never commit its value: the fleet /admin login and the
+	// x-admin-key sent to the geo-astro-site geo-admin proxy both read it.
 	"vars": {
 		"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 		"PUBLIC_SENTRY_DSN": "",
-		"PUBLIC_SENTRY_ENV": "production",
-		"ADMIN_SECRET": "0x4AAAAAAEJ_VwA6_G2-99vgHc02jWYUaYg"
+		"PUBLIC_SENTRY_ENV": "production"
 	},
 
 	// The project copilot: the tool-calling loop runs in this Worker's chat
@@ -296,8 +299,7 @@
 				"CHAT_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 				"DEMO_MODE": "true",
 				"PUBLIC_SENTRY_DSN": "https://093f7505d223a871223f9a15130ef116@o4510375271530496.ingest.de.sentry.io/4511764377043024",
-				"PUBLIC_SENTRY_ENV": "preview",
-				"ADMIN_SECRET": "0x4AAAAAAEJ_VwA6_G2-99vgHc02jWYUaYg"
+				"PUBLIC_SENTRY_ENV": "preview"
 			},
 			"ai": {
 				"binding": "AI"
