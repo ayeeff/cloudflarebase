@@ -80,6 +80,30 @@ export function operatorApiExposed(env: { EXPOSE_OPERATOR_API?: string }): boole
 	return env.EXPOSE_OPERATOR_API === 'true';
 }
 
+export interface GateEnv {
+	EXPOSE_OPERATOR_API?: string;
+	/** When set, every non-public path additionally requires `x-admin-key`. */
+	ADMIN_SECRET?: string;
+}
+
+/**
+ * Sync constant-time compare. Leaks only the length of the (fixed-length hex)
+ * secret, never its contents, and never throws on attacker-controlled input.
+ */
+function timingSafeEqualStr(a: string, b: string): boolean {
+	let diff = a.length !== b.length ? 1 : 0;
+	const n = Math.max(a.length, b.length);
+	for (let i = 0; i < n; i++) {
+		diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+	}
+	return diff === 0;
+}
+
+function operatorAuthorized(request: Request, env: GateEnv): boolean {
+	const provided = request.headers.get('x-admin-key') ?? '';
+	return timingSafeEqualStr(env.ADMIN_SECRET as string, provided);
+}
+
 /**
  * The 404 to answer with, or null to carry on. Everything that is not a
  * declared-public agent route is refused, `/internal/*` included - that one
@@ -87,10 +111,34 @@ export function operatorApiExposed(env: { EXPOSE_OPERATOR_API?: string }): boole
  * our topology and not of the package.
  */
 export function gateOperatorRoutes(
+	request: Request,
 	url: URL,
-	env: { EXPOSE_OPERATOR_API?: string },
+	env: GateEnv,
 ): Response | null {
-	if (operatorApiExposed(env)) return null;
+	const exposed = operatorApiExposed(env);
+	if (exposed && env.ADMIN_SECRET) {
+		// Our topology: ANOTHER public worker (the geo site) forwards /agents/*
+		// to this worker, so "no public hostname" no longer holds and binding
+		// trust alone is not enough. A deployment that sets ADMIN_SECRET keeps
+		// the operator plane open but requires the shared key on every
+		// non-public path; the refusal is the same 404 a closed surface gives,
+		// so the gate is not enumerable either. Public data paths never need
+		// it. Deployments without the secret keep the legacy flag-only
+		// behavior (fresh clones, local dev).
+		const match = AGENT_PATH.exec(url.pathname);
+		const subPath = match ? (match[1] ?? '/') : url.pathname;
+		const publicPath =
+			!url.pathname.startsWith('/internal/') && routeAccess(subPath) === 'public';
+		if (publicPath) return null;
+		// `new URL` resolves real dot segments before anything reads the path,
+		// but it leaves `%2e` alone - and classifying an encoded dot segment
+		// means betting on whether something downstream decodes it. Nothing
+		// this agent serves has one in its path, so refuse rather than guess.
+		if (/%2e/i.test(url.pathname)) return notFound();
+		if (operatorAuthorized(request, env)) return null;
+		return notFound();
+	}
+	if (exposed) return null;
 	// `new URL` resolves real dot segments before anything reads the path, but
 	// it leaves `%2e` alone - and classifying an encoded dot segment means
 	// betting on whether something downstream decodes it. Nothing this agent

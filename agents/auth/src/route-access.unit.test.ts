@@ -50,8 +50,18 @@ test('everything else is operator, declared or not', () => {
 	assert.equal(routeAccess('/api/authorize'), 'operator');
 });
 
-const gate = (path: string, env: { EXPOSE_OPERATOR_API?: string } = {}) =>
-	gateOperatorRoutes(new URL(`https://app.example${path}`), env);
+const gate = (
+	path: string,
+	env: { EXPOSE_OPERATOR_API?: string; ADMIN_SECRET?: string } = {},
+	key?: string
+) =>
+	gateOperatorRoutes(
+		new Request(`https://app.example${path}`, {
+			headers: key ? { 'x-admin-key': key } : {}
+		}),
+		new URL(`https://app.example${path}`),
+		env
+	);
 
 test('a public Worker serves public routes and refuses the rest', () => {
 	assert.equal(gate('/agents/auth-agent/p1/api/auth/sign-in/email'), null);
@@ -86,4 +96,30 @@ test('the flag opens the operator plane for a control-plane-only Worker', () => 
 		gate('/agents/auth-agent/p1/admin/users', { EXPOSE_OPERATOR_API: '1' })?.status,
 		404,
 	);
+});
+
+// Security-sensitive path: when the deployment sets ADMIN_SECRET the exposed
+// operator plane authenticates itself — another public worker forwards
+// /agents/* here, so binding trust alone is not enough. PUT /admin/roles with
+// `*` is the crown jewel this protects.
+const KEYED = { EXPOSE_OPERATOR_API: 'true', ADMIN_SECRET: 'a1b2c3d4-secret' };
+
+test('with ADMIN_SECRET the operator plane requires the shared key', () => {
+	// Public routes stay open, key or not.
+	assert.equal(gate('/agents/auth-agent/p1/api/auth/sign-in/email', KEYED), null);
+	assert.equal(gate('/agents/auth-agent/p1/config', KEYED), null);
+	// Operator paths refuse anonymous and wrong-key callers with the closed
+	// surface's ordinary 404 (not enumerable).
+	assert.equal(gate('/agents/auth-agent/p1/admin/users', KEYED)?.status, 404);
+	assert.equal(gate('/agents/auth-agent/p1/admin/users', KEYED, 'wrong-key')?.status, 404);
+	assert.equal(gate('/agents/auth-agent/p1/overview', KEYED)?.status, 404);
+	assert.equal(gate('/internal/projects/p1', KEYED)?.status, 404);
+	// The right key opens them.
+	assert.equal(gate('/agents/auth-agent/p1/admin/users', KEYED, 'a1b2c3d4-secret'), null);
+	assert.equal(gate('/agents/auth-agent/p1/overview', KEYED, 'a1b2c3d4-secret'), null);
+	assert.equal(gate('/internal/projects/p1', KEYED, 'a1b2c3d4-secret'), null);
+});
+
+test('without ADMIN_SECRET the legacy flag-only behavior is unchanged', () => {
+	assert.equal(gate('/agents/auth-agent/p1/admin/users', { EXPOSE_OPERATOR_API: 'true' }), null);
 });

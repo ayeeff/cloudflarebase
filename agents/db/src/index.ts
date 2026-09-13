@@ -2,7 +2,7 @@ import * as Sentry from '@sentry/cloudflare';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { getAgentByName, routeAgentRequest } from 'agents';
 import { drainUnusedBody } from './access';
-import { gateOperatorRoutes } from './route-access';
+import { gateOperatorRoutes, type GateEnv } from './route-access';
 import { isDurableObjectReset, DbAgent as DbAgentBase } from './agent';
 import { DbCollection as DbCollectionBase } from './collection';
 import { DbGateway as DbGatewayBase, gatewayName } from './gateway';
@@ -233,7 +233,7 @@ class DbService extends WorkerEntrypoint<Env> {
 		// the documented consumer install mounts this handler on their own
 		// PUBLIC Worker. Closed unless the deployment says otherwise
 		// (src/route-access.ts); a no-op wherever EXPOSE_OPERATOR_API is set.
-		const gated = gateOperatorRoutes(url, this.env);
+		const gated = gateOperatorRoutes(request, url, this.env as GateEnv);
 		if (gated) return gated;
 
 		const erase = url.pathname.match(/^\/internal\/projects\/([^/]+)$/);

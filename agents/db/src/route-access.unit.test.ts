@@ -47,8 +47,18 @@ test('the operator plane is operator, declared or not', () => {
 	assert.equal(routeAccess('/realtime-admin'), 'operator');
 });
 
-const gate = (path: string, env: { EXPOSE_OPERATOR_API?: string } = {}) =>
-	gateOperatorRoutes(new URL(`https://app.example${path}`), env);
+const gate = (
+	path: string,
+	env: { EXPOSE_OPERATOR_API?: string; ADMIN_SECRET?: string } = {},
+	key?: string
+) =>
+	gateOperatorRoutes(
+		new Request(`https://app.example${path}`, {
+			headers: key ? { 'x-admin-key': key } : {}
+		}),
+		new URL(`https://app.example${path}`),
+		env
+	);
 
 test('a public Worker serves the data paths and refuses the rest', () => {
 	assert.equal(gate('/agents/db-agent/p1/collections/orders/query'), null);
@@ -75,4 +85,29 @@ test('the flag opens the operator plane for a control-plane-only Worker', () => 
 	assert.equal(gate('/agents/db-agent/p1/admin/query', { EXPOSE_OPERATOR_API: 'true' }), null);
 	assert.equal(gate('/internal/projects/p1', { EXPOSE_OPERATOR_API: 'true' }), null);
 	assert.equal(gate('/agents/db-agent/p1/admin/query', { EXPOSE_OPERATOR_API: '1' })?.status, 404);
+});
+
+// Security-sensitive path: when the deployment sets ADMIN_SECRET the exposed
+// operator plane authenticates itself — another public worker forwards
+// /agents/* here, so binding trust alone is not enough.
+const KEYED = { EXPOSE_OPERATOR_API: 'true', ADMIN_SECRET: 'a1b2c3d4-secret' };
+
+test('with ADMIN_SECRET the operator plane requires the shared key', () => {
+	// Public data paths stay open, key or not.
+	assert.equal(gate('/agents/db-agent/p1/collections/orders/query', KEYED), null);
+	assert.equal(gate('/agents/db-agent/p1/realtime', KEYED), null);
+	// Operator paths refuse anonymous and wrong-key callers with the closed
+	// surface's ordinary 404 (not enumerable).
+	assert.equal(gate('/agents/db-agent/p1/admin/query', KEYED)?.status, 404);
+	assert.equal(gate('/agents/db-agent/p1/admin/query', KEYED, 'wrong-key')?.status, 404);
+	assert.equal(gate('/agents/db-agent/p1/overview', KEYED)?.status, 404);
+	assert.equal(gate('/internal/projects/p1', KEYED)?.status, 404);
+	// The right key opens them.
+	assert.equal(gate('/agents/db-agent/p1/admin/query', KEYED, 'a1b2c3d4-secret'), null);
+	assert.equal(gate('/agents/db-agent/p1/overview', KEYED, 'a1b2c3d4-secret'), null);
+	assert.equal(gate('/internal/projects/p1', KEYED, 'a1b2c3d4-secret'), null);
+});
+
+test('without ADMIN_SECRET the legacy flag-only behavior is unchanged', () => {
+	assert.equal(gate('/agents/db-agent/p1/admin/query', { EXPOSE_OPERATOR_API: 'true' }), null);
 });

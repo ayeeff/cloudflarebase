@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/cloudflare';
 import { getAgentByName, routeAgentRequest } from 'agents';
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { gateOperatorRoutes } from './route-access';
+import { gateOperatorRoutes, type GateEnv } from './route-access';
 import { AuthAgent as AuthAgentBase } from './agent';
 import { projectIdSchema } from './schemas';
 
@@ -49,7 +49,7 @@ class AuthService extends WorkerEntrypoint<Env> {
 		// their own PUBLIC Worker. Closed unless the deployment says otherwise
 		// (src/route-access.ts). A no-op here, where EXPOSE_OPERATOR_API is on a
 		// worker that has no public hostname to begin with.
-		const gated = gateOperatorRoutes(url, this.env);
+		const gated = gateOperatorRoutes(request, url, this.env as GateEnv);
 		if (gated) return gated;
 
 		// Erases one project's auth data. Outside /agents/* on purpose:

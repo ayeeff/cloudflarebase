@@ -42,14 +42,36 @@ export function assertProjectId(projectId: string | undefined): string {
 	return parsed.data;
 }
 
-type AgentEnv = Partial<Record<AppAgentEntry['binding'], Fetcher>>;
+type AgentEnv = Partial<Record<AppAgentEntry['binding'], Fetcher>> & { ADMIN_SECRET?: string };
 
-/** The entry's service binding, or undefined - for callers that fall through. */
+/**
+ * The entry's service binding — with the shared operator key attached.
+ *
+ * The agents gate their operator plane (`/admin/*`, `/overview`,
+ * `/internal/*`, the state-sync socket) on `x-admin-key` when the deployment
+ * sets `ADMIN_SECRET`: another public worker (the geo site) forwards
+ * `/agents/*` to them, so service-binding traffic is no longer trusted on
+ * its own. Public data paths ignore the header. WebSocket upgrades are
+ * passed through untouched (their paths are public data paths).
+ */
 export function agentFetcher(
 	platform: App.Platform | undefined,
 	entry: AppAgentEntry
 ): Fetcher | undefined {
-	return (platform?.env as AgentEnv | undefined)?.[entry.binding];
+	const agent = (platform?.env as AgentEnv | undefined)?.[entry.binding];
+	if (!agent || typeof agent.fetch !== 'function') return agent;
+	const secret = (platform?.env as AgentEnv | undefined)?.ADMIN_SECRET;
+	if (!secret) return agent;
+	return {
+		fetch: (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+			const req = input instanceof Request ? input : new Request(input, init);
+			// WebSocket upgrades hit public data paths (/realtime) — no key needed.
+			if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') return agent.fetch(req);
+			const headers = new Headers(req.headers);
+			if (!headers.has('x-admin-key')) headers.set('x-admin-key', secret);
+			return agent.fetch(new Request(req, { headers }));
+		}
+	} as unknown as Fetcher;
 }
 
 /** The entry's service binding, or a 500 naming the missing binding. */
