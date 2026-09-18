@@ -30,14 +30,10 @@
 	let siteBase = $derived(data.siteBase);
 
 	function getFlag(code: string): string {
-		if (code === 'US') return '🇺🇸';
-		if (code === 'AU') return '🇦🇺';
-		if (code === 'GB') return '🇬🇧';
-		if (code === 'FR') return '🇫🇷';
-		if (code === 'DE') return '🇩🇪';
-		if (code === 'CA') return '🇨🇦';
-		if (code.includes('IT')) return '🇮🇹 🇪🇸';
-		if (code.includes('JP')) return '🇯🇵 🇸🇬';
+		const c = code.split(',')[0].trim();
+		if (c.length === 2) {
+			return String.fromCodePoint(...[...c.toUpperCase()].map(char => 127397 + char.charCodeAt(0)));
+		}
 		return '🌐';
 	}
 </script>
@@ -347,14 +343,21 @@
 			</Card.Header>
 			<Card.Content class="space-y-3 text-xs">
 				<div class="space-y-1.5">
-					<span class="font-semibold text-foreground">Ingest Priority Atlas Countries:</span>
+					<span class="font-semibold text-foreground">Check Live R2 Address Partitions:</span>
 					<div class="rounded bg-muted/40 p-2.5 font-mono text-[11px] text-foreground select-all">
-						node scripts/sync-addresses-r2.mjs --countries=AU,US,GB,FR,DE,CA,JP,SG,IT,ES
+						node scripts/sync-addresses-r2.mjs --status
 					</div>
 				</div>
 
 				<div class="space-y-1.5">
-					<span class="font-semibold text-foreground">Run Full Global Ingestion (All 190+ Countries):</span>
+					<span class="font-semibold text-foreground">Ingest Great Britain (OS Open Names):</span>
+					<div class="rounded bg-muted/40 p-2.5 font-mono text-[11px] text-foreground select-all">
+						node scripts/build-gb-addresses.mjs
+					</div>
+				</div>
+
+				<div class="space-y-1.5">
+					<span class="font-semibold text-foreground">Run Full Global Overture Ingestion (All 39 Countries):</span>
 					<div class="rounded bg-muted/40 p-2.5 font-mono text-[11px] text-foreground select-all">
 						node scripts/sync-addresses-r2.mjs --all
 					</div>
@@ -364,8 +367,8 @@
 					<span class="font-semibold text-foreground">Query Direct from DuckDB over R2:</span>
 					<div class="rounded bg-muted/40 p-2.5 font-mono text-[11px] text-foreground select-all">
 						SELECT street, postcode, city, centroid_lat, centroid_lon<br/>
-						FROM read_parquet('s3://geo-datalake/sources/addresses/street_postcode_city/country=AU/*.parquet')<br/>
-						WHERE street ILIKE '%Swanston%' LIMIT 5;
+						FROM read_parquet('s3://geo-datalake/sources/addresses/street_postcode_city/country=US/*.parquet')<br/>
+						WHERE street ILIKE '%Broadway%' LIMIT 5;
 					</div>
 				</div>
 			</Card.Content>
