@@ -34,6 +34,7 @@
 		FolderOpen,
 		FolderTree,
 		Map,
+		MapPin,
 		GitBranch,
 		Globe,
 		HardDrive,
@@ -1065,6 +1066,19 @@
 					>
 						<Search class="h-4 w-4" />
 						Search Index
+					</a>
+					<a
+						href="/dashboard/geo-site/content/streets"
+						data-testid="nav-content-streets"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive('/dashboard/geo-site/content/streets')
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<MapPin class="h-4 w-4" />
+						Streets Index
 					</a>
 				</div>
 				<!-- eslint-enable svelte/no-navigation-without-resolve -->
