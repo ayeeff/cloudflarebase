@@ -36,7 +36,7 @@ export const POST: RequestHandler = async ({ request, cookies, platform }) => {
     sameSite: 'lax'
   });
 		const target = new URL(request.url).searchParams.get('redirect');
-		const safe = target && target.startsWith('/') && !target.startsWith('//') ? target : '/admin/maps';
+		const safe = target && target.startsWith('/') && !target.startsWith('//') ? target : '/dashboard/geo-site/content/maps';
 		return new Response(null, {
 			status: 303,
 			headers: { location: safe }

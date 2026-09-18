@@ -1,16 +1,17 @@
 import { serverError } from '$lib/server/agents';
+import { geoAstroFetch } from '$lib/server/geo-astro';
 import type { PageServerLoad } from './$types';
 
 const GEO_ASTRO_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 
-export const load: PageServerLoad = async ({ fetch, platform }) => {
+export const load: PageServerLoad = async ({ platform }) => {
 	const adminKey = platform?.env?.ADMIN_SECRET;
-	const response = await fetch(`${GEO_ASTRO_BASE}/api/addtemplate`, {
+	const response = await geoAstroFetch(platform, '/api/addtemplate', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json', ...(adminKey ? { 'x-admin-key': adminKey } : {}) },
 		body: JSON.stringify({ action: 'get-categories' })
 	});
 	if (!response.ok) serverError(502, `geo-astro-site /api/addtemplate responded ${response.status}`);
 	const data: any = await response.json();
-	return { categories: data.categories ?? [], count: data.count ?? 0 };
+	return { categories: data.categories ?? [], count: data.count ?? 0, base: GEO_ASTRO_BASE };
 };

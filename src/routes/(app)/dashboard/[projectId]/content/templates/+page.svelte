@@ -1,24 +1,25 @@
 <script lang="ts">
 	import * as Table from '$lib/components/ui/table';
 	import { Badge } from '$lib/components/ui/badge';
+	import { LayoutTemplate } from '@lucide/svelte';
 
 	let { data } = $props();
 </script>
 
 <svelte:head>
-	<title>Templates · Geo Admin · Cloudflarebase</title>
+	<title>Templates · Geo Dashboard · Cloudflarebase</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="mx-auto max-w-6xl space-y-6 px-3 py-5 sm:px-6 sm:py-8">
+<div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<div>
-			<h1 class="text-2xl font-bold tracking-tight">Templates</h1>
+			<h1 class="text-2xl font-bold tracking-tight">Category Templates</h1>
 			<p class="text-sm text-muted-foreground">{data.count} category templates (redesign via /addtemplate)</p>
 		</div>
 	</div>
 
-	<div class="rounded-lg border">
+	<div class="rounded-lg border bg-card">
 		<Table.Root>
 			<Table.Header>
 				<Table.Row>
