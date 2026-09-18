@@ -3,7 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
-	import { Globe, Map, FileText, Compass, BookOpen, PenTool, Edit, Search, User, Clock, CheckCircle2 } from 'lucide-svelte';
+	import { Globe, Map, FileText, Compass, BookOpen, PenTool, Edit, Search, User, Clock, CheckCircle2 } from '@lucide/svelte';
 
 	let { data } = $props();
 
