@@ -962,6 +962,19 @@
 						Webrings
 					</a>
 					<a
+						href="/dashboard/geo-site/content/user-activity"
+						data-testid="nav-content-user-activity"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive('/dashboard/geo-site/content/user-activity')
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<UsersRound class="h-4 w-4" />
+						User Visits
+					</a>
+					<a
 						href="/dashboard/geo-site/content/collections"
 						data-testid="nav-content-collections"
 						class={[
