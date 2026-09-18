@@ -450,6 +450,8 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 			totalCountries: '40 Countries (100% Ingested)',
 			bucket: 'geo-datalake',
 			prefix: 'sources/addresses/street_postcode_city/',
+			topStreetsCount: '45,079 Streets (Top 0.01%)',
+			topStreetsParquet: 'sources/addresses/top_streets.parquet (2.09 MB)',
 			freeTierLimit: '660 MB total (Zero Cloudflare Storage Cost)',
 			atlasCitiesCount: '380+'
 		},

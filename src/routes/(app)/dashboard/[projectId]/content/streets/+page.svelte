@@ -61,6 +61,16 @@
 
 		<div class="flex items-center gap-2">
 			<Button
+				variant="default"
+				size="sm"
+				href={`${siteBase}/address`}
+				target="_blank"
+				rel="noreferrer"
+			>
+				<Compass class="mr-1.5 size-4" />
+				Address Atlas (/address)
+			</Button>
+			<Button
 				variant="outline"
 				size="sm"
 				href={`${siteBase}/search?q=Bourke+Street`}
@@ -75,6 +85,19 @@
 
 	<!-- Top Metrics Cards -->
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+		<Card.Root class="border-border/60 shadow-xs">
+			<Card.Header class="flex flex-row items-center justify-between pb-2">
+				<Card.Title class="text-xs font-medium text-muted-foreground">Top 0.01% Popular Streets</Card.Title>
+				<Sparkles class="size-4 text-amber-500" />
+			</Card.Header>
+			<Card.Content>
+				<div class="text-2xl font-bold tracking-tight text-amber-500">45,079</div>
+				<p class="text-xs text-muted-foreground mt-1">
+					R2 Parquet: <code class="font-mono text-xs">top_streets.parquet</code> (2.09 MB)
+				</p>
+			</Card.Content>
+		</Card.Root>
+
 		<Card.Root class="border-border/60 shadow-xs">
 			<Card.Header class="flex flex-row items-center justify-between pb-2">
 				<Card.Title class="text-xs font-medium text-muted-foreground">Total Unique Streets</Card.Title>
