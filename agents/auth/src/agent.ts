@@ -1740,56 +1740,94 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		};
 		const session: { activeOrganizationId?: string | null } = resolved.session ?? {};
 
-		if (!user.isAnonymous) {
-			await ensurePersonalOrg(this.db, user);
+		let role = user.role ?? 'user';
+		let memberships: { id: string; name: string; slug: string; role: string }[] = [];
+		let invitations: any[] = [];
+
+		try {
+			if (!user.isAnonymous) {
+				await ensurePersonalOrg(this.db, user);
+			}
+		} catch (err) {
+			console.error('ensurePersonalOrg error in getConsoleMe:', err);
 		}
-		// Console-instance only (the route guarantees it): the deployment's
-		// administrator, healed into place if the role has never been assigned.
-		await ensureConsoleAdmin(this.db);
 
-		// The role is read from the TABLE, not from the session payload. The
-		// console runs a 60s signed cookie cache, and this role now gates the
-		// console's own project surfaces - a demotion that stays unenforced for
-		// a minute is a minute of administrator access nobody granted. It also
-		// makes the heal above take effect on the request that performs it.
-		const [current] = await this.db
-			.select({ role: schema.user.role })
-			.from(schema.user)
-			.where(eq(schema.user.id, user.id))
-			.limit(1);
-		const role = current?.role ?? user.role ?? 'user';
+		try {
+			// Console-instance only (the route guarantees it): the deployment's
+			// administrator, healed into place if the role has never been assigned.
+			await ensureConsoleAdmin(this.db);
+		} catch (err) {
+			console.error('ensureConsoleAdmin error in getConsoleMe:', err);
+		}
 
-		const memberships = await this.db
-			.select({
-				id: schema.organization.id,
-				name: schema.organization.name,
-				slug: schema.organization.slug,
-				role: schema.member.role,
-			})
-			.from(schema.member)
-			.innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
-			.where(eq(schema.member.userId, user.id))
-			.orderBy(asc(schema.member.createdAt));
+		try {
+			// The role is read from the TABLE, not from the session payload. The
+			// console runs a 60s signed cookie cache, and this role now gates the
+			// console's own project surfaces - a demotion that stays unenforced for
+			// a minute is a minute of administrator access nobody granted. It also
+			// makes the heal above take effect on the request that performs it.
+			const [current] = await this.db
+				.select({ role: schema.user.role })
+				.from(schema.user)
+				.where(eq(schema.user.id, user.id))
+				.limit(1);
+			role = current?.role ?? user.role ?? 'user';
+		} catch (err) {
+			console.error('user role query error in getConsoleMe:', err);
+		}
 
-		const invitations = await this.db
-			.select({
-				id: schema.invitation.id,
-				organizationId: schema.invitation.organizationId,
-				organizationName: schema.organization.name,
-				role: schema.invitation.role,
-				inviterEmail: schema.user.email,
-				expiresAt: schema.invitation.expiresAt,
-			})
-			.from(schema.invitation)
-			.innerJoin(schema.organization, eq(schema.organization.id, schema.invitation.organizationId))
-			.leftJoin(schema.user, eq(schema.user.id, schema.invitation.inviterId))
-			.where(
-				and(
-					eq(sql`lower(${schema.invitation.email})`, user.email.toLowerCase()),
-					eq(schema.invitation.status, 'pending'),
-					gt(schema.invitation.expiresAt, new Date()),
-				),
-			);
+		try {
+			memberships = await this.db
+				.select({
+					id: schema.organization.id,
+					name: schema.organization.name,
+					slug: schema.organization.slug,
+					role: schema.member.role,
+				})
+				.from(schema.member)
+				.innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
+				.where(eq(schema.member.userId, user.id))
+				.orderBy(asc(schema.member.createdAt));
+		} catch (err) {
+			console.error('memberships query error in getConsoleMe:', err);
+		}
+
+		try {
+			invitations = await this.db
+				.select({
+					id: schema.invitation.id,
+					organizationId: schema.invitation.organizationId,
+					organizationName: schema.organization.name,
+					role: schema.invitation.role,
+					inviterEmail: schema.user.email,
+					expiresAt: schema.invitation.expiresAt,
+				})
+				.from(schema.invitation)
+				.innerJoin(schema.organization, eq(schema.organization.id, schema.invitation.organizationId))
+				.leftJoin(schema.user, eq(schema.user.id, schema.invitation.inviterId))
+				.where(
+					and(
+						eq(sql`lower(${schema.invitation.email})`, user.email.toLowerCase()),
+						eq(schema.invitation.status, 'pending'),
+						gt(schema.invitation.expiresAt, new Date()),
+					),
+				);
+		} catch (err) {
+			console.error('invitations query error in getConsoleMe:', err);
+		}
+
+		const formattedInvitations = invitations.map((row) => {
+			let expiresIso: string;
+			try {
+				expiresIso = row.expiresAt instanceof Date ? row.expiresAt.toISOString() : new Date(row.expiresAt).toISOString();
+			} catch {
+				expiresIso = new Date().toISOString();
+			}
+			return {
+				...row,
+				expiresAt: expiresIso,
+			};
+		});
 
 		return Response.json({
 			user: {
@@ -1802,10 +1840,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 			},
 			session: { activeOrganizationId: session.activeOrganizationId ?? null },
 			organizations: memberships,
-			pendingInvitations: invitations.map((row) => ({
-				...row,
-				expiresAt: row.expiresAt.toISOString(),
-			})),
+			pendingInvitations: formattedInvitations,
 		} satisfies ConsoleMe);
 	}
 
