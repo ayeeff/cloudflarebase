@@ -82,6 +82,10 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 		continent?: string;
 		pop?: number;
 		categoryUuid?: string;
+		attachedAddresses?: number;
+		attachedStreets?: number;
+		streetsCovered?: number;
+		doorPoints?: number;
 	}
 
 	const collections = (await collRes.json()) as Record<string, AtlasEntry[]>;
@@ -127,7 +131,9 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 			continent: String(c.continent ?? ''),
 			pop: Number(c.pop) || 0,
 			prefix,
-			slugs
+			slugs,
+			attachedAddresses: Number(c.attachedAddresses ?? c.doorPoints ?? 0),
+			attachedStreets: Number(c.attachedStreets ?? c.streetsCovered ?? 0),
 		};
 	});
 

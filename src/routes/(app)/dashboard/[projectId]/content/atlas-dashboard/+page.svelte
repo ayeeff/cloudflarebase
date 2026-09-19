@@ -16,6 +16,8 @@
 		pop: number;
 		prefix: string;
 		slugs: Record<string, string | null>;
+		attachedAddresses: number;
+		attachedStreets: number;
 	};
 
 	const types = data.types as TypeDef[];
@@ -77,6 +79,12 @@
 		)
 	);
 	const completeRows = $derived(cities.filter((c) => gapsOf(c) === 0).length);
+	const totalAttachedAddresses = $derived(
+		cities.reduce((sum, c) => sum + (c.attachedAddresses || 0), 0)
+	);
+	const totalAttachedStreets = $derived(
+		cities.reduce((sum, c) => sum + (c.attachedStreets || 0), 0)
+	);
 
 	// ── Visible rows ──
 	const CONT_ORDER = ['Europe', 'Asia', 'North America', 'South America', 'Africa', 'Oceania'];
@@ -102,6 +110,10 @@
 		rows = [...rows];
 		if (sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name));
 		else if (sort === 'pop') rows.sort((a, b) => (b.pop || 0) - (a.pop || 0));
+		else if (sort === 'addresses')
+			rows.sort((a, b) => (b.attachedAddresses || 0) - (a.attachedAddresses || 0));
+		else if (sort === 'streets')
+			rows.sort((a, b) => (b.attachedStreets || 0) - (a.attachedStreets || 0));
 		else if (sort === 'continent')
 			rows.sort(
 				(a, b) =>
@@ -219,7 +231,7 @@
 
 	<!-- ── Stat cards ── -->
 	<div
-		class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
+		class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8"
 		data-testid="ac-overview-cards"
 	>
 		<div class="rounded-lg border bg-card p-3">
@@ -232,6 +244,17 @@
 				<span><b class="block text-lg font-bold text-amber-500">{totals.nopage}</b>no page</span>
 				<span
 					><b class="block text-lg font-bold text-violet-500">{pageOnly.length}</b>page-only</span
+				>
+			</div>
+		</div>
+		<div class="rounded-lg border bg-card p-3">
+			<h3 class="text-xs font-semibold text-muted-foreground">Attached Addresses</h3>
+			<div class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+				<span
+					><b class="block text-lg font-bold text-emerald-500">{(totalAttachedAddresses / 1e6).toFixed(1)}M</b>addresses</span
+				>
+				<span
+					><b class="block text-lg font-bold text-sky-500">{totalAttachedStreets.toLocaleString('en-US')}</b>streets</span
 				>
 			</div>
 		</div>
@@ -301,6 +324,8 @@
 		</label>
 		<NativeSelect bind:value={sort} class="h-8">
 			<option value="manifest">Sort: manifest order</option>
+			<option value="addresses">Sort: most attached addresses</option>
+			<option value="streets">Sort: most attached streets</option>
 			<option value="name">Sort: name A–Z</option>
 			<option value="pop">Sort: population</option>
 			<option value="continent">Sort: continent</option>
@@ -317,7 +342,13 @@
 			<thead>
 				<tr class="bg-card text-xs text-muted-foreground">
 					<th class="sticky top-0 z-10 border-b bg-card px-3 py-2 text-left">City</th>
-					<th class="sticky top-0 z-10 border-b bg-card px-2 py-2 text-left">Have</th>
+					<th class="sticky top-0 z-10 border-b bg-card px-3 py-2 text-right">
+						Attached Addresses
+						<span class="mt-0.5 block text-[10px] font-normal text-muted-foreground not-italic">
+							top 0.01% doors
+						</span>
+					</th>
+					<th class="sticky top-0 z-10 border-b bg-card px-2 py-2 text-center">Have</th>
 					{#each types as t, i (t.key)}
 						<th class="sticky top-0 z-10 border-b bg-card px-2 py-2 text-left">
 							{t.label}
@@ -340,6 +371,18 @@
 							<span class="block text-[11px] text-muted-foreground">
 								{c.continent} · pop {(c.pop || 0).toLocaleString('en-US')}
 							</span>
+						</td>
+						<td class="px-3 py-1.5 text-right font-mono text-xs tabular-nums align-top">
+							{#if (c.attachedAddresses || 0) > 0}
+								<span class="font-semibold text-emerald-500">
+									{(c.attachedAddresses || 0).toLocaleString('en-US')}
+								</span>
+								<span class="block text-[10px] text-muted-foreground">
+									{(c.attachedStreets || 0).toLocaleString('en-US')} {c.attachedStreets === 1 ? 'street' : 'streets'}
+								</span>
+							{:else}
+								<span class="text-muted-foreground/40">—</span>
+							{/if}
 						</td>
 						<td class="px-2 py-1.5 text-center">
 							<Badge
