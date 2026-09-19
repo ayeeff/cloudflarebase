@@ -108,11 +108,15 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	}
 
 	const cityEntries = collections.City ?? [];
-	// Dynamic City Atlases: all entries in collections.City are served live via SSR catch-all /atlas/[...slug].astro
-	for (const c of cityEntries) {
-		const slug = String(c.slug ?? '');
-		if (slug && !live.has(slug)) {
-			live.set(slug, { route: '/atlas/' });
+
+	// Dynamic Atlases: all entries across all 6 families in collections are served live via SSR catch-all /atlas/[...slug].astro
+	for (const t of TYPE_DEFS) {
+		const entries = collections[t.key] ?? [];
+		for (const e of entries) {
+			const slug = String(e.slug ?? '');
+			if (slug && !live.has(slug)) {
+				live.set(slug, { route: '/atlas/' });
+			}
 		}
 	}
 
