@@ -343,6 +343,7 @@
 					<option value="blog" selected={data.type === 'blog'}>Blog</option>
 					<option value="guide" selected={data.type === 'guide'}>Guides</option>
 					<option value="portal" selected={data.type === 'portal'}>Portals</option>
+					<option value="address" selected={data.type === 'address'}>Addresses</option>
 				</select>
 				<Button type="submit" variant="outline" class="h-9 shrink-0 px-3">Filter</Button>
 			</form>
