@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/sveltekit';
 
 // Layer-gaps dashboard: mirrors the layers-worker's public GET /gaps — the
 // per-city missing-layer matrix recomputed live from the R2 basemaps manifest
-// over the bundled 673-city candidate registry. Same access pattern as the
+// over the bundled candidate registry (1,228+ cities). Same access pattern as the
 // pmtiles/streetview dashboards: LAYERS service binding first (two Workers on
 // the same account cannot fetch() each other by URL — Cloudflare error 1042),
 // public URL fallback for local dev.

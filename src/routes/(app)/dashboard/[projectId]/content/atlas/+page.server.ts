@@ -11,19 +11,20 @@ const GEO_ASTRO_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 // the map denylist (worker.ts 404s denied /atlas/<slug>), and permanent
 // deletion needs filesystem access (dev checkout only).
 function isAtlasEntry(m: any): boolean {
-	if (!/-atlas$/i.test(String(m?.slug ?? ''))) return false;
+	if (!/-atlas$|-expensive-suburbs$/i.test(String(m?.slug ?? ''))) return false;
 	return !(m.categoryUuid ?? m.uuid ?? null);
 }
 
 // Collection taxonomy — the per-city atlas families plus everything else.
 // Mirrors the AtlasNavigator dial (City / Schools / Universities / Religious /
-// Metro) with the thematic one-offs bucketed together.
+// Expensive Suburbs / Metro) with the thematic one-offs bucketed together.
 const COLLECTIONS: { id: string; label: string; re: RegExp | null }[] = [
 	{ id: 'city', label: 'City', re: /-city-atlas$/i },
-	{ id: 'metro', label: 'Metro & Train', re: /-metro-train-atlas$/i },
-	{ id: 'worship', label: 'Worship', re: /-worship-atlas$/i },
+	{ id: 'metro', label: 'Metro & Train', re: /-metro-train-atlas$|-metro-and-train-stations-atlas$/i },
+	{ id: 'worship', label: 'Worship', re: /-worship-atlas$|-places-of-worship-atlas$/i },
 	{ id: 'schools', label: 'Schools', re: /-schools-atlas$/i },
 	{ id: 'universities', label: 'Universities', re: /-universities-atlas$/i },
+	{ id: 'suburbs', label: 'Expensive Suburbs', re: /-expensive-suburbs$/i },
 	{ id: 'thematic', label: 'Thematic', re: null } // everything else
 ];
 
