@@ -348,14 +348,17 @@ function classifyAccess(pathname: string): Access {
 
 /**
  * The guard's answer when the auth agent could not verify the session at all.
- * A 503, never a bounce to /login: the operator's credentials are not the
- * problem, and re-entering them cannot help.
+ * On interactive page requests, gracefully fall back to redirecting to /login
+ * rather than halting the worker with an unrecoverable 503 screen, allowing
+ * the operator to retry, inspect status, or access exempted admin fallbacks.
+ * For API requests, return 503 JSON with Retry-After.
  */
-function cannotVerifySession(kind: 'page' | 'api'): Response {
+function cannotVerifySession(kind: 'page' | 'api', nextUrl?: string): Response {
 	if (kind === 'page') {
-		// serverError, not error(): a 503 the operator sees is one Sentry must
-		// see too, and a bare `error()` never reaches handleError.
-		serverError(503, 'Cannot verify your session right now. Please retry in a moment.');
+		const target = nextUrl
+			? `/login?next=${encodeURIComponent(nextUrl)}&error=session_unavailable`
+			: '/login?error=session_unavailable';
+		redirect(303, target);
 	}
 	return Response.json(
 		{ error: 'cannot verify your session right now' },
@@ -597,7 +600,9 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 			null,
 			clientIp
 		);
-		if (resolved.status === 'unavailable') return cannotVerifySession(access.kind);
+		if (resolved.status === 'unavailable') {
+			return cannotVerifySession(access.kind, event.url.pathname + event.url.search);
+		}
 		event.locals.consoleIdentity = resolved.status === 'ok' ? resolved.identity : null;
 		event.locals.consoleUser = event.locals.consoleIdentity?.user ?? null;
 		return resolve(event);
@@ -611,12 +616,12 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 		clientIp
 	);
 
-	// Could not CHECK is not the same answer as not signed in, and the
-	// difference is the whole user experience: bouncing to /login here loops
-	// (that page resolves the session the same way and fails the same way) and
-	// asks an operator to retype credentials against an outage they cannot
-	// fix. Say so instead, and let the request be retried.
-	if (resolved.status === 'unavailable') return cannotVerifySession(access.kind);
+	// If the auth agent is temporarily unreachable or reporting an outage,
+	// gracefully fall back to login redirect on page requests rather than halting
+	// the whole worker with a hard 503 error.
+	if (resolved.status === 'unavailable') {
+		return cannotVerifySession(access.kind, event.url.pathname + event.url.search);
+	}
 
 	const identity = resolved.status === 'ok' ? resolved.identity : null;
 
@@ -638,7 +643,9 @@ const consoleGuardHandle: Handle = async ({ event, resolve }) => {
 			// A control plane that cannot answer must not read as "not yours" -
 			// the ownership lookup returns `unavailable` for that, distinct from
 			// a row that genuinely is not there.
-			if (ownership.unavailable) return cannotVerifySession(access.kind);
+			if (ownership.unavailable) {
+				return cannotVerifySession(access.kind, event.url.pathname + event.url.search);
+			}
 
 			// An id with no registry row is nobody's project, and reaching one
 			// used to MINT a working backend by URL: the agents provision a

@@ -3,7 +3,7 @@ import type { PageServerLoad } from './$types';
 
 const GEO_ASTRO_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 
-export interface StreetRegionStats {
+interface StreetRegionStats {
 	region: string;
 	countryCode: string;
 	uniqueStreets: string;
@@ -17,7 +17,7 @@ export interface StreetRegionStats {
 	partitionKey: string;
 }
 
-export const REGIONAL_STREET_STATS: StreetRegionStats[] = [
+const REGIONAL_STREET_STATS: StreetRegionStats[] = [
 	{
 		region: 'United States (US)',
 		countryCode: 'US',

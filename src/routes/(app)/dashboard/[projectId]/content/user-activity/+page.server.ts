@@ -20,7 +20,7 @@ export const load: PageServerLoad = async ({ params, url, platform }) => {
 		const agent = requireAuthAgent(platform);
 		const overviewRes = await agent.fetch(agentUrl(url.origin, projectId, '/overview'));
 		if (overviewRes.ok) {
-			const overview = await overviewRes.json();
+			const overview: any = await overviewRes.json();
 			registeredUsers = overview.users || [];
 		}
 	} catch (e) {
