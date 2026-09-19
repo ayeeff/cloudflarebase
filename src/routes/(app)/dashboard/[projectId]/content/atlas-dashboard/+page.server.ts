@@ -104,6 +104,14 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	}
 
 	const cityEntries = collections.City ?? [];
+	// Dynamic City Atlases: all entries in collections.City are served live via SSR catch-all /atlas/[...slug].astro
+	for (const c of cityEntries) {
+		const slug = String(c.slug ?? '');
+		if (slug && !live.has(slug)) {
+			live.set(slug, { route: '/atlas/' });
+		}
+	}
+
 	const cities = cityEntries.map((c) => {
 		const name = String(c.slug ?? '').replace(/-city-atlas$/i, '');
 		const prefix = name;
