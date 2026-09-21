@@ -60,31 +60,33 @@ jobs:
           mkdir -p bin && mv pmtiles bin/pmtiles && chmod +x bin/pmtiles
           ./bin/pmtiles --help | head -3
 
-      # The runner disk (~14 GB) can never hold the 88 GiB planet - stream it
-      # straight from R2 into osmium via a pipe. Disk only holds the (~1-2 GB)
-      # filtered route file.
-      - name: Stream planet from R2 through osmium tags-filter
+      # osmium's reference completion needs a SEEKABLE input, so a plain pipe
+      # from `aws s3 cp -` is not enough. Instead presign the R2 object and let
+      # osmium read the URL directly (libcurl + range requests; the planet is
+      # read twice, R2 egress is free).
+      - name: Presign planet URL + tags-filter via osmium
         timeout-minutes: 240
         run: |
           set -o pipefail
-          curl -sL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+          curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
           unzip -q awscliv2.zip && sudo ./aws/install --update
           aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           mkdir -p work
-          time aws s3 cp "s3://geo-datalake/sources/osm/${{ inputs.planet_key }}" - \
-            --endpoint-url "https://$CF_ACCOUNT_ID.r2.cloudflarestorage.com" \
-          | osmium tags-filter -F pbf - \
+          URL=$(aws s3 presign "s3://geo-datalake/sources/osm/${{ inputs.planet_key }}" \
+            --endpoint-url "https://$CF_ACCOUNT_ID.r2.cloudflarestorage.com" --expires-in 604800)
+          echo "presigned url length: ${#URL}"
+          osmium fileinfo "$URL" | head -20
+          time osmium tags-filter "$URL" \
             "r/route=train" "r/route=subway" "r/route=tram" "r/route=light_rail" \
             "r/route=monorail" "r/route=funicular" "r/route=railway" "r/route=ferry" \
-            -o work/routes.osm.pbf --overwrite
+            -F pbf -o work/routes.osm.pbf --overwrite
           ls -la work/
           df -h /
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
 
       - name: Assemble route geometries
         run: |
