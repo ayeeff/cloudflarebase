@@ -1,11 +1,17 @@
 name: OSM route relations -> per-city transit pmtiles
 
 # "Compute-near-data" pass over the planet.pbf sitting in the geo-datalake R2
-# bucket (88 GiB): streams it from R2 (fast CF<->GH link, zero local traffic),
-# filters route relations + member ways with osmium, assembles
-# MultiLineStrings per city, and uploads <slug>-osmtransit.pmtiles to R2
-# globe/basemaps/. The extraction scripts + city list live in the geo site
-# repo (ayeeff/astrogl, branch preview, layer/osm-routes/).
+# bucket (88 GiB): the runner disk cannot hold it and libosmium has no HTTP
+# input, so the planet is STREAMED from R2 three times (single-pass osmium
+# commands, stdin-compatible; R2 egress is free):
+#
+#   Pass A: osmium tags-filter -R  -> relations.osm.pbf (matched route relations)
+#   Pass B: osmium getid -i wayids.txt   -> ways.osm.pbf  (member ways)
+#   Pass C: osmium getid -i nodeids.txt  -> nodes.osm.pbf (referenced nodes)
+#   Merge:  osmium cat -> routes.osm.pbf -> python assembly -> per-city pmtiles
+#
+# The extraction scripts + city list live in the geo site repo
+# (ayeeff/astrogl, branch preview, layer/osm-routes/).
 #
 # Lives in this repo because GitHub only registers workflow_dispatch on the
 # default branch, and astrogl's default branch (master) must not be touched.
@@ -27,6 +33,10 @@ concurrency:
   group: osm-route-relations
   cancel-in-progress: false
 
+env:
+  PLANET: s3://geo-datalake/sources/osm/${{ inputs.planet_key || 'planet-260914.osm.pbf' }}
+  ENDPOINT: https://${{ secrets.CF_ACCOUNT_ID }}.r2.cloudflarestorage.com
+
 jobs:
   extract:
     runs-on: ubuntu-latest
@@ -47,14 +57,12 @@ jobs:
       - name: Install system deps (python osmium + build tools)
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ make libosmium-dev libprotozero-dev libexpat1-dev zlib1g-dev libbz2-dev liblz4-dev libcurl4-openssl-dev libboost-program-options-dev nlohmann-json3-dev python3-pip
+          sudo apt-get install -y cmake g++ make libosmium-dev libprotozero-dev libexpat1-dev zlib1g-dev libbz2-dev liblz4-dev libboost-program-options-dev nlohmann-json3-dev python3-pip
           pip3 install --break-system-packages osmium
 
-      # apt osmium-tool has NO libcurl input support ("No such file or directory"
-      # on URLs) and reference completion cannot read from a pipe, so build
-      # osmium-tool from source WITH curl to read the presigned R2 URL directly
-      # (range requests = seekable, two passes over 88 GiB, R2 egress free).
-      - name: Build osmium-tool with curl support
+      # apt osmium-tool is fine here (no URL reading needed anymore), but a
+      # from-source build keeps feature parity with what we tested (lz4 etc.).
+      - name: Build osmium-tool
         run: |
           git clone --depth 1 --branch v1.17.0 https://github.com/osmcode/osmium-tool.git
           cd osmium-tool && mkdir build && cd build
@@ -62,45 +70,62 @@ jobs:
           make -j4 > /dev/null
           sudo make install > /dev/null
           osmium --version | head -2
-          osmium fileinfo https://example.com/x.pbf 2>&1 | head -2 || true
 
-      - name: Install node deps
-        run: npm ci --prefix site
-
-      - name: Fetch go-pmtiles CLI
+      - name: Install AWS CLI v2
         run: |
-          curl -fsSL --retry 3 -o pmtiles.tar.gz https://github.com/protomaps/go-pmtiles/releases/download/v1.31.2/go-pmtiles_1.31.2_Linux_x86_64.tar.gz
-          tar xzf pmtiles.tar.gz
-          mkdir -p bin && mv pmtiles bin/pmtiles && chmod +x bin/pmtiles
-          ./bin/pmtiles --help | head -3
-
-      # osmium's reference completion needs a SEEKABLE input, so a plain pipe
-      # from `aws s3 cp -` is not enough. Instead presign the R2 object and let
-      # osmium read the URL directly (libcurl + range requests; the planet is
-      # read twice, R2 egress is free).
-      - name: Presign planet URL + tags-filter via osmium
-        timeout-minutes: 240
-        run: |
-          set -o pipefail
           curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
           unzip -q awscliv2.zip && sudo ./aws/install --update
           aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
           aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
-          mkdir -p work
-          URL=$(aws s3 presign "s3://geo-datalake/sources/osm/${{ inputs.planet_key }}" \
-            --endpoint-url "https://$CF_ACCOUNT_ID.r2.cloudflarestorage.com" --expires-in 604800)
-          echo "presigned url length: ${#URL}"
-          osmium fileinfo "$URL" | head -20
-          time osmium tags-filter "$URL" \
-            "r/route=train" "r/route=subway" "r/route=tram" "r/route=light_rail" \
-            "r/route=monorail" "r/route=funicular" "r/route=railway" "r/route=ferry" \
-            -F pbf -o work/routes.osm.pbf --overwrite
-          ls -la work/
-          df -h /
+          aws --version
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Pass A - stream planet -> matched relations (tags-filter -R)
+        timeout-minutes: 150
+        run: |
+          set -o pipefail
+          mkdir -p work
+          time aws s3 cp "$PLANET" - --endpoint-url "$ENDPOINT" \
+          | osmium tags-filter -R -F pbf - \
+            "r/route=train" "r/route=subway" "r/route=tram" "r/route=light_rail" \
+            "r/route=monorail" "r/route=funicular" "r/route=railway" "r/route=ferry" \
+            -o work/relations.osm.pbf --overwrite
+          ls -la work/relations.osm.pbf
+
+      - name: Collect member-way IDs
+        run: |
+          python3 site/layer/osm-routes/collect-ids.py ways work/relations.osm.pbf work/wayids.txt
+          wc -l work/wayids.txt
+
+      - name: Pass B - stream planet -> member ways (getid)
+        timeout-minutes: 150
+        run: |
+          set -o pipefail
+          time aws s3 cp "$PLANET" - --endpoint-url "$ENDPOINT" \
+          | osmium getid -F pbf -i work/wayids.txt - -o work/ways.osm.pbf --overwrite
+          ls -la work/ways.osm.pbf
+
+      - name: Collect referenced-node IDs
+        run: |
+          python3 site/layer/osm-routes/collect-ids.py nodes work/ways.osm.pbf work/nodeids.txt
+          wc -l work/nodeids.txt
+
+      - name: Pass C - stream planet -> referenced nodes (getid)
+        timeout-minutes: 150
+        run: |
+          set -o pipefail
+          time aws s3 cp "$PLANET" - --endpoint-url "$ENDPOINT" \
+          | osmium getid -F pbf -i work/nodeids.txt - -o work/nodes.osm.pbf --overwrite
+          ls -la work/nodes.osm.pbf
+          df -h /
+
+      - name: Merge type streams into routes.osm.pbf
+        run: |
+          osmium cat work/nodes.osm.pbf work/ways.osm.pbf work/relations.osm.pbf -o work/routes.osm.pbf --overwrite
+          osmium fileinfo work/routes.osm.pbf | head -12
+          df -h /
 
       - name: Assemble route geometries
         run: |
@@ -115,6 +140,9 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           PMTILES_BIN: ${{ github.workspace }}/bin/pmtiles
         run: |
+          curl -fsSL --retry 3 -o pmtiles.tar.gz https://github.com/protomaps/go-pmtiles/releases/download/v1.31.2/go-pmtiles_1.31.2_Linux_x86_64.tar.gz
+          tar xzf pmtiles.tar.gz
+          mkdir -p bin && mv pmtiles bin/pmtiles && chmod +x bin/pmtiles
           ARGS="work/out"
           if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit ${{ inputs.limit }}"; fi
           node site/layer/osm-routes/build-city-osmtransit.mjs $ARGS
