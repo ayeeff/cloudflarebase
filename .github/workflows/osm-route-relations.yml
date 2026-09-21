@@ -58,7 +58,7 @@ jobs:
           curl -fsSL --retry 3 -o pmtiles.tar.gz https://github.com/protomaps/go-pmtiles/releases/download/v1.31.2/go-pmtiles_1.31.2_Linux_x86_64.tar.gz
           tar xzf pmtiles.tar.gz
           mkdir -p bin && mv pmtiles bin/pmtiles && chmod +x bin/pmtiles
-          ./bin/pmtiles --version
+          ./bin/pmtiles --help | head -3
 
       # The runner disk (~14 GB) can never hold the 88 GiB planet - stream it
       # straight from R2 into osmium via a pipe. Disk only holds the (~1-2 GB)
