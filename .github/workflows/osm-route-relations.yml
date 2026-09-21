@@ -82,7 +82,19 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
 
+      # The three streamed streams (relations/ways/nodes pbf) are cached so a
+      # retry after a later-step failure does not re-stream 264 GiB.
+      - uses: actions/cache/restore@v4
+        id: streams
+        with:
+          path: |
+            work/relations.osm.pbf
+            work/ways.osm.pbf
+            work/nodes.osm.pbf
+          key: osm-routes-${{ inputs.planet_key || 'planet-260914.osm.pbf' }}-v1
+
       - name: Pass A - stream planet -> matched relations (tags-filter -R)
+        if: steps.streams.outputs.cache-hit != 'true'
         timeout-minutes: 150
         run: |
           set -o pipefail
@@ -95,11 +107,13 @@ jobs:
           ls -la work/relations.osm.pbf
 
       - name: Collect member-way IDs
+        if: steps.streams.outputs.cache-hit != 'true'
         run: |
           python3 site/layer/osm-routes/collect-ids.py ways work/relations.osm.pbf work/wayids.txt
           wc -l work/wayids.txt
 
       - name: Pass B - stream planet -> member ways (getid)
+        if: steps.streams.outputs.cache-hit != 'true'
         timeout-minutes: 150
         run: |
           set -o pipefail
@@ -108,11 +122,13 @@ jobs:
           ls -la work/ways.osm.pbf
 
       - name: Collect referenced-node IDs
+        if: steps.streams.outputs.cache-hit != 'true'
         run: |
           python3 site/layer/osm-routes/collect-ids.py nodes work/ways.osm.pbf work/nodeids.txt
           wc -l work/nodeids.txt
 
       - name: Pass C - stream planet -> referenced nodes (getid)
+        if: steps.streams.outputs.cache-hit != 'true'
         timeout-minutes: 150
         run: |
           set -o pipefail
@@ -120,6 +136,16 @@ jobs:
           | osmium getid -F pbf -i work/nodeids.txt - -o work/nodes.osm.pbf --overwrite
           ls -la work/nodes.osm.pbf
           df -h /
+
+      - name: Save streams cache
+        if: always() && steps.streams.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            work/relations.osm.pbf
+            work/ways.osm.pbf
+            work/nodes.osm.pbf
+          key: osm-routes-${{ inputs.planet_key || 'planet-260914.osm.pbf' }}-v1
 
       - name: Merge type streams into routes.osm.pbf
         run: |
