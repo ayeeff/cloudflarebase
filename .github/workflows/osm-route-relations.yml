@@ -1,0 +1,110 @@
+name: OSM route relations -> per-city transit pmtiles
+
+# "Compute-near-data" pass over the planet.pbf sitting in the geo-datalake R2
+# bucket (88 GiB): streams it from R2 (fast CF<->GH link, zero local traffic),
+# filters route relations + member ways with osmium, assembles
+# MultiLineStrings per city, and uploads <slug>-osmtransit.pmtiles to R2
+# globe/basemaps/. The extraction scripts + city list live in the geo site
+# repo (ayeeff/astrogl, branch preview, layer/osm-routes/).
+#
+# Lives in this repo because GitHub only registers workflow_dispatch on the
+# default branch, and astrogl's default branch (master) must not be touched.
+
+on:
+  workflow_dispatch:
+    inputs:
+      planet_key:
+        description: "planet pbf key in geo-datalake/sources/osm/"
+        default: "planet-260914.osm.pbf"
+      site_ref:
+        description: "astrogl branch holding layer/osm-routes scripts"
+        default: "preview"
+      limit:
+        description: "Max cities to build (empty = all)"
+        default: ""
+
+concurrency:
+  group: osm-route-relations
+  cancel-in-progress: false
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout site scripts
+        uses: actions/checkout@v4
+        with:
+          repository: ayeeff/astrogl
+          ref: ${{ inputs.site_ref || 'preview' }}
+          path: site
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install system deps (osmium + python osmium + awscli)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y osmium-tool python3-pip awscli
+          pip3 install --break-system-packages osmium
+
+      - name: Install node deps
+        run: npm ci --prefix site
+
+      - name: Fetch go-pmtiles CLI
+        run: |
+          curl -sL -o pmtiles.tar.gz https://github.com/protomaps/go-pmtiles/releases/download/v1.31.2/go-pmtiles_1.31.2_Linux_x86_64.tar.gz
+          tar xzf pmtiles.tar.gz pmtiles
+          mkdir -p bin && mv pmtiles bin/pmtiles && chmod +x bin/pmtiles
+          ./bin/pmtiles --version
+
+      # The runner disk (~14 GB) can never hold the 88 GiB planet - stream it
+      # straight from R2 into osmium via a pipe. Disk only holds the (~1-2 GB)
+      # filtered route file.
+      - name: Stream planet from R2 through osmium tags-filter
+        timeout-minutes: 240
+        run: |
+          set -o pipefail
+          aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
+          mkdir -p work
+          time aws s3 cp "s3://geo-datalake/sources/osm/${{ inputs.planet_key }}" - \
+            --endpoint-url "https://$CF_ACCOUNT_ID.r2.cloudflarestorage.com" \
+          | osmium tags-filter -F pbf - \
+            "r/route=train" "r/route=subway" "r/route=tram" "r/route=light_rail" \
+            "r/route=monorail" "r/route=funicular" "r/route=railway" "r/route=ferry" \
+            -o work/routes.osm.pbf --overwrite
+          ls -la work/
+          df -h /
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
+
+      - name: Assemble route geometries
+        run: |
+          python3 site/layer/osm-routes/extract-route-relations.py work/routes.osm.pbf work/out site/layer/osm-routes/cities.json
+          ls work/out/city-geoms | head -20
+          du -sh work/out/city-geoms
+
+      - name: Build + upload pmtiles
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          PMTILES_BIN: ${{ github.workspace }}/bin/pmtiles
+        run: |
+          ARGS="work/out"
+          if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit ${{ inputs.limit }}"; fi
+          node site/layer/osm-routes/build-city-osmtransit.mjs $ARGS
+
+      - name: Upload summary artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: osm-route-summary
+          path: |
+            work/out/summary.json
+            work/out/build-summary.json
