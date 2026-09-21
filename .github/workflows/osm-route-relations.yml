@@ -37,6 +37,7 @@ jobs:
         with:
           repository: ayeeff/astrogl
           ref: ${{ inputs.site_ref || 'preview' }}
+          token: ${{ secrets.SITE_REPO_TOKEN }}
           path: site
 
       - uses: actions/setup-node@v4
