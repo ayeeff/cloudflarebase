@@ -54,6 +54,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install node deps (geojson-vt / vt-pbf / aws sdk for the build script)
+        run: npm install --no-save --prefix site geojson-vt vt-pbf @aws-sdk/client-s3
+
       - name: Install system deps (python osmium + build tools)
         run: |
           sudo apt-get update
