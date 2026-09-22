@@ -40,6 +40,10 @@
 		profileSaved = false;
 		emailError = null;
 		emailNotice = null;
+		pwCurrent = '';
+		pwNew = '';
+		pwError = null;
+		pwSaved = false;
 		open = true;
 	}
 
@@ -96,6 +100,46 @@
 			emailError = 'Could not reach the auth agent.';
 		} finally {
 			emailBusy = false;
+		}
+	}
+
+	let pwCurrent = $state('');
+	let pwNew = $state('');
+	let pwBusy = $state(false);
+	let pwError = $state<string | null>(null);
+	let pwSaved = $state(false);
+
+	async function changePassword(event: SubmitEvent) {
+		event.preventDefault();
+		if (pwNew.length < 8) {
+			pwError = 'New password must be at least 8 characters.';
+			return;
+		}
+		pwBusy = true;
+		pwError = null;
+		pwSaved = false;
+		try {
+			const response = await fetch(`${CONSOLE_AUTH_BASE}/change-password`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					currentPassword: pwCurrent,
+					newPassword: pwNew,
+					revokeOtherSessions: true
+				})
+			});
+			if (!response.ok) {
+				const body = (await response.json().catch(() => null)) as { message?: string } | null;
+				pwError = body?.message ?? 'Could not change the password.';
+				return;
+			}
+			pwCurrent = '';
+			pwNew = '';
+			pwSaved = true;
+		} catch {
+			pwError = 'Could not reach the auth agent.';
+		} finally {
+			pwBusy = false;
 		}
 	}
 </script>
@@ -195,7 +239,53 @@
 					disabled={emailBusy}
 					data-testid="account-change-email"
 				>
-					{emailBusy ? 'Working…' : 'Change email'}
+					{emailBusy ? 'Working�?�' : 'Change email'}
+				</Button>
+			</div>
+		</form>
+
+		<form class="space-y-3 border-t pt-4" onsubmit={changePassword}>
+			<div class="grid gap-3 sm:grid-cols-2">
+				<div class="space-y-1.5">
+					<Label for="account-password-current">Current password</Label>
+					<Input
+						id="account-password-current"
+						type="password"
+						bind:value={pwCurrent}
+						autocomplete="current-password"
+						required
+					/>
+				</div>
+				<div class="space-y-1.5">
+					<Label for="account-password-new">New password</Label>
+					<Input
+						id="account-password-new"
+						type="password"
+						bind:value={pwNew}
+						autocomplete="new-password"
+						minlength={8}
+						required
+					/>
+				</div>
+			</div>
+			<p class="text-xs text-muted-foreground">
+				Changing the password signs out your other sessions.
+			</p>
+			{#if pwError}
+				<p class="text-sm text-destructive" data-testid="account-password-error">{pwError}</p>
+			{:else if pwSaved}
+				<p class="text-sm text-muted-foreground" data-testid="account-password-saved">
+					Password updated.
+				</p>
+			{/if}
+			<div class="flex justify-end">
+				<Button
+					type="submit"
+					variant="outline"
+					disabled={pwBusy}
+					data-testid="account-change-password"
+				>
+					{pwBusy ? 'Working�?�' : 'Change password'}
 				</Button>
 			</div>
 		</form>
