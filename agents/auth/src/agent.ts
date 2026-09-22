@@ -610,6 +610,7 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 
 		// Idempotent - drizzle tracks applied migrations in its own table.
 		await migrate(this.db, migrations);
+		await this.repairSchemaDrift();
 		if (this.env.LOCAL_ANALYTICS) {
 			await this.env.LOCAL_ANALYTICS.batch([
 				this.env.LOCAL_ANALYTICS.prepare(
@@ -771,6 +772,66 @@ export class AuthAgent extends Agent<Env, AuthAgentState> {
 		const token = this.env.CF_ANALYTICS_API_TOKEN;
 		const dataset = this.env.WAE_DATASET;
 		return accountId && token && dataset ? { accountId, token, dataset } : null;
+	}
+
+	/**
+	 * Self-healing repair for long-lived instances whose drizzle journal has
+	 * drifted from the physical schema (observed 2026-09-22 on the console
+	 * instance: the journal claimed every migration applied while the session
+	 * table lacked `active_organization_id` - every sign-in 500'd writing it).
+	 * Each statement is idempotent-shaped: it fails harmlessly when the column
+	 * or object already exists, so it is safe to run on every wake. Column
+	 * and table definitions mirror migrations.ts; keep both in sync.
+	 */
+	private async repairSchemaDrift(): Promise<void> {
+		const statements = [
+			'ALTER TABLE `session` ADD COLUMN `active_organization_id` text',
+			'ALTER TABLE `session` ADD COLUMN `country` text',
+			`CREATE TABLE IF NOT EXISTS \`invitation\` (
+				\`id\` text PRIMARY KEY NOT NULL,
+				\`organization_id\` text NOT NULL,
+				\`email\` text NOT NULL,
+				\`role\` text,
+				\`status\` text DEFAULT 'pending' NOT NULL,
+				\`expires_at\` integer NOT NULL,
+				\`created_at\` integer NOT NULL,
+				\`inviter_id\` text NOT NULL,
+				FOREIGN KEY (\`organization_id\`) REFERENCES \`organization\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+				FOREIGN KEY (\`inviter_id\`) REFERENCES \`user\`(\`id\`) ON UPDATE no action ON DELETE cascade
+			)`,
+			'CREATE INDEX IF NOT EXISTS `invitation_organization_idx` ON `invitation` (`organization_id`)',
+			'CREATE INDEX IF NOT EXISTS `invitation_email_idx` ON `invitation` (`email`)',
+			`CREATE TABLE IF NOT EXISTS \`member\` (
+				\`id\` text PRIMARY KEY NOT NULL,
+				\`organization_id\` text NOT NULL,
+				\`user_id\` text NOT NULL,
+				\`role\` text DEFAULT 'member' NOT NULL,
+				\`created_at\` integer NOT NULL,
+				FOREIGN KEY (\`organization_id\`) REFERENCES \`organization\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+				FOREIGN KEY (\`user_id\`) REFERENCES \`user\`(\`id\`) ON UPDATE no action ON DELETE cascade
+			)`,
+			'CREATE INDEX IF NOT EXISTS `member_organization_idx` ON `member` (`organization_id`)',
+			'CREATE INDEX IF NOT EXISTS `member_user_idx` ON `member` (`user_id`)',
+			`CREATE TABLE IF NOT EXISTS \`organization\` (
+				\`id\` text PRIMARY KEY NOT NULL,
+				\`name\` text NOT NULL,
+				\`slug\` text NOT NULL,
+				\`logo\` text,
+				\`metadata\` text,
+				\`created_at\` integer NOT NULL
+			)`,
+			'CREATE UNIQUE INDEX IF NOT EXISTS `organization_slug_unique` ON `organization` (`slug`)',
+			'CREATE INDEX IF NOT EXISTS `account_user_idx` ON `account` (`user_id`)',
+			'CREATE INDEX IF NOT EXISTS `session_user_idx` ON `session` (`user_id`)',
+			'CREATE INDEX IF NOT EXISTS `verification_identifier_idx` ON `verification` (`identifier`)',
+		];
+		for (const statement of statements) {
+			try {
+				this.ctx.storage.sql.exec(statement);
+			} catch {
+				// already applied - the only expected failure for these shapes
+			}
+		}
 	}
 
 	private async sendAuthEmail(message: AuthEmailMessage): Promise<void> {
