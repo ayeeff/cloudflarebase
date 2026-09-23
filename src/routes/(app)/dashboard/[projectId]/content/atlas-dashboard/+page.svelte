@@ -6,30 +6,44 @@
 
 	let { data } = $props();
 
-	const base = data.base ?? 'https://geo-astro-site.foodstarmelbourne.workers.dev';
-
 	type TypeDef = { key: string; label: string; suffix: string };
+
+	type EnvCoverage = {
+		ok: boolean;
+		error: string | null;
+		env: 'production' | 'preview';
+		base: string;
+		live: Record<string, { route: string }>;
+		slugsByPrefix: Record<string, Record<string, string | null>>;
+		pageOnly: { slug: string; route: string }[];
+		pageOnlyCount: number;
+		count: number;
+		lastUpdated: { collections: string | null };
+	};
+
 	type City = {
 		name: string;
 		iata: string;
 		continent: string;
 		pop: number;
 		prefix: string;
-		slugs: Record<string, string | null>;
 		attachedAddresses: number;
 		attachedStreets: number;
+		prodSlugs: Record<string, string | null> | null;
+		prevSlugs: Record<string, string | null> | null;
 	};
 
 	const types = data.types as TypeDef[];
 	const cities = data.cities as City[];
-	const live = (data.live ?? {}) as Record<string, { route: string }>;
-	const pageOnly = data.pageOnly as { slug: string; route: string }[];
+	const prod = data.production as EnvCoverage;
+	const prev = data.preview as EnvCoverage;
 
 	// ── Filters / sort ──
 	let q = $state('');
 	let hideComplete = $state(false);
 	let onlyGaps = $state(false);
 	let onlyNoPage = $state(false);
+	let onlyBranchDiff = $state(false);
 	let sort = $state('manifest');
 
 	// ── Coverage state per cell (mirrors atlas/dashboard.html) ──
@@ -37,15 +51,18 @@
 
 	function cellState(
 		c: City,
-		t: TypeDef
+		t: TypeDef,
+		which: 'prod' | 'prev'
 	): {
 		s: CellState;
 		slug: string | null;
 		route: string | null;
 	} {
-		const slug = c.slugs?.[t.key] ?? null;
+		const coverage = which === 'prod' ? prod : prev;
+		const slugs = (which === 'prod' ? c.prodSlugs : c.prevSlugs) ?? null;
+		const slug = slugs?.[t.key] ?? null;
 		const pageSlug = slug ?? `${c.prefix}-${t.suffix}`;
-		const entry = live[pageSlug];
+		const entry = coverage?.live?.[pageSlug];
 		if (slug) {
 			if (entry) return { s: entry.route === '/atlas/' ? 'ok' : 'map', slug, route: entry.route };
 			return { s: 'nopage', slug, route: null };
@@ -54,31 +71,60 @@
 		return { s: 'missing', slug: null, route: null };
 	}
 
-	const gapsOf = (c: City) => types.filter((t) => !c.slugs?.[t.key]).length;
-	const haveOf = (c: City) => types.length - gapsOf(c);
+	function haveOf(c: City, which: 'prod' | 'prev'): number {
+		const slugs = (which === 'prod' ? c.prodSlugs : c.prevSlugs) ?? {};
+		return types.filter((t) => slugs[t.key]).length;
+	}
+
+	function gapsOf(c: City): number {
+		// A gap on either branch counts — surface incomplete rows regardless of branch.
+		const pg = types.filter((t) => !(c.prodSlugs?.[t.key])).length;
+		const vg = types.filter((t) => !(c.prevSlugs?.[t.key])).length;
+		return Math.min(pg, vg);
+	}
+
+	function cellDiffers(c: City, t: TypeDef): boolean {
+		return cellState(c, t, 'prod').s !== cellState(c, t, 'prev').s;
+	}
+
+	function rowDiffers(c: City): boolean {
+		return types.some((t) => cellDiffers(c, t));
+	}
 
 	// ── Stats ──
-	const stats = $derived(
-		types.map((t) => {
+	function statsFor(which: 'prod' | 'prev') {
+		return types.map((t) => {
 			const s = { json: 0, ok: 0, map: 0, nopage: 0, missing: 0, pageonly: 0 };
 			for (const c of cities) {
-				const st = cellState(c, t).s;
+				const st = cellState(c, t, which).s;
 				s[st]++;
-				if (c.slugs?.[t.key]) s.json++;
+				const slugs = (which === 'prod' ? c.prodSlugs : c.prevSlugs) ?? {};
+				if (slugs[t.key]) s.json++;
 			}
 			return s;
-		})
-	);
-	const totals = $derived(
-		stats.reduce(
+		});
+	}
+
+	const prodStats = $derived(statsFor('prod'));
+	const prevStats = $derived(statsFor('prev'));
+
+	function totalsOf(stats: ReturnType<typeof statsFor>) {
+		return stats.reduce(
 			(acc, s) => {
 				for (const k in acc) acc[k as keyof typeof acc] += s[k as keyof typeof s];
 				return acc;
 			},
 			{ json: 0, ok: 0, map: 0, nopage: 0, missing: 0, pageonly: 0 }
-		)
-	);
-	const completeRows = $derived(cities.filter((c) => gapsOf(c) === 0).length);
+		);
+	}
+
+	const prodTotals = $derived(totalsOf(prodStats));
+	const prevTotals = $derived(totalsOf(prevStats));
+
+	const prodComplete = $derived(cities.filter((c) => haveOf(c, 'prod') === types.length).length);
+	const prevComplete = $derived(cities.filter((c) => haveOf(c, 'prev') === types.length).length);
+	const branchDiffRows = $derived(cities.filter(rowDiffers).length);
+
 	const totalAttachedAddresses = $derived(
 		cities.reduce((sum, c) => sum + (c.attachedAddresses || 0), 0)
 	);
@@ -93,9 +139,14 @@
 		let rows = cities.filter((c) => {
 			if ((hideComplete || onlyGaps) && gapsOf(c) === 0) return false;
 			if (onlyNoPage) {
-				const any = types.some((t) => c.slugs?.[t.key] && cellState(c, t).s === 'nopage');
+				const any = types.some(
+					(t) =>
+						((c.prodSlugs?.[t.key] && cellState(c, t, 'prod').s === 'nopage') ||
+							(c.prevSlugs?.[t.key] && cellState(c, t, 'prev').s === 'nopage')) as boolean
+				);
 				if (!any) return false;
 			}
+			if (onlyBranchDiff && !rowDiffers(c)) return false;
 			if (
 				query &&
 				!(
@@ -122,6 +173,8 @@
 			);
 		else if (sort === 'gaps')
 			rows.sort((a, b) => gapsOf(b) - gapsOf(a) || a.name.localeCompare(b.name));
+		else if (sort === 'diff')
+			rows.sort((a, b) => Number(rowDiffers(b)) - Number(rowDiffers(a)) || a.name.localeCompare(b.name));
 		return rows;
 	});
 
@@ -133,12 +186,18 @@
 		if (toastTimer) clearTimeout(toastTimer);
 		toastTimer = setTimeout(() => (toastMsg = ''), 2200);
 	}
-	function openCell(d: { slug: string | null; route: string | null }) {
+	function openCell(d: { slug: string | null; route: string | null }, which: 'prod' | 'prev') {
 		if (!d.slug || !d.route) return;
-		const url = base + d.route + d.slug;
+		const coverage = which === 'prod' ? prod : prev;
+		const url = coverage.base + d.route + d.slug;
 		if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
 		showToast(url + '  (copied)');
 		window.open(url, '_blank');
+	}
+
+	function openPageOnly(p: { slug: string; route: string }, which: 'prod' | 'prev') {
+		const coverage = which === 'prod' ? prod : prev;
+		window.open(coverage.base + p.route + p.slug, '_blank');
 	}
 
 	function formatAgo(iso: string | null | undefined): string {
@@ -168,6 +227,14 @@
 		});
 	}
 
+	function stateLabel(st: ReturnType<typeof cellState>, whichLabel: string): string {
+		if (st.s === 'ok' || st.s === 'map') return `${whichLabel}: ${st.slug}`;
+		if (st.s === 'nopage') return `${whichLabel}: ${st.slug}  (no page under /atlas/ or /maps/)`;
+		if (st.s === 'pageonly')
+			return `${whichLabel}: ${st.route}${st.slug}  (page exists, not in manifest)`;
+		return `${whichLabel}: MISSING from manifest`;
+	}
+
 	const lastUp = $derived(data.lastUpdated);
 </script>
 
@@ -183,7 +250,10 @@
 			<p class="mt-1 text-sm text-muted-foreground">
 				{data.count} manifest cities &times; {types.length} atlas families — computed live from
 				<span class="font-mono">/data/atlas-collections.json</span>
-				<span class="font-mono">/api/map-index.json</span> ({data.env === 'preview' ? 'Preview deployment' : 'Production deployment'}). Click a cell to open (and copy) the page.
+				<span class="font-mono">/api/map-index.json</span>. Each cell shows
+				<span class="font-semibold text-sky-600">master</span> ·
+				<span class="font-semibold text-violet-600">preview</span>
+				(left → right). Click a cell to open (and copy) that branch’s page.
 			</p>
 			{#if lastUp}
 				<div class="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
@@ -202,9 +272,14 @@
 							Registry: {formatDateTime(lastUp.registryGeneratedAt)} ({formatAgo(lastUp.registryGeneratedAt)})
 						</Badge>
 					{/if}
-					{#if lastUp.collections}
+					{#if lastUp.prodCollections}
 						<Badge variant="secondary" class="font-normal text-muted-foreground">
-							Collections: {formatDateTime(lastUp.collections)} ({formatAgo(lastUp.collections)})
+							Master collections: {formatDateTime(lastUp.prodCollections)} ({formatAgo(lastUp.prodCollections)})
+						</Badge>
+					{/if}
+					{#if lastUp.prevCollections}
+						<Badge variant="secondary" class="font-normal text-muted-foreground">
+							Preview collections: {formatDateTime(lastUp.prevCollections)} ({formatAgo(lastUp.prevCollections)})
 						</Badge>
 					{/if}
 					<Badge variant="secondary" class="font-normal text-muted-foreground">
@@ -213,19 +288,51 @@
 				</div>
 			{/if}
 		</div>
-		<div class="inline-flex rounded-lg border bg-muted/60 p-1 text-xs">
-			<a
-				href="?env=production"
-				class={['rounded-md px-3 py-1 font-medium transition-all', data.env !== 'preview' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground']}
-			>
-				Production (live)
-			</a>
-			<a
-				href="?env=preview"
-				class={['rounded-md px-3 py-1 font-medium transition-all', data.env === 'preview' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground']}
-			>
-				Preview (CI)
-			</a>
+		<div class="flex flex-wrap items-center gap-2 text-xs">
+			{#if prod.ok}
+				<Badge variant="outline" class="border-sky-500/40 bg-sky-500/10 text-sky-600 font-medium">
+					Master (production) · {prod.count} cities
+				</Badge>
+			{:else}
+				<Badge variant="outline" class="border-rose-500/40 bg-rose-500/10 text-rose-500 font-medium">
+					Master down: {prod.error}
+				</Badge>
+			{/if}
+			{#if prev.ok}
+				<Badge variant="outline" class="border-violet-500/40 bg-violet-500/10 text-violet-600 font-medium">
+					Preview (CI) · {prev.count} cities
+				</Badge>
+			{:else}
+				<Badge variant="outline" class="border-rose-500/40 bg-rose-500/10 text-rose-500 font-medium">
+					Preview down: {prev.error}
+				</Badge>
+			{/if}
+		</div>
+	</div>
+
+	<!-- ── Branch comparison cards ── -->
+	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="ac-branch-cards">
+		<div class="rounded-lg border border-sky-500/30 bg-card p-3">
+			<h3 class="text-xs font-semibold text-sky-600">Master (production) — geo-astro-site</h3>
+			<div class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+				<span><b class="block text-lg font-bold text-foreground">{prod.count}</b>cities</span>
+				<span><b class="block text-lg font-bold text-emerald-500">{prodComplete}</b>complete</span>
+				<span><b class="block text-lg font-bold text-rose-500">{prodTotals.missing}</b>gaps</span>
+				<span><b class="block text-lg font-bold text-amber-500">{prodTotals.nopage}</b>no page</span>
+				<span><b class="block text-lg font-bold text-violet-500">{prod.pageOnlyCount}</b>page-only</span>
+				<span><b class="block text-lg font-bold text-sky-500">{prodTotals.ok + prodTotals.map}</b>pages</span>
+			</div>
+		</div>
+		<div class="rounded-lg border border-violet-500/30 bg-card p-3">
+			<h3 class="text-xs font-semibold text-violet-600">Preview (CI) — preview-geo-astro-site</h3>
+			<div class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+				<span><b class="block text-lg font-bold text-foreground">{prev.count}</b>cities</span>
+				<span><b class="block text-lg font-bold text-emerald-500">{prevComplete}</b>complete</span>
+				<span><b class="block text-lg font-bold text-rose-500">{prevTotals.missing}</b>gaps</span>
+				<span><b class="block text-lg font-bold text-amber-500">{prevTotals.nopage}</b>no page</span>
+				<span><b class="block text-lg font-bold text-violet-500">{prev.pageOnlyCount}</b>page-only</span>
+				<span><b class="block text-lg font-bold text-violet-500">{prevTotals.ok + prevTotals.map}</b>pages</span>
+			</div>
 		</div>
 	</div>
 
@@ -239,37 +346,36 @@
 			<div class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
 				<span><b class="block text-lg font-bold text-foreground">{cities.length}</b>cities</span>
 				<span><b class="block text-lg font-bold text-foreground">{types.length}</b>types</span>
-				<span><b class="block text-lg font-bold text-emerald-500">{completeRows}</b>complete</span>
-				<span><b class="block text-lg font-bold text-rose-500">{totals.missing}</b>gaps</span>
-				<span><b class="block text-lg font-bold text-amber-500">{totals.nopage}</b>no page</span>
+				<span><b class="block text-lg font-bold text-amber-500">{branchDiffRows}</b>branch diffs</span>
 				<span
-					><b class="block text-lg font-bold text-violet-500">{pageOnly.length}</b>page-only</span
-				>
-			</div>
-		</div>
-		<div class="rounded-lg border bg-card p-3">
-			<h3 class="text-xs font-semibold text-muted-foreground">Attached Addresses</h3>
-			<div class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
-				<span
-					><b class="block text-lg font-bold text-emerald-500">{(totalAttachedAddresses / 1e6).toFixed(1)}M</b>addresses</span
+					><b class="block text-lg font-bold text-sky-500">{(totalAttachedAddresses / 1e6).toFixed(1)}M</b
+					>addresses</span
 				>
 				<span
-					><b class="block text-lg font-bold text-sky-500">{totalAttachedStreets.toLocaleString('en-US')}</b>streets</span
+					><b class="block text-lg font-bold text-sky-500">{totalAttachedStreets.toLocaleString('en-US')}</b
+					>streets</span
 				>
 			</div>
 		</div>
 		{#each types as t, i (t.key)}
 			<div class="rounded-lg border bg-card p-3">
 				<h3 class="text-xs font-semibold text-muted-foreground">{t.label}</h3>
-				<div class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
-					<span><b class="block text-lg font-bold text-foreground">{stats[i].json}</b>manifest</span
+				<div class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+					<span class="text-sky-600"
+						><b class="block text-sm font-bold text-sky-600">{prodStats[i].ok + prodStats[i].map}</b
+						>master</span
 					>
-					<span><b class="block text-lg font-bold text-rose-500">{stats[i].missing}</b>gaps</span>
-					<span><b class="block text-lg font-bold text-amber-500">{stats[i].nopage}</b>no page</span
+					<span class="text-violet-600"
+						><b class="block text-sm font-bold text-violet-600">{prevStats[i].ok + prevStats[i].map}</b
+						>preview</span
 					>
 					<span
-						><b class="block text-lg font-bold text-sky-500">{stats[i].ok + stats[i].map}</b
-						>pages</span
+						><b class="block text-sm font-bold text-rose-500">{prodStats[i].missing}</b
+						>gaps m</span
+					>
+					<span
+						><b class="block text-sm font-bold text-amber-500">{prodStats[i].nopage}</b
+						>no page m</span
 					>
 				</div>
 			</div>
@@ -281,6 +387,7 @@
 		class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground"
 		data-testid="ac-legend"
 	>
+		<span class="font-semibold text-foreground">Cell pair: left master · right preview</span>
 		<span class="inline-flex items-center gap-1.5"
 			><span class="dot ok"></span> in manifest + /atlas/ page</span
 		>
@@ -295,6 +402,9 @@
 		>
 		<span class="inline-flex items-center gap-1.5"
 			><span class="dot pageonly"></span> page exists, not in manifest</span
+		>
+		<span class="inline-flex items-center gap-1.5"
+			><span class="dot pair-diff"></span> branches disagree</span
 		>
 	</div>
 
@@ -322,8 +432,15 @@
 			<Checkbox bind:checked={onlyNoPage} class="size-3.5" />
 			only rows with pageless entries
 		</label>
+		<label
+			class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none"
+		>
+			<Checkbox bind:checked={onlyBranchDiff} class="size-3.5" />
+			only branch diffs
+		</label>
 		<NativeSelect bind:value={sort} class="h-8">
 			<option value="manifest">Sort: manifest order</option>
+			<option value="diff">Sort: branch diffs first</option>
 			<option value="addresses">Sort: most attached addresses</option>
 			<option value="streets">Sort: most attached streets</option>
 			<option value="name">Sort: name A–Z</option>
@@ -348,26 +465,40 @@
 							top 0.01% doors
 						</span>
 					</th>
-					<th class="sticky top-0 z-10 border-b bg-card px-2 py-2 text-center">Have</th>
+					<th class="sticky top-0 z-10 border-b bg-card px-2 py-2 text-center">
+						Have
+						<span class="mt-0.5 block text-[10px] font-normal not-italic">
+							<span class="text-sky-600">M</span> /
+							<span class="text-violet-600">P</span>
+						</span>
+					</th>
 					{#each types as t, i (t.key)}
 						<th class="sticky top-0 z-10 border-b bg-card px-2 py-2 text-left">
 							{t.label}
 							<span class="mt-0.5 block text-[10px] font-normal text-muted-foreground not-italic">
-								<span class="text-emerald-500">{stats[i].ok + stats[i].map}</span> ok ·
-								<span class="text-rose-500">{stats[i].missing}</span> gaps ·
-								<span class="text-amber-500">{stats[i].nopage}</span> no page
+								<span class="text-sky-600">{prodStats[i].ok + prodStats[i].map}</span> /
+								<span class="text-violet-600">{prevStats[i].ok + prevStats[i].map}</span> ok ·
+								<span class="text-rose-500">{prodStats[i].missing}</span> gaps
 							</span>
 						</th>
 					{/each}
 				</tr>
 			</thead>
 			<tbody>
-				{#each visible as c (c.name + c.iata)}
-					{@const have = haveOf(c)}
+				{#each visible as c (c.prefix)}
+					{@const haveM = haveOf(c, 'prod')}
+					{@const haveP = haveOf(c, 'prev')}
+					{@const diff = rowDiffers(c)}
 					<tr class="border-b border-border/60 last:border-0 hover:bg-accent/50">
 						<td class="px-3 py-1.5 align-top">
 							<span class="font-semibold">{c.name}</span>
 							<span class="ml-1.5 text-[11px] text-sky-500">{c.iata}</span>
+							{#if diff}
+								<span
+									class="ml-1 rounded bg-amber-500/15 px-1 text-[10px] font-semibold text-amber-600"
+									title="Master and preview coverage disagree for this city">diff</span
+								>
+							{/if}
 							<span class="block text-[11px] text-muted-foreground">
 								{c.continent} · pop {(c.pop || 0).toLocaleString('en-US')}
 							</span>
@@ -385,31 +516,33 @@
 							{/if}
 						</td>
 						<td class="px-2 py-1.5 text-center">
-							<Badge
-								variant={have === types.length
-									? 'default'
-									: have <= 2
-										? 'destructive'
-										: 'secondary'}
-								class="min-w-9 justify-center text-[11px]">{have}/{types.length}</Badge
-							>
+							<span class="inline-flex items-baseline gap-0.5 text-[11px] font-semibold tabular-nums">
+								<span class="text-sky-600">{haveM}/{types.length}</span>
+								<span class="text-muted-foreground/50">·</span>
+								<span class="text-violet-600">{haveP}/{types.length}</span>
+							</span>
 						</td>
 						{#each types as t (t.key)}
-							{@const st = cellState(c, t)}
+							{@const stM = cellState(c, t, 'prod')}
+							{@const stP = cellState(c, t, 'prev')}
+							{@const disagree = stM.s !== stP.s}
 							<td class="px-2 py-1.5 text-center">
-								<button
-									type="button"
-									class={['dot', st.s]}
-									disabled={!st.slug || !st.route}
-									title={st.s === 'ok' || st.s === 'map'
-										? st.slug
-										: st.s === 'nopage'
-											? `${st.slug}  (no page under /atlas/ or /maps/)`
-											: st.s === 'pageonly'
-												? `${st.route}${st.slug}  (page exists, not in manifest)`
-												: `MISSING from manifest — expected: ${c.prefix}-${t.suffix}`}
-									onclick={() => openCell({ slug: st.slug, route: st.route })}
-								></button>
+								<span class="inline-flex items-center justify-center gap-0.5">
+									<button
+										type="button"
+										class={['dot', 'prod-dot', stM.s, disagree ? 'ring-1 ring-amber-400' : '']}
+										disabled={!stM.slug || !stM.route}
+										title={stateLabel(stM, 'Master')}
+										onclick={() => openCell({ slug: stM.slug, route: stM.route }, 'prod')}
+									></button>
+									<button
+										type="button"
+										class={['dot', 'prev-dot', stP.s, disagree ? 'ring-1 ring-amber-400' : '']}
+										disabled={!stP.slug || !stP.route}
+										title={stateLabel(stP, 'Preview')}
+										onclick={() => openCell({ slug: stP.slug, route: stP.route }, 'prev')}
+									></button>
+								</span>
 							</td>
 						{/each}
 					</tr>
@@ -418,33 +551,60 @@
 		</table>
 	</div>
 
-	<!-- ── Page-only ── -->
-	<div class="pt-2" data-testid="ac-pageonly">
-		<h2 class="mb-2 text-sm font-semibold">
-			Pages on disk but not in manifest
-			<Badge variant="outline" class="ml-1 align-middle">{pageOnly.length}</Badge>
-		</h2>
-		{#if pageOnly.length}
-			<div class="flex flex-wrap gap-2">
-				<!-- eslint-disable svelte/no-navigation-without-resolve -- external absolute URL on geo-astro-site, not a local route -->
-				{#each pageOnly as p (p.slug)}
-					<a
-						href={base + p.route + p.slug}
-						target="_blank"
-						rel="noopener"
-						class="rounded-md border border-violet-400/50 bg-card px-2.5 py-1 font-mono text-xs hover:border-sky-500"
-					>
-						{p.slug}
-						<span class="ml-1 text-[10px] text-muted-foreground">{p.route}</span>
-					</a>
-				{/each}
-				<!-- eslint-enable svelte/no-navigation-without-resolve -->
-			</div>
-		{:else}
-			<p class="text-xs text-muted-foreground">
-				Every family page found on the site is in the manifest.
-			</p>
-		{/if}
+	<!-- ── Page-only (both branches) ── -->
+	<div class="grid gap-4 pt-2 lg:grid-cols-2" data-testid="ac-pageonly">
+		<div>
+			<h2 class="mb-2 text-sm font-semibold">
+				Master — pages not in manifest
+				<Badge variant="outline" class="ml-1 align-middle border-sky-500/40 text-sky-600"
+					>{prod.pageOnlyCount}</Badge
+				>
+			</h2>
+			{#if prod.pageOnly.length}
+				<div class="flex flex-wrap gap-2">
+					{#each prod.pageOnly as p (`m-${p.slug}`)}
+						<button
+							type="button"
+							class="rounded-md border border-sky-400/50 bg-card px-2.5 py-1 font-mono text-xs hover:border-sky-500"
+							onclick={() => openPageOnly(p, 'prod')}
+						>
+							{p.slug}
+							<span class="ml-1 text-[10px] text-muted-foreground">{p.route}</span>
+						</button>
+					{/each}
+				</div>
+			{:else}
+				<p class="text-xs text-muted-foreground">
+					Every family page found on master is in the manifest.
+				</p>
+			{/if}
+		</div>
+		<div>
+			<h2 class="mb-2 text-sm font-semibold">
+				Preview — pages not in manifest
+				<Badge variant="outline" class="ml-1 align-middle border-violet-500/40 text-violet-600"
+					>{prev.pageOnlyCount}</Badge
+				>
+			</h2>
+			{#if prev.pageOnly.length}
+				<div class="flex flex-wrap gap-2">
+					{#each prev.pageOnly as p (`p-${p.slug}`)}
+						<button
+							type="button"
+							class="rounded-md border border-violet-400/50 bg-card px-2.5 py-1 font-mono text-xs hover:border-violet-500"
+							onclick={() => openPageOnly(p, 'prev')}
+						>
+							{p.slug}
+							<span class="ml-1 text-[10px] text-muted-foreground">{p.route}</span>
+						</button>
+					{/each}
+				</div>
+			{:else}
+				<p class="text-xs text-muted-foreground">
+					Every family page found on preview is in the manifest.
+				</p>
+			{/if}
+		</div>
 	</div>
 
 	<p class="text-[11px] text-muted-foreground">
@@ -468,7 +628,7 @@
 <style>
 	.dot {
 		display: inline-block;
-		width: 28px;
+		width: 14px;
 		height: 18px;
 		border-radius: 5px;
 		border: 1px solid;
@@ -497,5 +657,20 @@
 	.dot.pageonly {
 		background: rgba(58, 42, 99, 0.9);
 		border-color: #7e5cd6;
+	}
+	.dot.prod-dot {
+		box-shadow: inset 0 -3px 0 rgba(14, 116, 144, 0.55);
+	}
+	.dot.prev-dot {
+		box-shadow: inset 0 -3px 0 rgba(124, 58, 237, 0.55);
+	}
+	.dot.pair-diff {
+		width: 28px;
+		background: repeating-linear-gradient(
+			-45deg,
+			rgba(31, 122, 68, 0.85) 0 7px,
+			rgba(138, 100, 20, 0.85) 7px 14px
+		);
+		border-color: #c99a1f;
 	}
 </style>
