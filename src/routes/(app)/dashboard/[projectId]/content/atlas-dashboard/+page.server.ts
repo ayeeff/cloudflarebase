@@ -77,18 +77,11 @@ async function loadCollectionsAndIndex(
 			platform as Parameters<typeof geoAstroFetch>[0],
 			'/data/branch-snapshots/preview.json'
 		);
-		if (!snapshotRes.ok) {
-			return buildEnvCoverage(
-				env,
-				new Response('{}', { status: 200 }),
-				new Response('[]', { status: 200 }),
-				{},
-				[]
-			);
-		}
-		const collRes = new Response('{}', { status: 200 });
-		const indexRes = new Response('[]', { status: 200 });
-		return { collRes, indexRes, snapshotRes };
+		return {
+			collRes: new Response('{}', { status: snapshotRes.ok ? 200 : 502 }),
+			indexRes: new Response('[]', { status: snapshotRes.ok ? 200 : 502 }),
+			snapshotRes
+		};
 	}
 
 	const [collRes, indexRes, snapshotRes] = await Promise.all([
