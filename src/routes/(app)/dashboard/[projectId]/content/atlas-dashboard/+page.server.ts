@@ -67,19 +67,43 @@ async function loadCollectionsAndIndex(
 	env: EnvKey
 ): Promise<{ collRes: Response; indexRes: Response; snapshotRes?: Response }> {
 	// Branch snapshots live in R2 (`data/branch-snapshots/<branch>.json`, written
-	// by geo-site `scripts/sync-branch-snapshots.mjs`) and are read over the
-	// GEO_ASTRO service binding. Direct fetch to preview-geo-astro-site is
+	// by geo-site `scripts/sync-branch-snapshots.mjs`). Read them over the LAYERS
+	// binding (layers-worker mirrors the same globe bucket) — GEO_ASTRO only
+	// reaches production, and production doesn't serve /data/branch-snapshots/*
+	// until preview is merged to master. Direct HTTP to workers.dev is
 	// edge-blocked Worker→workers.dev; raw.githubusercontent 404s (private repo).
-		if (env === 'preview') {
-		// Preview coverage comes ONLY from the branch snapshot — never the live
-		// production endpoints (they share the GEO_ASTRO binding to master).
-		const snapshotRes = await geoAstroFetch(
-			platform as Parameters<typeof geoAstroFetch>[0],
-			'/data/branch-snapshots/preview.json'
-		);
+	const loadSnapshot = async (branch: string): Promise<Response | undefined> => {
+		const path = `/branch-snapshots/${branch}.json`;
+		// Prefer LAYERS (same R2 bucket, works on both production and preview
+		// geo deploys); fall back to GEO_ASTRO once master has the /data route.
+		if ((platform as { env?: { LAYERS?: { fetch: (r: Request) => Promise<Response> } } })?.env?.LAYERS) {
+			try {
+				const binding = (platform as { env: { LAYERS: { fetch: (r: Request) => Promise<Response> } } }).env.LAYERS;
+				const headers = new Headers({ accept: 'application/json' });
+				const token = (platform as { env?: { LAYERS_TOKEN?: string } })?.env?.LAYERS_TOKEN;
+				if (token) headers.set('authorization', `Bearer ${token}`);
+				const res = await binding.fetch(new Request(new URL(path, 'https://layers-worker'), { headers }));
+				if (res.ok) return res;
+			} catch {
+				/* fall through to GEO_ASTRO */
+			}
+		}
+		try {
+			const res = await geoAstroFetch(
+				platform as Parameters<typeof geoAstroFetch>[0],
+				`/data/branch-snapshots/${branch}.json`
+			);
+			return res.ok ? res : undefined;
+		} catch {
+			return undefined;
+		}
+	};
+
+	if (env === 'preview') {
+		const snapshotRes = (await loadSnapshot('preview')) as Response | undefined;
 		return {
-			collRes: new Response('{}', { status: snapshotRes.ok ? 200 : 502 }),
-			indexRes: new Response('[]', { status: snapshotRes.ok ? 200 : 502 }),
+			collRes: new Response('{}', { status: snapshotRes?.ok ? 200 : 502 }),
+			indexRes: new Response('[]', { status: snapshotRes?.ok ? 200 : 502 }),
 			snapshotRes
 		};
 	}
@@ -92,7 +116,7 @@ async function loadCollectionsAndIndex(
 		// Live page list: build-time radar of src/pages/maps + src/pages/atlas
 		// complemented by R2-generated /maps/<uuid>/ maps.
 		geoAstroFetch(platform as Parameters<typeof geoAstroFetch>[0], '/api/map-index.json'),
-		geoAstroFetch(platform as Parameters<typeof geoAstroFetch>[0], '/data/branch-snapshots/master.json')
+		loadSnapshot('master')
 	]);
 	return { collRes, indexRes, snapshotRes };
 }
@@ -203,8 +227,9 @@ async function loadEnvCoverage(platform: unknown, env: EnvKey): Promise<EnvCover
 	try {
 		const { collRes, indexRes, snapshotRes } = await loadCollectionsAndIndex(platform, env);
 		let snapshot: BranchSnapshot | null = null;
-		if (snapshotRes?.ok) {
-			snapshot = (await snapshotRes.json().catch(() => null)) as BranchSnapshot | null;
+		const snapOk = snapshotRes?.ok ? snapshotRes : null;
+		if (snapOk) {
+			snapshot = (await snapOk.json().catch(() => null)) as BranchSnapshot | null;
 		}
 		if (snapshot?.collections && Array.isArray(snapshot.pages)) {
 			// Snapshot pages are family slugs under /atlas/ — synthesize a
