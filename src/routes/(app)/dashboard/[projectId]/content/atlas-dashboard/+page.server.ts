@@ -65,31 +65,43 @@ interface EnvCoverage {
 async function loadCollectionsAndIndex(
 	platform: unknown,
 	env: EnvKey
-): Promise<{ collRes: Response; indexRes: Response }> {
-	if (env === 'preview') {
-		const [collRes, indexRes] = await Promise.all([
-			fetch(`${GEO_ASTRO_PREVIEW_BASE}/data/atlas-collections.json`, {
-				headers: { accept: 'application/json' },
-				signal: AbortSignal.timeout(15000)
-			}),
-			fetch(`${GEO_ASTRO_PREVIEW_BASE}/api/map-index.json`, {
-				headers: { accept: 'application/json' },
-				signal: AbortSignal.timeout(15000)
-			})
-		]);
-		return { collRes, indexRes };
+): Promise<{ collRes: Response; indexRes: Response; snapshotRes?: Response }> {
+	// Branch snapshots live in R2 (`data/branch-snapshots/<branch>.json`, written
+	// by geo-site `scripts/sync-branch-snapshots.mjs`) and are read over the
+	// GEO_ASTRO service binding. Direct fetch to preview-geo-astro-site is
+	// edge-blocked Worker→workers.dev; raw.githubusercontent 404s (private repo).
+		if (env === 'preview') {
+		// Preview coverage comes ONLY from the branch snapshot — never the live
+		// production endpoints (they share the GEO_ASTRO binding to master).
+		const snapshotRes = await geoAstroFetch(
+			platform as Parameters<typeof geoAstroFetch>[0],
+			'/data/branch-snapshots/preview.json'
+		);
+		if (!snapshotRes.ok) {
+			return buildEnvCoverage(
+				env,
+				new Response('{}', { status: 200 }),
+				new Response('[]', { status: 200 }),
+				{},
+				[]
+			);
+		}
+		const collRes = new Response('{}', { status: 200 });
+		const indexRes = new Response('[]', { status: 200 });
+		return { collRes, indexRes, snapshotRes };
 	}
 
-	const [collRes, indexRes] = await Promise.all([
+	const [collRes, indexRes, snapshotRes] = await Promise.all([
 		// Live manifest: build-time seed (public/data/atlas-collections.json,
 		// regenerated every geo-site build) with an R2 override first when the
 		// Collections dashboard has edited it (src/worker.ts serves the override).
 		geoAstroFetch(platform as Parameters<typeof geoAstroFetch>[0], '/data/atlas-collections.json'),
 		// Live page list: build-time radar of src/pages/maps + src/pages/atlas
 		// complemented by R2-generated /maps/<uuid>/ maps.
-		geoAstroFetch(platform as Parameters<typeof geoAstroFetch>[0], '/api/map-index.json')
+		geoAstroFetch(platform as Parameters<typeof geoAstroFetch>[0], '/api/map-index.json'),
+		geoAstroFetch(platform as Parameters<typeof geoAstroFetch>[0], '/data/branch-snapshots/master.json')
 	]);
-	return { collRes, indexRes };
+	return { collRes, indexRes, snapshotRes };
 }
 
 function buildEnvCoverage(
@@ -184,17 +196,36 @@ function buildEnvCoverage(
 	};
 }
 
+interface BranchSnapshot {
+	branch?: string;
+	commit?: string;
+	generatedAt?: string;
+	collections?: Record<string, AtlasEntry[]>;
+	pages?: string[];
+}
+
+// Prefer the branch snapshot (git-truth for that branch) when present; fall
+// back to live map-index for environments that only have the R2 override.
 async function loadEnvCoverage(platform: unknown, env: EnvKey): Promise<EnvCoverage> {
 	try {
-		const { collRes, indexRes } = await loadCollectionsAndIndex(platform, env);
+		const { collRes, indexRes, snapshotRes } = await loadCollectionsAndIndex(platform, env);
+		let snapshot: BranchSnapshot | null = null;
+		if (snapshotRes?.ok) {
+			snapshot = (await snapshotRes.json().catch(() => null)) as BranchSnapshot | null;
+		}
+		if (snapshot?.collections && Array.isArray(snapshot.pages)) {
+			// Snapshot pages are family slugs under /atlas/ — synthesize a
+			// map-index-compatible list so buildEnvCoverage treats them as live.
+			const rawMaps: AtlasEntry[] = snapshot.pages.map((slug) => ({ slug }));
+			const fakeColl = new Response(JSON.stringify(snapshot.collections), {
+				status: 200,
+				headers: { 'last-modified': snapshot.generatedAt ?? collRes.headers.get('last-modified') ?? '' }
+			});
+			const fakeIndex = new Response(JSON.stringify(rawMaps), { status: 200 });
+			return buildEnvCoverage(env, fakeColl, fakeIndex, snapshot.collections, rawMaps);
+		}
 		if (!collRes.ok || !indexRes.ok) {
-			return buildEnvCoverage(
-				env,
-				collRes,
-				indexRes,
-				{},
-				[]
-			);
+			return buildEnvCoverage(env, collRes, indexRes, {}, []);
 		}
 		const collections = (await collRes.json()) as Record<string, AtlasEntry[]>;
 		const indexJson: unknown = await indexRes.json();
