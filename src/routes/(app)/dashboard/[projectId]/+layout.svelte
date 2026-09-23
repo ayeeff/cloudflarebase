@@ -26,6 +26,7 @@
 		Camera,
 		Check,
 		ChevronDown,
+		CopyCheck,
 		ChevronsUpDown,
 		Database,
 		Ellipsis,
@@ -1066,6 +1067,19 @@
 					>
 						<Search class="h-4 w-4" />
 						Search Index
+					</a>
+					<a
+						href="/dashboard/geo-site/content/scan-duplicates"
+						data-testid="nav-content-scan-duplicates"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive('/dashboard/geo-site/content/scan-duplicates')
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<CopyCheck class="h-4 w-4" />
+						Scan Duplicates
 					</a>
 					<a
 						href="/dashboard/geo-site/content/streets"

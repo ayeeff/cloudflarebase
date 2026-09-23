@@ -85,7 +85,8 @@
 		{ "binding": "DB_AGENT", "service": "db-agent" },
 		{ "binding": "GEO_ASTRO", "service": "geo-astro-site" },
 		{ "binding": "UPDATE_WORKER", "service": "update" },
-		{ "binding": "LAYERS", "service": "layers-worker" }
+		{ "binding": "LAYERS", "service": "layers-worker" },
+		{ "binding": "SCAN", "service": "scan-duplicates" }
 	],
 
 	// Control plane: the project registry. `database_id` is deliberately
@@ -327,7 +328,8 @@
 				{ "binding": "DB_AGENT", "service": "db-agent-preview" },
 				{ "binding": "GEO_ASTRO", "service": "geo-astro-site" },
 				{ "binding": "UPDATE_WORKER", "service": "update" },
-				{ "binding": "LAYERS", "service": "layers-worker" }
+				{ "binding": "LAYERS", "service": "layers-worker" },
+				{ "binding": "SCAN", "service": "scan-duplicates" }
 			]
 		}
 	}

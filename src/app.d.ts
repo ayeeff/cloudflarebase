@@ -75,6 +75,20 @@ declare global {
 				 */
 				LAYERS_TOKEN?: string;
 				/**
+				 * Service binding to the `scan-duplicates` Worker (duplicate scanner:
+				 * src/pages .astro clones, globe/basemaps etag dups, geo-datalake
+				 * layers, layer-harness __caCfg/.vtab) — powers
+				 * /dashboard/geo-site/content/scan-duplicates. Optional binding so a
+				 * self-hosted install without the worker falls back to its public URL.
+				 */
+				SCAN?: Fetcher;
+				/**
+				 * Bearer token for the scan-duplicates Worker (optional until set —
+				 * the worker is open when SCAN_TOKEN is unset). Same token as
+				 * `wrangler secret put SCAN_TOKEN` on scan-duplicates itself.
+				 */
+				SCAN_TOKEN?: string;
+				/**
 				 * Optional per-tenant ceiling overrides (registry.ts defaults both
 				 * to 5). Not in any deployed config's vars, so they are typed here
 				 * instead of the generated worker-configuration.d.ts; the e2e stack

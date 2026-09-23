@@ -1,4 +1,3 @@
-import { geoAstroFetch } from '$lib/server/geo-astro';
 import type { PageServerLoad } from './$types';
 import * as Sentry from '@sentry/sveltekit';
 
@@ -8,15 +7,16 @@ import * as Sentry from '@sentry/sveltekit';
 // preview CI build knows vs what production master knows. The repo is private
 // (raw.githubusercontent 404s) and Worker→workers.dev HTTP is edge-blocked —
 // read R2 branch snapshots (written by geo-site scripts/sync-branch-snapshots.mjs)
-// over the GEO_ASTRO service binding, same pattern as atlas-dashboard.
+// over the LAYERS service binding (GEO_ASTRO only reaches production geo-worker,
+// whose branch-snapshots route lands only after preview→master merge).
 // Same access pattern as the pmtiles/streetview dashboards: LAYERS service
 // binding first (two Workers on the same account cannot fetch() each other by
 // URL — Cloudflare error 1042), public URL fallback for local dev.
 const LAYERS_GAPS = 'https://layers-worker.foodstarmelbourne.workers.dev/gaps';
 const LAYERS_BINDING_URL = 'https://layers-worker/gaps';
 const MANIFEST_PATH: Record<string, string> = {
-	preview: '/data/branch-snapshots/basemaps-preview.json',
-	master: '/data/branch-snapshots/basemaps-master.json'
+	preview: '/branch-snapshots/basemaps-preview.json',
+	master: '/branch-snapshots/basemaps-master.json'
 };
 
 interface Gaps {
@@ -127,7 +127,27 @@ async function fetchBranchManifest(
 	const path = MANIFEST_PATH[branch];
 	if (!path) return emptyBranch(branch, 'unknown branch');
 	try {
-		const res = await geoAstroFetch(platform as Parameters<typeof geoAstroFetch>[0], path);
+		// Prefer the LAYERS service binding (same path shape as /gaps).
+		let res: Response | null = null;
+		const env = (platform as { env?: { LAYERS?: { fetch: (u: string, i?: RequestInit) => Promise<Response> } } })?.env;
+		if (env?.LAYERS) {
+			try {
+				res = await env.LAYERS.fetch(`https://layers-worker${path}`, {
+					headers: { accept: 'application/json' }
+				});
+			} catch (e) {
+				Sentry.captureException(e, {
+					tags: { source: 'gaps-dashboard', upstream: `layers-snapshot-${branch}` }
+				});
+				res = null;
+			}
+		}
+		if (!res) {
+			// Public fallback (local dev only — Worker→workers.dev is edge-blocked in prod).
+			res = await fetch(`https://layers-worker.foodstarmelbourne.workers.dev${path}`, {
+				signal: AbortSignal.timeout(20000)
+			});
+		}
 		if (!res.ok) return emptyBranch(branch, `snapshot HTTP ${res.status} (${path})`);
 		const body: unknown = await res.json();
 		if (!body || typeof body !== 'object') return emptyBranch(branch, 'malformed manifest JSON');
