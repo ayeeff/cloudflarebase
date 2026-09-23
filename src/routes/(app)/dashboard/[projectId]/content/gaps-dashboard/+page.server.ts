@@ -1,22 +1,22 @@
+import { geoAstroFetch } from '$lib/server/geo-astro';
 import type { PageServerLoad } from './$types';
 import * as Sentry from '@sentry/sveltekit';
 
 // Layer-gaps dashboard: dual branch coverage. The live layers-worker GET /gaps
 // supplies the candidate registry, then each git branch's committed
 // basemaps/manifest.json is scored separately so the matrix shows what the
-// preview CI build knows vs what production master knows. The repo is private,
-// so raw.githubusercontent 404s — fetch each branch's build-time manifest from
-// the corresponding geo Worker deploy (same dual-env pattern as atlas-dashboard).
+// preview CI build knows vs what production master knows. The repo is private
+// (raw.githubusercontent 404s) and Worker→workers.dev HTTP is edge-blocked —
+// read R2 branch snapshots (written by geo-site scripts/sync-branch-snapshots.mjs)
+// over the GEO_ASTRO service binding, same pattern as atlas-dashboard.
 // Same access pattern as the pmtiles/streetview dashboards: LAYERS service
 // binding first (two Workers on the same account cannot fetch() each other by
 // URL — Cloudflare error 1042), public URL fallback for local dev.
 const LAYERS_GAPS = 'https://layers-worker.foodstarmelbourne.workers.dev/gaps';
 const LAYERS_BINDING_URL = 'https://layers-worker/gaps';
-const GEO_ASTRO_PROD_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
-const GEO_ASTRO_PREVIEW_BASE = 'https://preview-geo-astro-site.foodstarmelbourne.workers.dev';
-const MANIFEST_URL: Record<string, string> = {
-	preview: `${GEO_ASTRO_PREVIEW_BASE}/api/basemaps-manifest.json`,
-	master: `${GEO_ASTRO_PROD_BASE}/api/basemaps-manifest.json`
+const MANIFEST_PATH: Record<string, string> = {
+	preview: '/data/branch-snapshots/basemaps-preview.json',
+	master: '/data/branch-snapshots/basemaps-master.json'
 };
 
 interface Gaps {
@@ -121,19 +121,20 @@ function computeBranch(
 
 async function fetchBranchManifest(
 	branch: string,
+	platform: unknown,
 	cands: { slug: string; display: string }[]
 ): Promise<BranchGaps> {
-	const url = MANIFEST_URL[branch];
-	if (!url) return emptyBranch(branch, 'unknown branch');
+	const path = MANIFEST_PATH[branch];
+	if (!path) return emptyBranch(branch, 'unknown branch');
 	try {
-		const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
-		if (!res.ok) return emptyBranch(branch, `manifest HTTP ${res.status} (${url})`);
+		const res = await geoAstroFetch(platform as Parameters<typeof geoAstroFetch>[0], path);
+		if (!res.ok) return emptyBranch(branch, `snapshot HTTP ${res.status} (${path})`);
 		const body: unknown = await res.json();
 		if (!body || typeof body !== 'object') return emptyBranch(branch, 'malformed manifest JSON');
 		return computeBranch(branch, body as { pmtiles?: { name: string }[] }, cands);
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
-		Sentry.captureException(e, { tags: { source: 'gaps-dashboard', upstream: `manifest-${branch}` } });
+		Sentry.captureException(e, { tags: { source: 'gaps-dashboard', upstream: `snapshot-${branch}` } });
 		return emptyBranch(branch, msg);
 	}
 }
@@ -183,8 +184,8 @@ export const load: PageServerLoad = async ({ platform }) => {
 		display: c.display || c.slug
 	}));
 	const [preview, master] = await Promise.all([
-		fetchBranchManifest('preview', cands),
-		fetchBranchManifest('master', cands)
+		fetchBranchManifest('preview', platform, cands),
+		fetchBranchManifest('master', platform, cands)
 	]);
 	return { gaps, branches: { preview, master } as Record<string, BranchGaps>, error: null };
 };
