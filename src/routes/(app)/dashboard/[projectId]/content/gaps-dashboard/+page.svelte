@@ -2,6 +2,7 @@
 	let { data } = $props();
 
 	const gaps = data.gaps;
+	const branches = data.branches;
 	const loadError: string | null = data.error;
 	const siteOrigin = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 
@@ -19,9 +20,32 @@
 		{ key: 'kartaview', label: 'KartaView', suffix: 'kartaview' }
 	];
 
-	const candidates: { slug: string; display: string; hasBase: boolean; missing: string[] }[] =
-		gaps?.candidates ?? [];
-	const manifestGeneratedAt: string | null = gaps?.manifestGeneratedAt ?? null;
+	type BranchName = 'preview' | 'master';
+	let branch = $state<BranchName>('preview');
+
+	interface BranchGaps {
+		branch: string;
+		ok: boolean;
+		error: string | null;
+		manifestFiles: number;
+		manifestGeneratedAt: string | null;
+		totals: { candidates: number; withBase: number; noBase: number };
+		perLayer: Record<string, number>;
+		union: { noBase: string[]; layers: Record<string, string[]> };
+		candidates: { slug: string; display: string; hasBase: boolean; missing: string[] }[];
+	}
+	const branchMap = $derived((branches ?? {}) as Partial<Record<BranchName, BranchGaps | null>>);
+	const bg = $derived(branchMap[branch] ?? null);
+	const branchOk = $derived(!!bg?.ok);
+	// Matrix source: selected branch's committed manifest; fall back to live R2 /gaps.
+	const matrixCandidates = $derived<
+		{ slug: string; display: string; hasBase: boolean; missing: string[] }[]
+	>(branchOk ? (bg?.candidates ?? []) : (gaps?.candidates ?? []));
+	const manifestGeneratedAt = $derived(
+		(branchOk ? bg?.manifestGeneratedAt : gaps?.manifestGeneratedAt) ?? null
+	);
+	const manifestFiles = $derived((branchOk ? bg?.manifestFiles : gaps?.manifestFiles) ?? 0);
+	const branchError = $derived(branchOk ? null : (bg?.error ?? 'branch manifest unavailable'));
 
 	type Row = {
 		slug: string;
@@ -32,7 +56,7 @@
 		order: number;
 	};
 	const rows = $derived.by<Row[]>(() =>
-		candidates.map((c, i) => ({
+		matrixCandidates.map((c, i) => ({
 			slug: c.slug,
 			display: c.display || c.slug,
 			hasBase: !!c.hasBase,
@@ -41,6 +65,39 @@
 			order: i
 		}))
 	);
+
+	// Per-branch column stats over ALL candidates (mirrors /gaps perLayer).
+	const colStatsByBranch = $derived.by<Record<BranchName, Record<string, { present: number; missing: number }>>>(() => {
+		const out = {
+			preview: {} as Record<string, { present: number; missing: number }>,
+			master: {} as Record<string, { present: number; missing: number }>
+		};
+		for (const name of ['preview', 'master'] as const) {
+			const src = branches?.[name];
+			const cands = src?.ok ? src.candidates : [];
+			for (const l of LAYER_DEFS) {
+				let present = 0;
+				let missing = 0;
+				for (const c of cands) {
+					if (l.key === 'base') {
+						if (c.hasBase) present++;
+						else missing++;
+					} else if (c.missing.includes(l.key)) missing++;
+					else present++;
+				}
+				out[name][l.key] = { present, missing };
+			}
+		}
+		return out;
+	});
+	const colStats = $derived(
+		colStatsByBranch[branchOk ? branch : 'preview'] ?? colStatsByBranch.preview
+	);
+
+	const totalGapCells = $derived(
+		rows.reduce((acc, r) => acc + (r.hasBase ? r.gaps : LAYER_DEFS.length - 1), 0)
+	);
+	const completeRows = $derived(rows.filter((r) => r.hasBase && r.gaps === 0).length);
 
 	// ── filters + sorting ──
 	let q = $state('');
@@ -73,28 +130,6 @@
 		}
 		return list;
 	});
-
-	// ── column stats (over ALL candidates, mirroring /gaps perLayer) ──
-	const colStats = $derived.by<Record<string, { present: number; missing: number }>>(() => {
-		const out: Record<string, { present: number; missing: number }> = {};
-		for (const l of LAYER_DEFS) {
-			const s = { present: 0, missing: 0 };
-			for (const c of candidates) {
-				if (l.key === 'base') {
-					if (c.hasBase) s.present++;
-					else s.missing++;
-				} else if (c.missing.includes(l.key)) s.missing++;
-				else s.present++;
-			}
-			out[l.key] = s;
-		}
-		return out;
-	});
-
-	const totalGapCells = $derived(
-		rows.reduce((acc, r) => acc + (r.hasBase ? r.gaps : LAYER_DEFS.length - 1), 0)
-	);
-	const completeRows = $derived(rows.filter((r) => r.hasBase && r.gaps === 0).length);
 
 	// click a missing cell → toast the extract command for that layer+slug
 	let toastMsg = $state('');
@@ -143,9 +178,9 @@
 		<div>
 			<h1 class="text-2xl font-bold tracking-tight">Layer Gaps (per-city missing pmtiles)</h1>
 			<p class="text-sm text-muted-foreground">
-				{gaps?.totals.candidates ?? 0} candidates · {gaps?.totals.withBase ?? 0} with base ·
-				{gaps?.totals.noBase ?? 0} without base · manifest {gaps?.manifestFiles ?? 0} files
-				{#if manifestGeneratedAt}· {manifestGeneratedAt.slice(0, 10)}{/if}
+				{branches?.preview?.manifestFiles ?? 0} preview · {branches?.master?.manifestFiles ?? 0} master ·
+				live R2 {gaps?.manifestFiles ?? 0} files
+				{#if manifestGeneratedAt}· {branch} {manifestGeneratedAt.slice(0, 10)}{/if}
 			</p>
 		</div>
 		<div class="flex items-center gap-2 text-xs text-muted-foreground">
@@ -181,27 +216,57 @@
 			<header>
 				<h2>Missing City-Layer Matrix</h2>
 				<div class="sub">
-					live from R2 <code>globe/basemaps/manifest.json</code> ·
-					<a href="{siteOrigin}/atlas" target="_blank" rel="noopener">/atlas</a> · rows without base cannot
-					render the city view — extract base first
+					coverage from each branch's committed
+					<code>basemaps/manifest.json</code> · preview = CI build knowledge · master = production ·
+					<a href="{siteOrigin}/atlas" target="_blank" rel="noopener">/atlas</a> · rows without base
+					cannot render the city view — extract base first
 				</div>
+				<div class="branch-toggle" role="group" aria-label="Branch">
+					<button
+						class={['bbtn', branch === 'preview' && 'on']}
+						onclick={() => (branch = 'preview')}
+						data-testid="gaps-branch-preview"
+					>
+						preview · {branches?.preview?.manifestFiles ?? 0} files
+					</button>
+					<button
+						class={['bbtn', branch === 'master' && 'on']}
+						onclick={() => (branch = 'master')}
+						data-testid="gaps-branch-master"
+					>
+						master · {branches?.master?.manifestFiles ?? 0} files
+					</button>
+				</div>
+				{#if branchError}
+					<div class="branch-err" data-testid="gaps-branch-error">
+						{branch} branch manifest unavailable ({branchError}) — showing live R2 fallback.
+					</div>
+				{/if}
 			</header>
 
 			<div class="cards">
 				<div class="card">
-					<h3>Overview</h3>
+					<h3>Overview · {branch}</h3>
 					<div class="nums">
-						<span><b>{gaps?.totals.candidates ?? 0}</b>candidates</span>
+						<span><b>{rows.length}</b>candidates</span>
 						<span><b>{completeRows}</b>complete</span>
 						<span class="m"><b>{totalGapCells}</b>missing cells</span>
+					</div>
+					<div class="dual">
+						<span>preview <b>{branches?.preview?.manifestFiles ?? 0}</b> files</span>
+						<span>master <b>{branches?.master?.manifestFiles ?? 0}</b> files</span>
 					</div>
 				</div>
 				{#each LAYER_DEFS.slice(1) as l (l.key)}
 					<div class="card">
 						<h3>{l.label}</h3>
 						<div class="nums">
-							<span class="m"><b>{colStats[l.key]?.missing ?? 0}</b>missing</span>
+							<span class="m"><b>{colStats[l.key]?.missing ?? 0}</b>missing ({branch})</span>
 							<span><b>{colStats[l.key]?.present ?? 0}</b>present</span>
+						</div>
+						<div class="dual">
+							<span>p <b>{colStatsByBranch.preview[l.key]?.missing ?? '—'}</b></span>
+							<span>m <b>{colStatsByBranch.master[l.key]?.missing ?? '—'}</b></span>
 						</div>
 					</div>
 				{/each}
@@ -391,6 +456,54 @@
 	}
 	.pdash .card .nums .m b {
 		color: #ff8fa3;
+	}
+	.pdash .branch-toggle {
+		display: flex;
+		gap: 8px;
+		margin-top: 10px;
+	}
+	.pdash .bbtn {
+		background: var(--panel2);
+		border: 1px solid var(--border);
+		color: var(--muted);
+		border-radius: 8px;
+		padding: 6px 12px;
+		font-size: 12px;
+		cursor: pointer;
+		transition:
+			border-color 0.15s,
+			color 0.15s;
+	}
+	.pdash .bbtn:hover {
+		border-color: var(--accent);
+		color: var(--text);
+	}
+	.pdash .bbtn.on {
+		border-color: var(--accent);
+		color: var(--accent);
+		background: #102030;
+	}
+	.pdash .branch-err {
+		margin-top: 8px;
+		font-size: 12px;
+		color: #ff8fa3;
+		border: 1px dashed var(--missing-border);
+		border-radius: 6px;
+		padding: 6px 10px;
+	}
+	.pdash .card .dual {
+		display: flex;
+		gap: 12px;
+		margin-top: 6px;
+		font-size: 11px;
+		color: var(--muted);
+		border-top: 1px dashed var(--border);
+		padding-top: 6px;
+	}
+	.pdash .card .dual b {
+		display: inline;
+		font-size: 12px;
+		margin-left: 3px;
 	}
 	.pdash .legend {
 		display: flex;

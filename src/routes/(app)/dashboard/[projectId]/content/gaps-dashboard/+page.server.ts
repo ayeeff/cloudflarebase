@@ -1,14 +1,17 @@
 import type { PageServerLoad } from './$types';
 import * as Sentry from '@sentry/sveltekit';
 
-// Layer-gaps dashboard: mirrors the layers-worker's public GET /gaps — the
-// per-city missing-layer matrix recomputed live from the R2 basemaps manifest
-// over the bundled candidate registry (1,228+ cities). Same access pattern as the
-// pmtiles/streetview dashboards: LAYERS service binding first (two Workers on
-// the same account cannot fetch() each other by URL — Cloudflare error 1042),
-// public URL fallback for local dev.
+// Layer-gaps dashboard: dual branch coverage. The live layers-worker GET /gaps
+// supplies the candidate registry, then each git branch's committed
+// basemaps/manifest.json (raw.githubusercontent) is scored separately so the
+// matrix shows what the preview CI build knows vs what production master knows.
+// Same access pattern as the pmtiles/streetview dashboards: LAYERS service
+// binding first (two Workers on the same account cannot fetch() each other by
+// URL — Cloudflare error 1042), public URL fallback for local dev.
 const LAYERS_GAPS = 'https://layers-worker.foodstarmelbourne.workers.dev/gaps';
 const LAYERS_BINDING_URL = 'https://layers-worker/gaps';
+const RAW_MANIFEST = (branch: string) =>
+	`https://raw.githubusercontent.com/ayeeff/astrogl/${branch}/basemaps/manifest.json`;
 
 interface Gaps {
 	ok: boolean;
@@ -19,6 +22,112 @@ interface Gaps {
 	perLayer: Record<string, number>;
 	union: { noBase: string[]; layers: Record<string, string[]> };
 	candidates: { slug: string; display: string; hasBase: boolean; missing: string[] }[];
+}
+
+interface BranchGaps {
+	branch: string;
+	ok: boolean;
+	error: string | null;
+	manifestFiles: number;
+	manifestGeneratedAt: string | null;
+	totals: { candidates: number; withBase: number; noBase: number };
+	perLayer: Record<string, number>;
+	union: { noBase: string[]; layers: Record<string, string[]> };
+	candidates: { slug: string; display: string; hasBase: boolean; missing: string[] }[];
+}
+
+// Mirror of workers/layers/src/gaps.js — layer suffixes + power slug aliases.
+const LAYER_KEYS = [
+	'terrain',
+	'satellite',
+	'population',
+	'speed',
+	'transit',
+	'power',
+	'bathymetry',
+	'mapillary',
+	'kartaview'
+] as const;
+const SLUG_ALIAS: Record<string, string> = {
+	newyork: 'ny',
+	losangeles: 'la',
+	sanfrancisco: 'sf'
+};
+
+function emptyBranch(branch: string, error: string): BranchGaps {
+	return {
+		branch,
+		ok: false,
+		error,
+		manifestFiles: 0,
+		manifestGeneratedAt: null,
+		totals: { candidates: 0, withBase: 0, noBase: 0 },
+		perLayer: {},
+		union: { noBase: [], layers: {} },
+		candidates: []
+	};
+}
+
+// Score one branch's manifest names against the candidate registry (same
+// semantics as gaps.js computeGaps).
+function computeBranch(
+	branch: string,
+	manifest: { pmtiles?: { name: string }[]; generatedAt?: string },
+	cands: { slug: string; display: string }[]
+): BranchGaps {
+	const names = new Set((manifest.pmtiles ?? []).map((f) => f.name));
+	const candidates = cands.map(({ slug, display }) => {
+		const hasBase = names.has(slug);
+		const missing: string[] = [];
+		for (const key of LAYER_KEYS) {
+			let present = names.has(`${slug}-${key}`);
+			if (!present && key === 'power' && SLUG_ALIAS[slug]) {
+				present = names.has(`${SLUG_ALIAS[slug]}-power`);
+			}
+			if (!present) missing.push(key);
+		}
+		return { slug, display, hasBase, missing };
+	});
+	const noBase = candidates.filter((r) => !r.hasBase).map((r) => r.slug);
+	const perLayer: Record<string, number> = {};
+	const unionLayers: Record<string, string[]> = {};
+	for (const key of LAYER_KEYS) {
+		const list = candidates.filter((r) => r.hasBase && r.missing.includes(key)).map((r) => r.slug);
+		unionLayers[key] = list;
+		perLayer[key] = list.length;
+	}
+	return {
+		branch,
+		ok: true,
+		error: null,
+		manifestFiles: names.size,
+		manifestGeneratedAt: typeof manifest.generatedAt === 'string' ? manifest.generatedAt : null,
+		totals: {
+			candidates: candidates.length,
+			withBase: candidates.length - noBase.length,
+			noBase: noBase.length
+		},
+		perLayer,
+		union: { noBase, layers: unionLayers },
+		candidates
+	};
+}
+
+async function fetchBranchManifest(
+	branch: string,
+	cands: { slug: string; display: string }[]
+): Promise<BranchGaps> {
+	try {
+		const res = await fetch(RAW_MANIFEST(branch), { signal: AbortSignal.timeout(15000) });
+		if (!res.ok) return emptyBranch(branch, `manifest HTTP ${res.status}`);
+		const body: unknown = await res.json();
+		if (!body || typeof body !== 'object') return emptyBranch(branch, 'malformed manifest JSON');
+		return computeBranch(branch, body as { pmtiles?: { name: string }[] }, cands);
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		Sentry.captureException(e, { tags: { source: 'gaps-dashboard', upstream: `raw-${branch}` } });
+		return emptyBranch(branch, msg);
+	}
 }
 
 export const load: PageServerLoad = async ({ platform }) => {
@@ -43,6 +152,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 			});
 			return {
 				gaps: null as Gaps | null,
+				branches: null as Record<string, BranchGaps | null> | null,
 				error: `layers-worker unreachable: ${e instanceof Error ? e.message : String(e)}`
 			};
 		}
@@ -51,12 +161,22 @@ export const load: PageServerLoad = async ({ platform }) => {
 		const detail = await res.text().catch(() => '');
 		return {
 			gaps: null,
+			branches: null,
 			error: `layers-worker /gaps responded ${res.status}: ${detail.slice(0, 200)}`
 		};
 	}
 	const body: unknown = await res.json().catch(() => null);
 	if (!body || typeof body !== 'object' || !(body as Record<string, unknown>).ok) {
-		return { gaps: null, error: 'layers-worker /gaps returned a malformed payload' };
+		return { gaps: null, branches: null, error: 'layers-worker /gaps returned a malformed payload' };
 	}
-	return { gaps: body as Gaps, error: null };
+	const gaps = body as Gaps;
+	const cands = gaps.candidates.map((c) => ({
+		slug: c.slug,
+		display: c.display || c.slug
+	}));
+	const [preview, master] = await Promise.all([
+		fetchBranchManifest('preview', cands),
+		fetchBranchManifest('master', cands)
+	]);
+	return { gaps, branches: { preview, master } as Record<string, BranchGaps>, error: null };
 };
