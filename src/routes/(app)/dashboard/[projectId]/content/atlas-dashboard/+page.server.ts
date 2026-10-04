@@ -423,17 +423,26 @@ export const load: PageServerLoad = async ({ platform }) => {
 export const actions: Actions = {
 	saveRegistry: async ({ platform }) => {
 		try {
-			let citySlugs: string[] = [];
+			const slugSet = new Set<string>();
 			try {
 				const res = await geoAstroFetch(platform, '/data/atlas-collections.json');
 				if (res.ok) {
 					const coll = (await res.json()) as any;
 					const cityEntries = coll?.City ?? [];
-					citySlugs = cityEntries.map((c: any) => String(c.slug ?? '').replace(/-city-atlas$/i, ''));
+					for (const c of cityEntries) {
+						const s = String(c.slug ?? '').replace(/-city-atlas$/i, '').trim();
+						if (s) slugSet.add(s);
+					}
 				}
 			} catch {
 				/* fall through */
 			}
+			if (Array.isArray((seedRegistry as any).cities)) {
+				for (const sc of (seedRegistry as any).cities) {
+					if (sc.slug) slugSet.add(sc.slug);
+				}
+			}
+			const citySlugs = [...slugSet];
 			const report = await loadAtlas2DStorageReport(platform, citySlugs);
 			const saved = await saveMissingRegistryToR2(platform, report.missingRegistryJson);
 			return {
