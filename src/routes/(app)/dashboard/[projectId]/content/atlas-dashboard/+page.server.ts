@@ -6,6 +6,7 @@ import {
 	saveMissingRegistryToR2,
 	type CityStorage2D
 } from '$lib/server/atlas-2d-storage';
+import seedRegistry from '$lib/data/atlas-2d-missing-files.json';
 import type { PageServerLoad, Actions } from './$types';
 
 const GEO_ASTRO_PROD_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
@@ -347,6 +348,32 @@ export const load: PageServerLoad = async ({ platform }) => {
 					attachedStreets: c.attachedStreets,
 					prodSlugs: key === 'prodSlugs' ? slugs : null,
 					prevSlugs: key === 'prevSlugs' ? slugs : null,
+					storage2d: null
+				});
+			}
+		}
+	}
+
+	// Merge all 1,225 registered cities from the 2D registry seed so all cities are tracked
+	if (Array.isArray((seedRegistry as any).cities)) {
+		for (const sc of (seedRegistry as any).cities) {
+			if (!byPrefix.has(sc.slug)) {
+				const prodSlugs: Record<string, string> = {};
+				const prevSlugs: Record<string, string> = {};
+				for (const t of TYPE_DEFS) {
+					prodSlugs[t.key] = `${sc.slug}-${t.suffix}`;
+					prevSlugs[t.key] = `${sc.slug}-${t.suffix}`;
+				}
+				byPrefix.set(sc.slug, {
+					name: sc.name || sc.slug,
+					iata: '',
+					continent: '',
+					pop: 0,
+					prefix: sc.slug,
+					attachedAddresses: 0,
+					attachedStreets: 0,
+					prodSlugs,
+					prevSlugs,
 					storage2d: null
 				});
 			}
