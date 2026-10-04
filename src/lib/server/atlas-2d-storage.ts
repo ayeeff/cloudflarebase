@@ -210,6 +210,16 @@ export async function loadAtlas2DStorageReport(
 	platform: any,
 	citySlugs: string[]
 ): Promise<Atlas2DStorageReport> {
+	if (!citySlugs || citySlugs.length === 0) {
+		if (Array.isArray((fallbackSeed as any).cities)) {
+			citySlugs = (fallbackSeed as any).cities.map((c: any) => c.slug);
+		} else if ((fallbackSeed as any).missingByCity) {
+			citySlugs = Object.keys((fallbackSeed as any).missingByCity);
+		} else {
+			citySlugs = [];
+		}
+	}
+
 	// 1. Try Live R2 Listing via native bindings if available
 	const datalakeBucket = platform?.env?.DATALAKE as R2Bucket | undefined;
 	const globeBucket = platform?.env?.GLOBE as R2Bucket | undefined;

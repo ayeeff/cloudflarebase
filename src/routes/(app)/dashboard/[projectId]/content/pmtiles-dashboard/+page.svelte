@@ -5,6 +5,9 @@
 	const loadError: string | null = data.error;
 
 	const siteOrigin = dash?.siteOrigin ?? 'https://geo-astro-site.foodstarmelbourne.workers.dev';
+	const previewOrigin = 'https://preview-geo-astro-site.foodstarmelbourne.workers.dev';
+	const atlasHref = (slug: string) => `${siteOrigin}/atlas/${slug}-city-atlas`;
+	const previewAtlasHref = (slug: string) => `${previewOrigin}/atlas/${slug}-city-atlas`;
 	const layers: { key: string; label: string; suffix: string }[] = dash?.layers ?? [];
 	type CityMeta = {
 		city?: string;
@@ -344,14 +347,44 @@
 						{#each visible as r (r.slug)}
 							<tr>
 								<td class="citycell">
-									<b>{r.city}</b>
+									<!-- eslint-disable svelte/no-navigation-without-resolve -- cross-origin links to the geo site -->
+									<a
+										href={previewAtlasHref(r.slug)}
+										target="_blank"
+										rel="noopener"
+										class="citylink"
+										title="Open {r.city} city atlas on preview"
+									>
+										<b>{r.city}</b>
+									</a>
 									<span class="meta">{r.slug}</span>
-									<span class="cont"
-										>{r.country ?? '—'}
+									<span class="cont">
+										{r.country ?? '—'}
 										{#if r.rank}· rank {r.rank}{/if}
 										{#if r.stores}· {r.stores} stores{/if}
-										{#if r.popM}· {r.popM}M{/if}</span
-									>
+										{#if r.popM}· {r.popM}M{/if}
+										·
+										<a
+											href={previewAtlasHref(r.slug)}
+											target="_blank"
+											rel="noopener"
+											class="previewlink"
+											title="Preview branch ({previewOrigin}/atlas/{r.slug}-city-atlas)"
+										>
+											preview ↗
+										</a>
+										·
+										<a
+											href={atlasHref(r.slug)}
+											target="_blank"
+											rel="noopener"
+											class="masterlink"
+											title="Master production branch ({siteOrigin}/atlas/{r.slug}-city-atlas)"
+										>
+											master ↗
+										</a>
+									</span>
+									<!-- eslint-enable svelte/no-navigation-without-resolve -->
 									{#if r.osm}
 										<span
 											class="osmbadge"
@@ -633,6 +666,14 @@
 	.pdash .citycell b {
 		font-weight: 600;
 	}
+	.pdash .citycell .citylink {
+		color: var(--text);
+		text-decoration: none;
+	}
+	.pdash .citycell .citylink:hover {
+		color: var(--accent);
+		text-decoration: underline;
+	}
 	.pdash .citycell .meta {
 		color: var(--accent);
 		font-size: 11px;
@@ -642,6 +683,30 @@
 		display: block;
 		color: var(--muted);
 		font-size: 11px;
+	}
+	.pdash .citycell .cont a {
+		color: var(--muted);
+		text-decoration: none;
+	}
+	.pdash .citycell .cont a:hover {
+		color: var(--accent);
+		text-decoration: underline;
+	}
+	.pdash .citycell .cont a.previewlink {
+		color: #a78bfa;
+		font-weight: 500;
+	}
+	.pdash .citycell .cont a.previewlink:hover {
+		color: #c4b5fd;
+		text-decoration: underline;
+	}
+	.pdash .citycell .cont a.masterlink {
+		color: #38bdf8;
+		font-weight: 500;
+	}
+	.pdash .citycell .cont a.masterlink:hover {
+		color: #7dd3fc;
+		text-decoration: underline;
 	}
 	.pdash .citycell .osmbadge {
 		display: inline-block;

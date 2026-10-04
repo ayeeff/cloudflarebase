@@ -298,6 +298,10 @@ function classifyAccess(pathname: string): Access {
 		if (segments[1] === 'registry' && segments[2] === 'projects' && segments[3]) {
 			return { scope: 'operator', projectId: segments[3], kind: 'api' };
 		}
+		// Public Atlas registry export endpoint for dashboard downloads / tooling
+		if (segments[1] === 'atlas') {
+			return { scope: 'open' };
+		}
 		if (segments[1] === 'projects') {
 			const rest = segments.slice(3);
 			// /api/projects/<id>/<apiPrefix>/... proxies onto an agent; translate

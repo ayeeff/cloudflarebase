@@ -22,7 +22,9 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 
 	const isDownload = url.searchParams.get('download') === '1';
 	const headers: Record<string, string> = {
-		'content-type': 'application/json; charset=utf-8'
+		'content-type': 'application/json; charset=utf-8',
+		'access-control-allow-origin': '*',
+		'cache-control': 'public, max-age=60'
 	};
 	if (isDownload) {
 		headers['content-disposition'] = 'attachment; filename="missing-atlas-2d-files.json"';

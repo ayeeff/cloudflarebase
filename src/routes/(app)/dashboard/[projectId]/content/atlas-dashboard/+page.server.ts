@@ -375,7 +375,8 @@ export const load: PageServerLoad = async ({ platform }) => {
 			totals: storage2dReport.totals,
 			source: storage2dReport.source,
 			filesChecked: storage2dReport.filesChecked,
-			generatedAt: storage2dReport.generatedAt
+			generatedAt: storage2dReport.generatedAt,
+			missingRegistryJson: storage2dReport.missingRegistryJson
 		},
 		lastUpdated: {
 			collections: production.lastUpdated.collections ?? preview.lastUpdated.collections,

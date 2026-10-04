@@ -150,7 +150,9 @@
 		showToast(`${c.url}  (copied)`);
 		window.open(c.url, '_blank');
 	}
+	const previewOrigin = 'https://preview-geo-astro-site.foodstarmelbourne.workers.dev';
 	const atlasHref = (slug: string) => `${siteOrigin}/atlas/${slug}-city-atlas`;
+	const previewAtlasHref = (slug: string) => `${previewOrigin}/atlas/${slug}-city-atlas`;
 </script>
 
 <svelte:head>
@@ -288,18 +290,39 @@
 							<tr>
 								<td class="citycell">
 									<!-- eslint-disable svelte/no-navigation-without-resolve -- cross-origin links to the geo site -->
-									<a href={atlasHref(r.slug)} target="_blank" rel="noopener" class="citylink"
-										><b>{r.city}</b></a
+									<a
+										href={previewAtlasHref(r.slug)}
+										target="_blank"
+										rel="noopener"
+										class="citylink"
+										title="Open {r.city} city atlas on preview"
 									>
+										<b>{r.city}</b>
+									</a>
 									<span class="meta">{r.slug}</span>
 									<span class="cont">
 										{r.country ?? '—'}
 										{#if r.rank}· rank {r.rank}{/if}
 										·
-										<a href="{atlasHref(r.slug)}#street" target="_blank" rel="noopener"
-											>street tab ↗</a
-										></span
-									>
+										<a
+											href={previewAtlasHref(r.slug)}
+											target="_blank"
+											rel="noopener"
+											class="previewlink"
+											title="Preview branch ({previewOrigin}/atlas/{r.slug}-city-atlas)"
+										>
+											preview ↗
+										</a>
+										·
+										<a
+											href="{atlasHref(r.slug)}#street"
+											target="_blank"
+											rel="noopener"
+											title="Master branch street tab ({siteOrigin}/atlas/{r.slug}-city-atlas#street)"
+										>
+											street tab ↗
+										</a>
+									</span>
 									<!-- eslint-enable svelte/no-navigation-without-resolve -->
 								</td>
 								<td>
@@ -567,6 +590,15 @@
 	}
 	.pdash .citycell .cont a:hover {
 		color: var(--accent);
+		text-decoration: underline;
+	}
+	.pdash .citycell .cont a.previewlink {
+		color: #a78bfa;
+		font-weight: 500;
+	}
+	.pdash .citycell .cont a.previewlink:hover {
+		color: #c4b5fd;
+		text-decoration: underline;
 	}
 	.pdash td.cell {
 		text-align: center;

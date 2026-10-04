@@ -73,6 +73,8 @@
 	let onlyMissing2D = $state(false);
 	let onlyMissingGeoms = $state(false);
 	let onlyMissingTransit = $state(false);
+	let filterFile = $state<string | null>(null);
+	let activeMissingTab = $state<string | null>(null);
 	let sort = $state('manifest');
 	let savingRegistry = $state(false);
 
@@ -191,6 +193,12 @@
 			)
 				return false;
 			if (
+				filterFile &&
+				c.storage2d?.datalake[filterFile] &&
+				c.storage2d?.globe[filterFile]
+			)
+				return false;
+			if (
 				query &&
 				!(
 					c.name.toLowerCase().includes(query) ||
@@ -236,6 +244,67 @@
 				: `s3://globe/data/${slug}-2d/${file}`;
 		if (navigator.clipboard) navigator.clipboard.writeText(s3Uri).catch(() => {});
 		showToast(s3Uri + '  (copied)');
+	}
+
+	const missingCitiesByFile = $derived.by(() => {
+		const out: Record<string, City[]> = {
+			'demand-streets.json': [],
+			'neighborhoods.json': [],
+			'places.json': [],
+			'street-geoms.json': [],
+			'transit-lines.json': []
+		};
+		for (const c of cities) {
+			for (const f of FILES_2D) {
+				const isMissingDl = !c.storage2d?.datalake[f.key];
+				const isMissingGl = !c.storage2d?.globe[f.key];
+				if (isMissingDl || isMissingGl) {
+					out[f.key].push(c);
+				}
+			}
+		}
+		return out;
+	});
+
+	function toggleFilterFile(fileKey: string) {
+		if (filterFile === fileKey) {
+			filterFile = null;
+			activeMissingTab = null;
+		} else {
+			filterFile = fileKey;
+			activeMissingTab = fileKey;
+		}
+	}
+
+	function downloadRegistryJson() {
+		const jsonStr = storage2d?.missingRegistryJson;
+		if (!jsonStr) {
+			window.open('/api/atlas/missing-2d-files?download=1', '_blank');
+			return;
+		}
+		const blob = new Blob([jsonStr], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'missing-atlas-2d-files.json';
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		URL.revokeObjectURL(url);
+		showToast('missing-atlas-2d-files.json downloaded');
+	}
+
+	function copySlugsList(slugs: string[]) {
+		const text = slugs.join('\n');
+		if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+		showToast(`Copied ${slugs.length} city slugs to clipboard`);
+	}
+
+	function copyAllMissingSlugs() {
+		const allMissing = cities
+			.filter((c) => c.storage2d?.hasAnyMissing)
+			.map((c) => c.prefix);
+		copySlugsList(allMissing);
 	}
 
 	// ── Toast + click-through ──
@@ -354,14 +423,15 @@
 			{/if}
 		</div>
 		<div class="flex flex-wrap items-center gap-2 text-xs">
-			<a
-				href="/api/atlas/missing-2d-files?download=1"
-				download="missing-atlas-2d-files.json"
-				target="_blank"
-				class="inline-flex h-7 items-center justify-center rounded-md border border-input bg-background px-2.5 text-xs font-medium shadow-xs hover:bg-accent hover:text-accent-foreground"
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				class="h-7 text-xs font-medium cursor-pointer"
+				onclick={downloadRegistryJson}
 			>
 				Download Missing Registry (.json)
-			</a>
+			</Button>
 			<form
 				method="POST"
 				action="?/saveRegistry"
@@ -448,7 +518,17 @@
 				<div class="mt-2 grid grid-cols-5 gap-2 text-center text-xs">
 					{#each FILES_2D as f (f.key)}
 						{@const tot = storage2d.totals.datalake[f.key]}
-						<div class="rounded bg-muted/40 p-1.5">
+						<button
+							type="button"
+							class={[
+								'rounded p-1.5 text-center transition cursor-pointer border',
+								filterFile === f.key
+									? 'bg-teal-500/20 border-teal-500 ring-1 ring-teal-500'
+									: 'bg-muted/40 border-transparent hover:bg-muted/70'
+							]}
+							onclick={() => toggleFilterFile(f.key)}
+							title="Click to filter table by missing {f.key}"
+						>
 							<span class="block text-[11px] font-mono font-bold text-foreground">{f.letter}</span>
 							<span class="block text-[10px] text-muted-foreground truncate" title={f.key}>{f.key.replace('.json', '')}</span>
 							<b class="mt-1 block text-sm font-bold text-teal-600 tabular-nums">{tot?.present ?? 0}</b>
@@ -459,7 +539,7 @@
 							{:else}
 								<span class="block text-[10px] font-medium text-emerald-500">100%</span>
 							{/if}
-						</div>
+						</button>
 					{/each}
 				</div>
 			{/if}
@@ -480,7 +560,17 @@
 				<div class="mt-2 grid grid-cols-5 gap-2 text-center text-xs">
 					{#each FILES_2D as f (f.key)}
 						{@const tot = storage2d.totals.globe[f.key]}
-						<div class="rounded bg-muted/40 p-1.5">
+						<button
+							type="button"
+							class={[
+								'rounded p-1.5 text-center transition cursor-pointer border',
+								filterFile === f.key
+									? 'bg-indigo-500/20 border-indigo-500 ring-1 ring-indigo-500'
+									: 'bg-muted/40 border-transparent hover:bg-muted/70'
+							]}
+							onclick={() => toggleFilterFile(f.key)}
+							title="Click to filter table by missing {f.key}"
+						>
 							<span class="block text-[11px] font-mono font-bold text-foreground">{f.letter}</span>
 							<span class="block text-[10px] text-muted-foreground truncate" title={f.key}>{f.key.replace('.json', '')}</span>
 							<b class="mt-1 block text-sm font-bold text-indigo-600 tabular-nums">{tot?.present ?? 0}</b>
@@ -491,11 +581,141 @@
 							{:else}
 								<span class="block text-[10px] font-medium text-emerald-500">100%</span>
 							{/if}
-						</div>
+						</button>
 					{/each}
 				</div>
 			{/if}
 		</div>
+	</div>
+
+	<!-- ── Missing 2D Inventory Details Panel ── -->
+	<div class="rounded-lg border bg-card p-3 space-y-3" data-testid="ac-missing-inventory">
+		<div class="flex flex-wrap items-center justify-between gap-2">
+			<div>
+				<h3 class="text-xs font-semibold text-foreground flex items-center gap-2">
+					<span>Missing 2D Inventory Details</span>
+					{#if filterFile}
+						<Badge variant="outline" class="border-cyan-500/40 text-cyan-500 font-mono text-[10px]">
+							Active filter: {filterFile}
+						</Badge>
+					{/if}
+				</h3>
+				<p class="text-[11px] text-muted-foreground">
+					Select any file below to see and copy the exact list of cities missing that file.
+				</p>
+			</div>
+			<div class="flex items-center gap-2">
+				<Button
+					variant="outline"
+					size="sm"
+					class="h-7 text-xs font-medium cursor-pointer"
+					onclick={downloadRegistryJson}
+				>
+					Download JSON
+				</Button>
+				<Button
+					variant="outline"
+					size="sm"
+					class="h-7 text-xs cursor-pointer"
+					onclick={copyAllMissingSlugs}
+				>
+					Copy All Missing Slugs
+				</Button>
+				{#if filterFile}
+					<Button
+						variant="ghost"
+						size="sm"
+						class="h-7 text-xs text-rose-500 hover:text-rose-400 cursor-pointer"
+						onclick={() => {
+							filterFile = null;
+							activeMissingTab = null;
+						}}
+					>
+						Clear Filter
+					</Button>
+				{/if}
+			</div>
+		</div>
+
+		<!-- File selection tabs -->
+		<div class="flex flex-wrap gap-1.5 border-b pb-2">
+			{#each FILES_2D as f (f.key)}
+				{@const list = missingCitiesByFile[f.key] ?? []}
+				<button
+					type="button"
+					class={[
+						'rounded-md px-2.5 py-1 text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer',
+						activeMissingTab === f.key
+							? 'bg-primary text-primary-foreground font-semibold shadow-xs'
+							: 'bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground'
+					]}
+					onclick={() => toggleFilterFile(f.key)}
+				>
+					<span class="font-mono font-bold">[{f.letter}]</span>
+					<span>{f.key}</span>
+					<span class="rounded bg-background/30 px-1 py-0.2 text-[10px] tabular-nums font-bold">
+						{list.length} missing
+					</span>
+				</button>
+			{/each}
+		</div>
+
+		{#if activeMissingTab}
+			{@const activeList = missingCitiesByFile[activeMissingTab] ?? []}
+			<div class="space-y-2 rounded-md bg-muted/20 p-2.5 border border-border/50">
+				<div class="flex items-center justify-between">
+					<span class="text-xs font-semibold text-foreground">
+						{activeList.length} cities missing <code class="text-cyan-500">{activeMissingTab}</code>:
+					</span>
+					<div class="flex items-center gap-2">
+						<button
+							type="button"
+							class="text-xs font-medium text-sky-500 hover:underline cursor-pointer"
+							onclick={() => copySlugsList(activeList.map((c) => c.prefix))}
+						>
+							Copy {activeList.length} slugs
+						</button>
+						<button
+							type="button"
+							class="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+							onclick={() => {
+								activeMissingTab = null;
+								filterFile = null;
+							}}
+						>
+							Close
+						</button>
+					</div>
+				</div>
+				<div class="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto p-1">
+					{#each activeList as c (c.prefix)}
+						<span
+							class="inline-flex items-center gap-1 rounded bg-card px-2 py-0.5 text-xs border border-border"
+						>
+							<!-- eslint-disable svelte/no-navigation-without-resolve -->
+							<a
+								href="{prev.base}/atlas/{c.prevSlugs?.['City'] ?? `${c.prefix}-city-atlas`}"
+								target="_blank"
+								rel="noopener"
+								class="font-medium hover:text-cyan-500 hover:underline"
+								title="Open {c.name} on preview"
+							>
+								{c.name}
+							</a>
+							<span class="text-[10px] text-muted-foreground font-mono">({c.prefix})</span>
+							<a
+								href="{prev.base}/atlas/{c.prevSlugs?.['City'] ?? `${c.prefix}-city-atlas`}"
+								target="_blank"
+								rel="noopener"
+								class="text-[10px] text-violet-500 hover:underline"
+								title="Preview"
+							>↗</a>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
+						</span>
+					{/each}
+				</div>
+			</div>
+		{/if}
 	</div>
 
 	<!-- ── Stat cards ── -->
@@ -625,20 +845,30 @@
 			class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none"
 		>
 			<Checkbox bind:checked={onlyMissing2D} class="size-3.5" />
-			missing 2D files ({storage2d?.totals.citiesWithAnyMissing ?? 0})
+			any missing 2D ({storage2d?.totals.citiesWithAnyMissing ?? 0})
 		</label>
-		<label
-			class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none"
-		>
-			<Checkbox bind:checked={onlyMissingGeoms} class="size-3.5" />
-			missing street-geoms ({storage2d?.totals.datalake['street-geoms.json']?.missing ?? 0})
-		</label>
-		<label
-			class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none"
-		>
-			<Checkbox bind:checked={onlyMissingTransit} class="size-3.5" />
-			missing transit-lines ({storage2d?.totals.datalake['transit-lines.json']?.missing ?? 0})
-		</label>
+		<NativeSelect bind:value={filterFile} class="h-8">
+			<option value="">All 2D files</option>
+			{#each FILES_2D as f (f.key)}
+				{@const miss = Math.max(storage2d?.totals.datalake[f.key]?.missing ?? 0, storage2d?.totals.globe[f.key]?.missing ?? 0)}
+				<option value={f.key}>Missing {f.key} ({miss})</option>
+			{/each}
+		</NativeSelect>
+		{#if filterFile}
+			<span class="inline-flex items-center gap-1.5 rounded-md bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-xs text-cyan-600 font-medium">
+				missing {filterFile}
+				<button
+					type="button"
+					class="ml-1 text-xs font-bold hover:text-rose-500 cursor-pointer"
+					onclick={() => {
+						filterFile = null;
+						activeMissingTab = null;
+					}}
+				>
+					×
+				</button>
+			</span>
+		{/if}
 		<NativeSelect bind:value={sort} class="h-8">
 			<option value="manifest">Sort: manifest order</option>
 			<option value="missing-2d">Sort: most missing 2D files</option>
@@ -704,18 +934,51 @@
 					{@const haveP = haveOf(c, 'prev')}
 					{@const diff = rowDiffers(c)}
 					<tr class="border-b border-border/60 last:border-0 hover:bg-accent/50">
-						<td class="px-3 py-1.5 align-top">
-							<span class="font-semibold">{c.name}</span>
-							<span class="ml-1.5 text-[11px] text-sky-500">{c.iata}</span>
+						<td class="px-3 py-1.5 align-top citycell">
+							<!-- eslint-disable svelte/no-navigation-without-resolve -- cross-origin links to the geo site -->
+							<a
+								href="{prev.base}/atlas/{c.prevSlugs?.['City'] ?? `${c.prefix}-city-atlas`}"
+								target="_blank"
+								rel="noopener"
+								class="citylink"
+								title="Open {c.name} city atlas on preview"
+							>
+								<b>{c.name}</b>
+							</a>
+							<span class="meta">{c.prefix}</span>
+							{#if c.iata}
+								<span class="ml-1 text-[11px] font-mono text-sky-500">{c.iata}</span>
+							{/if}
 							{#if diff}
 								<span
 									class="ml-1 rounded bg-amber-500/15 px-1 text-[10px] font-semibold text-amber-600"
 									title="Master and preview coverage disagree for this city">diff</span
 								>
 							{/if}
-							<span class="block text-[11px] text-muted-foreground">
+							<span class="cont">
 								{c.continent} · pop {(c.pop || 0).toLocaleString('en-US')}
+								·
+								<a
+									href="{prev.base}/atlas/{c.prevSlugs?.['City'] ?? `${c.prefix}-city-atlas`}"
+									target="_blank"
+									rel="noopener"
+									class="previewlink"
+									title="Preview branch ({prev.base}/atlas/{c.prevSlugs?.['City'] ?? `${c.prefix}-city-atlas`})"
+								>
+									preview ↗
+								</a>
+								·
+								<a
+									href="{prod.base}/atlas/{c.prodSlugs?.['City'] ?? `${c.prefix}-city-atlas`}"
+									target="_blank"
+									rel="noopener"
+									class="masterlink"
+									title="Master branch ({prod.base}/atlas/{c.prodSlugs?.['City'] ?? `${c.prefix}-city-atlas`})"
+								>
+									master ↗
+								</a>
 							</span>
+							<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						</td>
 						<td class="px-3 py-1.5 text-right font-mono text-xs tabular-nums align-top">
 							{#if (c.attachedAddresses || 0) > 0}
@@ -947,5 +1210,46 @@
 		background: rgba(244, 63, 94, 0.18);
 		color: #f43f5e;
 		border-color: rgba(244, 63, 94, 0.4);
+	}
+	.citycell b {
+		font-weight: 600;
+	}
+	.citycell .citylink {
+		color: inherit;
+		text-decoration: none;
+	}
+	.citycell .citylink:hover {
+		color: #38bdf8;
+		text-decoration: underline;
+	}
+	.citycell .meta {
+		color: #22d3ee;
+		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+		font-size: 11px;
+		margin-left: 6px;
+	}
+	.citycell .cont {
+		display: block;
+		color: hsl(var(--muted-foreground));
+		font-size: 11px;
+	}
+	.citycell .cont a {
+		text-decoration: none;
+	}
+	.citycell .cont a.previewlink {
+		color: #a78bfa;
+		font-weight: 500;
+	}
+	.citycell .cont a.previewlink:hover {
+		color: #c4b5fd;
+		text-decoration: underline;
+	}
+	.citycell .cont a.masterlink {
+		color: #38bdf8;
+		font-weight: 500;
+	}
+	.citycell .cont a.masterlink:hover {
+		color: #7dd3fc;
+		text-decoration: underline;
 	}
 </style>
