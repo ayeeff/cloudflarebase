@@ -1,7 +1,12 @@
 import { serverError } from '$lib/server/agents';
 import { geoAstroFetch } from '$lib/server/geo-astro';
 import { getAtlasStatus, type AtlasStatus } from '$lib/server/update-worker';
-import type { PageServerLoad } from './$types';
+import {
+	loadAtlas2DStorageReport,
+	saveMissingRegistryToR2,
+	type CityStorage2D
+} from '$lib/server/atlas-2d-storage';
+import type { PageServerLoad, Actions } from './$types';
 
 const GEO_ASTRO_PROD_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
 const GEO_ASTRO_PREVIEW_BASE = 'https://preview-geo-astro-site.foodstarmelbourne.workers.dev';
@@ -317,6 +322,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 			attachedStreets: number;
 			prodSlugs: Record<string, string | null> | null;
 			prevSlugs: Record<string, string | null> | null;
+			storage2d?: CityStorage2D | null;
 		}
 	>();
 
@@ -340,10 +346,18 @@ export const load: PageServerLoad = async ({ platform }) => {
 					attachedAddresses: c.attachedAddresses,
 					attachedStreets: c.attachedStreets,
 					prodSlugs: key === 'prodSlugs' ? slugs : null,
-					prevSlugs: key === 'prevSlugs' ? slugs : null
+					prevSlugs: key === 'prevSlugs' ? slugs : null,
+					storage2d: null
 				});
 			}
 		}
+	}
+
+	const citySlugs = [...byPrefix.keys()];
+	const storage2dReport = await loadAtlas2DStorageReport(platform, citySlugs);
+
+	for (const [prefix, entry] of byPrefix.entries()) {
+		entry.storage2d = storage2dReport.byCity[prefix] ?? null;
 	}
 
 	const cities = [...byPrefix.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -357,6 +371,12 @@ export const load: PageServerLoad = async ({ platform }) => {
 		base: production.ok ? production.base : preview.base,
 		env: production.ok ? 'production' : 'preview',
 		loadedAt: new Date().toISOString(),
+		storage2d: {
+			totals: storage2dReport.totals,
+			source: storage2dReport.source,
+			filesChecked: storage2dReport.filesChecked,
+			generatedAt: storage2dReport.generatedAt
+		},
 		lastUpdated: {
 			collections: production.lastUpdated.collections ?? preview.lastUpdated.collections,
 			prodCollections: production.lastUpdated.collections,
@@ -370,4 +390,35 @@ export const load: PageServerLoad = async ({ platform }) => {
 			progressTotalCities: atlasStatus?.progress?.cities?.length ?? 500
 		}
 	};
+};
+
+export const actions: Actions = {
+	saveRegistry: async ({ platform }) => {
+		try {
+			let citySlugs: string[] = [];
+			try {
+				const res = await geoAstroFetch(platform, '/data/atlas-collections.json');
+				if (res.ok) {
+					const coll = (await res.json()) as any;
+					const cityEntries = coll?.City ?? [];
+					citySlugs = cityEntries.map((c: any) => String(c.slug ?? '').replace(/-city-atlas$/i, ''));
+				}
+			} catch {
+				/* fall through */
+			}
+			const report = await loadAtlas2DStorageReport(platform, citySlugs);
+			const saved = await saveMissingRegistryToR2(platform, report.missingRegistryJson);
+			return {
+				success: saved.ok,
+				error: saved.error,
+				savedKeys: saved.savedKeys,
+				missingCount: report.totals.citiesWithAnyMissing
+			};
+		} catch (e) {
+			return {
+				success: false,
+				error: e instanceof Error ? e.message : String(e)
+			};
+		}
+	}
 };

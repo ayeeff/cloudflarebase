@@ -3,8 +3,10 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { NativeSelect } from '$lib/components/ui/native-select';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
+	import { enhance } from '$app/forms';
 
-	let { data } = $props();
+	let { data, form } = $props();
 
 	type TypeDef = { key: string; label: string; suffix: string };
 
@@ -21,6 +23,20 @@
 		lastUpdated: { collections: string | null };
 	};
 
+	type CityStorage2D = {
+		slug: string;
+		datalake: Record<string, boolean>;
+		globe: Record<string, boolean>;
+		missing: {
+			datalake: string[];
+			globe: string[];
+		};
+		datalakePresentCount: number;
+		globePresentCount: number;
+		hasAnyMissing: boolean;
+		isComplete: boolean;
+	};
+
 	type City = {
 		name: string;
 		iata: string;
@@ -31,12 +47,22 @@
 		attachedStreets: number;
 		prodSlugs: Record<string, string | null> | null;
 		prevSlugs: Record<string, string | null> | null;
+		storage2d?: CityStorage2D | null;
 	};
 
 	const types = data.types as TypeDef[];
 	const cities = data.cities as City[];
 	const prod = data.production as EnvCoverage;
 	const prev = data.preview as EnvCoverage;
+	const storage2d = $derived(data.storage2d);
+
+	const FILES_2D = [
+		{ key: 'demand-streets.json', letter: 'D', label: 'demand-streets.json' },
+		{ key: 'neighborhoods.json', letter: 'N', label: 'neighborhoods.json' },
+		{ key: 'places.json', letter: 'P', label: 'places.json' },
+		{ key: 'street-geoms.json', letter: 'G', label: 'street-geoms.json' },
+		{ key: 'transit-lines.json', letter: 'T', label: 'transit-lines.json' }
+	] as const;
 
 	// ── Filters / sort ──
 	let q = $state('');
@@ -44,7 +70,11 @@
 	let onlyGaps = $state(false);
 	let onlyNoPage = $state(false);
 	let onlyBranchDiff = $state(false);
+	let onlyMissing2D = $state(false);
+	let onlyMissingGeoms = $state(false);
+	let onlyMissingTransit = $state(false);
 	let sort = $state('manifest');
+	let savingRegistry = $state(false);
 
 	// ── Coverage state per cell (mirrors atlas/dashboard.html) ──
 	type CellState = 'ok' | 'map' | 'nopage' | 'missing' | 'pageonly';
@@ -147,6 +177,19 @@
 				if (!any) return false;
 			}
 			if (onlyBranchDiff && !rowDiffers(c)) return false;
+			if (onlyMissing2D && !c.storage2d?.hasAnyMissing) return false;
+			if (
+				onlyMissingGeoms &&
+				c.storage2d?.datalake['street-geoms.json'] &&
+				c.storage2d?.globe['street-geoms.json']
+			)
+				return false;
+			if (
+				onlyMissingTransit &&
+				c.storage2d?.datalake['transit-lines.json'] &&
+				c.storage2d?.globe['transit-lines.json']
+			)
+				return false;
 			if (
 				query &&
 				!(
@@ -175,8 +218,25 @@
 			rows.sort((a, b) => gapsOf(b) - gapsOf(a) || a.name.localeCompare(b.name));
 		else if (sort === 'diff')
 			rows.sort((a, b) => Number(rowDiffers(b)) - Number(rowDiffers(a)) || a.name.localeCompare(b.name));
+		else if (sort === 'missing-2d')
+			rows.sort((a, b) => {
+				const aMiss =
+					(a.storage2d?.missing.datalake.length || 0) + (a.storage2d?.missing.globe.length || 0);
+				const bMiss =
+					(b.storage2d?.missing.datalake.length || 0) + (b.storage2d?.missing.globe.length || 0);
+				return bMiss - aMiss || a.name.localeCompare(b.name);
+			});
 		return rows;
 	});
+
+	function copyStoragePath(bucket: 'geo-datalake' | 'globe', slug: string, file: string) {
+		const s3Uri =
+			bucket === 'geo-datalake'
+				? `s3://geo-datalake/sources/osm/places/${slug}/${file}`
+				: `s3://globe/data/${slug}-2d/${file}`;
+		if (navigator.clipboard) navigator.clipboard.writeText(s3Uri).catch(() => {});
+		showToast(s3Uri + '  (copied)');
+	}
 
 	// ── Toast + click-through ──
 	let toastMsg = $state('');
@@ -282,6 +342,11 @@
 							Preview collections: {formatDateTime(lastUp.prevCollections)} ({formatAgo(lastUp.prevCollections)})
 						</Badge>
 					{/if}
+					{#if storage2d}
+						<Badge variant="outline" class="border-teal-500/40 bg-teal-500/10 text-teal-600 font-medium">
+							2D Storage: {storage2d.totals.citiesWithAnyMissing} cities missing files · {storage2d.totals.citiesCompleteBoth} complete
+						</Badge>
+					{/if}
 					<Badge variant="secondary" class="font-normal text-muted-foreground">
 						Loaded: {formatAgo(data.loadedAt)}
 					</Badge>
@@ -289,6 +354,36 @@
 			{/if}
 		</div>
 		<div class="flex flex-wrap items-center gap-2 text-xs">
+			<a
+				href="/api/atlas/missing-2d-files?download=1"
+				download="missing-atlas-2d-files.json"
+				target="_blank"
+				class="inline-flex h-7 items-center justify-center rounded-md border border-input bg-background px-2.5 text-xs font-medium shadow-xs hover:bg-accent hover:text-accent-foreground"
+			>
+				Download Missing Registry (.json)
+			</a>
+			<form
+				method="POST"
+				action="?/saveRegistry"
+				use:enhance={() => {
+					savingRegistry = true;
+					return async ({ update }) => {
+						await update();
+						savingRegistry = false;
+						showToast('2D missing files registry saved to R2');
+					};
+				}}
+			>
+				<Button
+					type="submit"
+					variant="outline"
+					size="sm"
+					class="h-7 text-xs"
+					disabled={savingRegistry}
+				>
+					{savingRegistry ? 'Saving to R2…' : 'Save Registry to R2'}
+				</Button>
+			</form>
 			{#if prod.ok}
 				<Badge variant="outline" class="border-sky-500/40 bg-sky-500/10 text-sky-600 font-medium">
 					Master (production) · {prod.count} cities
@@ -333,6 +428,73 @@
 				<span><b class="block text-lg font-bold text-violet-500">{prev.pageOnlyCount}</b>page-only</span>
 				<span><b class="block text-lg font-bold text-violet-500">{prevTotals.ok + prevTotals.map}</b>pages</span>
 			</div>
+		</div>
+	</div>
+
+	<!-- ── 2D Storage Cards (geo-datalake & globe) ── -->
+	<div class="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="ac-2d-storage-cards">
+		<div class="rounded-lg border border-teal-500/30 bg-card p-3">
+			<div class="flex items-center justify-between">
+				<h3 class="text-xs font-semibold text-teal-600">
+					s3://geo-datalake/sources/osm/places/&lt;slug&gt;/
+				</h3>
+				{#if storage2d}
+					<span class="text-[10px] text-muted-foreground font-mono">
+						{storage2d.source} · {formatAgo(storage2d.generatedAt)}
+					</span>
+				{/if}
+			</div>
+			{#if storage2d}
+				<div class="mt-2 grid grid-cols-5 gap-2 text-center text-xs">
+					{#each FILES_2D as f (f.key)}
+						{@const tot = storage2d.totals.datalake[f.key]}
+						<div class="rounded bg-muted/40 p-1.5">
+							<span class="block text-[11px] font-mono font-bold text-foreground">{f.letter}</span>
+							<span class="block text-[10px] text-muted-foreground truncate" title={f.key}>{f.key.replace('.json', '')}</span>
+							<b class="mt-1 block text-sm font-bold text-teal-600 tabular-nums">{tot?.present ?? 0}</b>
+							{#if (tot?.missing ?? 0) > 0}
+								<span class="block text-[10px] font-semibold text-rose-500 tabular-nums">
+									{tot.missing} missing
+								</span>
+							{:else}
+								<span class="block text-[10px] font-medium text-emerald-500">100%</span>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		<div class="rounded-lg border border-indigo-500/30 bg-card p-3">
+			<div class="flex items-center justify-between">
+				<h3 class="text-xs font-semibold text-indigo-600">
+					s3://globe/data/&lt;slug&gt;-2d/
+				</h3>
+				{#if storage2d}
+					<span class="text-[10px] text-muted-foreground font-mono">
+						{storage2d.source} · {formatAgo(storage2d.generatedAt)}
+					</span>
+				{/if}
+			</div>
+			{#if storage2d}
+				<div class="mt-2 grid grid-cols-5 gap-2 text-center text-xs">
+					{#each FILES_2D as f (f.key)}
+						{@const tot = storage2d.totals.globe[f.key]}
+						<div class="rounded bg-muted/40 p-1.5">
+							<span class="block text-[11px] font-mono font-bold text-foreground">{f.letter}</span>
+							<span class="block text-[10px] text-muted-foreground truncate" title={f.key}>{f.key.replace('.json', '')}</span>
+							<b class="mt-1 block text-sm font-bold text-indigo-600 tabular-nums">{tot?.present ?? 0}</b>
+							{#if (tot?.missing ?? 0) > 0}
+								<span class="block text-[10px] font-semibold text-rose-500 tabular-nums">
+									{tot.missing} missing
+								</span>
+							{:else}
+								<span class="block text-[10px] font-medium text-emerald-500">100%</span>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
 		</div>
 	</div>
 
@@ -406,6 +568,27 @@
 		<span class="inline-flex items-center gap-1.5"
 			><span class="dot pair-diff"></span> branches disagree</span
 		>
+		<span class="ml-2 inline-flex items-center gap-1 font-semibold text-foreground">
+			2D Storage (5 files):
+		</span>
+		<span class="inline-flex items-center gap-1"
+			><span class="file-pill present">D</span> demand-streets</span
+		>
+		<span class="inline-flex items-center gap-1"
+			><span class="file-pill present">N</span> neighborhoods</span
+		>
+		<span class="inline-flex items-center gap-1"
+			><span class="file-pill present">P</span> places</span
+		>
+		<span class="inline-flex items-center gap-1"
+			><span class="file-pill present">G</span> street-geoms</span
+		>
+		<span class="inline-flex items-center gap-1"
+			><span class="file-pill present">T</span> transit-lines</span
+		>
+		<span class="inline-flex items-center gap-1"
+			><span class="file-pill missing">✗</span> missing</span
+		>
 	</div>
 
 	<!-- ── Controls ── -->
@@ -438,8 +621,27 @@
 			<Checkbox bind:checked={onlyBranchDiff} class="size-3.5" />
 			only branch diffs
 		</label>
+		<label
+			class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none"
+		>
+			<Checkbox bind:checked={onlyMissing2D} class="size-3.5" />
+			missing 2D files ({storage2d?.totals.citiesWithAnyMissing ?? 0})
+		</label>
+		<label
+			class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none"
+		>
+			<Checkbox bind:checked={onlyMissingGeoms} class="size-3.5" />
+			missing street-geoms ({storage2d?.totals.datalake['street-geoms.json']?.missing ?? 0})
+		</label>
+		<label
+			class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground select-none"
+		>
+			<Checkbox bind:checked={onlyMissingTransit} class="size-3.5" />
+			missing transit-lines ({storage2d?.totals.datalake['transit-lines.json']?.missing ?? 0})
+		</label>
 		<NativeSelect bind:value={sort} class="h-8">
 			<option value="manifest">Sort: manifest order</option>
+			<option value="missing-2d">Sort: most missing 2D files</option>
 			<option value="diff">Sort: branch diffs first</option>
 			<option value="addresses">Sort: most attached addresses</option>
 			<option value="streets">Sort: most attached streets</option>
@@ -470,6 +672,18 @@
 						<span class="mt-0.5 block text-[10px] font-normal not-italic">
 							<span class="text-sky-600">M</span> /
 							<span class="text-violet-600">P</span>
+						</span>
+					</th>
+					<th class="sticky top-0 z-10 border-b bg-card px-2 py-2 text-center" title="s3://geo-datalake/sources/osm/places/<slug>/">
+						geo-datalake
+						<span class="mt-0.5 block text-[10px] font-normal text-muted-foreground not-italic">
+							sources/osm/places/
+						</span>
+					</th>
+					<th class="sticky top-0 z-10 border-b bg-card px-2 py-2 text-center" title="s3://globe/data/<slug>-2d/">
+						globe (2D)
+						<span class="mt-0.5 block text-[10px] font-normal text-muted-foreground not-italic">
+							data/&lt;slug&gt;-2d/
 						</span>
 					</th>
 					{#each types as t, i (t.key)}
@@ -521,6 +735,36 @@
 								<span class="text-muted-foreground/50">·</span>
 								<span class="text-violet-600">{haveP}/{types.length}</span>
 							</span>
+						</td>
+						<td class="px-2 py-1.5 text-center" data-testid="cell-datalake-{c.prefix}">
+							<div class="inline-flex items-center justify-center gap-1">
+								{#each FILES_2D as f (f.key)}
+									{@const present = c.storage2d?.datalake[f.key] ?? false}
+									<button
+										type="button"
+										class={['file-pill', present ? 'present' : 'missing']}
+										title={`s3://geo-datalake/sources/osm/places/${c.prefix}/${f.key} (${present ? 'present' : 'MISSING'}) — click to copy path`}
+										onclick={() => copyStoragePath('geo-datalake', c.prefix, f.key)}
+									>
+										{f.letter}
+									</button>
+								{/each}
+							</div>
+						</td>
+						<td class="px-2 py-1.5 text-center" data-testid="cell-globe-{c.prefix}">
+							<div class="inline-flex items-center justify-center gap-1">
+								{#each FILES_2D as f (f.key)}
+									{@const present = c.storage2d?.globe[f.key] ?? false}
+									<button
+										type="button"
+										class={['file-pill', present ? 'present' : 'missing']}
+										title={`s3://globe/data/${c.prefix}-2d/${f.key} (${present ? 'present' : 'MISSING'}) — click to copy path`}
+										onclick={() => copyStoragePath('globe', c.prefix, f.key)}
+									>
+										{f.letter}
+									</button>
+								{/each}
+							</div>
 						</td>
 						{#each types as t (t.key)}
 							{@const stM = cellState(c, t, 'prod')}
@@ -672,5 +916,36 @@
 			rgba(138, 100, 20, 0.85) 7px 14px
 		);
 		border-color: #c99a1f;
+	}
+	.file-pill {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 17px;
+		height: 18px;
+		padding: 0 3px;
+		font-size: 10px;
+		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+		font-weight: 700;
+		border-radius: 4px;
+		border: 1px solid transparent;
+		user-select: none;
+		line-height: 1;
+		cursor: pointer;
+		transition: transform 0.1s ease, filter 0.1s ease;
+	}
+	.file-pill:hover {
+		filter: brightness(1.2);
+		transform: scale(1.08);
+	}
+	.file-pill.present {
+		background: rgba(16, 185, 129, 0.18);
+		color: #10b981;
+		border-color: rgba(16, 185, 129, 0.4);
+	}
+	.file-pill.missing {
+		background: rgba(244, 63, 94, 0.18);
+		color: #f43f5e;
+		border-color: rgba(244, 63, 94, 0.4);
 	}
 </style>

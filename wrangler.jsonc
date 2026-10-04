@@ -89,6 +89,11 @@
 		{ "binding": "SCAN", "service": "scan-duplicates" }
 	],
 
+	"r2_buckets": [
+		{ "binding": "DATALAKE", "bucket_name": "geo-datalake" },
+		{ "binding": "GLOBE", "bucket_name": "globe" }
+	],
+
 	// Control plane: the project registry. `database_id` is deliberately
 	// omitted so `wrangler deploy` provisions the database on first deploy and
 	// writes the id back here - a self-hosted install has no setup step, and
@@ -330,6 +335,10 @@
 				{ "binding": "UPDATE_WORKER", "service": "update" },
 				{ "binding": "LAYERS", "service": "layers-worker" },
 				{ "binding": "SCAN", "service": "scan-duplicates" }
+			],
+			"r2_buckets": [
+				{ "binding": "DATALAKE", "bucket_name": "geo-datalake" },
+				{ "binding": "GLOBE", "bucket_name": "globe" }
 			]
 		}
 	}

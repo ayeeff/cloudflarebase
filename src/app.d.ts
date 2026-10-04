@@ -88,6 +88,10 @@ declare global {
 				 * `wrangler secret put SCAN_TOKEN` on scan-duplicates itself.
 				 */
 				SCAN_TOKEN?: string;
+				/** Direct R2 bucket binding to geo-datalake */
+				DATALAKE?: R2Bucket;
+				/** Direct R2 bucket binding to globe */
+				GLOBE?: R2Bucket;
 				/**
 				 * Optional per-tenant ceiling overrides (registry.ts defaults both
 				 * to 5). Not in any deployed config's vars, so they are typed here

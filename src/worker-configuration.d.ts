@@ -24,6 +24,8 @@ interface __BaseEnv_Env {
 	UPDATE_WORKER?: Fetcher /* update */;
 	LAYERS?: Fetcher /* layers-worker */;
 	SCAN?: Fetcher /* scan-duplicates */;
+	DATALAKE?: R2Bucket;
+	GLOBE?: R2Bucket;
 }
 declare namespace Cloudflare {
 	interface LocalEnv {

@@ -39,6 +39,7 @@
 		order: number;
 		naKeys: string[];
 		naCount: number;
+		osm: { sizeMB: number; url: string; name: string } | null;
 	};
 
 	const rows = $derived.by<Row[]>(() => {
@@ -47,12 +48,20 @@
 		for (const f of files) {
 			let slug = f.name;
 			let layer = 'base';
-			for (let i = layers.length - 1; i >= 0; i--) {
-				const sfx = layers[i].suffix;
-				if (sfx && f.name.endsWith(`-${sfx}`)) {
-					slug = f.name.slice(0, -(sfx.length + 1));
-					layer = layers[i].key;
-					break;
+			// <slug>-osmtransit.pmtiles = supplementary OSM route fallback for the
+			// Mobility tab (layer/osm-routes pipeline) — NOT a city of its own.
+			// Fold it into the parent city row so it doesn't create 448 phantom
+			// rows that look like they are missing every layer.
+			const osmMatch = /^(.+)-osmtransit$/.exec(f.name);
+			if (osmMatch) slug = osmMatch[1];
+			else {
+				for (let i = layers.length - 1; i >= 0; i--) {
+					const sfx = layers[i].suffix;
+					if (sfx && f.name.endsWith(`-${sfx}`)) {
+						slug = f.name.slice(0, -(sfx.length + 1));
+						layer = layers[i].key;
+						break;
+					}
 				}
 			}
 			const rec = bySlug[slug] ?? {
@@ -67,15 +76,20 @@
 				total: 0,
 				order: order++,
 				naKeys: [],
-				naCount: 0
+				naCount: 0,
+				osm: null
 			};
 			const sizeMB = f.size / 1048576;
-			rec.cells[layer] = {
-				size: f.size,
-				sizeMB,
-				name: f.name,
-				url: `${siteOrigin}/basemaps/${f.name}.pmtiles`
-			};
+			if (osmMatch) {
+				rec.osm = { sizeMB, url: `${siteOrigin}/basemaps/${f.name}.pmtiles`, name: f.name };
+			} else {
+				rec.cells[layer] = {
+					size: f.size,
+					sizeMB,
+					name: f.name,
+					url: `${siteOrigin}/basemaps/${f.name}.pmtiles`
+				};
+			}
 			rec.total += f.size;
 			bySlug[slug] = rec;
 		}
@@ -338,6 +352,16 @@
 										{#if r.stores}· {r.stores} stores{/if}
 										{#if r.popM}· {r.popM}M{/if}</span
 									>
+									{#if r.osm}
+										<span
+											class="osmbadge"
+											title="{r.osm.name} · {r.osm.sizeMB.toFixed(2)} MB · OSM route fallback for the Mobility tab"
+											onclick={() => {
+												if (navigator.clipboard) navigator.clipboard.writeText(r.osm!.url).catch(() => {});
+												showToast(`${r.osm!.url}  (copied)`);
+											}}>＋OSM</span
+										>
+									{/if}
 								</td>
 								<td>
 									<span
@@ -618,6 +642,20 @@
 		display: block;
 		color: var(--muted);
 		font-size: 11px;
+	}
+	.pdash .citycell .osmbadge {
+		display: inline-block;
+		margin-left: 6px;
+		padding: 0 5px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		font-size: 10px;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.pdash .citycell .osmbadge:hover {
+		color: var(--accent);
+		border-color: var(--accent);
 	}
 	.pdash td.cell {
 		text-align: center;
