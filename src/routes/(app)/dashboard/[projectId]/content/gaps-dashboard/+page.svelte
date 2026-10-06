@@ -1,4 +1,6 @@
 <script lang="ts">
+	import cityQid from '$lib/data/city-qid.json';
+
 	let { data } = $props();
 
 	const gaps = data.gaps;
@@ -53,17 +55,23 @@
 		hasBase: boolean;
 		missing: string[];
 		gaps: number;
+		pop: number | null;
 		order: number;
 	};
 	const rows = $derived.by<Row[]>(() =>
-		matrixCandidates.map((c, i) => ({
-			slug: c.slug,
-			display: c.display || c.slug,
-			hasBase: !!c.hasBase,
-			missing: Array.isArray(c.missing) ? c.missing : [],
-			gaps: Array.isArray(c.missing) ? c.missing.length : 0,
-			order: i
-		}))
+		matrixCandidates.map((c, i) => {
+			const qidInfo = (cityQid as Record<string, any>)[c.slug] || (cityQid as Record<string, any>)[(c.display || '').toLowerCase()];
+			const pop = qidInfo?.pop ? Number(qidInfo.pop) : null;
+			return {
+				slug: c.slug,
+				display: c.display || c.slug,
+				hasBase: !!c.hasBase,
+				missing: Array.isArray(c.missing) ? c.missing : [],
+				gaps: Array.isArray(c.missing) ? c.missing.length : 0,
+				pop,
+				order: i
+			};
+		})
 	);
 
 	// Per-branch column stats over ALL candidates (mirrors /gaps perLayer).
@@ -103,7 +111,7 @@
 	let q = $state('');
 	let hideComplete = $state(false);
 	let includeNoBase = $state(false);
-	let sort = $state('gaps');
+	let sort = $state('pop');
 
 	const visible = $derived.by(() => {
 		const query = q.trim().toLowerCase();
@@ -117,8 +125,13 @@
 			return true;
 		});
 		switch (sort) {
+			case 'pop':
+				list = [...list].sort(
+					(a, b) => (b.pop || 0) - (a.pop || 0) || a.display.localeCompare(b.display)
+				);
+				break;
 			case 'gaps':
-				list = [...list].sort((a, b) => b.gaps - a.gaps || a.display.localeCompare(b.display));
+				list = [...list].sort((a, b) => b.gaps - a.gaps || (b.pop || 0) - (a.pop || 0) || a.display.localeCompare(b.display));
 				break;
 			case 'name':
 				list = [...list].sort(
@@ -296,6 +309,7 @@
 					rows without base</label
 				>
 				<select bind:value={sort} data-testid="gaps-sort" class="tbl-sel">
+					<option value="pop">Sort: population</option>
 					<option value="gaps">Sort: most gaps first</option>
 					<option value="name">Sort: name A–Z</option>
 				</select>
@@ -327,6 +341,7 @@
 									<span class="meta">{r.slug}</span>
 									{#if !r.hasBase}<span class="nb">no base</span>{/if}
 									<span class="cont">
+										{#if r.pop}<span>{(r.pop / 1000000).toFixed(1)}M</span> · {/if}
 										<a href="{siteOrigin}/atlas/{r.slug}-city-atlas" target="_blank" rel="noopener"
 											>atlas ↗</a
 										></span

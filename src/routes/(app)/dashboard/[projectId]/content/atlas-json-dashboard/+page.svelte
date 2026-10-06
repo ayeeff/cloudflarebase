@@ -36,7 +36,7 @@
 	let filterFile = $state<string | null>(null);
 	let onlyMissing = $state(false);
 	let onlyComplete = $state(false);
-	let sort = $state<'name' | 'missing' | 'pop'>('name');
+	let sort = $state<'name' | 'missing' | 'pop'>('pop');
 	let savingRegistry = $state(false);
 	let toastMessage = $state<string | null>(null);
 
@@ -78,7 +78,7 @@
 		if (sort === 'name') {
 			rows.sort((a, b) => a.name.localeCompare(b.name));
 		} else if (sort === 'pop') {
-			rows.sort((a, b) => (b.pop || 0) - (a.pop || 0));
+			rows.sort((a, b) => (b.pop || 0) - (a.pop || 0) || a.name.localeCompare(b.name));
 		} else if (sort === 'missing') {
 			rows.sort((a, b) => {
 				const aMiss = (a.storage19?.missing.datalake.length || 0) + (a.storage19?.missing.globe.length || 0);

@@ -75,7 +75,7 @@
 	let onlyMissingTransit = $state(false);
 	let filterFile = $state<string | null>(null);
 	let activeMissingTab = $state<string | null>(null);
-	let sort = $state('manifest');
+	let sort = $state('pop');
 	let savingRegistry = $state(false);
 
 	// ── Coverage state per cell (mirrors atlas/dashboard.html) ──
@@ -210,8 +210,8 @@
 			return true;
 		});
 		rows = [...rows];
-		if (sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name));
-		else if (sort === 'pop') rows.sort((a, b) => (b.pop || 0) - (a.pop || 0));
+		if (sort === 'pop' || sort === 'manifest') rows.sort((a, b) => (b.pop || 0) - (a.pop || 0) || a.name.localeCompare(b.name));
+		else if (sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name));
 		else if (sort === 'addresses')
 			rows.sort((a, b) => (b.attachedAddresses || 0) - (a.attachedAddresses || 0));
 		else if (sort === 'streets')

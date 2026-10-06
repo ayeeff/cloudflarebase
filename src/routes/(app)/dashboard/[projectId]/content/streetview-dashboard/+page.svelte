@@ -1,4 +1,6 @@
 <script lang="ts">
+	import cityQid from '$lib/data/city-qid.json';
+
 	let { data } = $props();
 
 	const dash = data.dash;
@@ -19,6 +21,7 @@
 		city: string;
 		country: string | null;
 		rank: number | null;
+		pop: number | null;
 		cells: Record<string, Cell | undefined>;
 		have: number;
 		total: number;
@@ -64,15 +67,17 @@
 			rec.city = m?.city ?? slug.replace(/-/g, ' ');
 			rec.country = m?.country ?? null;
 			rec.rank = m?.rank ?? null;
+			const qidInfo = (cityQid as Record<string, any>)[slug] || (cityQid as Record<string, any>)[rec.city.toLowerCase()];
+			rec.pop = qidInfo?.pop ? Number(qidInfo.pop) : null;
 			rec.have = Object.keys(rec.cells).length;
 		}
-		return Object.values(bySlug).sort((a, b) => a.city.localeCompare(b.city));
+		return Object.values(bySlug).sort((a, b) => (b.pop || 0) - (a.pop || 0) || a.city.localeCompare(b.city));
 	});
 
 	// ── filters + sorting ──
 	let q = $state('');
 	let onlyCovered = $state(true);
-	let sort = $state('size');
+	let sort = $state('pop');
 
 	const visible = $derived.by(() => {
 		const query = q.trim().toLowerCase();
@@ -85,6 +90,11 @@
 			return true;
 		});
 		switch (sort) {
+			case 'pop':
+				list = [...list].sort(
+					(a, b) => (b.pop || 0) - (a.pop || 0) || a.city.localeCompare(b.city)
+				);
+				break;
 			case 'name':
 				list = [...list].sort(
 					(a, b) => a.city.localeCompare(b.city) || a.slug.localeCompare(b.slug)
@@ -261,6 +271,7 @@
 					cities</label
 				>
 				<select bind:value={sort} data-testid="sv-sort" class="tbl-sel">
+					<option value="pop">Sort: population</option>
 					<option value="size">Sort: total size</option>
 					<option value="name">Sort: name A–Z</option>
 				</select>
@@ -303,6 +314,7 @@
 									<span class="cont">
 										{r.country ?? '—'}
 										{#if r.rank}· rank {r.rank}{/if}
+										{#if r.pop}· {(r.pop / 1000000).toFixed(1)}M{/if}
 										·
 										<a
 											href={previewAtlasHref(r.slug)}

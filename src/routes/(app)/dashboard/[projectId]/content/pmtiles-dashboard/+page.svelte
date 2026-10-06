@@ -1,4 +1,6 @@
 <script lang="ts">
+	import cityQid from '$lib/data/city-qid.json';
+
 	let { data } = $props();
 
 	const dash = data.dash;
@@ -36,6 +38,7 @@
 		rank: number | null;
 		stores: number | null;
 		popM: number | null;
+		pop: number | null;
 		cells: Record<string, Cell | undefined>;
 		have: number;
 		total: number;
@@ -74,6 +77,7 @@
 				rank: null,
 				stores: null,
 				popM: null,
+				pop: null,
 				cells: {},
 				have: 0,
 				total: 0,
@@ -104,6 +108,8 @@
 			rec.rank = m?.rank ?? null;
 			rec.stores = m?.stores ?? null;
 			rec.popM = m?.popM ?? null;
+			const qidInfo = (cityQid as Record<string, any>)[slug] || (cityQid as Record<string, any>)[rec.city.toLowerCase()];
+			rec.pop = qidInfo?.pop ? Number(qidInfo.pop) : (rec.popM ? rec.popM * 1000000 : null);
 			rec.have = Object.keys(rec.cells).length;
 			// N/A only applies to layers whose file is absent (a staged file wins)
 			const naSet = naSets.get(slug);
@@ -119,7 +125,7 @@
 	let q = $state('');
 	let hideComplete = $state(false);
 	let onlyGaps = $state(false);
-	let sort = $state('name');
+	let sort = $state('pop');
 	// effective gaps: layers that are neither staged nor N/A
 	const gapOf = (r: Row) => layers.length - r.have - r.naCount;
 
@@ -135,6 +141,11 @@
 			return true;
 		});
 		switch (sort) {
+			case 'pop':
+				list = [...list].sort(
+					(a, b) => (b.pop ?? 0) - (a.pop ?? 0) || a.city.localeCompare(b.city)
+				);
+				break;
 			case 'name':
 				list = [...list].sort(
 					(a, b) => a.city.localeCompare(b.city) || a.slug.localeCompare(b.slug)
@@ -315,6 +326,7 @@
 					only rows with gaps</label
 				>
 				<select bind:value={sort} data-testid="pmtiles-sort" class="tbl-sel">
+					<option value="pop">Sort: population</option>
 					<option value="name">Sort: name A–Z</option>
 					<option value="rank">Sort: rank</option>
 					<option value="stores">Sort: chain stores</option>
@@ -362,7 +374,7 @@
 										{r.country ?? '—'}
 										{#if r.rank}· rank {r.rank}{/if}
 										{#if r.stores}· {r.stores} stores{/if}
-										{#if r.popM}· {r.popM}M{/if}
+										{#if r.popM}· {r.popM}M{:else if r.pop}· {(r.pop / 1000000).toFixed(1)}M{/if}
 										·
 										<a
 											href={previewAtlasHref(r.slug)}

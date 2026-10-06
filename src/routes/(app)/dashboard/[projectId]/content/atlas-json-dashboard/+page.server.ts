@@ -7,6 +7,7 @@ import {
 	type City19Storage
 } from '$lib/server/atlas-19-files-storage';
 import seedRegistry from '$lib/data/atlas-2d-missing-files.json';
+import cityQid from '$lib/data/city-qid.json';
 import type { PageServerLoad, Actions } from './$types';
 
 interface CityEntry {
@@ -34,7 +35,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 				slug,
 				prefix: slug,
 				continent: c.continent || 'Global',
-				pop: c.pop || 0
+				pop: c.pop || (cityQid as Record<string, any>)[slug]?.pop || 0
 			});
 		}
 	}
@@ -45,7 +46,13 @@ export const load: PageServerLoad = async ({ platform }) => {
 	// 3. Attach per-city storage records
 	for (const city of cityList) {
 		city.storage19 = report.byCity[city.slug] || report.byCity[city.slug.toLowerCase()];
+		if (!city.pop) {
+			const qidInfo = (cityQid as Record<string, any>)[city.slug] || (cityQid as Record<string, any>)[city.name.toLowerCase()];
+			if (qidInfo?.pop) city.pop = Number(qidInfo.pop);
+		}
 	}
+
+	cityList.sort((a, b) => (b.pop || 0) - (a.pop || 0) || a.name.localeCompare(b.name));
 
 	return {
 		totalCities: cityList.length,

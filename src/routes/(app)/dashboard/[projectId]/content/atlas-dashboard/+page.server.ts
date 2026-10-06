@@ -7,6 +7,7 @@ import {
 	type CityStorage2D
 } from '$lib/server/atlas-2d-storage';
 import seedRegistry from '$lib/data/atlas-2d-missing-files.json';
+import cityQid from '$lib/data/city-qid.json';
 import type { PageServerLoad, Actions } from './$types';
 
 const GEO_ASTRO_PROD_BASE = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
@@ -385,9 +386,13 @@ export const load: PageServerLoad = async ({ platform }) => {
 
 	for (const [prefix, entry] of byPrefix.entries()) {
 		entry.storage2d = storage2dReport.byCity[prefix] ?? null;
+		if (!entry.pop) {
+			const qidInfo = (cityQid as Record<string, any>)[prefix] || (cityQid as Record<string, any>)[entry.name.toLowerCase()];
+			if (qidInfo?.pop) entry.pop = Number(qidInfo.pop);
+		}
 	}
 
-	const cities = [...byPrefix.values()].sort((a, b) => a.name.localeCompare(b.name));
+	const cities = [...byPrefix.values()].sort((a, b) => (b.pop || 0) - (a.pop || 0) || a.name.localeCompare(b.name));
 
 	return {
 		types: TYPE_DEFS,
