@@ -423,6 +423,12 @@
 			{/if}
 		</div>
 		<div class="flex flex-wrap items-center gap-2 text-xs">
+			<a
+				href="/dashboard/geo-site/content/atlas-json-dashboard"
+				class="inline-flex h-7 items-center justify-center rounded-md border border-sky-500/40 bg-sky-500/10 px-3 text-xs font-semibold text-sky-600 hover:bg-sky-500/20"
+			>
+				Atlas 19-Files JSON &rarr;
+			</a>
 			<Button
 				type="button"
 				variant="outline"
