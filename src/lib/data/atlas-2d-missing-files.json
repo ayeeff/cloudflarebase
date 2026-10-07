@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-10-07T06:30:57.189Z",
-  "totalCities": 1252,
+  "totalCities": 1251,
   "filesChecked": [
     "demand-streets.json",
     "neighborhoods.json",
@@ -7294,16 +7294,6 @@
       ],
       "globe": [
         "street-geoms.json"
-      ]
-    },
-    "stpetersburg": {
-      "datalake": [
-        "street-geoms.json",
-        "transit-lines.json"
-      ],
-      "globe": [
-        "street-geoms.json",
-        "transit-lines.json"
       ]
     },
     "subiya": {
@@ -34996,33 +34986,6 @@
         ],
         "globe": [
           "street-geoms.json"
-        ]
-      }
-    },
-    {
-      "slug": "stpetersburg",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": false,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": false,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "street-geoms.json",
-          "transit-lines.json"
-        ],
-        "globe": [
-          "street-geoms.json",
-          "transit-lines.json"
         ]
       }
     },
