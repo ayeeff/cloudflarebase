@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-10-07T06:30:57.189Z",
-  "totalCities": 1255,
+  "totalCities": 1252,
   "filesChecked": [
     "demand-streets.json",
     "neighborhoods.json",
@@ -127,7 +127,7 @@
         "street-geoms.json"
       ]
     },
-    "acara": {
+    "acarau": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -229,7 +229,7 @@
         "transit-lines.json"
       ]
     },
-    "alec": {
+    "zalec": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -253,7 +253,7 @@
         "transit-lines.json"
       ]
     },
-    "alto-alegre-do-maranh-o": {
+    "alto-alegre-do-maranhao": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -261,7 +261,7 @@
         "transit-lines.json"
       ]
     },
-    "alto-alegre-do-pindar": {
+    "alto-alegre-do-pindare": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -369,7 +369,7 @@
         "transit-lines.json"
       ]
     },
-    "angoul-me": {
+    "angouleme": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -385,7 +385,7 @@
         "transit-lines.json"
       ]
     },
-    "ankaya": {
+    "cankaya": {
       "datalake": [
         "street-geoms.json",
         "transit-lines.json"
@@ -561,7 +561,7 @@
         "transit-lines.json"
       ]
     },
-    "at-lio-vivacqua": {
+    "atilio-vivacqua": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -605,7 +605,7 @@
         "transit-lines.json"
       ]
     },
-    "axix-do-tocantins": {
+    "axixa-do-tocantins": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -749,7 +749,7 @@
         "transit-lines.json"
       ]
     },
-    "barra-do-pira": {
+    "barra-do-pirai": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -855,7 +855,7 @@
         "transit-lines.json"
       ]
     },
-    "benitojurez": {
+    "benito-juarez": {
       "datalake": [
         "street-geoms.json",
         "transit-lines.json"
@@ -905,7 +905,7 @@
         "transit-lines.json"
       ]
     },
-    "bigua-u": {
+    "biguacu": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -949,7 +949,7 @@
         "transit-lines.json"
       ]
     },
-    "bl-nod-l-s-pont-mousson": {
+    "blenod-les-pont-a-mousson": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -1167,7 +1167,7 @@
         "transit-lines.json"
       ]
     },
-    "bu-je": {
+    "bucje": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -1219,7 +1219,7 @@
         "transit-lines.json"
       ]
     },
-    "c-cuta": {
+    "cucuta": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -1227,7 +1227,7 @@
         "transit-lines.json"
       ]
     },
-    "caapor": {
+    "caapora": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -1299,7 +1299,7 @@
         "transit-lines.json"
       ]
     },
-    "cancn": {
+    "cancun": {
       "datalake": [
         "street-geoms.json",
         "transit-lines.json"
@@ -1327,7 +1327,7 @@
         "transit-lines.json"
       ]
     },
-    "capit-o-po-o": {
+    "capitao-poco": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -1607,7 +1607,7 @@
         "transit-lines.json"
       ]
     },
-    "ciudadjurez": {
+    "ciudad-juarez": {
       "datalake": [
         "street-geoms.json",
         "transit-lines.json"
@@ -1645,7 +1645,7 @@
         "transit-lines.json"
       ]
     },
-    "cod": {
+    "codo": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -1703,7 +1703,7 @@
         "transit-lines.json"
       ]
     },
-    "concei-o-do-araguaia": {
+    "conceicao-do-araguaia": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -1711,7 +1711,7 @@
         "transit-lines.json"
       ]
     },
-    "concei-o-do-coit": {
+    "conceicao-do-coite": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -1785,7 +1785,7 @@
         "transit-lines.json"
       ]
     },
-    "cuauhtmoc": {
+    "cuauhtemoc": {
       "datalake": [
         "street-geoms.json",
         "transit-lines.json"
@@ -1795,7 +1795,7 @@
         "transit-lines.json"
       ]
     },
-    "cuiab": {
+    "cuiaba": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -1811,7 +1811,7 @@
         "transit-lines.json"
       ]
     },
-    "curion-polis": {
+    "curionopolis": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -1829,7 +1829,7 @@
         "transit-lines.json"
       ]
     },
-    "cz-stochowski": {
+    "czestochowski": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -2033,7 +2033,7 @@
         "transit-lines.json"
       ]
     },
-    "divin-polis": {
+    "divinopolis": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -2143,7 +2143,7 @@
         "street-geoms.json"
       ]
     },
-    "dzki-wschodni": {
+    "lodzki-wschodni": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -2241,7 +2241,7 @@
         "transit-lines.json"
       ]
     },
-    "eus-bio": {
+    "eusebio": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -2437,7 +2437,7 @@
         "transit-lines.json"
       ]
     },
-    "fuente-lamo": {
+    "fuente-alamo": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -2675,7 +2675,7 @@
         "transit-lines.json"
       ]
     },
-    "gro-r-hrsdorf": {
+    "grossrohrsdorf": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -2699,7 +2699,7 @@
         "transit-lines.json"
       ]
     },
-    "gua-doce-do-maranh-o": {
+    "agua-doce-do-maranhao": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -2707,7 +2707,7 @@
         "transit-lines.json"
       ]
     },
-    "guajar-mirim": {
+    "guajara-mirim": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -2731,7 +2731,7 @@
         "transit-lines.json"
       ]
     },
-    "guas-de-lind-ia": {
+    "aguas-de-lindoia": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -2767,7 +2767,7 @@
         "transit-lines.json"
       ]
     },
-    "guilas": {
+    "aguilas": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -2893,7 +2893,7 @@
         "transit-lines.json"
       ]
     },
-    "heitora": {
+    "heitorai": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -3048,7 +3048,7 @@
         "transit-lines.json"
       ]
     },
-    "ibagu": {
+    "ibague": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -3072,7 +3072,7 @@
         "transit-lines.json"
       ]
     },
-    "igarap-do-meio": {
+    "igarape-do-meio": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -3080,7 +3080,7 @@
         "transit-lines.json"
       ]
     },
-    "igarap-miri": {
+    "igarape-miri": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -3088,7 +3088,7 @@
         "transit-lines.json"
       ]
     },
-    "igarat": {
+    "igarata": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -3112,7 +3112,7 @@
         "transit-lines.json"
       ]
     },
-    "imb": {
+    "imbe": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -3138,7 +3138,7 @@
         "transit-lines.json"
       ]
     },
-    "irec": {
+    "irece": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -3178,7 +3178,7 @@
         "transit-lines.json"
       ]
     },
-    "itagua": {
+    "itaguai": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -3202,7 +3202,7 @@
         "transit-lines.json"
       ]
     },
-    "itapo": {
+    "itapoa": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -3536,7 +3536,7 @@
         "transit-lines.json"
       ]
     },
-    "ko-cia-ski": {
+    "koscianski": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -3584,7 +3584,7 @@
         "transit-lines.json"
       ]
     },
-    "ku-im": {
+    "kurim": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -3630,7 +3630,7 @@
         "transit-lines.json"
       ]
     },
-    "la-arak": {
+    "lacarak": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -3884,7 +3884,7 @@
         "transit-lines.json"
       ]
     },
-    "lepp-virta": {
+    "leppavirta": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4034,7 +4034,7 @@
         "transit-lines.json"
       ]
     },
-    "longeville-l-s-saint-avold": {
+    "longeville-les-saint-avold": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4076,7 +4076,7 @@
         "transit-lines.json"
       ]
     },
-    "lu-s-eduardo-magalh-es": {
+    "luis-eduardo-magalhaes": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4128,7 +4128,7 @@
         "transit-lines.json"
       ]
     },
-    "m-laga": {
+    "malaga": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4136,7 +4136,7 @@
         "transit-lines.json"
       ]
     },
-    "m-xico": {
+    "mexico": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4152,7 +4152,7 @@
         "transit-lines.json"
       ]
     },
-    "maca": {
+    "macae": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4160,7 +4160,7 @@
         "transit-lines.json"
       ]
     },
-    "macap": {
+    "macapa": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4178,7 +4178,7 @@
         "transit-lines.json"
       ]
     },
-    "magalh-es-barata": {
+    "magalhaes-barata": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4316,7 +4316,7 @@
         "transit-lines.json"
       ]
     },
-    "manhua-u": {
+    "manhuacu": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4350,7 +4350,7 @@
         "street-geoms.json"
       ]
     },
-    "mara": {
+    "marau": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4358,7 +4358,7 @@
         "transit-lines.json"
       ]
     },
-    "marab": {
+    "maraba": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4456,7 +4456,7 @@
         "transit-lines.json"
       ]
     },
-    "mauz-sur-le-mignon": {
+    "mauze-sur-le-mignon": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4492,7 +4492,7 @@
         "transit-lines.json"
       ]
     },
-    "medell-n": {
+    "medellin": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4516,7 +4516,7 @@
         "street-geoms.json"
       ]
     },
-    "medve-a": {
+    "medveda": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4524,7 +4524,7 @@
         "transit-lines.json"
       ]
     },
-    "meg-ve": {
+    "megeve": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4578,7 +4578,7 @@
         "transit-lines.json"
       ]
     },
-    "michoac-n-de-ocampo": {
+    "michoacan-de-ocampo": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4686,7 +4686,7 @@
         "transit-lines.json"
       ]
     },
-    "moju-dos-campos": {
+    "mojui-dos-campos": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4756,7 +4756,7 @@
         "transit-lines.json"
       ]
     },
-    "monte-apraz-vel": {
+    "monte-aprazivel": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -4838,7 +4838,7 @@
         "transit-lines.json"
       ]
     },
-    "mossor": {
+    "mossoro": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -5012,7 +5012,7 @@
         "street-geoms.json"
       ]
     },
-    "nazar": {
+    "nazare": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -5038,7 +5038,7 @@
         "transit-lines.json"
       ]
     },
-    "neum-nster": {
+    "neumunster": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -5256,7 +5256,7 @@
         "transit-lines.json"
       ]
     },
-    "nukualofa": {
+    "nuku-alofa": {
       "datalake": [
         "street-geoms.json",
         "transit-lines.json"
@@ -5362,7 +5362,7 @@
         "transit-lines.json"
       ]
     },
-    "oriximin": {
+    "oriximina": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -5528,7 +5528,7 @@
         "transit-lines.json"
       ]
     },
-    "paranaquecity": {
+    "paranaque": {
       "datalake": [
         "street-geoms.json",
         "transit-lines.json"
@@ -5690,7 +5690,7 @@
         "transit-lines.json"
       ]
     },
-    "pi-n": {
+    "pien": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -5722,7 +5722,7 @@
         "transit-lines.json"
       ]
     },
-    "po-o-das-trincheiras": {
+    "poco-das-trincheiras": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -5764,7 +5764,7 @@
         "transit-lines.json"
       ]
     },
-    "pola-a": {
+    "polaca": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -5820,7 +5820,7 @@
         "transit-lines.json"
       ]
     },
-    "popay-n": {
+    "popayan": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -5974,7 +5974,7 @@
         "transit-lines.json"
       ]
     },
-    "presidente-epit-cio": {
+    "presidente-epitacio": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6022,7 +6022,7 @@
         "transit-lines.json"
       ]
     },
-    "pszczy-ski": {
+    "pszczynski": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6070,7 +6070,7 @@
         "street-geoms.json"
       ]
     },
-    "quer-taro": {
+    "queretaro": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6200,7 +6200,7 @@
         "transit-lines.json"
       ]
     },
-    "reoc-n": {
+    "reocin": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6316,7 +6316,7 @@
         "transit-lines.json"
       ]
     },
-    "rmqi": {
+    "urumqi": {
       "datalake": [
         "street-geoms.json",
         "transit-lines.json"
@@ -6362,7 +6362,7 @@
         "transit-lines.json"
       ]
     },
-    "ropczycko-s-dziszowski": {
+    "ropczycko-sedziszowski": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6370,7 +6370,7 @@
         "transit-lines.json"
       ]
     },
-    "ros-rio-do-sul": {
+    "rosario-do-sul": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6412,7 +6412,7 @@
         "transit-lines.json"
       ]
     },
-    "rzesz-w": {
+    "rzeszow": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6428,7 +6428,7 @@
         "transit-lines.json"
       ]
     },
-    "s-o-bento": {
+    "sao-bento": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6436,7 +6436,7 @@
         "transit-lines.json"
       ]
     },
-    "s-o-carlos": {
+    "sao-carlos": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6444,7 +6444,7 @@
         "transit-lines.json"
       ]
     },
-    "s-o-domingos-do-capim": {
+    "sao-domingos-do-capim": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6452,7 +6452,7 @@
         "transit-lines.json"
       ]
     },
-    "s-o-gon-alo-dos-campos": {
+    "sao-goncalo-dos-campos": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6460,7 +6460,7 @@
         "transit-lines.json"
       ]
     },
-    "s-o-jo-o-da-barra": {
+    "sao-joao-da-barra": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6468,7 +6468,7 @@
         "transit-lines.json"
       ]
     },
-    "s-o-louren-o-do-sul": {
+    "sao-lourenco-do-sul": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6476,7 +6476,7 @@
         "transit-lines.json"
       ]
     },
-    "s-o-luiz-gonzaga": {
+    "sao-luiz-gonzaga": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6484,7 +6484,7 @@
         "transit-lines.json"
       ]
     },
-    "s-o-miguel-do-igua-u": {
+    "sao-miguel-do-iguacu": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6492,7 +6492,7 @@
         "transit-lines.json"
       ]
     },
-    "s-o-roque-do-cana": {
+    "sao-roque-do-canaa": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6500,7 +6500,7 @@
         "transit-lines.json"
       ]
     },
-    "s-o-sebasti-o-da-boa-vista": {
+    "sao-sebastiao-da-boa-vista": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6508,7 +6508,7 @@
         "transit-lines.json"
       ]
     },
-    "saarbr-cken": {
+    "saarbrucken": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6516,7 +6516,7 @@
         "transit-lines.json"
       ]
     },
-    "sab-udia": {
+    "sabaudia": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6524,7 +6524,7 @@
         "transit-lines.json"
       ]
     },
-    "saint-andr-d-argenteuil": {
+    "saint-andre-dargenteuil": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6572,7 +6572,7 @@
         "transit-lines.json"
       ]
     },
-    "saint-s-bastien-sur-loire": {
+    "saint-sebastien-sur-loire": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6630,7 +6630,7 @@
         "transit-lines.json"
       ]
     },
-    "saka": {
+    "osaka": {
       "datalake": [
         "street-geoms.json",
         "transit-lines.json"
@@ -6658,7 +6658,7 @@
         "transit-lines.json"
       ]
     },
-    "sales-polis": {
+    "salesopolis": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6682,7 +6682,7 @@
         "street-geoms.json"
       ]
     },
-    "san-luis-potos": {
+    "san-luis-potosi": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6718,7 +6718,7 @@
         "transit-lines.json"
       ]
     },
-    "sanjose": {
+    "san-jose": {
       "datalake": [
         "street-geoms.json"
       ],
@@ -6760,7 +6760,7 @@
         "street-geoms.json"
       ]
     },
-    "santa-b-rbara": {
+    "santa-barbara": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6768,7 +6768,7 @@
         "transit-lines.json"
       ]
     },
-    "santa-b-rbara-d-oeste": {
+    "santa-barbara-doeste": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6776,7 +6776,7 @@
         "transit-lines.json"
       ]
     },
-    "santa-eul-ria-des-riu": {
+    "santa-eularia-des-riu": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6800,7 +6800,7 @@
         "transit-lines.json"
       ]
     },
-    "santo-ant-nio-do-tau": {
+    "santo-antonio-do-taua": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -6808,7 +6808,7 @@
         "transit-lines.json"
       ]
     },
-    "saotome": {
+    "sao-tome": {
       "datalake": [
         "demand-streets.json",
         "neighborhoods.json",
@@ -6936,7 +6936,7 @@
         "transit-lines.json"
       ]
     },
-    "sert-ozinho": {
+    "sertaozinho": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7062,7 +7062,7 @@
         "transit-lines.json"
       ]
     },
-    "skar-yski": {
+    "skarzyski": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7256,7 +7256,7 @@
         "transit-lines.json"
       ]
     },
-    "st-andr": {
+    "st-andra": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7332,7 +7332,7 @@
         "transit-lines.json"
       ]
     },
-    "svo-e": {
+    "svode": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7356,7 +7356,7 @@
         "transit-lines.json"
       ]
     },
-    "tail-ndia": {
+    "tailandia": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7408,7 +7408,7 @@
         "transit-lines.json"
       ]
     },
-    "taubat": {
+    "taubate": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7454,7 +7454,7 @@
         "transit-lines.json"
       ]
     },
-    "teres-polis": {
+    "teresopolis": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7504,7 +7504,7 @@
         "transit-lines.json"
       ]
     },
-    "timba-ba": {
+    "timbauba": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7562,7 +7562,7 @@
         "transit-lines.json"
       ]
     },
-    "tournon-sur-rh-ne": {
+    "tournon-sur-rhone": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7578,7 +7578,7 @@
         "transit-lines.json"
       ]
     },
-    "tr-laz": {
+    "trelaze": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7610,7 +7610,7 @@
         "transit-lines.json"
       ]
     },
-    "trentino-alto-adige-s-dtirol": {
+    "trentino-alto-adige-sudtirol": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7634,7 +7634,7 @@
         "street-geoms.json"
       ]
     },
-    "troms": {
+    "tromso": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7650,7 +7650,7 @@
         "transit-lines.json"
       ]
     },
-    "tubar-o": {
+    "tubarao": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7708,7 +7708,7 @@
         "transit-lines.json"
       ]
     },
-    "tyrn-v": {
+    "tyrnava": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7732,7 +7732,7 @@
         "transit-lines.json"
       ]
     },
-    "uberl-ndia": {
+    "uberlandia": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7772,7 +7772,7 @@
         "transit-lines.json"
       ]
     },
-    "urua-u": {
+    "uruacu": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7780,7 +7780,7 @@
         "transit-lines.json"
       ]
     },
-    "uruar": {
+    "uruara": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7796,7 +7796,7 @@
         "transit-lines.json"
       ]
     },
-    "v-ksy": {
+    "vaaksy": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7804,7 +7804,7 @@
         "transit-lines.json"
       ]
     },
-    "vacqui-res": {
+    "vacquieres": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7812,7 +7812,7 @@
         "transit-lines.json"
       ]
     },
-    "vale-do-para-so": {
+    "vale-do-paraiso": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7820,7 +7820,7 @@
         "transit-lines.json"
       ]
     },
-    "valen-a": {
+    "valenca": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7896,7 +7896,7 @@
         "transit-lines.json"
       ]
     },
-    "vi-osa": {
+    "vicosa": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7962,7 +7962,7 @@
         "transit-lines.json"
       ]
     },
-    "vit-ria-da-conquista": {
+    "vitoria-da-conquista": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -7970,7 +7970,7 @@
         "transit-lines.json"
       ]
     },
-    "vitr": {
+    "vitre": {
       "datalake": [
         "transit-lines.json"
       ],
@@ -8511,7 +8511,7 @@
       }
     },
     {
-      "slug": "acara",
+      "slug": "acarau",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -8649,7 +8649,82 @@
       }
     },
     {
+      "slug": "agua-doce-do-maranhao",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "aguas-de-lindoia",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
       "slug": "aguascalientes",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "aguilas",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -8922,31 +8997,6 @@
       }
     },
     {
-      "slug": "alec",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
       "slug": "alexandria",
       "datalake": {
         "demand-streets.json": true,
@@ -9039,7 +9089,7 @@
       }
     },
     {
-      "slug": "alto-alegre-do-maranh-o",
+      "slug": "alto-alegre-do-maranhao",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -9064,7 +9114,7 @@
       }
     },
     {
-      "slug": "alto-alegre-do-pindar",
+      "slug": "alto-alegre-do-pindare",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -9498,7 +9548,7 @@
       }
     },
     {
-      "slug": "angoul-me",
+      "slug": "angouleme",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -9564,33 +9614,6 @@
           "transit-lines.json"
         ],
         "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "ankaya",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": false,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": false,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "street-geoms.json",
-          "transit-lines.json"
-        ],
-        "globe": [
-          "street-geoms.json",
           "transit-lines.json"
         ]
       }
@@ -10169,31 +10192,6 @@
       }
     },
     {
-      "slug": "at-lio-vivacqua",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
       "slug": "athens",
       "datalake": {
         "demand-streets.json": true,
@@ -10241,6 +10239,31 @@
     },
     {
       "slug": "atibaia",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "atilio-vivacqua",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -10403,7 +10426,7 @@
       }
     },
     {
-      "slug": "axix-do-tocantins",
+      "slug": "axixa-do-tocantins",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -10953,7 +10976,7 @@
       }
     },
     {
-      "slug": "barra-do-pira",
+      "slug": "barra-do-pirai",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -11368,7 +11391,7 @@
       }
     },
     {
-      "slug": "benitojurez",
+      "slug": "benito-juarez",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -11545,7 +11568,7 @@
       }
     },
     {
-      "slug": "bigua-u",
+      "slug": "biguacu",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -11695,31 +11718,6 @@
       }
     },
     {
-      "slug": "bl-nod-l-s-pont-mousson",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
       "slug": "blagnac",
       "datalake": {
         "demand-streets.json": true,
@@ -11767,6 +11765,31 @@
         ],
         "globe": [
           "street-geoms.json",
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "blenod-les-pont-a-mousson",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
           "transit-lines.json"
         ]
       }
@@ -12510,7 +12533,28 @@
       }
     },
     {
-      "slug": "bu-je",
+      "slug": "bucharest",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": true
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": true
+      },
+      "missingFiles": {
+        "datalake": [],
+        "globe": []
+      }
+    },
+    {
+      "slug": "buchlovice",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -12535,28 +12579,7 @@
       }
     },
     {
-      "slug": "bucharest",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": true
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": true
-      },
-      "missingFiles": {
-        "datalake": [],
-        "globe": []
-      }
-    },
-    {
-      "slug": "buchlovice",
+      "slug": "bucje",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -12790,32 +12813,7 @@
       }
     },
     {
-      "slug": "c-cuta",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "caapor",
+      "slug": "caapora",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -13103,7 +13101,7 @@
       }
     },
     {
-      "slug": "cancn",
+      "slug": "cancun",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -13150,6 +13148,33 @@
           "transit-lines.json"
         ],
         "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "cankaya",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": false,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": false,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "street-geoms.json",
+          "transit-lines.json"
+        ],
+        "globe": [
+          "street-geoms.json",
           "transit-lines.json"
         ]
       }
@@ -13203,7 +13228,7 @@
       }
     },
     {
-      "slug": "capit-o-po-o",
+      "slug": "capitao-poco",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -14262,7 +14287,7 @@
       }
     },
     {
-      "slug": "ciudadjurez",
+      "slug": "ciudad-juarez",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -14389,7 +14414,7 @@
       }
     },
     {
-      "slug": "cod",
+      "slug": "codo",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -14608,7 +14633,7 @@
       }
     },
     {
-      "slug": "concei-o-do-araguaia",
+      "slug": "conceicao-do-araguaia",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -14633,7 +14658,7 @@
       }
     },
     {
-      "slug": "concei-o-do-coit",
+      "slug": "conceicao-do-coite",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -14885,7 +14910,7 @@
       }
     },
     {
-      "slug": "cuauhtmoc",
+      "slug": "cuauhtemoc",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -14912,7 +14937,32 @@
       }
     },
     {
-      "slug": "cuiab",
+      "slug": "cucuta",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "cuiaba",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -14962,7 +15012,7 @@
       }
     },
     {
-      "slug": "curion-polis",
+      "slug": "curionopolis",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -15035,7 +15085,7 @@
       }
     },
     {
-      "slug": "cz-stochowski",
+      "slug": "czestochowski",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -15844,7 +15894,7 @@
       }
     },
     {
-      "slug": "divin-polis",
+      "slug": "divinopolis",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -16259,31 +16309,6 @@
       }
     },
     {
-      "slug": "dzki-wschodni",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
       "slug": "eastham",
       "datalake": {
         "demand-streets.json": true,
@@ -16624,7 +16649,7 @@
       }
     },
     {
-      "slug": "eus-bio",
+      "slug": "eusebio",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -17337,7 +17362,7 @@
       }
     },
     {
-      "slug": "fuente-lamo",
+      "slug": "fuente-alamo",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -18219,7 +18244,7 @@
       }
     },
     {
-      "slug": "gro-r-hrsdorf",
+      "slug": "grossrohrsdorf",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -18277,31 +18302,6 @@
       }
     },
     {
-      "slug": "gua-doce-do-maranh-o",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
       "slug": "guadalajara",
       "datalake": {
         "demand-streets.json": true,
@@ -18323,7 +18323,7 @@
       }
     },
     {
-      "slug": "guajar-mirim",
+      "slug": "guajara-mirim",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -18395,31 +18395,6 @@
     },
     {
       "slug": "guaraciaba-do-norte",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "guas-de-lind-ia",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -18539,31 +18514,6 @@
         ],
         "globe": [
           "street-geoms.json",
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "guilas",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
           "transit-lines.json"
         ]
       }
@@ -19097,7 +19047,7 @@
       }
     },
     {
-      "slug": "heitora",
+      "slug": "heitorai",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -19709,7 +19659,7 @@
       }
     },
     {
-      "slug": "ibagu",
+      "slug": "ibague",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -19784,7 +19734,7 @@
       }
     },
     {
-      "slug": "igarap-do-meio",
+      "slug": "igarape-do-meio",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -19809,7 +19759,7 @@
       }
     },
     {
-      "slug": "igarap-miri",
+      "slug": "igarape-miri",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -19834,7 +19784,7 @@
       }
     },
     {
-      "slug": "igarat",
+      "slug": "igarata",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -19909,7 +19859,7 @@
       }
     },
     {
-      "slug": "imb",
+      "slug": "imbe",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -20007,7 +19957,7 @@
       }
     },
     {
-      "slug": "irec",
+      "slug": "irece",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -20174,7 +20124,7 @@
       }
     },
     {
-      "slug": "itagua",
+      "slug": "itaguai",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -20249,7 +20199,7 @@
       }
     },
     {
-      "slug": "itapo",
+      "slug": "itapoa",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -21464,31 +21414,6 @@
       }
     },
     {
-      "slug": "ko-cia-ski",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
       "slug": "ko-ick",
       "datalake": {
         "demand-streets.json": true,
@@ -21532,6 +21457,31 @@
       "missingFiles": {
         "datalake": [],
         "globe": []
+      }
+    },
+    {
+      "slug": "koscianski",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
       }
     },
     {
@@ -21639,31 +21589,6 @@
       }
     },
     {
-      "slug": "ku-im",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
       "slug": "kualalumpur",
       "datalake": {
         "demand-streets.json": true,
@@ -21707,6 +21632,31 @@
         ],
         "globe": [
           "street-geoms.json",
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "kurim",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
           "transit-lines.json"
         ]
       }
@@ -21849,31 +21799,6 @@
           "neighborhoods.json",
           "places.json",
           "street-geoms.json",
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "la-arak",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
           "transit-lines.json"
         ]
       }
@@ -22051,6 +21976,31 @@
         ],
         "globe": [
           "street-geoms.json",
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "lacarak",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
           "transit-lines.json"
         ]
       }
@@ -22685,7 +22635,7 @@
       }
     },
     {
-      "slug": "lepp-virta",
+      "slug": "leppavirta",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -23102,6 +23052,31 @@
       }
     },
     {
+      "slug": "lodzki-wschodni",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
       "slug": "lom",
       "datalake": {
         "demand-streets.json": true,
@@ -23246,7 +23221,7 @@
       }
     },
     {
-      "slug": "longeville-l-s-saint-avold",
+      "slug": "longeville-les-saint-avold",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -23394,31 +23369,6 @@
       }
     },
     {
-      "slug": "lu-s-eduardo-magalh-es",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
       "slug": "luanda",
       "datalake": {
         "demand-streets.json": true,
@@ -23493,6 +23443,31 @@
     },
     {
       "slug": "lucena",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "luis-eduardo-magalhaes",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -23632,56 +23607,6 @@
       }
     },
     {
-      "slug": "m-laga",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "m-xico",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
       "slug": "m-yry",
       "datalake": {
         "demand-streets.json": true,
@@ -23707,7 +23632,7 @@
       }
     },
     {
-      "slug": "maca",
+      "slug": "macae",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -23732,7 +23657,7 @@
       }
     },
     {
-      "slug": "macap",
+      "slug": "macapa",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -23826,7 +23751,7 @@
       }
     },
     {
-      "slug": "magalh-es-barata",
+      "slug": "magalhaes-barata",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -23979,6 +23904,31 @@
         ],
         "globe": [
           "street-geoms.json",
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "malaga",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
           "transit-lines.json"
         ]
       }
@@ -24219,7 +24169,7 @@
       }
     },
     {
-      "slug": "manhua-u",
+      "slug": "manhuacu",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -24342,32 +24292,7 @@
       }
     },
     {
-      "slug": "mara",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "marab",
+      "slug": "maraba",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -24393,6 +24318,31 @@
     },
     {
       "slug": "maraial",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "marau",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -24732,7 +24682,7 @@
       }
     },
     {
-      "slug": "mauz-sur-le-mignon",
+      "slug": "mauze-sur-le-mignon",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -24857,7 +24807,7 @@
       }
     },
     {
-      "slug": "medell-n",
+      "slug": "medellin",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -24932,7 +24882,7 @@
       }
     },
     {
-      "slug": "medve-a",
+      "slug": "medveda",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -24957,7 +24907,7 @@
       }
     },
     {
-      "slug": "meg-ve",
+      "slug": "megeve",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -25176,6 +25126,31 @@
       }
     },
     {
+      "slug": "mexico",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
       "slug": "mexicocity",
       "datalake": {
         "demand-streets.json": true,
@@ -25218,7 +25193,7 @@
       }
     },
     {
-      "slug": "michoac-n-de-ocampo",
+      "slug": "michoacan-de-ocampo",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -25635,7 +25610,7 @@
       }
     },
     {
-      "slug": "moju-dos-campos",
+      "slug": "mojui-dos-campos",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -25862,7 +25837,7 @@
       }
     },
     {
-      "slug": "monte-apraz-vel",
+      "slug": "monte-aprazivel",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -26143,7 +26118,7 @@
       }
     },
     {
-      "slug": "mossor",
+      "slug": "mossoro",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -26888,7 +26863,7 @@
       }
     },
     {
-      "slug": "nazar",
+      "slug": "nazare",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -26965,7 +26940,7 @@
       }
     },
     {
-      "slug": "neum-nster",
+      "slug": "neumunster",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -27717,7 +27692,7 @@
       }
     },
     {
-      "slug": "nukualofa",
+      "slug": "nuku-alofa",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -28132,7 +28107,7 @@
       }
     },
     {
-      "slug": "oriximin",
+      "slug": "oriximina",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -28743,7 +28718,7 @@
       }
     },
     {
-      "slug": "paranaquecity",
+      "slug": "paranaque",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -29375,31 +29350,6 @@
       }
     },
     {
-      "slug": "pi-n",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
       "slug": "picassent",
       "datalake": {
         "demand-streets.json": true,
@@ -29426,6 +29376,31 @@
     },
     {
       "slug": "piemonte",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "pien",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -29538,7 +29513,7 @@
       }
     },
     {
-      "slug": "po-o-das-trincheiras",
+      "slug": "poco-das-trincheiras",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -29665,7 +29640,7 @@
       }
     },
     {
-      "slug": "pola-a",
+      "slug": "polaca",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -29840,7 +29815,7 @@
       }
     },
     {
-      "slug": "popay-n",
+      "slug": "popayan",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -30325,7 +30300,7 @@
       }
     },
     {
-      "slug": "presidente-epit-cio",
+      "slug": "presidente-epitacio",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -30458,7 +30433,7 @@
       }
     },
     {
-      "slug": "pszczy-ski",
+      "slug": "pszczynski",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -30713,7 +30688,7 @@
       }
     },
     {
-      "slug": "quer-taro",
+      "slug": "queretaro",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -30735,27 +30710,6 @@
         "globe": [
           "transit-lines.json"
         ]
-      }
-    },
-    {
-      "slug": "queretaro",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": true
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": true
-      },
-      "missingFiles": {
-        "datalake": [],
-        "globe": []
       }
     },
     {
@@ -31182,7 +31136,7 @@
       }
     },
     {
-      "slug": "reoc-n",
+      "slug": "reocin",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -31641,33 +31595,6 @@
       }
     },
     {
-      "slug": "rmqi",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": false,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": false,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "street-geoms.json",
-          "transit-lines.json"
-        ],
-        "globe": [
-          "street-geoms.json",
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
       "slug": "roanoke",
       "datalake": {
         "demand-streets.json": true,
@@ -31835,7 +31762,7 @@
       }
     },
     {
-      "slug": "ropczycko-s-dziszowski",
+      "slug": "ropczycko-sedziszowski",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -31860,7 +31787,7 @@
       }
     },
     {
-      "slug": "ros-rio-do-sul",
+      "slug": "rosario-do-sul",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -31987,7 +31914,7 @@
       }
     },
     {
-      "slug": "rzesz-w",
+      "slug": "rzeszow",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -32037,7 +31964,7 @@
       }
     },
     {
-      "slug": "s-o-bento",
+      "slug": "saarbrucken",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -32062,257 +31989,7 @@
       }
     },
     {
-      "slug": "s-o-carlos",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "s-o-domingos-do-capim",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "s-o-gon-alo-dos-campos",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "s-o-jo-o-da-barra",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "s-o-louren-o-do-sul",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "s-o-luiz-gonzaga",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "s-o-miguel-do-igua-u",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "s-o-roque-do-cana",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "s-o-sebasti-o-da-boa-vista",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "saarbr-cken",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "sab-udia",
+      "slug": "sabaudia",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -32358,7 +32035,7 @@
       }
     },
     {
-      "slug": "saint-andr-d-argenteuil",
+      "slug": "saint-andre-dargenteuil",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -32508,7 +32185,7 @@
       }
     },
     {
-      "slug": "saint-s-bastien-sur-loire",
+      "slug": "saint-sebastien-sur-loire",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -32693,33 +32370,6 @@
       }
     },
     {
-      "slug": "saka",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": false,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": false,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "street-geoms.json",
-          "transit-lines.json"
-        ],
-        "globe": [
-          "street-geoms.json",
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
       "slug": "salazie",
       "datalake": {
         "demand-streets.json": true,
@@ -32772,7 +32422,7 @@
       }
     },
     {
-      "slug": "sales-polis",
+      "slug": "salesopolis",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -32868,7 +32518,32 @@
       }
     },
     {
-      "slug": "san-luis-potos",
+      "slug": "san-jose",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": false,
+        "transit-lines.json": true
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": false,
+        "transit-lines.json": true
+      },
+      "missingFiles": {
+        "datalake": [
+          "street-geoms.json"
+        ],
+        "globe": [
+          "street-geoms.json"
+        ]
+      }
+    },
+    {
+      "slug": "san-luis-potosi",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -33077,31 +32752,6 @@
       }
     },
     {
-      "slug": "sanjose",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": false,
-        "transit-lines.json": true
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": false,
-        "transit-lines.json": true
-      },
-      "missingFiles": {
-        "datalake": [
-          "street-geoms.json"
-        ],
-        "globe": [
-          "street-geoms.json"
-        ]
-      }
-    },
-    {
       "slug": "sanjuan",
       "datalake": {
         "demand-streets.json": false,
@@ -33208,7 +32858,7 @@
       }
     },
     {
-      "slug": "santa-b-rbara",
+      "slug": "santa-barbara",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -33233,7 +32883,7 @@
       }
     },
     {
-      "slug": "santa-b-rbara-d-oeste",
+      "slug": "santa-barbara-doeste",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -33258,7 +32908,7 @@
       }
     },
     {
-      "slug": "santa-eul-ria-des-riu",
+      "slug": "santa-eularia-des-riu",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -33396,7 +33046,7 @@
       }
     },
     {
-      "slug": "santo-ant-nio-do-tau",
+      "slug": "santo-antonio-do-taua",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -33442,28 +33092,257 @@
       }
     },
     {
-      "slug": "saopaulo",
+      "slug": "sao-bento",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
         "places.json": true,
         "street-geoms.json": true,
-        "transit-lines.json": true
+        "transit-lines.json": false
       },
       "globe": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
         "places.json": true,
         "street-geoms.json": true,
-        "transit-lines.json": true
+        "transit-lines.json": false
       },
       "missingFiles": {
-        "datalake": [],
-        "globe": []
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
       }
     },
     {
-      "slug": "saotome",
+      "slug": "sao-carlos",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "sao-domingos-do-capim",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "sao-goncalo-dos-campos",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "sao-joao-da-barra",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "sao-lourenco-do-sul",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "sao-luiz-gonzaga",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "sao-miguel-do-iguacu",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "sao-roque-do-canaa",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "sao-sebastiao-da-boa-vista",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
+      "slug": "sao-tome",
       "datalake": {
         "demand-streets.json": false,
         "neighborhoods.json": false,
@@ -33493,6 +33372,27 @@
           "street-geoms.json",
           "transit-lines.json"
         ]
+      }
+    },
+    {
+      "slug": "saopaulo",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": true
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": true
+      },
+      "missingFiles": {
+        "datalake": [],
+        "globe": []
       }
     },
     {
@@ -33892,7 +33792,7 @@
       }
     },
     {
-      "slug": "sert-ozinho",
+      "slug": "sertaozinho",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -34361,7 +34261,7 @@
       }
     },
     {
-      "slug": "skar-yski",
+      "slug": "skarzyski",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -34933,7 +34833,7 @@
       }
     },
     {
-      "slug": "st-andr",
+      "slug": "st-andra",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -35288,7 +35188,7 @@
       }
     },
     {
-      "slug": "svo-e",
+      "slug": "svode",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -35447,7 +35347,7 @@
       }
     },
     {
-      "slug": "tail-ndia",
+      "slug": "tailandia",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -35706,7 +35606,7 @@
       }
     },
     {
-      "slug": "taubat",
+      "slug": "taubate",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -35879,7 +35779,7 @@
       }
     },
     {
-      "slug": "teres-polis",
+      "slug": "teresina",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -35904,7 +35804,7 @@
       }
     },
     {
-      "slug": "teresina",
+      "slug": "teresopolis",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -36094,7 +35994,7 @@
       }
     },
     {
-      "slug": "timba-ba",
+      "slug": "timbauba",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -36334,7 +36234,7 @@
       }
     },
     {
-      "slug": "tournon-sur-rh-ne",
+      "slug": "tournon-sur-rhone",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -36360,31 +36260,6 @@
     },
     {
       "slug": "tours",
-      "datalake": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "globe": {
-        "demand-streets.json": true,
-        "neighborhoods.json": true,
-        "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": false
-      },
-      "missingFiles": {
-        "datalake": [
-          "transit-lines.json"
-        ],
-        "globe": [
-          "transit-lines.json"
-        ]
-      }
-    },
-    {
-      "slug": "tr-laz",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -36459,6 +36334,31 @@
       }
     },
     {
+      "slug": "trelaze",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
+      }
+    },
+    {
       "slug": "tren-iansky",
       "datalake": {
         "demand-streets.json": true,
@@ -36484,7 +36384,7 @@
       }
     },
     {
-      "slug": "trentino-alto-adige-s-dtirol",
+      "slug": "trentino-alto-adige-sudtirol",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -36559,7 +36459,7 @@
       }
     },
     {
-      "slug": "troms",
+      "slug": "tromso",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -36609,7 +36509,7 @@
       }
     },
     {
-      "slug": "tubar-o",
+      "slug": "tubarao",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -36828,7 +36728,7 @@
       }
     },
     {
-      "slug": "tyrn-v",
+      "slug": "tyrnava",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -36903,7 +36803,7 @@
       }
     },
     {
-      "slug": "uberl-ndia",
+      "slug": "uberlandia",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -37028,7 +36928,7 @@
       }
     },
     {
-      "slug": "urua-u",
+      "slug": "uruacu",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -37053,7 +36953,7 @@
       }
     },
     {
-      "slug": "uruar",
+      "slug": "uruara",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -37108,23 +37008,29 @@
         "demand-streets.json": true,
         "neighborhoods.json": true,
         "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": true
+        "street-geoms.json": false,
+        "transit-lines.json": false
       },
       "globe": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
         "places.json": true,
-        "street-geoms.json": true,
-        "transit-lines.json": true
+        "street-geoms.json": false,
+        "transit-lines.json": false
       },
       "missingFiles": {
-        "datalake": [],
-        "globe": []
+        "datalake": [
+          "street-geoms.json",
+          "transit-lines.json"
+        ],
+        "globe": [
+          "street-geoms.json",
+          "transit-lines.json"
+        ]
       }
     },
     {
-      "slug": "v-ksy",
+      "slug": "vaaksy",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -37149,7 +37055,7 @@
       }
     },
     {
-      "slug": "vacqui-res",
+      "slug": "vacquieres",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -37195,7 +37101,7 @@
       }
     },
     {
-      "slug": "vale-do-para-so",
+      "slug": "vale-do-paraiso",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -37220,7 +37126,7 @@
       }
     },
     {
-      "slug": "valen-a",
+      "slug": "valenca",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -37554,7 +37460,7 @@
       }
     },
     {
-      "slug": "vi-osa",
+      "slug": "vicosa",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -37819,7 +37725,7 @@
       }
     },
     {
-      "slug": "vit-ria-da-conquista",
+      "slug": "vitoria-da-conquista",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -37844,7 +37750,7 @@
       }
     },
     {
-      "slug": "vitr",
+      "slug": "vitre",
       "datalake": {
         "demand-streets.json": true,
         "neighborhoods.json": true,
@@ -39015,6 +38921,31 @@
       "missingFiles": {
         "datalake": [],
         "globe": []
+      }
+    },
+    {
+      "slug": "zalec",
+      "datalake": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "globe": {
+        "demand-streets.json": true,
+        "neighborhoods.json": true,
+        "places.json": true,
+        "street-geoms.json": true,
+        "transit-lines.json": false
+      },
+      "missingFiles": {
+        "datalake": [
+          "transit-lines.json"
+        ],
+        "globe": [
+          "transit-lines.json"
+        ]
       }
     },
     {
