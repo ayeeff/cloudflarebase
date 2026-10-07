@@ -240,6 +240,21 @@ export function build19FilesReport(
 }
 
 /**
+ * Exhaustively list all R2 object keys under a prefix by paginating through
+ * the 1000-object-per-page API limit.
+ */
+async function listAllKeys(bucket: R2Bucket, prefix: string): Promise<Set<string>> {
+	const keys = new Set<string>();
+	let cursor: string | undefined;
+	do {
+		const res = await bucket.list({ prefix, limit: 1000, cursor });
+		for (const obj of res.objects) keys.add(obj.key);
+		cursor = res.truncated ? res.cursor : undefined;
+	} while (cursor);
+	return keys;
+}
+
+/**
  * Load the 19-file report from R2 or fallback
  */
 export async function loadAtlas19StorageReport(
@@ -279,16 +294,13 @@ export async function loadAtlas19StorageReport(
 		}
 	}
 
-	// Live scan if buckets bound
+	// Live scan if buckets bound — paginate fully (1000-object page limit)
 	if (globe && datalake) {
 		try {
-			const [glRes, dlRes] = await Promise.all([
-				globe.list({ prefix: 'data/', limit: 1000 }),
-				datalake.list({ prefix: 'sources/', limit: 1000 })
+			const [glSet, dlSet] = await Promise.all([
+				listAllKeys(globe, 'data/'),
+				listAllKeys(datalake, 'sources/')
 			]);
-
-			const glSet = new Set(glRes.objects.map((o) => o.key));
-			const dlSet = new Set(dlRes.objects.map((o) => o.key));
 
 			return build19FilesReport(dlSet, glSet, citySlugs, 'live-r2');
 		} catch {
