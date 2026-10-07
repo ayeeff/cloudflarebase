@@ -45,11 +45,8 @@ export const load: PageServerLoad = async ({ platform }) => {
 			Sentry.captureException(e, {
 				tags: { source: 'streetview-dashboard', upstream: 'layers-worker-public' }
 			});
-			return {
-				dash: null as Dash | null,
-				error: `layers-worker unreachable: ${e instanceof Error ? e.message : String(e)}`
-			};
 		}
+	}
 	if (res && res.ok) {
 		const body: unknown = await res.json().catch(() => null);
 		if (body && typeof body === 'object' && (body as Record<string, unknown>).ok) {
