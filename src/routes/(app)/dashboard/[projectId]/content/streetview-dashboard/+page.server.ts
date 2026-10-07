@@ -50,19 +50,48 @@ export const load: PageServerLoad = async ({ platform }) => {
 				error: `layers-worker unreachable: ${e instanceof Error ? e.message : String(e)}`
 			};
 		}
+	if (res && res.ok) {
+		const body: unknown = await res.json().catch(() => null);
+		if (body && typeof body === 'object' && (body as Record<string, unknown>).ok) {
+			const d = body as Dash;
+			if (d.files && d.files.length > 0) {
+				const layers = (d.layers ?? []).filter((l) => STREET_KEYS.includes(l.key));
+				return { dash: { ...d, layers }, error: null };
+			}
+		}
 	}
-	if (!res.ok) {
-		const detail = await res.text().catch(() => '');
-		return {
-			dash: null,
-			error: `layers-worker /dashboard responded ${res.status}: ${detail.slice(0, 200)}`
-		};
+
+	// Direct GLOBE fallback if bound
+	if (platform?.env?.GLOBE) {
+		try {
+			const manifestObj = (await platform.env.GLOBE.get('data/basemaps-manifest.json')) ||
+				(await platform.env.GLOBE.get('basemaps/manifest.json'));
+			if (manifestObj) {
+				const m = (await manifestObj.json()) as any;
+				return {
+					dash: {
+						ok: true,
+						siteOrigin: 'https://geo-astro-site.foodstarmelbourne.workers.dev',
+						bucket: 'globe',
+						prefix: 'data/',
+						layers: [
+							{ key: 'mapillary', label: 'Street View (Mapillary)', suffix: 'mapillary' },
+							{ key: 'kartaview', label: 'Street View (KartaView)', suffix: 'kartaview' }
+						],
+						cities: {},
+						manifestGeneratedAt: m.generatedAt || null,
+						files: m.pmtiles || []
+					},
+					error: null
+				};
+			}
+		} catch (err) {
+			console.warn('[streetview-dashboard] GLOBE direct manifest read failed:', err);
+		}
 	}
-	const body: unknown = await res.json().catch(() => null);
-	if (!body || typeof body !== 'object' || !(body as Record<string, unknown>).ok) {
-		return { dash: null, error: 'layers-worker /dashboard returned a malformed payload' };
-	}
-	const dash = body as Dash;
-	const layers = (dash.layers ?? []).filter((l) => STREET_KEYS.includes(l.key));
-	return { dash: { ...dash, layers }, error: null };
+
+	return {
+		dash: null,
+		error: res ? `layers-worker /dashboard responded ${res.status}` : 'layers-worker unreachable'
+	};
 };

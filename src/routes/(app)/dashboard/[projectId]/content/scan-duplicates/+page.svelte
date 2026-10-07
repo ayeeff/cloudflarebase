@@ -75,7 +75,7 @@
 		<p class="mt-1 text-sm text-muted-foreground">
 			Finds duplicate <code class="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">.astro</code>
 			pages, byte-identical / name-colliding PMTiles in
-			<code class="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">globe/basemaps</code>, duplicated
+			<code class="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">globe/data/&lt;slug&gt;-2d</code>, duplicated
 			layers in
 			<code class="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">geo-datalake</code>, and duplicate
 			layer-harness keys (			<code class="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">__caCfg</code>
@@ -290,7 +290,7 @@
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div class="flex items-center gap-2 text-sm font-medium">
 				<Copy class="size-4 text-muted-foreground" />
-				globe/basemaps .pmtiles
+				globe/data/&lt;slug&gt;-2d .pmtiles
 			</div>
 			{#if basemapDeleteKeys.length > 0}
 				<form

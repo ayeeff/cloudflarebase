@@ -133,7 +133,7 @@
 			>
 			+ Mapterhorn, satellite from EOX, population from Kontur, mobility from GTFS, power from OpenInfraMap,
 			bathymetry from GEBCO. Output lands in the same R2 bucket the site serves
-			<code class="rounded bg-muted px-1 py-0.5 font-mono text-xs">/basemaps/*</code> from; every
+			<code class="rounded bg-muted px-1 py-0.5 font-mono text-xs">/data/&lt;slug&gt;-2d/*</code> from; every
 			run ends with a manifest refresh. See also the
 			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- hard-coded cross-project path, same as the sidebar -->
 			<a href="/dashboard/geo-site/content/pmtiles-dashboard" class="text-blue-500 hover:underline"
@@ -510,10 +510,10 @@
 	<p class="text-xs text-muted-foreground">
 		Every run's output pmtiles are served at
 		<a
-			href="{geoBase}/basemaps/paris.pmtiles"
+			href="{geoBase}/data/paris-2d/paris.pmtiles"
 			target="_blank"
 			rel="noopener"
-			class="text-blue-500 hover:underline">{geoBase}/basemaps/&lt;slug&gt;.pmtiles</a
+			class="text-blue-500 hover:underline">{geoBase}/data/&lt;slug&gt;-2d/&lt;slug&gt;.pmtiles</a
 		>
 		— spot-check a fresh build with
 		<code class="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">curl -I</code>.

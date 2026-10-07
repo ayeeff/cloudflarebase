@@ -35,6 +35,8 @@ interface Dash {
 export const load: PageServerLoad = async ({ platform }) => {
 	let res: Response | null = null;
 	const init = { headers: { accept: 'application/json' } };
+
+	// 1. Try layers-worker via service binding or public URL
 	try {
 		if (platform?.env?.LAYERS) {
 			res = await platform.env.LAYERS.fetch(LAYERS_BINDING_URL, init);
@@ -52,22 +54,62 @@ export const load: PageServerLoad = async ({ platform }) => {
 			Sentry.captureException(e, {
 				tags: { source: 'pmtiles-dashboard', upstream: 'layers-worker-public' }
 			});
-			return {
-				dash: null as Dash | null,
-				error: `layers-worker unreachable: ${e instanceof Error ? e.message : String(e)}`
-			};
 		}
 	}
-	if (!res.ok) {
-		const detail = await res.text().catch(() => '');
-		return {
-			dash: null,
-			error: `layers-worker /dashboard responded ${res.status}: ${detail.slice(0, 200)}`
-		};
+
+	if (res && res.ok) {
+		const body: unknown = await res.json().catch(() => null);
+		if (body && typeof body === 'object' && (body as Record<string, unknown>).ok) {
+			const d = body as Dash;
+			// If layers-worker returned valid manifest with files
+			if (d.files && d.files.length > 0) {
+				return { dash: d, error: null };
+			}
+		}
 	}
-	const body: unknown = await res.json().catch(() => null);
-	if (!body || typeof body !== 'object' || !(body as Record<string, unknown>).ok) {
-		return { dash: null, error: 'layers-worker /dashboard returned a malformed payload' };
+
+	// 2. Direct GLOBE fallback if bound
+	if (platform?.env?.GLOBE) {
+		try {
+			const manifestObj = (await platform.env.GLOBE.get('data/basemaps-manifest.json')) ||
+				(await platform.env.GLOBE.get('basemaps/manifest.json'));
+			if (manifestObj) {
+				const m = (await manifestObj.json()) as any;
+				return {
+					dash: {
+						ok: true,
+						siteOrigin: 'https://geo-astro-site.foodstarmelbourne.workers.dev',
+						bucket: 'globe',
+						prefix: 'data/',
+						layers: [
+							{ key: 'base', label: 'Buildings', suffix: '' },
+							{ key: 'terrain', label: 'Terrain', suffix: 'terrain' },
+							{ key: 'satellite', label: 'Satellite', suffix: 'satellite' },
+							{ key: 'population', label: 'Population', suffix: 'population' },
+							{ key: 'speed', label: 'Internet Speed', suffix: 'speed' },
+							{ key: 'transit', label: 'Mobility', suffix: 'transit' },
+							{ key: 'power', label: 'Power', suffix: 'power' },
+							{ key: 'bathymetry', label: 'Bathymetry', suffix: 'bathymetry' },
+							{ key: 'mapillary', label: 'Street View (Mapillary)', suffix: 'mapillary' },
+							{ key: 'kartaview', label: 'Street View (KartaView)', suffix: 'kartaview' }
+						],
+						cities: {},
+						manifestGeneratedAt: m.generatedAt || null,
+						files: m.pmtiles || [],
+						na: {},
+						naReasons: {},
+						naGeneratedAt: null
+					},
+					error: null
+				};
+			}
+		} catch (err) {
+			console.warn('[pmtiles-dashboard] GLOBE direct manifest read failed:', err);
+		}
 	}
-	return { dash: body as Dash, error: null };
+
+	return {
+		dash: null,
+		error: res ? `layers-worker /dashboard responded ${res.status}` : 'layers-worker unreachable'
+	};
 };

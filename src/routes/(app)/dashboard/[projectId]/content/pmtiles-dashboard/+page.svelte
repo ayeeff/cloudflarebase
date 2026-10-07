@@ -88,13 +88,13 @@
 			};
 			const sizeMB = f.size / 1048576;
 			if (osmMatch) {
-				rec.osm = { sizeMB, url: `${siteOrigin}/basemaps/${f.name}.pmtiles`, name: f.name };
+				rec.osm = { sizeMB, url: `${siteOrigin}/data/${slug}-2d/${f.name}.pmtiles`, name: f.name };
 			} else {
 				rec.cells[layer] = {
 					size: f.size,
 					sizeMB,
 					name: f.name,
-					url: `${siteOrigin}/basemaps/${f.name}.pmtiles`
+					url: `${siteOrigin}/data/${slug}-2d/${f.name}.pmtiles`
 				};
 			}
 			rec.total += f.size;
@@ -232,7 +232,7 @@
 		<div>
 			<h1 class="text-2xl font-bold tracking-tight">City Basemaps (PMTiles)</h1>
 			<p class="text-sm text-muted-foreground">
-				{rows.length} cities · {files.length} pmtiles in R2 <code>globe/basemaps/</code>
+				{rows.length} cities · {files.length} pmtiles in R2 <code>globe/data/&lt;slug&gt;-2d/</code>
 				{#if manifestGeneratedAt}· manifest {manifestGeneratedAt.slice(0, 10)}
 				{/if}
 			</p>
@@ -270,7 +270,7 @@
 			<header>
 				<h2>City Basemap Coverage</h2>
 				<div class="sub">
-					ALL pmtiles staged in R2 <code>globe/basemaps/</code> ·
+					ALL pmtiles staged in R2 <code>globe/data/&lt;slug&gt;-2d/</code> ·
 					<a href="{siteOrigin}/atlas" target="_blank" rel="noopener">/atlas</a> ·
 					<a href="{siteOrigin}/maps" target="_blank" rel="noopener">/maps</a>
 				</div>
@@ -441,7 +441,7 @@
 												title="MISSING from R2 · {layerLabel(l.key)}"
 												onclick={() =>
 													showToast(
-														`no ${siteOrigin}/basemaps/${r.slug}${l.suffix ? `-${l.suffix}` : ''}.pmtiles`
+														`no ${siteOrigin}/data/${r.slug}-2d/${r.slug}${l.suffix ? `-${l.suffix}` : ''}.pmtiles`
 													)}
 												data-testid="cell-{r.slug}-{l.key}"
 											></button>

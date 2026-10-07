@@ -167,7 +167,7 @@
 		kartaview: 'node layer/extract-city-kartaview.mjs --slug {slug}'
 	};
 	const cellPmtilesUrl = (slug: string, key: string) =>
-		`${siteOrigin}/basemaps/${slug}${key === 'base' ? '' : `-${key}`}.pmtiles`;
+		`${siteOrigin}/data/${slug}-2d/${slug}${key === 'base' ? '' : `-${key}`}.pmtiles`;
 
 	function missingClick(r: Row, l: { key: string; label: string }) {
 		const cmd = (EXTRACT_CMD[l.key] ?? '').replace('{slug}', r.slug);
@@ -230,7 +230,7 @@
 				<h2>Missing City-Layer Matrix</h2>
 				<div class="sub">
 					coverage from each branch's committed
-					<code>basemaps/manifest.json</code> · preview = CI build knowledge · master = production ·
+					<code>globe/data/&lt;slug&gt;-2d/</code> · preview = CI build knowledge · master = production ·
 					<a href="{siteOrigin}/atlas" target="_blank" rel="noopener">/atlas</a> · rows without base
 					cannot render the city view — extract base first
 				</div>

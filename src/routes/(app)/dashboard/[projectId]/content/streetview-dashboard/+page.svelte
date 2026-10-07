@@ -57,7 +57,7 @@
 				size: f.size,
 				sizeMB,
 				name: f.name,
-				url: `${siteOrigin}/basemaps/${f.name}.pmtiles`
+				url: `${siteOrigin}/data/${slug}-2d/${f.name}.pmtiles`
 			};
 			rec.total += f.size;
 		}
@@ -178,7 +178,7 @@
 			</h1>
 			<p class="text-sm text-muted-foreground">
 				{mapillaryRows} Mapillary · {kartaviewRows} KartaView pmtiles staged in R2
-				<code>globe/basemaps/</code>
+				<code>globe/data/&lt;slug&gt;-2d/</code>
 				{#if manifestGeneratedAt}· manifest {manifestGeneratedAt.slice(0, 10)}{/if}
 			</p>
 		</div>
@@ -360,7 +360,7 @@
 												class="dot missing"
 												title="NOT STAGED · {l.label}"
 												onclick={() =>
-													showToast(`no ${siteOrigin}/basemaps/${r.slug}-${l.suffix}.pmtiles`)}
+													showToast(`no ${siteOrigin}/data/${r.slug}-2d/${r.slug}-${l.suffix}.pmtiles`)}
 												data-testid="cell-{r.slug}-{l.key}"
 											></button>
 										{/if}
