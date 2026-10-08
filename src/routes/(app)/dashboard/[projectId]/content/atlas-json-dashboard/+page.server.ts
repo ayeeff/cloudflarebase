@@ -45,7 +45,8 @@ export const load: PageServerLoad = async ({ platform }) => {
 
 	// 3. Attach per-city storage records
 	for (const city of cityList) {
-		city.storage19 = report.byCity[city.slug] || report.byCity[city.slug.toLowerCase()];
+		const s = city.slug.toLowerCase();
+		city.storage19 = report.byCity[city.slug] || report.byCity[s] || report.byCity[s.replace(/-/g, '')] || report.byCity[s.replace(/(\w+)-city$/, '$1')];
 		if (!city.pop) {
 			const qidInfo = (cityQid as Record<string, any>)[city.slug] || (cityQid as Record<string, any>)[city.name.toLowerCase()];
 			if (qidInfo?.pop) city.pop = Number(qidInfo.pop);

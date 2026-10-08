@@ -101,6 +101,8 @@ export interface Atlas19StorageReport {
 }
 
 const REGISTRY_19_KEY = 'registry/atlas-19-files-registry.json';
+const REPORT_19_KEY = 'registry/atlas-19-files-report.json';
+const CANDIDATE_19_KEYS = [REGISTRY_19_KEY, REPORT_19_KEY];
 
 /**
  * Known cities with full 19 raw files locally / verified
@@ -276,17 +278,19 @@ export async function loadAtlas19StorageReport(
 	// Check R2 cached registry
 	if (globe) {
 		try {
-			const cached = await globe.get(REGISTRY_19_KEY);
-			if (cached) {
-				const json = await cached.json() as any;
-				if (json && json.totals && json.byCity) {
-					return {
-						source: 'registry-cache',
-						generatedAt: json.generatedAt || new Date().toISOString(),
-						filesChecked: ALL_19_FILES,
-						totals: json.totals,
-						byCity: json.byCity
-					};
+			for (const key of CANDIDATE_19_KEYS) {
+				const cached = await globe.get(key);
+				if (cached) {
+					const json = await cached.json() as any;
+					if (json && json.totals && json.byCity) {
+						return {
+							source: 'registry-cache',
+							generatedAt: json.generatedAt || new Date().toISOString(),
+							filesChecked: ALL_19_FILES,
+							totals: json.totals,
+							byCity: json.byCity
+						};
+					}
 				}
 			}
 		} catch {
@@ -321,9 +325,14 @@ export async function save19RegistryToR2(platform: any, report: Atlas19StorageRe
 	if (!globe) return false;
 
 	try {
-		await globe.put(REGISTRY_19_KEY, JSON.stringify(report, null, 2), {
-			httpMetadata: { contentType: 'application/json' }
-		});
+		const payload = JSON.stringify(report, null, 2);
+		await Promise.all(
+			CANDIDATE_19_KEYS.map((key) =>
+				globe.put(key, payload, {
+					httpMetadata: { contentType: 'application/json' }
+				})
+			)
+		);
 		return true;
 	} catch {
 		return false;
