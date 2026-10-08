@@ -173,6 +173,11 @@ straight to production. (The upstream `origin` remote is read-only for us;
 pushing there 403s.) The `preview` branch is optional; don't route dashboard
 edits through it.
 
+## Minor code changes: skip local builds
+
+**For minor code changes, forget about running local builds.**
+Do not waste time or tokens executing local builds (`bun run build`, `npm run build`, etc.) for UI tweaks, template adjustments, link fixes, minor script updates, or dashboard changes. Push code directly to `fork main` (`git push fork main`), and let Cloudflare Workers Builds CI compile and deploy automatically on the edge in ~30–45s.
+
 Secrets never gate a deploy: wrangler's `secrets.required` only drives
 typegen and local-dev warnings, and every agent degrades without its optional
 secrets. But a capability gated on a secret stays off until someone runs

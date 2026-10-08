@@ -7,6 +7,8 @@
 	const branches = data.branches;
 	const loadError: string | null = data.error;
 	const siteOrigin = 'https://geo-astro-site.foodstarmelbourne.workers.dev';
+	const previewOrigin = 'https://preview-geo-astro-site.foodstarmelbourne.workers.dev';
+	const previewAtlasHref = (slug: string) => `${previewOrigin}/atlas/${slug}-city-atlas`;
 
 	// Mirror of workers/layers/src/gaps.js LAYERS (labels + suffixes for the matrix)
 	const LAYER_DEFS: { key: string; label: string; suffix: string }[] = [
@@ -343,15 +345,37 @@
 						{#each visible as r (r.slug)}
 							<tr class:nobase={!r.hasBase}>
 								<td class="citycell">
-									<b>{r.display}{r.country ? `, ${r.country}` : ''}</b>
+									<!-- eslint-disable svelte/no-navigation-without-resolve -->
+									<a
+										href={previewAtlasHref(r.slug)}
+										target="_blank"
+										rel="noopener"
+										class="citylink"
+										title="Open {r.display} city atlas on preview"
+									>
+										<b>{r.display}{r.country ? `, ${r.country}` : ''}</b>
+									</a>
 									<span class="meta">{r.slug}</span>
 									{#if !r.hasBase}<span class="nb">no base</span>{/if}
 									<span class="cont">
 										{#if r.pop}<span>{r.pop >= 1000000 ? `${(r.pop / 1000000).toFixed(1)}M` : r.pop.toLocaleString()}</span> · {/if}
-										<a href="{siteOrigin}/atlas/{r.slug}-city-atlas" target="_blank" rel="noopener"
-											>atlas ↗</a
-										></span
-									>
+										<a
+											href={previewAtlasHref(r.slug)}
+											target="_blank"
+											rel="noopener"
+											class="previewlink"
+											title="Preview branch ({previewOrigin}/atlas/{r.slug}-city-atlas)"
+										>preview ↗</a>
+										·
+										<a
+											href="{siteOrigin}/atlas/{r.slug}-city-atlas"
+											target="_blank"
+											rel="noopener"
+											class="masterlink"
+											title="Master production branch ({siteOrigin}/atlas/{r.slug}-city-atlas)"
+										>master ↗</a>
+									</span>
+									<!-- eslint-enable svelte/no-navigation-without-resolve -->
 								</td>
 								<td>
 									<span class={['badge', r.gaps === 0 ? 'all' : r.gaps > 4 ? 'low' : '']}>
@@ -657,6 +681,14 @@
 	.pdash .citycell b {
 		font-weight: 600;
 	}
+	.pdash .citycell .citylink {
+		color: var(--text);
+		text-decoration: none;
+	}
+	.pdash .citycell .citylink:hover {
+		color: var(--accent);
+		text-decoration: underline;
+	}
 	.pdash .citycell .meta {
 		color: var(--accent);
 		font-size: 11px;
@@ -681,6 +713,22 @@
 	}
 	.pdash .citycell .cont a:hover {
 		color: var(--accent);
+	}
+	.pdash .citycell .cont a.previewlink {
+		color: #a78bfa;
+		font-weight: 500;
+	}
+	.pdash .citycell .cont a.previewlink:hover {
+		color: #c4b5fd;
+		text-decoration: underline;
+	}
+	.pdash .citycell .cont a.masterlink {
+		color: #38bdf8;
+		font-weight: 500;
+	}
+	.pdash .citycell .cont a.masterlink:hover {
+		color: #7dd3fc;
+		text-decoration: underline;
 	}
 	.pdash td.cell {
 		text-align: center;

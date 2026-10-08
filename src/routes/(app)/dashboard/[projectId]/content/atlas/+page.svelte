@@ -8,6 +8,7 @@
 	let { data, form } = $props();
 
 	const base = data.base ?? 'https://geo-astro-site.foodstarmelbourne.workers.dev';
+	const previewBase = 'https://preview-geo-astro-site.foodstarmelbourne.workers.dev';
 
 	function shotUrl(map: any): string | null {
 		return map.screenshotUrl ?? null;
@@ -180,12 +181,22 @@
 							{/if}
 						</Table.Cell>
 						<Table.Cell class="font-mono text-xs">
-							<div class="flex items-center gap-1 truncate">
+							<div class="flex items-center gap-1.5 truncate">
+								<!-- eslint-disable svelte/no-navigation-without-resolve -->
 								<a
-									href="{base}/atlas/{map.slug}"
+									href="{previewBase}/atlas/{map.slug}"
 									class="truncate text-blue-500 hover:underline"
 									target="_blank"
-									rel="noopener">{map.slug}</a>
+									rel="noopener"
+									title="Open on preview ({previewBase}/atlas/{map.slug})">{map.slug}</a>
+								<a
+									href="{previewBase}/atlas/{map.slug}"
+									target="_blank"
+									rel="noopener"
+									class="text-[10px] text-violet-500 hover:underline shrink-0"
+									title="Preview"
+								>↗</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 								{#if map.denied}
 									<Badge variant="destructive" class="ml-1 shrink-0 text-[10px]">hidden</Badge>
 								{/if}

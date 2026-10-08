@@ -7,6 +7,11 @@
 
 	let { data } = $props();
 
+	const previewOrigin = 'https://preview-geo-astro-site.foodstarmelbourne.workers.dev';
+	function previewAtlasHref(slug: string): string {
+		return `${previewOrigin}/atlas/${slug}-city-atlas`;
+	}
+
 	type City = {
 		name: string;
 		slug: string;
@@ -331,7 +336,24 @@
 					<tr class="hover:bg-muted/30 transition-colors">
 						<td class="p-2.5 pl-3">
 							<div class="flex items-baseline gap-2">
-								<span class="font-semibold text-foreground">{city.name}{city.country && city.country !== 'Global' ? `, ${city.country}` : ''}</span>
+								<!-- eslint-disable svelte/no-navigation-without-resolve -->
+								<a
+									href={previewAtlasHref(city.slug)}
+									target="_blank"
+									rel="noopener"
+									class="font-semibold text-foreground hover:text-sky-500 hover:underline"
+									title="Open {city.name} city atlas on preview"
+								>
+									{city.name}{city.country && city.country !== 'Global' ? `, ${city.country}` : ''}
+								</a>
+								<a
+									href={previewAtlasHref(city.slug)}
+									target="_blank"
+									rel="noopener"
+									class="text-[10px] text-sky-500 hover:underline"
+									title="Open city atlas on preview"
+								>↗</a>
+								<!-- eslint-enable svelte/no-navigation-without-resolve -->
 								<span class="text-[10px] text-muted-foreground font-mono">({city.slug})</span>
 							</div>
 							<div class="text-[10px] text-muted-foreground">

@@ -125,7 +125,17 @@
 						<Table.Body>
 							{#each data.collections[l] ?? [] as r (r.slug)}
 								<Table.Row>
-									<Table.Cell class="font-mono text-[11px]">{r.slug}</Table.Cell>
+									<Table.Cell class="font-mono text-[11px]">
+										<!-- eslint-disable svelte/no-navigation-without-resolve -->
+										<a
+											href="https://preview-geo-astro-site.foodstarmelbourne.workers.dev/atlas/{r.slug}"
+											target="_blank"
+											rel="noopener"
+											class="text-primary hover:underline"
+											title="Open on preview"
+										>{r.slug}</a>
+										<!-- eslint-enable svelte/no-navigation-without-resolve -->
+									</Table.Cell>
 									<Table.Cell class="font-medium">{r.name}</Table.Cell>
 									<Table.Cell class="font-mono text-xs">{r.iata}</Table.Cell>
 									<Table.Cell class="text-xs">{r.pop ?? '—'}</Table.Cell>
@@ -159,8 +169,8 @@
 														editPop = r.pop != null ? String(r.pop) : '';
 														editContinent = r.continent ?? '';
 													}}>Edit</Button>
-												<Button size="sm" variant="ghost" type="button" onclick={() => window.open(`${data.base}/atlas/${r.slug}`, '_blank')}>
-													View
+												<Button size="sm" variant="ghost" type="button" onclick={() => window.open(`https://preview-geo-astro-site.foodstarmelbourne.workers.dev/atlas/${r.slug}`, '_blank')}>
+													View ↗
 												</Button>
 												<form method="POST" action="?/remove" use:enhance>
 													<input type="hidden" name="collection" value={l} />
