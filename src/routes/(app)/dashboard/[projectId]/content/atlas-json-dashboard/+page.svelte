@@ -11,6 +11,7 @@
 		name: string;
 		slug: string;
 		prefix: string;
+		country: string;
 		continent: string;
 		pop: number;
 		storage19?: {
@@ -68,8 +69,9 @@
 			if (query) {
 				const matchName = c.name.toLowerCase().includes(query);
 				const matchSlug = c.slug.toLowerCase().includes(query);
+				const matchCountry = (c.country || '').toLowerCase().includes(query);
 				const matchCont = c.continent.toLowerCase().includes(query);
-				if (!matchName && !matchSlug && !matchCont) return false;
+				if (!matchName && !matchSlug && !matchCountry && !matchCont) return false;
 			}
 			return true;
 		});
@@ -329,11 +331,11 @@
 					<tr class="hover:bg-muted/30 transition-colors">
 						<td class="p-2.5 pl-3">
 							<div class="flex items-baseline gap-2">
-								<span class="font-semibold text-foreground">{city.name}</span>
+								<span class="font-semibold text-foreground">{city.name}{city.country && city.country !== 'Global' ? `, ${city.country}` : ''}</span>
 								<span class="text-[10px] text-muted-foreground font-mono">({city.slug})</span>
 							</div>
 							<div class="text-[10px] text-muted-foreground">
-								{city.continent} · Pop {(city.pop || 0).toLocaleString()}
+								{city.country && city.country !== 'Global' ? `${city.country} · ` : ''}{city.continent} · Pop {(city.pop || 0).toLocaleString()}
 							</div>
 						</td>
 

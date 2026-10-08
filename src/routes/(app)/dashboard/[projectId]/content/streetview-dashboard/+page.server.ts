@@ -52,6 +52,8 @@ export const load: PageServerLoad = async ({ platform }) => {
 		if (body && typeof body === 'object' && (body as Record<string, unknown>).ok) {
 			const d = body as Dash;
 			if (d.files && d.files.length > 0) {
+				d.files = d.files.filter((f) => !f.name.startsWith('newyorkcity'));
+				delete d.cities['newyorkcity'];
 				const layers = (d.layers ?? []).filter((l) => STREET_KEYS.includes(l.key));
 				return { dash: { ...d, layers }, error: null };
 			}

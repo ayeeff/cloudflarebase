@@ -52,6 +52,7 @@
 	type Row = {
 		slug: string;
 		display: string;
+		country: string;
 		hasBase: boolean;
 		missing: string[];
 		gaps: number;
@@ -59,19 +60,24 @@
 		order: number;
 	};
 	const rows = $derived.by<Row[]>(() =>
-		matrixCandidates.map((c, i) => {
-			const qidInfo = (cityQid as Record<string, any>)[c.slug] || (cityQid as Record<string, any>)[(c.display || '').toLowerCase()];
-			const pop = qidInfo?.pop ? Number(qidInfo.pop) : null;
-			return {
-				slug: c.slug,
-				display: c.display || c.slug,
-				hasBase: !!c.hasBase,
-				missing: Array.isArray(c.missing) ? c.missing : [],
-				gaps: Array.isArray(c.missing) ? c.missing.length : 0,
-				pop,
-				order: i
-			};
-		})
+		matrixCandidates
+			.filter((c) => c.slug !== 'newyorkcity')
+			.map((c, i) => {
+				const s = c.slug.toLowerCase();
+				const qidInfo = (cityQid as Record<string, any>)[c.slug] || (cityQid as Record<string, any>)[s] || (cityQid as Record<string, any>)[s.replace(/-/g, '')] || (cityQid as Record<string, any>)[(c.display || '').toLowerCase()];
+				const pop = qidInfo?.pop ? Number(qidInfo.pop) : null;
+				const country = qidInfo?.country && qidInfo.country !== 'Global' ? qidInfo.country : '';
+				return {
+					slug: c.slug,
+					display: c.display || c.slug,
+					country,
+					hasBase: !!c.hasBase,
+					missing: Array.isArray(c.missing) ? c.missing : [],
+					gaps: Array.isArray(c.missing) ? c.missing.length : 0,
+					pop,
+					order: i
+				};
+			})
 	);
 
 	// Per-branch column stats over ALL candidates (mirrors /gaps perLayer).
@@ -119,7 +125,7 @@
 			if (!includeNoBase && !r.hasBase) return false;
 			if (hideComplete && r.gaps === 0) return false;
 			if (query) {
-				const hay = `${r.display} ${r.slug}`.toLowerCase();
+				const hay = `${r.display} ${r.slug} ${r.country || ''}`.toLowerCase();
 				if (!hay.includes(query)) return false;
 			}
 			return true;
@@ -337,11 +343,11 @@
 						{#each visible as r (r.slug)}
 							<tr class:nobase={!r.hasBase}>
 								<td class="citycell">
-									<b>{r.display}</b>
+									<b>{r.display}{r.country ? `, ${r.country}` : ''}</b>
 									<span class="meta">{r.slug}</span>
 									{#if !r.hasBase}<span class="nb">no base</span>{/if}
 									<span class="cont">
-										{#if r.pop}<span>{(r.pop / 1000000).toFixed(1)}M</span> · {/if}
+										{#if r.pop}<span>{r.pop >= 1000000 ? `${(r.pop / 1000000).toFixed(1)}M` : r.pop.toLocaleString()}</span> · {/if}
 										<a href="{siteOrigin}/atlas/{r.slug}-city-atlas" target="_blank" rel="noopener"
 											>atlas ↗</a
 										></span

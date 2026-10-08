@@ -55,6 +55,7 @@ interface EnvCoverage {
 	cities: {
 		name: string;
 		iata: string;
+		country: string;
 		continent: string;
 		pop: number;
 		prefix: string;
@@ -164,19 +165,27 @@ function buildEnvCoverage(
 	}
 
 	const cityEntries = collections.City ?? [];
-	const cities = cityEntries.map((c) => {
-		const name = String(c.slug ?? '').replace(/-city-atlas$/i, '');
-		const prefix = name;
-		return {
-			name: String(c.name ?? prefix),
-			iata: String(c.iata ?? ''),
-			continent: String(c.continent ?? ''),
-			pop: Number(c.pop) || 0,
-			prefix,
-			attachedAddresses: Number(c.attachedAddresses ?? c.doorPoints ?? 0),
-			attachedStreets: Number(c.attachedStreets ?? c.streetsCovered ?? 0)
-		};
-	});
+	const cities = cityEntries
+		.filter((c) => {
+			const slug = String(c.slug ?? '').replace(/-city-atlas$/i, '');
+			return slug && slug !== 'newyorkcity';
+		})
+		.map((c) => {
+			const name = String(c.slug ?? '').replace(/-city-atlas$/i, '');
+			const prefix = name;
+			const s = prefix.toLowerCase();
+			const qidInfo = (cityQid as Record<string, any>)[prefix] || (cityQid as Record<string, any>)[s] || (cityQid as Record<string, any>)[s.replace(/-/g, '')];
+			return {
+				name: String(c.name ?? qidInfo?.municipality ?? prefix),
+				iata: String(c.iata ?? ''),
+				country: String((c as any).country ?? qidInfo?.country ?? 'Global'),
+				continent: String(c.continent ?? qidInfo?.continent ?? 'Global'),
+				pop: Number(c.pop) || Number(qidInfo?.pop) || 0,
+				prefix,
+				attachedAddresses: Number(c.attachedAddresses ?? c.doorPoints ?? 0),
+				attachedStreets: Number(c.attachedStreets ?? c.streetsCovered ?? 0)
+			};
+		});
 
 	const slugsByPrefix: Record<string, Record<string, string | null>> = {};
 	for (const c of cities) {
@@ -317,6 +326,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 		{
 			name: string;
 			iata: string;
+			country: string;
 			continent: string;
 			pop: number;
 			prefix: string;
@@ -333,15 +343,21 @@ export const load: PageServerLoad = async ({ platform }) => {
 		[production, 'prodSlugs']
 	] as const) {
 		for (const c of src.cities) {
+			if (c.prefix === 'newyorkcity') continue;
 			const slugs = src.slugsByPrefix[c.prefix] ?? {};
 			const existing = byPrefix.get(c.prefix);
 			if (existing) {
 				if (key === 'prodSlugs') existing.prodSlugs = slugs;
 				else existing.prevSlugs = slugs;
+				if ((!existing.country || existing.country === 'Global') && c.country && c.country !== 'Global') {
+					existing.country = c.country;
+				}
+				if (!existing.pop && c.pop) existing.pop = c.pop;
 			} else {
 				byPrefix.set(c.prefix, {
 					name: c.name,
 					iata: c.iata,
+					country: c.country,
 					continent: c.continent,
 					pop: c.pop,
 					prefix: c.prefix,
@@ -358,6 +374,7 @@ export const load: PageServerLoad = async ({ platform }) => {
 	// Merge all 1,225 registered cities from the 2D registry seed so all cities are tracked
 	if (Array.isArray((seedRegistry as any).cities)) {
 		for (const sc of (seedRegistry as any).cities) {
+			if (sc.slug === 'newyorkcity') continue;
 			if (!byPrefix.has(sc.slug)) {
 				const prodSlugs: Record<string, string> = {};
 				const prevSlugs: Record<string, string> = {};
@@ -365,11 +382,14 @@ export const load: PageServerLoad = async ({ platform }) => {
 					prodSlugs[t.key] = `${sc.slug}-${t.suffix}`;
 					prevSlugs[t.key] = `${sc.slug}-${t.suffix}`;
 				}
+				const s = sc.slug.toLowerCase();
+				const qidInfo = (cityQid as Record<string, any>)[sc.slug] || (cityQid as Record<string, any>)[s] || (cityQid as Record<string, any>)[s.replace(/-/g, '')];
 				byPrefix.set(sc.slug, {
-					name: sc.name || sc.slug,
+					name: sc.name || qidInfo?.municipality || sc.slug,
 					iata: '',
-					continent: '',
-					pop: 0,
+					country: sc.country || qidInfo?.country || 'Global',
+					continent: sc.continent || qidInfo?.continent || 'Global',
+					pop: sc.pop || qidInfo?.pop || 0,
 					prefix: sc.slug,
 					attachedAddresses: 0,
 					attachedStreets: 0,
@@ -385,11 +405,16 @@ export const load: PageServerLoad = async ({ platform }) => {
 	const storage2dReport = await loadAtlas2DStorageReport(platform, citySlugs);
 
 	for (const [prefix, entry] of byPrefix.entries()) {
-		entry.storage2d = storage2dReport.byCity[prefix] ?? null;
-		if (!entry.pop) {
-			const qidInfo = (cityQid as Record<string, any>)[prefix] || (cityQid as Record<string, any>)[entry.name.toLowerCase()];
-			if (qidInfo?.pop) entry.pop = Number(qidInfo.pop);
+		if (prefix === 'newyorkcity') {
+			byPrefix.delete(prefix);
+			continue;
 		}
+		entry.storage2d = storage2dReport.byCity[prefix] ?? null;
+		const s = prefix.toLowerCase();
+		const qidInfo = (cityQid as Record<string, any>)[prefix] || (cityQid as Record<string, any>)[s] || (cityQid as Record<string, any>)[s.replace(/-/g, '')];
+		if (!entry.pop && qidInfo?.pop) entry.pop = Number(qidInfo.pop);
+		if ((!entry.country || entry.country === 'Global') && qidInfo?.country) entry.country = qidInfo.country;
+		if ((!entry.continent || entry.continent === 'Global') && qidInfo?.continent) entry.continent = qidInfo.continent;
 	}
 
 	const cities = [...byPrefix.values()].sort((a, b) => (b.pop || 0) - (a.pop || 0) || a.name.localeCompare(b.name));

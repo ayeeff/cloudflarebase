@@ -63,6 +63,8 @@ export const load: PageServerLoad = async ({ platform }) => {
 			const d = body as Dash;
 			// If layers-worker returned valid manifest with files
 			if (d.files && d.files.length > 0) {
+				d.files = d.files.filter((f) => !f.name.startsWith('newyorkcity'));
+				delete d.cities['newyorkcity'];
 				return { dash: d, error: null };
 			}
 		}

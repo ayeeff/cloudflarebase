@@ -40,6 +40,7 @@
 	type City = {
 		name: string;
 		iata: string;
+		country: string;
 		continent: string;
 		pop: number;
 		prefix: string;
@@ -202,6 +203,7 @@
 				query &&
 				!(
 					c.name.toLowerCase().includes(query) ||
+					(c.country || '').toLowerCase().includes(query) ||
 					c.iata.toLowerCase().includes(query) ||
 					c.prefix.toLowerCase().includes(query)
 				)
@@ -706,7 +708,7 @@
 								class="font-medium hover:text-cyan-500 hover:underline"
 								title="Open {c.name} on preview"
 							>
-								{c.name}
+								{c.name}{c.country && c.country !== 'Global' ? `, ${c.country}` : ''}
 							</a>
 							<span class="text-[10px] text-muted-foreground font-mono">({c.prefix})</span>
 							<a
@@ -949,7 +951,7 @@
 								class="citylink"
 								title="Open {c.name} city atlas on preview"
 							>
-								<b>{c.name}</b>
+								<b>{c.name}{c.country && c.country !== 'Global' ? `, ${c.country}` : ''}</b>
 							</a>
 							<span class="meta">{c.prefix}</span>
 							{#if c.iata}
@@ -962,7 +964,7 @@
 								>
 							{/if}
 							<span class="cont">
-								{c.continent} · pop {(c.pop || 0).toLocaleString('en-US')}
+								{c.country && c.country !== 'Global' ? `${c.country} · ` : ''}{c.continent} · pop {(c.pop || 0).toLocaleString('en-US')}
 								·
 								<a
 									href="{prev.base}/atlas/{c.prevSlugs?.['City'] ?? `${c.prefix}-city-atlas`}"

@@ -199,6 +199,9 @@ export const load: PageServerLoad = async ({ platform }) => {
 		return { gaps: null, branches: null, error: 'layers-worker /gaps returned a malformed payload' };
 	}
 	const gaps = body as Gaps;
+	if (Array.isArray(gaps.candidates)) {
+		gaps.candidates = gaps.candidates.filter((c) => c.slug !== 'newyorkcity');
+	}
 	const cands = gaps.candidates.map((c) => ({
 		slug: c.slug,
 		display: c.display || c.slug

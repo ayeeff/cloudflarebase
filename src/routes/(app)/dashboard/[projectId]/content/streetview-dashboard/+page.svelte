@@ -62,12 +62,17 @@
 			rec.total += f.size;
 		}
 		for (const slug of Object.keys(bySlug)) {
+			if (slug === 'newyorkcity') {
+				delete bySlug[slug];
+				continue;
+			}
 			const rec = bySlug[slug];
 			const m = citiesMeta[slug];
 			rec.city = m?.city ?? slug.replace(/-/g, ' ');
-			rec.country = m?.country ?? null;
+			const s = slug.toLowerCase();
+			const qidInfo = (cityQid as Record<string, any>)[slug] || (cityQid as Record<string, any>)[s] || (cityQid as Record<string, any>)[s.replace(/-/g, '')] || (cityQid as Record<string, any>)[rec.city.toLowerCase()];
+			rec.country = m?.country || (qidInfo?.country && qidInfo.country !== 'Global' ? qidInfo.country : null);
 			rec.rank = m?.rank ?? null;
-			const qidInfo = (cityQid as Record<string, any>)[slug] || (cityQid as Record<string, any>)[rec.city.toLowerCase()];
 			rec.pop = qidInfo?.pop ? Number(qidInfo.pop) : null;
 			rec.have = Object.keys(rec.cells).length;
 		}
@@ -308,13 +313,13 @@
 										class="citylink"
 										title="Open {r.city} city atlas on preview"
 									>
-										<b>{r.city}</b>
+										<b>{r.city}{r.country ? `, ${r.country}` : ''}</b>
 									</a>
 									<span class="meta">{r.slug}</span>
 									<span class="cont">
 										{r.country ?? '—'}
 										{#if r.rank}· rank {r.rank}{/if}
-										{#if r.pop}· {(r.pop / 1000000).toFixed(1)}M{/if}
+										{#if r.pop}· {r.pop >= 1000000 ? `${(r.pop / 1000000).toFixed(1)}M` : r.pop.toLocaleString()}{/if}
 										·
 										<a
 											href={previewAtlasHref(r.slug)}
