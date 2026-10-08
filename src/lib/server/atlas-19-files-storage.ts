@@ -131,6 +131,12 @@ export function build19FilesReport(
 	let citiesCompleteBoth = 0;
 	let citiesWithAnyMissing = 0;
 
+	const seedCityMap = new Map<string, any>(
+		Array.isArray((fallbackSeed as any)?.cities)
+			? (fallbackSeed as any).cities.map((c: any) => [c.slug, c])
+			: []
+	);
+
 	for (const slug of citySlugs) {
 		const isKnownRawPack = KNOWN_COMPLETE_19_CITIES.has(slug.toLowerCase());
 		const dlStatus = {} as Record<Granular19File, boolean>;
@@ -161,26 +167,10 @@ export function build19FilesReport(
 					hasGl = true;
 				}
 			} else if (dlKeys.size === 0 && glKeys.size === 0) {
-				// Baseline fallback derived from existing 5 files:
-				// If city had 'demand-streets.json', it has demand-streets.json
-				const hasLegacy5Demand = true; // most cities have D/N/P
-				if (file === 'demand-streets.json') {
-					hasDl = true;
-					hasGl = true;
-				} else if (file === 'districts.json' || file === 'areas.json') {
-					hasDl = true;
-					hasGl = true;
-				} else if (file === 'pois.json' || file === 'landmarks.json') {
-					hasDl = true;
-					hasGl = true;
-				} else if (file === 'streets.json') {
-					// 883 have street-geoms
-					hasDl = false;
-					hasGl = false;
-				} else if (file === 'baseline.json') {
-					// 410 have transit
-					hasDl = false;
-					hasGl = false;
+				const seedCity = seedCityMap.get(slug) || seedCityMap.get(slug.toLowerCase());
+				if (seedCity) {
+					hasDl = Boolean(seedCity.datalake?.[file]);
+					hasGl = Boolean(seedCity.globe?.[file]);
 				} else {
 					hasDl = false;
 					hasGl = false;
