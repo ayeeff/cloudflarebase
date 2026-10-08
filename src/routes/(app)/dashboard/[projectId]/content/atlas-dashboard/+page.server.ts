@@ -148,7 +148,7 @@ function buildEnvCoverage(
 	const live = new Map<string, { route: string }>();
 	for (const m of rawMaps) {
 		const slug = String(m.slug ?? '');
-		if (!slug || !FAMILY_RE.test(slug)) continue;
+		if (!slug || !FAMILY_RE.test(slug) || slug.startsWith('newyorkcity')) continue;
 		if (m.categoryUuid) live.set(slug, { route: `/maps/${m.categoryUuid}/` });
 		else live.set(slug, { route: '/atlas/' });
 	}
@@ -158,7 +158,7 @@ function buildEnvCoverage(
 		const entries = collections[t.key] ?? [];
 		for (const e of entries) {
 			const slug = String(e.slug ?? '');
-			if (slug && !live.has(slug)) {
+			if (slug && !slug.startsWith('newyorkcity') && !live.has(slug)) {
 				live.set(slug, { route: '/atlas/' });
 			}
 		}
@@ -206,7 +206,7 @@ function buildEnvCoverage(
 			if (slug) referenced.add(slug);
 		}
 	const pageOnly = [...live.keys()]
-		.filter((slug) => !referenced.has(slug))
+		.filter((slug) => !referenced.has(slug) && !slug.startsWith('newyorkcity'))
 		.sort()
 		.map((slug) => ({ slug, route: live.get(slug)!.route }));
 
