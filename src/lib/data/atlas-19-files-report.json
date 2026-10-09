@@ -1,6 +1,6 @@
 {
   "source": "live-r2",
-  "generatedAt": "2026-10-09T04:43:20.188Z",
+  "generatedAt": "2026-10-09T07:22:25.931Z",
   "filesChecked": [
     "areas.json",
     "baseline.json",
@@ -135,8 +135,8 @@
         "missing": 122
       },
       "landmarks.json": {
-        "present": 1203,
-        "missing": 47
+        "present": 1246,
+        "missing": 4
       },
       "model.json": {
         "present": 0,
@@ -179,6 +179,16 @@
         "missing": 184
       }
     },
+    "pageTypeDatasets": {
+      "guide": {
+        "totalSlugs": 245,
+        "filesCount": 735
+      },
+      "maps": {
+        "totalSlugs": 709,
+        "filesCount": 2127
+      }
+    },
     "totalCities": 1250,
     "citiesCompleteBoth": 0,
     "citiesWithAnyMissing": 1250
@@ -216,7 +226,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -258,7 +268,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -272,7 +281,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -308,7 +317,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -350,7 +359,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -364,7 +372,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -400,7 +408,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -442,7 +450,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -456,7 +463,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -1352,7 +1359,7 @@
         "demand.json": false,
         "districts.json": true,
         "extent.json": true,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": true,
         "pois.json": true,
@@ -1392,7 +1399,6 @@
           "buildings.bin",
           "buildings.json",
           "demand.json",
-          "landmarks.json",
           "model.json",
           "purposes.bin.json",
           "tram-streets.bin",
@@ -1402,7 +1408,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 7,
+      "globePresentCount": 8,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -2868,7 +2874,7 @@
         "demand.json": false,
         "districts.json": true,
         "extent.json": true,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": true,
         "pois.json": true,
@@ -2908,7 +2914,6 @@
           "buildings.bin",
           "buildings.json",
           "demand.json",
-          "landmarks.json",
           "model.json",
           "purposes.bin.json",
           "tram-streets.bin",
@@ -2918,7 +2923,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 7,
+      "globePresentCount": 8,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -6267,7 +6272,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -6310,7 +6315,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -6324,7 +6328,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -7237,7 +7241,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -7280,7 +7284,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -7294,7 +7297,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -7487,7 +7490,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -7530,7 +7533,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -7544,7 +7546,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -8047,7 +8049,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -8090,7 +8092,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -8104,7 +8105,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -9244,7 +9245,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -9285,7 +9286,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -9299,7 +9299,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 1,
+      "globePresentCount": 2,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -13387,7 +13387,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -13430,7 +13430,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -13444,7 +13443,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -17027,7 +17026,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -17070,7 +17069,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -17084,7 +17082,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -19181,7 +19179,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -19224,7 +19222,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -19238,7 +19235,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -23347,7 +23344,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -23389,7 +23386,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -23403,7 +23399,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -25345,7 +25341,7 @@
         "demand.json": false,
         "districts.json": true,
         "extent.json": true,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": true,
         "pois.json": true,
@@ -25381,7 +25377,6 @@
         "globe": [
           "baseline.json",
           "demand.json",
-          "landmarks.json",
           "model.json",
           "purposes.bin.json",
           "tram-streets.bin",
@@ -25389,7 +25384,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 12,
+      "globePresentCount": 13,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -32517,7 +32512,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -32560,7 +32555,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -32574,7 +32568,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -35529,7 +35523,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -35572,7 +35566,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -35586,7 +35579,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -42296,7 +42289,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -42339,7 +42332,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -42353,7 +42345,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -42946,7 +42938,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -42989,7 +42981,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -43003,7 +42994,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -43898,7 +43889,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -43940,7 +43931,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -43954,7 +43944,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -50842,7 +50832,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -50885,7 +50875,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -50899,7 +50888,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -56734,7 +56723,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -56775,7 +56764,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -56789,7 +56777,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 1,
+      "globePresentCount": 2,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -57701,7 +57689,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -57744,7 +57732,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -57758,7 +57745,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -57794,7 +57781,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -57837,7 +57824,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -57851,7 +57837,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -60892,7 +60878,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -60935,7 +60921,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -60949,7 +60934,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -61310,7 +61295,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -61353,7 +61338,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -61367,7 +61351,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -62425,7 +62409,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -62466,7 +62450,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -62480,7 +62463,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 1,
+      "globePresentCount": 2,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -62997,7 +62980,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -63039,7 +63022,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -63053,7 +63035,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -65925,7 +65907,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": true,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": true,
         "pois.json": false,
@@ -65965,7 +65947,6 @@
           "buildings.json",
           "demand.json",
           "districts.json",
-          "landmarks.json",
           "model.json",
           "pois.json",
           "purposes.bin.json",
@@ -65976,7 +65957,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 5,
+      "globePresentCount": 6,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -70599,7 +70580,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -70642,7 +70623,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -70656,7 +70636,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -71562,7 +71542,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -71605,7 +71585,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -71619,7 +71598,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -77595,7 +77574,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -77636,7 +77615,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -77650,7 +77628,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 1,
+      "globePresentCount": 2,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -77762,7 +77740,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -77805,7 +77783,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -77819,7 +77796,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -77931,7 +77908,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -77974,7 +77951,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -77988,7 +77964,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -79300,7 +79276,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -79343,7 +79319,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -79357,7 +79332,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -81191,7 +81166,7 @@
         "demand.json": false,
         "districts.json": true,
         "extent.json": true,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": true,
         "pois.json": true,
@@ -81230,7 +81205,6 @@
           "buildings.bin",
           "buildings.json",
           "demand.json",
-          "landmarks.json",
           "model.json",
           "purposes.bin.json",
           "tram-streets.bin",
@@ -81240,7 +81214,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 8,
+      "globePresentCount": 9,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -81276,7 +81250,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -81319,7 +81293,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -81333,7 +81306,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -82787,7 +82760,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -82829,7 +82802,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -82843,7 +82815,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -85244,7 +85216,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -85285,7 +85257,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -85299,7 +85270,7 @@
         ]
       },
       "datalakePresentCount": 1,
-      "globePresentCount": 1,
+      "globePresentCount": 2,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -85891,7 +85862,7 @@
         "demand.json": false,
         "districts.json": false,
         "extent.json": false,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": false,
         "pois.json": false,
@@ -85934,7 +85905,6 @@
           "demand.json",
           "districts.json",
           "extent.json",
-          "landmarks.json",
           "model.json",
           "pack.json",
           "pois.json",
@@ -85948,7 +85918,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 0,
+      "globePresentCount": 1,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -87624,7 +87594,7 @@
         "demand.json": false,
         "districts.json": true,
         "extent.json": true,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": true,
         "pois.json": true,
@@ -87664,7 +87634,6 @@
           "buildings.bin",
           "buildings.json",
           "demand.json",
-          "landmarks.json",
           "model.json",
           "purposes.bin.json",
           "tram-streets.bin",
@@ -87674,7 +87643,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 7,
+      "globePresentCount": 8,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -92855,7 +92824,7 @@
         "demand.json": false,
         "districts.json": true,
         "extent.json": true,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": true,
         "pois.json": true,
@@ -92894,7 +92863,6 @@
           "buildings.bin",
           "buildings.json",
           "demand.json",
-          "landmarks.json",
           "model.json",
           "purposes.bin.json",
           "tram-streets.bin",
@@ -92904,7 +92872,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 8,
+      "globePresentCount": 9,
       "hasAnyMissing": true,
       "isComplete": false
     },
@@ -93343,7 +93311,7 @@
         "demand.json": false,
         "districts.json": true,
         "extent.json": true,
-        "landmarks.json": false,
+        "landmarks.json": true,
         "model.json": false,
         "pack.json": true,
         "pois.json": true,
@@ -93382,7 +93350,6 @@
           "buildings.bin",
           "buildings.json",
           "demand.json",
-          "landmarks.json",
           "model.json",
           "purposes.bin.json",
           "tram-streets.bin",
@@ -93392,7 +93359,7 @@
         ]
       },
       "datalakePresentCount": 0,
-      "globePresentCount": 8,
+      "globePresentCount": 9,
       "hasAnyMissing": true,
       "isComplete": false
     },

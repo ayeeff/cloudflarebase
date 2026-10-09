@@ -93,6 +93,10 @@ export interface Atlas19StorageReport {
 	totals: {
 		datalake: Record<Granular19File, { present: number; missing: number }>;
 		globe: Record<Granular19File, { present: number; missing: number }>;
+		pageTypeDatasets?: {
+			guide: { totalSlugs: number; filesCount: number };
+			maps: { totalSlugs: number; filesCount: number };
+		};
 		totalCities: number;
 		citiesCompleteBoth: number;
 		citiesWithAnyMissing: number;

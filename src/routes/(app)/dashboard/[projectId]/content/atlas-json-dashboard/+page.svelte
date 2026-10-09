@@ -131,9 +131,18 @@
 					19 Raw Files Schema
 				</Badge>
 			</div>
-			<p class="mt-1 text-sm text-muted-foreground">
-				Tracking granular urban datasets across {data.totalCities} cities in R2 (<span class="font-mono">geo-datalake</span> and <span class="font-mono">globe</span>).
-				Provides fine-grained layer isolation for MapLibre WebGL, routing, and transit models.
+			<p class="mt-1 text-sm text-muted-foreground flex flex-wrap items-center gap-2">
+				<span>Tracking granular urban datasets across {data.totalCities} cities in R2 (<span class="font-mono">geo-datalake</span> and <span class="font-mono">globe</span>).</span>
+				{#if report?.totals?.pageTypeDatasets}
+					<span class="inline-flex items-center gap-1.5 font-mono text-xs">
+						<Badge variant="outline" class="text-[11px] bg-emerald-500/10 text-emerald-600 border-emerald-500/30">
+							Guide: {report.totals.pageTypeDatasets.guide.totalSlugs} cities ({report.totals.pageTypeDatasets.guide.filesCount} files)
+						</Badge>
+						<Badge variant="outline" class="text-[11px] bg-indigo-500/10 text-indigo-600 border-indigo-500/30">
+							Maps: {report.totals.pageTypeDatasets.maps.totalSlugs} maps ({report.totals.pageTypeDatasets.maps.filesCount} files)
+						</Badge>
+					</span>
+				{/if}
 			</p>
 		</div>
 
