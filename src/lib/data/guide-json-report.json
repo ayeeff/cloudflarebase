@@ -1,0 +1,4692 @@
+{
+  "source": "live-r2",
+  "generatedAt": "2026-10-09T08:47:11.709Z",
+  "filesChecked": [
+    "pack.json",
+    "data.json",
+    "pois.json",
+    "landmarks.json"
+  ],
+  "totals": {
+    "totalGuides": 245,
+    "guidesComplete": 245,
+    "guidesWithMissing": 0,
+    "totalPois": 73586,
+    "totalLandmarks": 73586,
+    "files": {
+      "pack.json": {
+        "present": 245,
+        "missing": 0
+      },
+      "data.json": {
+        "present": 245,
+        "missing": 0
+      },
+      "pois.json": {
+        "present": 245,
+        "missing": 0
+      },
+      "landmarks.json": {
+        "present": 245,
+        "missing": 0
+      }
+    }
+  },
+  "byGuide": {
+    "abidjan": {
+      "slug": "abidjan",
+      "name": "Abidjan",
+      "country": "Ivory Coast",
+      "continent": "Africa",
+      "pop": 5616633,
+      "poisCount": 195,
+      "landmarksCount": 195,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/abidjan/",
+      "previewUrl": "/guide/abidjan"
+    },
+    "abu-dhabi": {
+      "slug": "abu-dhabi",
+      "name": "Abu Dhabi",
+      "country": "UAE",
+      "continent": "Asia",
+      "pop": 1570000,
+      "poisCount": 217,
+      "landmarksCount": 217,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/abu-dhabi/",
+      "previewUrl": "/guide/abu-dhabi"
+    },
+    "abuja": {
+      "slug": "abuja",
+      "name": "Abuja",
+      "country": "Nigeria",
+      "continent": "Africa",
+      "pop": 1693400,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/abuja/",
+      "previewUrl": "/guide/abuja"
+    },
+    "accra": {
+      "slug": "accra",
+      "name": "Accra",
+      "country": "Ghana",
+      "continent": "Africa",
+      "pop": 2291352,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/accra/",
+      "previewUrl": "/guide/accra"
+    },
+    "addis-ababa": {
+      "slug": "addis-ababa",
+      "name": "Addis Ababa",
+      "country": "Ethiopia",
+      "continent": "Africa",
+      "pop": 5704000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/addis-ababa/",
+      "previewUrl": "/guide/addis-ababa"
+    },
+    "algiers": {
+      "slug": "algiers",
+      "name": "Algiers",
+      "country": "Algeria",
+      "continent": "Africa",
+      "pop": 3415811,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/algiers/",
+      "previewUrl": "/guide/algiers"
+    },
+    "amman": {
+      "slug": "amman",
+      "name": "Amman",
+      "country": "Jordan",
+      "continent": "Asia",
+      "pop": 4007526,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/amman/",
+      "previewUrl": "/guide/amman"
+    },
+    "amsterdam": {
+      "slug": "amsterdam",
+      "name": "Amsterdam",
+      "country": "Netherlands",
+      "continent": "Europe",
+      "pop": 921468,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/amsterdam/",
+      "previewUrl": "/guide/amsterdam"
+    },
+    "andorra": {
+      "slug": "andorra",
+      "name": "Andorra la Vella",
+      "country": "AD",
+      "continent": "Europe",
+      "pop": 24042,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/andorra/",
+      "previewUrl": "/guide/andorra"
+    },
+    "ankara": {
+      "slug": "ankara",
+      "name": "Ankara",
+      "country": "Turkey",
+      "continent": "Europe",
+      "pop": 5803482,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/ankara/",
+      "previewUrl": "/guide/ankara"
+    },
+    "antananarivo": {
+      "slug": "antananarivo",
+      "name": "Antananarivo",
+      "country": "Madagascar",
+      "continent": "Africa",
+      "pop": 2610000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/antananarivo/",
+      "previewUrl": "/guide/antananarivo"
+    },
+    "apia": {
+      "slug": "apia",
+      "name": "Apia",
+      "country": "Samoa",
+      "continent": "Oceania",
+      "pop": 37708,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/apia/",
+      "previewUrl": "/guide/apia"
+    },
+    "ashgabat": {
+      "slug": "ashgabat",
+      "name": "Ashgabat",
+      "country": "Turkmenistan",
+      "continent": "Asia",
+      "pop": 1030063,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/ashgabat/",
+      "previewUrl": "/guide/ashgabat"
+    },
+    "asmara": {
+      "slug": "asmara",
+      "name": "Asmara",
+      "country": "Eritrea",
+      "continent": "Africa",
+      "pop": 963000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/asmara/",
+      "previewUrl": "/guide/asmara"
+    },
+    "astana": {
+      "slug": "astana",
+      "name": "Astana",
+      "country": "Kazakhstan",
+      "continent": "Asia",
+      "pop": 1239744,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/astana/",
+      "previewUrl": "/guide/astana"
+    },
+    "asuncion": {
+      "slug": "asuncion",
+      "name": "Asunción",
+      "country": "Paraguay",
+      "continent": "South America",
+      "pop": 462241,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/asuncion/",
+      "previewUrl": "/guide/asuncion"
+    },
+    "athens": {
+      "slug": "athens",
+      "name": "Athens",
+      "country": "Greece",
+      "continent": "Europe",
+      "pop": 816556,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/athens/",
+      "previewUrl": "/guide/athens"
+    },
+    "atlanta": {
+      "slug": "atlanta",
+      "name": "Atlanta",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 498715,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/atlanta/",
+      "previewUrl": "/guide/atlanta"
+    },
+    "auckland": {
+      "slug": "auckland",
+      "name": "Auckland",
+      "country": "New Zealand",
+      "continent": "Oceania",
+      "pop": 1470100,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/auckland/",
+      "previewUrl": "/guide/auckland"
+    },
+    "baghdad": {
+      "slug": "baghdad",
+      "name": "Baghdad",
+      "country": "Iraq",
+      "continent": "Asia",
+      "pop": 8126755,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/baghdad/",
+      "previewUrl": "/guide/baghdad"
+    },
+    "baguio-city": {
+      "slug": "baguio-city",
+      "name": "Baguio City",
+      "country": "Philippines",
+      "continent": "Asia",
+      "pop": 368426,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/baguio-city/",
+      "previewUrl": "/guide/baguio-city"
+    },
+    "baku": {
+      "slug": "baku",
+      "name": "Baku",
+      "country": "Azerbaijan",
+      "continent": "Asia",
+      "pop": 2300500,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/baku/",
+      "previewUrl": "/guide/baku"
+    },
+    "bamako": {
+      "slug": "bamako",
+      "name": "Bamako",
+      "country": "Mali",
+      "continent": "Africa",
+      "pop": 4227569,
+      "poisCount": 247,
+      "landmarksCount": 247,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bamako/",
+      "previewUrl": "/guide/bamako"
+    },
+    "bandar-seri-begawan": {
+      "slug": "bandar-seri-begawan",
+      "name": "Bandar Seri Begawan",
+      "country": "Brunei",
+      "continent": "Asia",
+      "pop": 50000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bandar-seri-begawan/",
+      "previewUrl": "/guide/bandar-seri-begawan"
+    },
+    "bangalore": {
+      "slug": "bangalore",
+      "name": "Bengaluru",
+      "country": "India",
+      "continent": "Asia",
+      "pop": 12327000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bangalore/",
+      "previewUrl": "/guide/bangalore"
+    },
+    "bangkok": {
+      "slug": "bangkok",
+      "name": "Bangkok",
+      "country": "Thailand",
+      "continent": "Asia",
+      "pop": 8280925,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bangkok/",
+      "previewUrl": "/guide/bangkok"
+    },
+    "bangui": {
+      "slug": "bangui",
+      "name": "Bangui",
+      "country": "Central African Republic",
+      "continent": "Africa",
+      "pop": 889231,
+      "poisCount": 315,
+      "landmarksCount": 315,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bangui/",
+      "previewUrl": "/guide/bangui"
+    },
+    "banjul": {
+      "slug": "banjul",
+      "name": "Banjul",
+      "country": "Gambia",
+      "continent": "Africa",
+      "pop": 44188,
+      "poisCount": 200,
+      "landmarksCount": 200,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/banjul/",
+      "previewUrl": "/guide/banjul"
+    },
+    "basseterre": {
+      "slug": "basseterre",
+      "name": "Basseterre",
+      "country": "Saint Kitts",
+      "continent": "North America",
+      "pop": 13220,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/basseterre/",
+      "previewUrl": "/guide/basseterre"
+    },
+    "beijing": {
+      "slug": "beijing",
+      "name": "Beijing",
+      "country": "China",
+      "continent": "Asia",
+      "pop": 21893095,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/beijing/",
+      "previewUrl": "/guide/beijing"
+    },
+    "beirut": {
+      "slug": "beirut",
+      "name": "Beirut",
+      "country": "Lebanon",
+      "continent": "Asia",
+      "pop": 2421354,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/beirut/",
+      "previewUrl": "/guide/beirut"
+    },
+    "belgrade": {
+      "slug": "belgrade",
+      "name": "Belgrade",
+      "country": "Serbia",
+      "continent": "Europe",
+      "pop": 1378682,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/belgrade/",
+      "previewUrl": "/guide/belgrade"
+    },
+    "belmopan": {
+      "slug": "belmopan",
+      "name": "Belmopan",
+      "country": "Belize",
+      "continent": "North America",
+      "pop": 20754,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/belmopan/",
+      "previewUrl": "/guide/belmopan"
+    },
+    "berlin": {
+      "slug": "berlin",
+      "name": "Berlin",
+      "country": "Germany",
+      "continent": "Europe",
+      "pop": 4332834,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/berlin/",
+      "previewUrl": "/guide/berlin"
+    },
+    "bern": {
+      "slug": "bern",
+      "name": "Bern",
+      "country": "Switzerland",
+      "continent": "Europe",
+      "pop": 201800,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bern/",
+      "previewUrl": "/guide/bern"
+    },
+    "bir-lehlou": {
+      "slug": "bir-lehlou",
+      "name": "Bir Lehlou",
+      "country": "Global",
+      "continent": "Global",
+      "pop": 0,
+      "poisCount": 119,
+      "landmarksCount": 119,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bir-lehlou/",
+      "previewUrl": "/guide/bir-lehlou"
+    },
+    "bishkek": {
+      "slug": "bishkek",
+      "name": "Bishkek",
+      "country": "Kyrgyzstan",
+      "continent": "Asia",
+      "pop": 1191000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bishkek/",
+      "previewUrl": "/guide/bishkek"
+    },
+    "bissau": {
+      "slug": "bissau",
+      "name": "Bissau",
+      "country": "Guinea-Bissau",
+      "continent": "Africa",
+      "pop": 492004,
+      "poisCount": 156,
+      "landmarksCount": 156,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bissau/",
+      "previewUrl": "/guide/bissau"
+    },
+    "bloemfontein": {
+      "slug": "bloemfontein",
+      "name": "Bloemfontein",
+      "country": "South Africa",
+      "continent": "Africa",
+      "pop": 256185,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bloemfontein/",
+      "previewUrl": "/guide/bloemfontein"
+    },
+    "bogota": {
+      "slug": "bogota",
+      "name": "Bogotá",
+      "country": "Colombia",
+      "continent": "South America",
+      "pop": 8034649,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bogota/",
+      "previewUrl": "/guide/bogota"
+    },
+    "brasilia": {
+      "slug": "brasilia",
+      "name": "Brasília",
+      "country": "Brazil",
+      "continent": "South America",
+      "pop": 3094325,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/brasilia/",
+      "previewUrl": "/guide/brasilia"
+    },
+    "bratislava": {
+      "slug": "bratislava",
+      "name": "Bratislava",
+      "country": "Slovakia",
+      "continent": "Europe",
+      "pop": 480902,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bratislava/",
+      "previewUrl": "/guide/bratislava"
+    },
+    "brazzaville": {
+      "slug": "brazzaville",
+      "name": "Brazzaville",
+      "country": "Congo",
+      "continent": "Africa",
+      "pop": 2145783,
+      "poisCount": 243,
+      "landmarksCount": 243,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/brazzaville/",
+      "previewUrl": "/guide/brazzaville"
+    },
+    "bridgetown": {
+      "slug": "bridgetown",
+      "name": "Bridgetown",
+      "country": "Barbados",
+      "continent": "North America",
+      "pop": 110000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bridgetown/",
+      "previewUrl": "/guide/bridgetown"
+    },
+    "brussels": {
+      "slug": "brussels",
+      "name": "Brussels",
+      "country": "Belgium",
+      "continent": "Europe",
+      "pop": 1255795,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/brussels/",
+      "previewUrl": "/guide/brussels"
+    },
+    "bucharest": {
+      "slug": "bucharest",
+      "name": "Bucharest",
+      "country": "Romania",
+      "continent": "Europe",
+      "pop": 2067000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bucharest/",
+      "previewUrl": "/guide/bucharest"
+    },
+    "budapest": {
+      "slug": "budapest",
+      "name": "Budapest",
+      "country": "Hungary",
+      "continent": "Europe",
+      "pop": 1757618,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/budapest/",
+      "previewUrl": "/guide/budapest"
+    },
+    "buenos-aires": {
+      "slug": "buenos-aires",
+      "name": "Buenos Aires",
+      "country": "Argentina",
+      "continent": "South America",
+      "pop": 3121707,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/buenos-aires/",
+      "previewUrl": "/guide/buenos-aires"
+    },
+    "bujumbura": {
+      "slug": "bujumbura",
+      "name": "Bujumbura",
+      "country": "BI",
+      "continent": "Africa",
+      "pop": 658859,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/bujumbura/",
+      "previewUrl": "/guide/bujumbura"
+    },
+    "cairo": {
+      "slug": "cairo",
+      "name": "Cairo",
+      "country": "Egypt",
+      "continent": "Africa",
+      "pop": 10248385,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/cairo/",
+      "previewUrl": "/guide/cairo"
+    },
+    "canberra": {
+      "slug": "canberra",
+      "name": "Canberra",
+      "country": "Australia",
+      "continent": "Oceania",
+      "pop": 473855,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/canberra/",
+      "previewUrl": "/guide/canberra"
+    },
+    "cape-town": {
+      "slug": "cape-town",
+      "name": "Cape Town",
+      "country": "South Africa",
+      "continent": "Africa",
+      "pop": 3776313,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/cape-town/",
+      "previewUrl": "/guide/cape-town"
+    },
+    "caracas": {
+      "slug": "caracas",
+      "name": "Caracas",
+      "country": "Venezuela",
+      "continent": "South America",
+      "pop": 2245744,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/caracas/",
+      "previewUrl": "/guide/caracas"
+    },
+    "casablanca": {
+      "slug": "casablanca",
+      "name": "Casablanca",
+      "country": "Morocco",
+      "continent": "Africa",
+      "pop": 4370000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/casablanca/",
+      "previewUrl": "/guide/casablanca"
+    },
+    "castries": {
+      "slug": "castries",
+      "name": "Castries",
+      "country": "Saint Lucia",
+      "continent": "North America",
+      "pop": 70000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/castries/",
+      "previewUrl": "/guide/castries"
+    },
+    "central-italy": {
+      "slug": "central-italy",
+      "name": "Central Italy",
+      "country": "Italy",
+      "continent": "Europe",
+      "pop": 35000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/central-italy/",
+      "previewUrl": "/guide/central-italy"
+    },
+    "chengdu": {
+      "slug": "chengdu",
+      "name": "Chengdu",
+      "country": "China",
+      "continent": "Asia",
+      "pop": 20937757,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/chengdu/",
+      "previewUrl": "/guide/chengdu"
+    },
+    "chicago": {
+      "slug": "chicago",
+      "name": "Chicago",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 2746388,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/chicago/",
+      "previewUrl": "/guide/chicago"
+    },
+    "chisinau": {
+      "slug": "chisinau",
+      "name": "Chișinău",
+      "country": "MD",
+      "continent": "Europe",
+      "pop": 685900,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/chisinau/",
+      "previewUrl": "/guide/chisinau"
+    },
+    "colombo": {
+      "slug": "colombo",
+      "name": "Colombo",
+      "country": "Sri Lanka",
+      "continent": "Asia",
+      "pop": 752993,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/colombo/",
+      "previewUrl": "/guide/colombo"
+    },
+    "conakry": {
+      "slug": "conakry",
+      "name": "Conakry",
+      "country": "Guinea",
+      "continent": "Africa",
+      "pop": 2160000,
+      "poisCount": 125,
+      "landmarksCount": 125,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/conakry/",
+      "previewUrl": "/guide/conakry"
+    },
+    "cotonou": {
+      "slug": "cotonou",
+      "name": "Cotonou",
+      "country": "Benin",
+      "continent": "Africa",
+      "pop": 780000,
+      "poisCount": 62,
+      "landmarksCount": 62,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/cotonou/",
+      "previewUrl": "/guide/cotonou"
+    },
+    "dakar": {
+      "slug": "dakar",
+      "name": "Dakar",
+      "country": "Senegal",
+      "continent": "Africa",
+      "pop": 1438725,
+      "poisCount": 155,
+      "landmarksCount": 155,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/dakar/",
+      "previewUrl": "/guide/dakar"
+    },
+    "damascus": {
+      "slug": "damascus",
+      "name": "Damascus",
+      "country": "Syria",
+      "continent": "Asia",
+      "pop": 2685360,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/damascus/",
+      "previewUrl": "/guide/damascus"
+    },
+    "dar-es-salaam": {
+      "slug": "dar-es-salaam",
+      "name": "Dar es Salaam",
+      "country": "Tanzania",
+      "continent": "Africa",
+      "pop": 4715000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/dar-es-salaam/",
+      "previewUrl": "/guide/dar-es-salaam"
+    },
+    "denver": {
+      "slug": "denver",
+      "name": "Denver",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 715522,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/denver/",
+      "previewUrl": "/guide/denver"
+    },
+    "dhaka": {
+      "slug": "dhaka",
+      "name": "Dhaka",
+      "country": "Bangladesh",
+      "continent": "Asia",
+      "pop": 16800000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/dhaka/",
+      "previewUrl": "/guide/dhaka"
+    },
+    "dili": {
+      "slug": "dili",
+      "name": "Dili",
+      "country": "TL",
+      "continent": "Asia",
+      "pop": 222323,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/dili/",
+      "previewUrl": "/guide/dili"
+    },
+    "djibouti": {
+      "slug": "djibouti",
+      "name": "Djibouti",
+      "country": "Djibouti",
+      "continent": "Africa",
+      "pop": 1152944,
+      "poisCount": 280,
+      "landmarksCount": 280,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/djibouti/",
+      "previewUrl": "/guide/djibouti"
+    },
+    "dodoma": {
+      "slug": "dodoma",
+      "name": "Dodoma",
+      "country": "Tanzania",
+      "continent": "Africa",
+      "pop": 213636,
+      "poisCount": 210,
+      "landmarksCount": 210,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/dodoma/",
+      "previewUrl": "/guide/dodoma"
+    },
+    "doha": {
+      "slug": "doha",
+      "name": "Doha",
+      "country": "Qatar",
+      "continent": "Asia",
+      "pop": 1312947,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/doha/",
+      "previewUrl": "/guide/doha"
+    },
+    "dubai": {
+      "slug": "dubai",
+      "name": "Dubai",
+      "country": "UAE",
+      "continent": "Asia",
+      "pop": 3944751,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/dubai/",
+      "previewUrl": "/guide/dubai"
+    },
+    "dublin": {
+      "slug": "dublin",
+      "name": "Dublin",
+      "country": "Ireland",
+      "continent": "Europe",
+      "pop": 592713,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/dublin/",
+      "previewUrl": "/guide/dublin"
+    },
+    "dushanbe": {
+      "slug": "dushanbe",
+      "name": "Dushanbe",
+      "country": "Tajikistan",
+      "continent": "Asia",
+      "pop": 1201800,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/dushanbe/",
+      "previewUrl": "/guide/dushanbe"
+    },
+    "freetown": {
+      "slug": "freetown",
+      "name": "Freetown",
+      "country": "Sierra Leone",
+      "continent": "Africa",
+      "pop": 1055964,
+      "poisCount": 140,
+      "landmarksCount": 140,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/freetown/",
+      "previewUrl": "/guide/freetown"
+    },
+    "funafuti": {
+      "slug": "funafuti",
+      "name": "Funafuti",
+      "country": "Tuvalu",
+      "continent": "Oceania",
+      "pop": 6025,
+      "poisCount": 188,
+      "landmarksCount": 188,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/funafuti/",
+      "previewUrl": "/guide/funafuti"
+    },
+    "gaborone": {
+      "slug": "gaborone",
+      "name": "Gaborone",
+      "country": "Botswana",
+      "continent": "Africa",
+      "pop": 246325,
+      "poisCount": 238,
+      "landmarksCount": 238,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/gaborone/",
+      "previewUrl": "/guide/gaborone"
+    },
+    "geneva": {
+      "slug": "geneva",
+      "name": "Geneva",
+      "country": "Switzerland",
+      "continent": "Europe",
+      "pop": 209061,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/geneva/",
+      "previewUrl": "/guide/geneva"
+    },
+    "georgetown": {
+      "slug": "georgetown",
+      "name": "Georgetown",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 235017,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/georgetown/",
+      "previewUrl": "/guide/georgetown"
+    },
+    "guatemala": {
+      "slug": "guatemala",
+      "name": "Guatemala City",
+      "country": "Guatemala",
+      "continent": "North America",
+      "pop": 1213651,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/guatemala/",
+      "previewUrl": "/guide/guatemala"
+    },
+    "hanoi": {
+      "slug": "hanoi",
+      "name": "Hanoi",
+      "country": "Vietnam",
+      "continent": "Asia",
+      "pop": 8717600,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/hanoi/",
+      "previewUrl": "/guide/hanoi"
+    },
+    "harare": {
+      "slug": "harare",
+      "name": "Harare",
+      "country": "Zimbabwe",
+      "continent": "Africa",
+      "pop": 2150000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/harare/",
+      "previewUrl": "/guide/harare"
+    },
+    "hargeysa": {
+      "slug": "hargeysa",
+      "name": "Hargeisa",
+      "country": "Somalia",
+      "continent": "Africa",
+      "pop": 1227620,
+      "poisCount": 279,
+      "landmarksCount": 279,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/hargeysa/",
+      "previewUrl": "/guide/hargeysa"
+    },
+    "havana": {
+      "slug": "havana",
+      "name": "Havana",
+      "country": "Cuba",
+      "continent": "North America",
+      "pop": 2492618,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/havana/",
+      "previewUrl": "/guide/havana"
+    },
+    "helsinki": {
+      "slug": "helsinki",
+      "name": "Helsinki",
+      "country": "Finland",
+      "continent": "Europe",
+      "pop": 694392,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/helsinki/",
+      "previewUrl": "/guide/helsinki"
+    },
+    "hong-kong": {
+      "slug": "hong-kong",
+      "name": "Hong Kong",
+      "country": "Hong Kong",
+      "continent": "Asia",
+      "pop": 7500700,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/hong-kong/",
+      "previewUrl": "/guide/hong-kong"
+    },
+    "honiara": {
+      "slug": "honiara",
+      "name": "Honiara",
+      "country": "Solomon Islands",
+      "continent": "Oceania",
+      "pop": 92344,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/honiara/",
+      "previewUrl": "/guide/honiara"
+    },
+    "houston": {
+      "slug": "houston",
+      "name": "Houston",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 2319603,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/houston/",
+      "previewUrl": "/guide/houston"
+    },
+    "islamabad": {
+      "slug": "islamabad",
+      "name": "Islamabad",
+      "country": "Pakistan",
+      "continent": "Asia",
+      "pop": 1900000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/islamabad/",
+      "previewUrl": "/guide/islamabad"
+    },
+    "istanbul": {
+      "slug": "istanbul",
+      "name": "Istanbul",
+      "country": "Turkey",
+      "continent": "Europe",
+      "pop": 15655924,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/istanbul/",
+      "previewUrl": "/guide/istanbul"
+    },
+    "jakarta": {
+      "slug": "jakarta",
+      "name": "Jakarta",
+      "country": "Indonesia",
+      "continent": "Asia",
+      "pop": 11135191,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/jakarta/",
+      "previewUrl": "/guide/jakarta"
+    },
+    "jerusalem": {
+      "slug": "jerusalem",
+      "name": "Jerusalem",
+      "country": "Israel",
+      "continent": "Asia",
+      "pop": 1050151,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/jerusalem/",
+      "previewUrl": "/guide/jerusalem"
+    },
+    "johannesburg": {
+      "slug": "johannesburg",
+      "name": "Johannesburg",
+      "country": "South Africa",
+      "continent": "Africa",
+      "pop": 4803262,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/johannesburg/",
+      "previewUrl": "/guide/johannesburg"
+    },
+    "juba": {
+      "slug": "juba",
+      "name": "Juba",
+      "country": "SS",
+      "continent": "Africa",
+      "pop": 525953,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/juba/",
+      "previewUrl": "/guide/juba"
+    },
+    "kabul": {
+      "slug": "kabul",
+      "name": "Kabul",
+      "country": "Afghanistan",
+      "continent": "Asia",
+      "pop": 5333284,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kabul/",
+      "previewUrl": "/guide/kabul"
+    },
+    "kampala": {
+      "slug": "kampala",
+      "name": "Kampala",
+      "country": "Uganda",
+      "continent": "Africa",
+      "pop": 1797722,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kampala/",
+      "previewUrl": "/guide/kampala"
+    },
+    "kathmandu": {
+      "slug": "kathmandu",
+      "name": "Kathmandu",
+      "country": "Nepal",
+      "continent": "Asia",
+      "pop": 845767,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kathmandu/",
+      "previewUrl": "/guide/kathmandu"
+    },
+    "khartoum": {
+      "slug": "khartoum",
+      "name": "Khartoum",
+      "country": "Sudan",
+      "continent": "Africa",
+      "pop": 6527500,
+      "poisCount": 316,
+      "landmarksCount": 316,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/khartoum/",
+      "previewUrl": "/guide/khartoum"
+    },
+    "kiev": {
+      "slug": "kiev",
+      "name": "Kyiv",
+      "country": "Ukraine",
+      "continent": "Europe",
+      "pop": 2962180,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kiev/",
+      "previewUrl": "/guide/kiev"
+    },
+    "kigali": {
+      "slug": "kigali",
+      "name": "Kigali",
+      "country": "Rwanda",
+      "continent": "Africa",
+      "pop": 1745555,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kigali/",
+      "previewUrl": "/guide/kigali"
+    },
+    "kingston": {
+      "slug": "kingston",
+      "name": "Kingston",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 937700,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kingston/",
+      "previewUrl": "/guide/kingston"
+    },
+    "kingstown": {
+      "slug": "kingstown",
+      "name": "Kingstown",
+      "country": "Saint Vincent",
+      "continent": "North America",
+      "pop": 24518,
+      "poisCount": 252,
+      "landmarksCount": 252,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kingstown/",
+      "previewUrl": "/guide/kingstown"
+    },
+    "kinshasa": {
+      "slug": "kinshasa",
+      "name": "Kinshasa",
+      "country": "DR Congo",
+      "continent": "Africa",
+      "pop": 14565700,
+      "poisCount": 291,
+      "landmarksCount": 291,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kinshasa/",
+      "previewUrl": "/guide/kinshasa"
+    },
+    "kobenhavn": {
+      "slug": "kobenhavn",
+      "name": "Kobenhavn",
+      "country": "Global",
+      "continent": "Global",
+      "pop": 0,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kobenhavn/",
+      "previewUrl": "/guide/kobenhavn"
+    },
+    "kolkata": {
+      "slug": "kolkata",
+      "name": "Kolkata",
+      "country": "India",
+      "continent": "Asia",
+      "pop": 4580544,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kolkata/",
+      "previewUrl": "/guide/kolkata"
+    },
+    "kuala-lumpur": {
+      "slug": "kuala-lumpur",
+      "name": "Kuala Lumpur",
+      "country": "Malaysia",
+      "continent": "Asia",
+      "pop": 9000280,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kuala-lumpur/",
+      "previewUrl": "/guide/kuala-lumpur"
+    },
+    "kuwait": {
+      "slug": "kuwait",
+      "name": "Kuwait City",
+      "country": "Kuwait",
+      "continent": "Asia",
+      "pop": 2989000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kuwait/",
+      "previewUrl": "/guide/kuwait"
+    },
+    "kyoto": {
+      "slug": "kyoto",
+      "name": "Kyoto",
+      "country": "Japan",
+      "continent": "Asia",
+      "pop": 1479218,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/kyoto/",
+      "previewUrl": "/guide/kyoto"
+    },
+    "la-paz": {
+      "slug": "la-paz",
+      "name": "La Paz",
+      "country": "Bolivia",
+      "continent": "South America",
+      "pop": 2867504,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/la-paz/",
+      "previewUrl": "/guide/la-paz"
+    },
+    "laayoune": {
+      "slug": "laayoune",
+      "name": "Laâyoune",
+      "country": "Morocco",
+      "continent": "Africa",
+      "pop": 270000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/laayoune/",
+      "previewUrl": "/guide/laayoune"
+    },
+    "lagos": {
+      "slug": "lagos",
+      "name": "Lagos",
+      "country": "Nigeria",
+      "continent": "Africa",
+      "pop": 15070000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/lagos/",
+      "previewUrl": "/guide/lagos"
+    },
+    "libreville": {
+      "slug": "libreville",
+      "name": "Libreville",
+      "country": "Gabon",
+      "continent": "Africa",
+      "pop": 899000,
+      "poisCount": 128,
+      "landmarksCount": 128,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/libreville/",
+      "previewUrl": "/guide/libreville"
+    },
+    "lilongwe": {
+      "slug": "lilongwe",
+      "name": "Lilongwe",
+      "country": "Malawi",
+      "continent": "Africa",
+      "pop": 989318,
+      "poisCount": 287,
+      "landmarksCount": 287,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/lilongwe/",
+      "previewUrl": "/guide/lilongwe"
+    },
+    "lima": {
+      "slug": "lima",
+      "name": "Lima",
+      "country": "Peru",
+      "continent": "South America",
+      "pop": 9943800,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/lima/",
+      "previewUrl": "/guide/lima"
+    },
+    "lisbon": {
+      "slug": "lisbon",
+      "name": "Lisbon",
+      "country": "Portugal",
+      "continent": "Europe",
+      "pop": 547733,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/lisbon/",
+      "previewUrl": "/guide/lisbon"
+    },
+    "ljubljana": {
+      "slug": "ljubljana",
+      "name": "Ljubljana",
+      "country": "Slovenia",
+      "continent": "Europe",
+      "pop": 286745,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/ljubljana/",
+      "previewUrl": "/guide/ljubljana"
+    },
+    "lobamba": {
+      "slug": "lobamba",
+      "name": "Lobamba",
+      "country": "SZ",
+      "continent": "Africa",
+      "pop": 114585,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/lobamba/",
+      "previewUrl": "/guide/lobamba"
+    },
+    "lome": {
+      "slug": "lome",
+      "name": "Lomé",
+      "country": "Togo",
+      "continent": "Africa",
+      "pop": 2188376,
+      "poisCount": 202,
+      "landmarksCount": 202,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/lome/",
+      "previewUrl": "/guide/lome"
+    },
+    "london": {
+      "slug": "london",
+      "name": "London",
+      "country": "UK",
+      "continent": "Europe",
+      "pop": 8908081,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/london/",
+      "previewUrl": "/guide/london"
+    },
+    "los-angeles": {
+      "slug": "los-angeles",
+      "name": "Los Angeles",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 3990456,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/los-angeles/",
+      "previewUrl": "/guide/los-angeles"
+    },
+    "luanda": {
+      "slug": "luanda",
+      "name": "Luanda",
+      "country": "Angola",
+      "continent": "Africa",
+      "pop": 2584000,
+      "poisCount": 251,
+      "landmarksCount": 251,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/luanda/",
+      "previewUrl": "/guide/luanda"
+    },
+    "lusaka": {
+      "slug": "lusaka",
+      "name": "Lusaka",
+      "country": "Zambia",
+      "continent": "Africa",
+      "pop": 2467563,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/lusaka/",
+      "previewUrl": "/guide/lusaka"
+    },
+    "luxembourg": {
+      "slug": "luxembourg",
+      "name": "Luxembourg",
+      "country": "LU",
+      "continent": "Europe",
+      "pop": 690959,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/luxembourg/",
+      "previewUrl": "/guide/luxembourg"
+    },
+    "madrid": {
+      "slug": "madrid",
+      "name": "Madrid",
+      "country": "Spain",
+      "continent": "Europe",
+      "pop": 3506730,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/madrid/",
+      "previewUrl": "/guide/madrid"
+    },
+    "majuro": {
+      "slug": "majuro",
+      "name": "Majuro",
+      "country": "Marshall Islands",
+      "continent": "Oceania",
+      "pop": 30000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/majuro/",
+      "previewUrl": "/guide/majuro"
+    },
+    "malabo": {
+      "slug": "malabo",
+      "name": "Malabo",
+      "country": "GQ",
+      "continent": "Africa",
+      "pop": 297000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/malabo/",
+      "previewUrl": "/guide/malabo"
+    },
+    "male": {
+      "slug": "male",
+      "name": "Malé",
+      "country": "MV",
+      "continent": "Asia",
+      "pop": 252768,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/male/",
+      "previewUrl": "/guide/male"
+    },
+    "managua": {
+      "slug": "managua",
+      "name": "Managua",
+      "country": "Nicaragua",
+      "continent": "North America",
+      "pop": 973087,
+      "poisCount": 234,
+      "landmarksCount": 234,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/managua/",
+      "previewUrl": "/guide/managua"
+    },
+    "manama": {
+      "slug": "manama",
+      "name": "Manama",
+      "country": "Bahrain",
+      "continent": "Asia",
+      "pop": 297502,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/manama/",
+      "previewUrl": "/guide/manama"
+    },
+    "manila": {
+      "slug": "manila",
+      "name": "Manila",
+      "country": "Philippines",
+      "continent": "Asia",
+      "pop": 1902590,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/manila/",
+      "previewUrl": "/guide/manila"
+    },
+    "maputo": {
+      "slug": "maputo",
+      "name": "Maputo",
+      "country": "Mozambique",
+      "continent": "Africa",
+      "pop": 1191613,
+      "poisCount": 291,
+      "landmarksCount": 291,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/maputo/",
+      "previewUrl": "/guide/maputo"
+    },
+    "maseru": {
+      "slug": "maseru",
+      "name": "Maseru",
+      "country": "LS",
+      "continent": "Africa",
+      "pop": 343541,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/maseru/",
+      "previewUrl": "/guide/maseru"
+    },
+    "mbabane": {
+      "slug": "mbabane",
+      "name": "Mbabane",
+      "country": "SZ",
+      "continent": "Africa",
+      "pop": 76218,
+      "poisCount": 229,
+      "landmarksCount": 229,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/mbabane/",
+      "previewUrl": "/guide/mbabane"
+    },
+    "melbourne": {
+      "slug": "melbourne",
+      "name": "Melbourne",
+      "country": "Australia",
+      "continent": "Oceania",
+      "pop": 5350705,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/melbourne/",
+      "previewUrl": "/guide/melbourne"
+    },
+    "melekeok": {
+      "slug": "melekeok",
+      "name": "Ngerulmud",
+      "country": "Palau",
+      "continent": "Oceania",
+      "pop": 35000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/melekeok/",
+      "previewUrl": "/guide/melekeok"
+    },
+    "mexico-city": {
+      "slug": "mexico-city",
+      "name": "Mexico City",
+      "country": "Mexico",
+      "continent": "North America",
+      "pop": 9209944,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/mexico-city/",
+      "previewUrl": "/guide/mexico-city"
+    },
+    "miami": {
+      "slug": "miami",
+      "name": "Miami",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 463347,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/miami/",
+      "previewUrl": "/guide/miami"
+    },
+    "minsk": {
+      "slug": "minsk",
+      "name": "Minsk",
+      "country": "Belarus",
+      "continent": "Europe",
+      "pop": 2020600,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/minsk/",
+      "previewUrl": "/guide/minsk"
+    },
+    "mogadishu": {
+      "slug": "mogadishu",
+      "name": "Mogadishu",
+      "country": "Somalia",
+      "continent": "Africa",
+      "pop": 2120000,
+      "poisCount": 184,
+      "landmarksCount": 184,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/mogadishu/",
+      "previewUrl": "/guide/mogadishu"
+    },
+    "monaco": {
+      "slug": "monaco",
+      "name": "Monaco",
+      "country": "MC",
+      "continent": "Europe",
+      "pop": 39150,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/monaco/",
+      "previewUrl": "/guide/monaco"
+    },
+    "monrovia": {
+      "slug": "monrovia",
+      "name": "Monrovia",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 1761032,
+      "poisCount": 244,
+      "landmarksCount": 244,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/monrovia/",
+      "previewUrl": "/guide/monrovia"
+    },
+    "monterrey": {
+      "slug": "monterrey",
+      "name": "Monterrey",
+      "country": "Mexico",
+      "continent": "North America",
+      "pop": 1142952,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/monterrey/",
+      "previewUrl": "/guide/monterrey"
+    },
+    "montevideo": {
+      "slug": "montevideo",
+      "name": "Montevideo",
+      "country": "Uruguay",
+      "continent": "South America",
+      "pop": 1344839,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/montevideo/",
+      "previewUrl": "/guide/montevideo"
+    },
+    "moroni": {
+      "slug": "moroni",
+      "name": "Moroni",
+      "country": "Comoros",
+      "continent": "Africa",
+      "pop": 40000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/moroni/",
+      "previewUrl": "/guide/moroni"
+    },
+    "moscow": {
+      "slug": "moscow",
+      "name": "Moscow",
+      "country": "Russia",
+      "continent": "Europe",
+      "pop": 13274285,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/moscow/",
+      "previewUrl": "/guide/moscow"
+    },
+    "most-beautiful-libraries": {
+      "slug": "most-beautiful-libraries",
+      "name": "Most-beautiful-libraries",
+      "country": "Global",
+      "continent": "Global",
+      "pop": 0,
+      "poisCount": 10,
+      "landmarksCount": 10,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/most-beautiful-libraries/",
+      "previewUrl": "/guide/most-beautiful-libraries"
+    },
+    "mumbai": {
+      "slug": "mumbai",
+      "name": "Mumbai",
+      "country": "India",
+      "continent": "Asia",
+      "pop": 15414288,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/mumbai/",
+      "previewUrl": "/guide/mumbai"
+    },
+    "muscat": {
+      "slug": "muscat",
+      "name": "Muscat",
+      "country": "Oman",
+      "continent": "Asia",
+      "pop": 1421409,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/muscat/",
+      "previewUrl": "/guide/muscat"
+    },
+    "nairobi": {
+      "slug": "nairobi",
+      "name": "Nairobi",
+      "country": "Kenya",
+      "continent": "Africa",
+      "pop": 5545000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/nairobi/",
+      "previewUrl": "/guide/nairobi"
+    },
+    "nassau": {
+      "slug": "nassau",
+      "name": "Nassau",
+      "country": "Bahamas",
+      "continent": "North America",
+      "pop": 274400,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/nassau/",
+      "previewUrl": "/guide/nassau"
+    },
+    "naypyidaw": {
+      "slug": "naypyidaw",
+      "name": "Naypyidaw",
+      "country": "Myanmar",
+      "continent": "Asia",
+      "pop": 1160242,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/naypyidaw/",
+      "previewUrl": "/guide/naypyidaw"
+    },
+    "ndjamena": {
+      "slug": "ndjamena",
+      "name": "N'Djamena",
+      "country": "Chad",
+      "continent": "Africa",
+      "pop": 1092066,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/ndjamena/",
+      "previewUrl": "/guide/ndjamena"
+    },
+    "new-delhi": {
+      "slug": "new-delhi",
+      "name": "New Delhi",
+      "country": "India",
+      "continent": "Asia",
+      "pop": 33000000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/new-delhi/",
+      "previewUrl": "/guide/new-delhi"
+    },
+    "new-york": {
+      "slug": "new-york",
+      "name": "New York",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 8804190,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/new-york/",
+      "previewUrl": "/guide/new-york"
+    },
+    "niamey": {
+      "slug": "niamey",
+      "name": "Niamey",
+      "country": "Niger",
+      "continent": "Africa",
+      "pop": 1496260,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/niamey/",
+      "previewUrl": "/guide/niamey"
+    },
+    "nicosia": {
+      "slug": "nicosia",
+      "name": "Nicosia",
+      "country": "Cyprus",
+      "continent": "Asia",
+      "pop": 330000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/nicosia/",
+      "previewUrl": "/guide/nicosia"
+    },
+    "nouakchott": {
+      "slug": "nouakchott",
+      "name": "Nouakchott",
+      "country": "Mauritania",
+      "continent": "Africa",
+      "pop": 1446761,
+      "poisCount": 136,
+      "landmarksCount": 136,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/nouakchott/",
+      "previewUrl": "/guide/nouakchott"
+    },
+    "nukualofa": {
+      "slug": "nukualofa",
+      "name": "Nukuʻalofa",
+      "country": "Global",
+      "continent": "Global",
+      "pop": 24571,
+      "poisCount": 228,
+      "landmarksCount": 228,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/nukualofa/",
+      "previewUrl": "/guide/nukualofa"
+    },
+    "osaka": {
+      "slug": "osaka",
+      "name": "Osaka",
+      "country": "Japan",
+      "continent": "Asia",
+      "pop": 2751862,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/osaka/",
+      "previewUrl": "/guide/osaka"
+    },
+    "oslo": {
+      "slug": "oslo",
+      "name": "Oslo",
+      "country": "Norway",
+      "continent": "Europe",
+      "pop": 717710,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/oslo/",
+      "previewUrl": "/guide/oslo"
+    },
+    "ottawa": {
+      "slug": "ottawa",
+      "name": "Ottawa",
+      "country": "Canada",
+      "continent": "North America",
+      "pop": 1017449,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/ottawa/",
+      "previewUrl": "/guide/ottawa"
+    },
+    "ouagadougou": {
+      "slug": "ouagadougou",
+      "name": "Ouagadougou",
+      "country": "Burkina Faso",
+      "continent": "Africa",
+      "pop": 2453496,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/ouagadougou/",
+      "previewUrl": "/guide/ouagadougou"
+    },
+    "palikir": {
+      "slug": "palikir",
+      "name": "Palikir",
+      "country": "Micronesia",
+      "continent": "Oceania",
+      "pop": 6227,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/palikir/",
+      "previewUrl": "/guide/palikir"
+    },
+    "panama-city": {
+      "slug": "panama-city",
+      "name": "Panama City",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 1540000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/panama-city/",
+      "previewUrl": "/guide/panama-city"
+    },
+    "paramaribo": {
+      "slug": "paramaribo",
+      "name": "Paramaribo",
+      "country": "Suriname",
+      "continent": "South America",
+      "pop": 242946,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/paramaribo/",
+      "previewUrl": "/guide/paramaribo"
+    },
+    "paris": {
+      "slug": "paris",
+      "name": "Paris",
+      "country": "France",
+      "continent": "Europe",
+      "pop": 2243739,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/paris/",
+      "previewUrl": "/guide/paris"
+    },
+    "phnom-penh": {
+      "slug": "phnom-penh",
+      "name": "Phnom Penh",
+      "country": "Cambodia",
+      "continent": "Asia",
+      "pop": 2129371,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/phnom-penh/",
+      "previewUrl": "/guide/phnom-penh"
+    },
+    "podgorica": {
+      "slug": "podgorica",
+      "name": "Podgorica",
+      "country": "Montenegro",
+      "continent": "Europe",
+      "pop": 163000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/podgorica/",
+      "previewUrl": "/guide/podgorica"
+    },
+    "port-au-prince": {
+      "slug": "port-au-prince",
+      "name": "Port-au-Prince",
+      "country": "Haiti",
+      "continent": "North America",
+      "pop": 987310,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/port-au-prince/",
+      "previewUrl": "/guide/port-au-prince"
+    },
+    "port-louis": {
+      "slug": "port-louis",
+      "name": "Port Louis",
+      "country": "Mauritius",
+      "continent": "Africa",
+      "pop": 149194,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/port-louis/",
+      "previewUrl": "/guide/port-louis"
+    },
+    "port-moresby": {
+      "slug": "port-moresby",
+      "name": "Port Moresby",
+      "country": "Papua New Guinea",
+      "continent": "Oceania",
+      "pop": 364125,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/port-moresby/",
+      "previewUrl": "/guide/port-moresby"
+    },
+    "port-of-spain": {
+      "slug": "port-of-spain",
+      "name": "Port of Spain",
+      "country": "Trinidad and Tobago",
+      "continent": "North America",
+      "pop": 49031,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/port-of-spain/",
+      "previewUrl": "/guide/port-of-spain"
+    },
+    "port-vila": {
+      "slug": "port-vila",
+      "name": "Port Vila",
+      "country": "Vanuatu",
+      "continent": "Oceania",
+      "pop": 51437,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/port-vila/",
+      "previewUrl": "/guide/port-vila"
+    },
+    "porto-novo": {
+      "slug": "porto-novo",
+      "name": "Porto-Novo",
+      "country": "Benin",
+      "continent": "Africa",
+      "pop": 267191,
+      "poisCount": 84,
+      "landmarksCount": 84,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/porto-novo/",
+      "previewUrl": "/guide/porto-novo"
+    },
+    "prague": {
+      "slug": "prague",
+      "name": "Prague",
+      "country": "Czech Republic",
+      "continent": "Europe",
+      "pop": 1397880,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/prague/",
+      "previewUrl": "/guide/prague"
+    },
+    "praia": {
+      "slug": "praia",
+      "name": "Praia",
+      "country": "Cape Verde",
+      "continent": "Africa",
+      "pop": 159050,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/praia/",
+      "previewUrl": "/guide/praia"
+    },
+    "pretoria": {
+      "slug": "pretoria",
+      "name": "Pretoria",
+      "country": "South Africa",
+      "continent": "Africa",
+      "pop": 741651,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/pretoria/",
+      "previewUrl": "/guide/pretoria"
+    },
+    "pristina": {
+      "slug": "pristina",
+      "name": "Pristina",
+      "country": "Kosovo",
+      "continent": "Europe",
+      "pop": 227466,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/pristina/",
+      "previewUrl": "/guide/pristina"
+    },
+    "putrajaya": {
+      "slug": "putrajaya",
+      "name": "Putrajaya",
+      "country": "Malaysia",
+      "continent": "Asia",
+      "pop": 109202,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/putrajaya/",
+      "previewUrl": "/guide/putrajaya"
+    },
+    "pyongyang": {
+      "slug": "pyongyang",
+      "name": "Pyongyang",
+      "country": "North Korea",
+      "continent": "Asia",
+      "pop": 4138187,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/pyongyang/",
+      "previewUrl": "/guide/pyongyang"
+    },
+    "quito": {
+      "slug": "quito",
+      "name": "Quito",
+      "country": "Ecuador",
+      "continent": "South America",
+      "pop": 2011388,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/quito/",
+      "previewUrl": "/guide/quito"
+    },
+    "rabat": {
+      "slug": "rabat",
+      "name": "Rabat",
+      "country": "Morocco",
+      "continent": "Africa",
+      "pop": 621480,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/rabat/",
+      "previewUrl": "/guide/rabat"
+    },
+    "rangoon": {
+      "slug": "rangoon",
+      "name": "Rangoon",
+      "country": "Myanmar",
+      "continent": "Asia",
+      "pop": 35000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/rangoon/",
+      "previewUrl": "/guide/rangoon"
+    },
+    "reykjavik": {
+      "slug": "reykjavik",
+      "name": "Reykjavík",
+      "country": "Iceland",
+      "continent": "Europe",
+      "pop": 138772,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/reykjavik/",
+      "previewUrl": "/guide/reykjavik"
+    },
+    "riga": {
+      "slug": "riga",
+      "name": "Riga",
+      "country": "Latvia",
+      "continent": "Europe",
+      "pop": 701977,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/riga/",
+      "previewUrl": "/guide/riga"
+    },
+    "rio-de-janeiro": {
+      "slug": "rio-de-janeiro",
+      "name": "Rio de Janeiro",
+      "country": "Brazil",
+      "continent": "South America",
+      "pop": 6775561,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/rio-de-janeiro/",
+      "previewUrl": "/guide/rio-de-janeiro"
+    },
+    "riyadh": {
+      "slug": "riyadh",
+      "name": "Riyadh",
+      "country": "Saudi Arabia",
+      "continent": "Asia",
+      "pop": 7676655,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/riyadh/",
+      "previewUrl": "/guide/riyadh"
+    },
+    "rome": {
+      "slug": "rome",
+      "name": "Rome",
+      "country": "Italy",
+      "continent": "Europe",
+      "pop": 2873494,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/rome/",
+      "previewUrl": "/guide/rome"
+    },
+    "roseau": {
+      "slug": "roseau",
+      "name": "Roseau",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 16582,
+      "poisCount": 278,
+      "landmarksCount": 278,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/roseau/",
+      "previewUrl": "/guide/roseau"
+    },
+    "saint-george-s": {
+      "slug": "saint-george-s",
+      "name": "St. George's",
+      "country": "Canada",
+      "continent": "North America",
+      "pop": 33734,
+      "poisCount": 132,
+      "landmarksCount": 132,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/saint-george-s/",
+      "previewUrl": "/guide/saint-george-s"
+    },
+    "saint-john-s": {
+      "slug": "saint-john-s",
+      "name": "St. John's",
+      "country": "Antigua and Barbuda",
+      "continent": "North America",
+      "pop": 24451,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/saint-john-s/",
+      "previewUrl": "/guide/saint-john-s"
+    },
+    "san-francisco": {
+      "slug": "san-francisco",
+      "name": "San Francisco",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 884363,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/san-francisco/",
+      "previewUrl": "/guide/san-francisco"
+    },
+    "san-jose": {
+      "slug": "san-jose",
+      "name": "San Jose",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 340000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/san-jose/",
+      "previewUrl": "/guide/san-jose"
+    },
+    "san-marino": {
+      "slug": "san-marino",
+      "name": "San Marino",
+      "country": "Italy",
+      "continent": "Europe",
+      "pop": 34167,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/san-marino/",
+      "previewUrl": "/guide/san-marino"
+    },
+    "san-salvador": {
+      "slug": "san-salvador",
+      "name": "San Salvador",
+      "country": "El Salvador",
+      "continent": "North America",
+      "pop": 415346,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/san-salvador/",
+      "previewUrl": "/guide/san-salvador"
+    },
+    "sanaa": {
+      "slug": "sanaa",
+      "name": "Sana'a",
+      "country": "Yemen",
+      "continent": "Asia",
+      "pop": 2957000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/sanaa/",
+      "previewUrl": "/guide/sanaa"
+    },
+    "santiago": {
+      "slug": "santiago",
+      "name": "Santiago",
+      "country": "Chile",
+      "continent": "South America",
+      "pop": 6257516,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/santiago/",
+      "previewUrl": "/guide/santiago"
+    },
+    "santo-domingo": {
+      "slug": "santo-domingo",
+      "name": "Santo Domingo",
+      "country": "Dominican Republic",
+      "continent": "North America",
+      "pop": 2201941,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/santo-domingo/",
+      "previewUrl": "/guide/santo-domingo"
+    },
+    "sao-paulo": {
+      "slug": "sao-paulo",
+      "name": "Sao Paulo",
+      "country": "Brazil",
+      "continent": "South America",
+      "pop": 12396372,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/sao-paulo/",
+      "previewUrl": "/guide/sao-paulo"
+    },
+    "sao-tome": {
+      "slug": "sao-tome",
+      "name": "São Tomé",
+      "country": "Sao Tome and Principe",
+      "continent": "Global",
+      "pop": 70000,
+      "poisCount": 100,
+      "landmarksCount": 100,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/sao-tome/",
+      "previewUrl": "/guide/sao-tome"
+    },
+    "sarajevo": {
+      "slug": "sarajevo",
+      "name": "Sarajevo",
+      "country": "Bosnia",
+      "continent": "Europe",
+      "pop": 350000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/sarajevo/",
+      "previewUrl": "/guide/sarajevo"
+    },
+    "seoul": {
+      "slug": "seoul",
+      "name": "Seoul",
+      "country": "South Korea",
+      "continent": "Asia",
+      "pop": 10627790,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/seoul/",
+      "previewUrl": "/guide/seoul"
+    },
+    "shanghai": {
+      "slug": "shanghai",
+      "name": "Shanghai",
+      "country": "China",
+      "continent": "Asia",
+      "pop": 24870895,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/shanghai/",
+      "previewUrl": "/guide/shanghai"
+    },
+    "singapore": {
+      "slug": "singapore",
+      "name": "Singapore",
+      "country": "Singapore",
+      "continent": "Asia",
+      "pop": 5888926,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/singapore/",
+      "previewUrl": "/guide/singapore"
+    },
+    "skopje": {
+      "slug": "skopje",
+      "name": "Skopje",
+      "country": "North Macedonia",
+      "continent": "Europe",
+      "pop": 509900,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/skopje/",
+      "previewUrl": "/guide/skopje"
+    },
+    "sofia": {
+      "slug": "sofia",
+      "name": "Sofia",
+      "country": "Bulgaria",
+      "continent": "Europe",
+      "pop": 1242568,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/sofia/",
+      "previewUrl": "/guide/sofia"
+    },
+    "sri-jawewardenepura-kotte": {
+      "slug": "sri-jawewardenepura-kotte",
+      "name": "Srijawewardenepurakotte",
+      "country": "Sri Lanka",
+      "continent": "Asia",
+      "pop": 35000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/sri-jawewardenepura-kotte/",
+      "previewUrl": "/guide/sri-jawewardenepura-kotte"
+    },
+    "stockholm": {
+      "slug": "stockholm",
+      "name": "Stockholm",
+      "country": "Sweden",
+      "continent": "Europe",
+      "pop": 984748,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/stockholm/",
+      "previewUrl": "/guide/stockholm"
+    },
+    "sucre": {
+      "slug": "sucre",
+      "name": "Sucre",
+      "country": "Bolivia",
+      "continent": "South America",
+      "pop": 360544,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/sucre/",
+      "previewUrl": "/guide/sucre"
+    },
+    "suva": {
+      "slug": "suva",
+      "name": "Suva",
+      "country": "Fiji",
+      "continent": "Oceania",
+      "pop": 88271,
+      "poisCount": 246,
+      "landmarksCount": 246,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/suva/",
+      "previewUrl": "/guide/suva"
+    },
+    "sydney": {
+      "slug": "sydney",
+      "name": "Sydney",
+      "country": "Australia",
+      "continent": "Oceania",
+      "pop": 5450496,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/sydney/",
+      "previewUrl": "/guide/sydney"
+    },
+    "taipei": {
+      "slug": "taipei",
+      "name": "Taipei",
+      "country": "Taiwan",
+      "continent": "Asia",
+      "pop": 2706030,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/taipei/",
+      "previewUrl": "/guide/taipei"
+    },
+    "tallinn": {
+      "slug": "tallinn",
+      "name": "Tallinn",
+      "country": "Estonia",
+      "continent": "Europe",
+      "pop": 478000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/tallinn/",
+      "previewUrl": "/guide/tallinn"
+    },
+    "tarawa": {
+      "slug": "tarawa",
+      "name": "Tarawa",
+      "country": "Kiribati",
+      "continent": "Oceania",
+      "pop": 70090,
+      "poisCount": 175,
+      "landmarksCount": 175,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/tarawa/",
+      "previewUrl": "/guide/tarawa"
+    },
+    "tashkent": {
+      "slug": "tashkent",
+      "name": "Tashkent",
+      "country": "Uzbekistan",
+      "continent": "Asia",
+      "pop": 2956384,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/tashkent/",
+      "previewUrl": "/guide/tashkent"
+    },
+    "tbilisi": {
+      "slug": "tbilisi",
+      "name": "Tbilisi",
+      "country": "Georgia",
+      "continent": "Asia",
+      "pop": 1400000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/tbilisi/",
+      "previewUrl": "/guide/tbilisi"
+    },
+    "tegucigalpa": {
+      "slug": "tegucigalpa",
+      "name": "Tegucigalpa",
+      "country": "Honduras",
+      "continent": "North America",
+      "pop": 1199136,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/tegucigalpa/",
+      "previewUrl": "/guide/tegucigalpa"
+    },
+    "tehran": {
+      "slug": "tehran",
+      "name": "Tehran",
+      "country": "Iran",
+      "continent": "Asia",
+      "pop": 8846782,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/tehran/",
+      "previewUrl": "/guide/tehran"
+    },
+    "tel-aviv-yafo": {
+      "slug": "tel-aviv-yafo",
+      "name": "Tel Aviv-Yafo",
+      "country": "Israel",
+      "continent": "Asia",
+      "pop": 467875,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/tel-aviv-yafo/",
+      "previewUrl": "/guide/tel-aviv-yafo"
+    },
+    "the-hague": {
+      "slug": "the-hague",
+      "name": "The Hague",
+      "country": "Netherlands",
+      "continent": "Europe",
+      "pop": 605876,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/the-hague/",
+      "previewUrl": "/guide/the-hague"
+    },
+    "thimphu": {
+      "slug": "thimphu",
+      "name": "Thimphu",
+      "country": "BT",
+      "continent": "Asia",
+      "pop": 114551,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/thimphu/",
+      "previewUrl": "/guide/thimphu"
+    },
+    "tirana": {
+      "slug": "tirana",
+      "name": "Tirana",
+      "country": "Albania",
+      "continent": "Europe",
+      "pop": 418495,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/tirana/",
+      "previewUrl": "/guide/tirana"
+    },
+    "tokyo": {
+      "slug": "tokyo",
+      "name": "Tokyo",
+      "country": "Japan",
+      "continent": "Asia",
+      "pop": 38140000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/tokyo/",
+      "previewUrl": "/guide/tokyo"
+    },
+    "toronto": {
+      "slug": "toronto",
+      "name": "Toronto",
+      "country": "Canada",
+      "continent": "North America",
+      "pop": 3480000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/toronto/",
+      "previewUrl": "/guide/toronto"
+    },
+    "tripoli": {
+      "slug": "tripoli",
+      "name": "Tripoli",
+      "country": "Libya",
+      "continent": "Africa",
+      "pop": 1100000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/tripoli/",
+      "previewUrl": "/guide/tripoli"
+    },
+    "tunis": {
+      "slug": "tunis",
+      "name": "Tunis",
+      "country": "Tunisia",
+      "continent": "Africa",
+      "pop": 693486,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/tunis/",
+      "previewUrl": "/guide/tunis"
+    },
+    "ulaanbaatar": {
+      "slug": "ulaanbaatar",
+      "name": "Ulaanbaatar",
+      "country": "Mongolia",
+      "continent": "Asia",
+      "pop": 1515593,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/ulaanbaatar/",
+      "previewUrl": "/guide/ulaanbaatar"
+    },
+    "urumqi": {
+      "slug": "urumqi",
+      "name": "Ürümqi",
+      "country": "China",
+      "continent": "Asia",
+      "pop": 4054369,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/urumqi/",
+      "previewUrl": "/guide/urumqi"
+    },
+    "vaduz": {
+      "slug": "vaduz",
+      "name": "Vaduz",
+      "country": "LI",
+      "continent": "Europe",
+      "pop": 5668,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/vaduz/",
+      "previewUrl": "/guide/vaduz"
+    },
+    "valletta": {
+      "slug": "valletta",
+      "name": "Valletta",
+      "country": "Malta",
+      "continent": "Europe",
+      "pop": 6444,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/valletta/",
+      "previewUrl": "/guide/valletta"
+    },
+    "valparaiso": {
+      "slug": "valparaiso",
+      "name": "Valparaíso",
+      "country": "Chile",
+      "continent": "South America",
+      "pop": 296655,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/valparaiso/",
+      "previewUrl": "/guide/valparaiso"
+    },
+    "vancouver": {
+      "slug": "vancouver",
+      "name": "Vancouver",
+      "country": "Canada",
+      "continent": "North America",
+      "pop": 662248,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/vancouver/",
+      "previewUrl": "/guide/vancouver"
+    },
+    "vatican-city": {
+      "slug": "vatican-city",
+      "name": "Vatican City",
+      "country": "Italy",
+      "continent": "Europe",
+      "pop": 1000,
+      "poisCount": 208,
+      "landmarksCount": 208,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/vatican-city/",
+      "previewUrl": "/guide/vatican-city"
+    },
+    "victoria": {
+      "slug": "victoria",
+      "name": "Victoria",
+      "country": "Canada",
+      "continent": "North America",
+      "pop": 26450,
+      "poisCount": 198,
+      "landmarksCount": 198,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/victoria/",
+      "previewUrl": "/guide/victoria"
+    },
+    "vienna": {
+      "slug": "vienna",
+      "name": "Vienna",
+      "country": "Austria",
+      "continent": "Europe",
+      "pop": 2083630,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/vienna/",
+      "previewUrl": "/guide/vienna"
+    },
+    "vientiane": {
+      "slug": "vientiane",
+      "name": "Vientiane",
+      "country": "Laos",
+      "continent": "Asia",
+      "pop": 1003004,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/vientiane/",
+      "previewUrl": "/guide/vientiane"
+    },
+    "vilnius": {
+      "slug": "vilnius",
+      "name": "Vilnius",
+      "country": "Lithuania",
+      "continent": "Europe",
+      "pop": 644600,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/vilnius/",
+      "previewUrl": "/guide/vilnius"
+    },
+    "warsaw": {
+      "slug": "warsaw",
+      "name": "Warsaw",
+      "country": "Poland",
+      "continent": "Europe",
+      "pop": 1862402,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/warsaw/",
+      "previewUrl": "/guide/warsaw"
+    },
+    "washington-d-c": {
+      "slug": "washington-d-c",
+      "name": "Washingtondc",
+      "country": "USA",
+      "continent": "North America",
+      "pop": 35000,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/washington-d-c/",
+      "previewUrl": "/guide/washington-d-c"
+    },
+    "wellington": {
+      "slug": "wellington",
+      "name": "Wellington",
+      "country": "New Zealand",
+      "continent": "Oceania",
+      "pop": 216200,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/wellington/",
+      "previewUrl": "/guide/wellington"
+    },
+    "windhoek": {
+      "slug": "windhoek",
+      "name": "Windhoek",
+      "country": "Namibia",
+      "continent": "Africa",
+      "pop": 486169,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/windhoek/",
+      "previewUrl": "/guide/windhoek"
+    },
+    "yamoussoukro": {
+      "slug": "yamoussoukro",
+      "name": "Yamoussoukro",
+      "country": "Ivory Coast",
+      "continent": "Africa",
+      "pop": 355573,
+      "poisCount": 250,
+      "landmarksCount": 250,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/yamoussoukro/",
+      "previewUrl": "/guide/yamoussoukro"
+    },
+    "yaounde": {
+      "slug": "yaounde",
+      "name": "Yaoundé",
+      "country": "Cameroon",
+      "continent": "Africa",
+      "pop": 2440462,
+      "poisCount": 303,
+      "landmarksCount": 303,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/yaounde/",
+      "previewUrl": "/guide/yaounde"
+    },
+    "yerevan": {
+      "slug": "yerevan",
+      "name": "Yerevan",
+      "country": "Armenia",
+      "continent": "Asia",
+      "pop": 1106300,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/yerevan/",
+      "previewUrl": "/guide/yerevan"
+    },
+    "zagreb": {
+      "slug": "zagreb",
+      "name": "Zagreb",
+      "country": "Croatia",
+      "continent": "Europe",
+      "pop": 809268,
+      "poisCount": 320,
+      "landmarksCount": 320,
+      "files": {
+        "pack.json": true,
+        "data.json": true,
+        "pois.json": true,
+        "landmarks.json": true
+      },
+      "missing": [],
+      "isComplete": true,
+      "r2Path": "data/guide/zagreb/",
+      "previewUrl": "/guide/zagreb"
+    }
+  }
+}
