@@ -8322,13 +8322,6 @@
     "pop": 191468,
     "qid": "Q14440"
   },
-  "del-biob-o": {
-    "municipality": "Concepción",
-    "country": "Chile",
-    "continent": "South America",
-    "pop": 220000,
-    "qid": "Q1880"
-  },
   "del-maule": {
     "municipality": "Talca",
     "country": "Chile",
@@ -8363,13 +8356,6 @@
     "continent": "South America",
     "pop": 74170,
     "qid": "Q931971"
-  },
-  "filad-lfia": {
-    "municipality": "Filadélfia",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 35000,
-    "qid": "Q863976"
   },
   "fuente-alamo": {
     "municipality": "Fuente Álamo",
@@ -8490,26 +8476,12 @@
     "pop": 65408,
     "qid": "Q574651"
   },
-  "jind-ich-v-hradec-ii": {
-    "municipality": "Jindřichův Hradec II",
-    "country": "Czech Republic",
-    "continent": "Europe",
-    "pop": 35000,
-    "qid": "Q508911"
-  },
   "jp-cand": {
     "municipality": "邑楽郡板倉町",
     "country": "Japan",
     "continent": "Asia",
     "pop": 35000,
     "qid": "Q694523"
-  },
-  "k-s-m": {
-    "municipality": "Käsämä",
-    "country": "Finland",
-    "continent": "Europe",
-    "pop": 35000,
-    "qid": "Q520772"
   },
   "karper": {
     "municipality": "Karperö",
@@ -8532,13 +8504,6 @@
     "pop": 2962180,
     "qid": "Q1899"
   },
-  "ko-ick": {
-    "municipality": "Košický",
-    "country": "Slovakia",
-    "continent": "Europe",
-    "pop": 35000,
-    "qid": "Q483679"
-  },
   "koscianski": {
     "municipality": "Kościan",
     "country": "Poland",
@@ -8560,26 +8525,12 @@
     "pop": 11000,
     "qid": "Q1018449"
   },
-  "la-font-d-en-carr-s": {
-    "municipality": "la Font d'en Carròs",
-    "country": "Spain",
-    "continent": "Europe",
-    "pop": 35000,
-    "qid": "Q941317"
-  },
   "lacarak": {
     "municipality": "Laćarak",
     "country": "Serbia",
     "continent": "Europe",
     "pop": 10500,
     "qid": "Q1018450"
-  },
-  "leli-k": {
-    "municipality": "Lelių k.",
-    "country": "Lithuania",
-    "continent": "Europe",
-    "pop": 35000,
-    "qid": "Q847773"
   },
   "leppavirta": {
     "municipality": "Leppävirta",
@@ -8629,13 +8580,6 @@
     "continent": "South America",
     "pop": 107909,
     "qid": "Q551589"
-  },
-  "m-yry": {
-    "municipality": "Mäyry",
-    "country": "Finland",
-    "continent": "Europe",
-    "pop": 35000,
-    "qid": "Q826541"
   },
   "macae": {
     "municipality": "Macaé",
@@ -8881,13 +8825,6 @@
     "continent": "South America",
     "pop": 39505,
     "qid": "Q713619"
-  },
-  "prien-m": {
-    "municipality": "Prienų m.",
-    "country": "Lithuania",
-    "continent": "Europe",
-    "pop": 35000,
-    "qid": "Q449089"
   },
   "pszczynski": {
     "municipality": "Pszczyna",
@@ -9162,13 +9099,6 @@
     "pop": 10000,
     "qid": "Q1018457"
   },
-  "star-holice": {
-    "municipality": "Staré Holice",
-    "country": "Czech Republic",
-    "continent": "Europe",
-    "pop": 35000,
-    "qid": "Q262459"
-  },
   "svode": {
     "municipality": "Svode",
     "country": "Serbia",
@@ -9224,13 +9154,6 @@
     "continent": "Europe",
     "pop": 15000,
     "qid": "Q544383"
-  },
-  "tren-iansky": {
-    "municipality": "Trenčiansky",
-    "country": "Slovakia",
-    "continent": "Europe",
-    "pop": 35000,
-    "qid": "Q825626"
   },
   "trentino-alto-adige-sudtirol": {
     "municipality": "Trento",
@@ -9329,13 +9252,6 @@
     "continent": "South America",
     "pop": 76430,
     "qid": "Q258295"
-  },
-  "vila-nova-de-famalic-o": {
-    "municipality": "Vila Nova De Famalicão",
-    "country": "Portugal",
-    "continent": "Europe",
-    "pop": 35000,
-    "qid": "Q247240"
   },
   "vinica-breg": {
     "municipality": "Vinica Breg",
