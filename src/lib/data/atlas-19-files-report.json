@@ -194,8 +194,8 @@
     "citiesWithAnyMissing": 1250
   },
   "byCity": {
-    "a-ail-ndia": {
-      "slug": "a-ail-ndia",
+    "acailandia": {
+      "slug": "acailandia",
       "datalake": {
         "areas.json": false,
         "baseline.json": false,
@@ -285,8 +285,8 @@
       "hasAnyMissing": true,
       "isComplete": false
     },
-    "a-u": {
-      "slug": "a-u",
+    "acu": {
+      "slug": "acu",
       "datalake": {
         "areas.json": false,
         "baseline.json": false,
@@ -376,8 +376,8 @@
       "hasAnyMissing": true,
       "isComplete": false
     },
-    "abadi-nia": {
-      "slug": "abadi-nia",
+    "abadiania": {
+      "slug": "abadiania",
       "datalake": {
         "areas.json": false,
         "baseline.json": false,
