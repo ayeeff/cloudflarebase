@@ -1,0 +1,3624 @@
+{
+  "categories": [
+    {
+      "id": "retail",
+      "name": "Retail",
+      "subfoldersCount": 100,
+      "filesCount": 103,
+      "totalFiles": 27198,
+      "subfolders": [
+        {
+          "name": "1-walmart-inc-data",
+          "path": "1-walmart-inc-data",
+          "fileCount": 911
+        },
+        {
+          "name": "10-cvs-health-corporation-retail-data",
+          "path": "10-cvs-health-corporation-retail-data",
+          "fileCount": 803
+        },
+        {
+          "name": "100-levi-strauss-and-co-direct-data",
+          "path": "100-levi-strauss-and-co-direct-data",
+          "fileCount": 104
+        },
+        {
+          "name": "11-target-corporation-data",
+          "path": "11-target-corporation-data",
+          "fileCount": 136
+        },
+        {
+          "name": "12-ahold-delhaize-data",
+          "path": "12-ahold-delhaize-data",
+          "fileCount": 370
+        },
+        {
+          "name": "13-carrefour-s-a-data",
+          "path": "13-carrefour-s-a-data",
+          "fileCount": 833
+        },
+        {
+          "name": "14-lowes-companies-inc-data",
+          "path": "14-lowes-companies-inc-data",
+          "fileCount": 110
+        },
+        {
+          "name": "15-tesco-plc-data",
+          "path": "15-tesco-plc-data",
+          "fileCount": 476
+        },
+        {
+          "name": "16-7-eleven-seven-and-i-licensees-system-data",
+          "path": "16-7-eleven-seven-and-i-licensees-system-data",
+          "fileCount": 1442
+        },
+        {
+          "name": "17-apple-store-direct-retail-data",
+          "path": "17-apple-store-direct-retail-data",
+          "fileCount": 37
+        },
+        {
+          "name": "18-albertsons-companies-inc-data",
+          "path": "18-albertsons-companies-inc-data",
+          "fileCount": 244
+        },
+        {
+          "name": "19-edeka-group-data",
+          "path": "19-edeka-group-data",
+          "fileCount": 817
+        },
+        {
+          "name": "2-amazon-com-inc-retail-data",
+          "path": "2-amazon-com-inc-retail-data",
+          "fileCount": 2753
+        },
+        {
+          "name": "20-lvmh-selective-retailing-est-data",
+          "path": "20-lvmh-selective-retailing-est-data",
+          "fileCount": 336
+        },
+        {
+          "name": "21-seven-and-i-holdings-co-data",
+          "path": "21-seven-and-i-holdings-co-data",
+          "fileCount": 1459
+        },
+        {
+          "name": "22-rewe-group-data",
+          "path": "22-rewe-group-data",
+          "fileCount": 777
+        },
+        {
+          "name": "23-centres-e-leclerc-data",
+          "path": "23-centres-e-leclerc-data",
+          "fileCount": 306
+        },
+        {
+          "name": "24-aeon-co-ltd-data",
+          "path": "24-aeon-co-ltd-data",
+          "fileCount": 46
+        },
+        {
+          "name": "25-publix-super-markets-inc-data",
+          "path": "25-publix-super-markets-inc-data",
+          "fileCount": 153
+        },
+        {
+          "name": "26-the-tjx-companies-inc-data",
+          "path": "26-the-tjx-companies-inc-data",
+          "fileCount": 592
+        },
+        {
+          "name": "27-loblaw-companies-limited-data",
+          "path": "27-loblaw-companies-limited-data",
+          "fileCount": 92
+        },
+        {
+          "name": "28-h-e-b-grocery-company-data",
+          "path": "28-h-e-b-grocery-company-data",
+          "fileCount": 48
+        },
+        {
+          "name": "29-best-buy-co-inc-data",
+          "path": "29-best-buy-co-inc-data",
+          "fileCount": 62
+        },
+        {
+          "name": "3-costco-wholesale-corporation-data",
+          "path": "3-costco-wholesale-corporation-data",
+          "fileCount": 24
+        },
+        {
+          "name": "30-intermarche-itm-data",
+          "path": "30-intermarche-itm-data",
+          "fileCount": 323
+        },
+        {
+          "name": "31-ikea-ingka-holding-data",
+          "path": "31-ikea-ingka-holding-data",
+          "fileCount": 10
+        },
+        {
+          "name": "32-woolworths-group-data",
+          "path": "32-woolworths-group-data",
+          "fileCount": 82
+        },
+        {
+          "name": "33-dollar-general-corporation-data",
+          "path": "33-dollar-general-corporation-data",
+          "fileCount": 1799
+        },
+        {
+          "name": "34-j-sainsbury-plc-data",
+          "path": "34-j-sainsbury-plc-data",
+          "fileCount": 178
+        },
+        {
+          "name": "35-inditex-s-a-zara-etc-data",
+          "path": "35-inditex-s-a-zara-etc-data",
+          "fileCount": 272
+        },
+        {
+          "name": "36-coop-group-switzerland-data",
+          "path": "36-coop-group-switzerland-data",
+          "fileCount": 65
+        },
+        {
+          "name": "37-mercadona-s-a-data",
+          "path": "37-mercadona-s-a-data",
+          "fileCount": 122
+        },
+        {
+          "name": "38-elo-auchan-data",
+          "path": "38-elo-auchan-data",
+          "fileCount": 145
+        },
+        {
+          "name": "39-jeronimo-martins-data",
+          "path": "39-jeronimo-martins-data",
+          "fileCount": 317
+        },
+        {
+          "name": "4-schwarz-group-lidl-kaufland-data",
+          "path": "4-schwarz-group-lidl-kaufland-data",
+          "fileCount": 835
+        },
+        {
+          "name": "40-asda-group-limited-data",
+          "path": "40-asda-group-limited-data",
+          "fileCount": 93
+        },
+        {
+          "name": "41-groupe-adeo-leroy-merlin-data",
+          "path": "41-groupe-adeo-leroy-merlin-data",
+          "fileCount": 19
+        },
+        {
+          "name": "42-reliance-retail-limited-data",
+          "path": "42-reliance-retail-limited-data",
+          "fileCount": 162
+        },
+        {
+          "name": "43-migros-genossenschafts-bund-data",
+          "path": "43-migros-genossenschafts-bund-data",
+          "fileCount": 30
+        },
+        {
+          "name": "44-dollar-tree-inc-data",
+          "path": "44-dollar-tree-inc-data",
+          "fileCount": 1307
+        },
+        {
+          "name": "45-systeme-u-data",
+          "path": "45-systeme-u-data",
+          "fileCount": 16
+        },
+        {
+          "name": "46-coles-group-limited-data",
+          "path": "46-coles-group-limited-data",
+          "fileCount": 114
+        },
+        {
+          "name": "47-shein-retail-sales-data",
+          "path": "47-shein-retail-sales-data",
+          "fileCount": 1
+        },
+        {
+          "name": "48-alibaba-new-retail-and-direct-data",
+          "path": "48-alibaba-new-retail-and-direct-data",
+          "fileCount": 25
+        },
+        {
+          "name": "49-metro-ag-data",
+          "path": "49-metro-ag-data",
+          "fileCount": 47
+        },
+        {
+          "name": "5-the-home-depot-inc-data",
+          "path": "5-the-home-depot-inc-data",
+          "fileCount": 149
+        },
+        {
+          "name": "50-cp-all-7-eleven-thailand-data",
+          "path": "50-cp-all-7-eleven-thailand-data",
+          "fileCount": 168
+        },
+        {
+          "name": "51-femsa-comercio-oxxo-data",
+          "path": "51-femsa-comercio-oxxo-data",
+          "fileCount": 596
+        },
+        {
+          "name": "52-essilorluxottica-retail-data",
+          "path": "52-essilorluxottica-retail-data",
+          "fileCount": 426
+        },
+        {
+          "name": "53-h-and-m-hennes-and-mauritz-data",
+          "path": "53-h-and-m-hennes-and-mauritz-data",
+          "fileCount": 78
+        },
+        {
+          "name": "54-macys-inc-data",
+          "path": "54-macys-inc-data",
+          "fileCount": 26
+        },
+        {
+          "name": "55-bjs-wholesale-club-data",
+          "path": "55-bjs-wholesale-club-data",
+          "fileCount": 5
+        },
+        {
+          "name": "56-meijer-inc-data",
+          "path": "56-meijer-inc-data",
+          "fileCount": 11
+        },
+        {
+          "name": "57-ross-stores-inc-data",
+          "path": "57-ross-stores-inc-data",
+          "fileCount": 171
+        },
+        {
+          "name": "58-alimentation-couche-tard-circle-k-data",
+          "path": "58-alimentation-couche-tard-circle-k-data",
+          "fileCount": 431
+        },
+        {
+          "name": "59-sephora-lvmh-data",
+          "path": "59-sephora-lvmh-data",
+          "fileCount": 121
+        },
+        {
+          "name": "6-the-kroger-co-data",
+          "path": "6-the-kroger-co-data",
+          "fileCount": 265
+        },
+        {
+          "name": "60-oreilly-auto-parts-data",
+          "path": "60-oreilly-auto-parts-data",
+          "fileCount": 513
+        },
+        {
+          "name": "61-autozone-inc-data",
+          "path": "61-autozone-inc-data",
+          "fileCount": 658
+        },
+        {
+          "name": "62-kohls-corporation-data",
+          "path": "62-kohls-corporation-data",
+          "fileCount": 36
+        },
+        {
+          "name": "63-chedraui-smart-and-final-data",
+          "path": "63-chedraui-smart-and-final-data",
+          "fileCount": 27
+        },
+        {
+          "name": "64-tractor-supply-co-data",
+          "path": "64-tractor-supply-co-data",
+          "fileCount": 127
+        },
+        {
+          "name": "65-nordstrom-inc-data",
+          "path": "65-nordstrom-inc-data",
+          "fileCount": 18
+        },
+        {
+          "name": "66-gap-inc-data",
+          "path": "66-gap-inc-data",
+          "fileCount": 336
+        },
+        {
+          "name": "67-dicks-sporting-goods-data",
+          "path": "67-dicks-sporting-goods-data",
+          "fileCount": 55
+        },
+        {
+          "name": "68-sherwin-williams-stores-data",
+          "path": "68-sherwin-williams-stores-data",
+          "fileCount": 366
+        },
+        {
+          "name": "69-menards-data",
+          "path": "69-menards-data",
+          "fileCount": 9
+        },
+        {
+          "name": "7-aldi-nord-sud-data",
+          "path": "7-aldi-nord-sud-data",
+          "fileCount": 914
+        },
+        {
+          "name": "70-hy-vee-inc-data",
+          "path": "70-hy-vee-inc-data",
+          "fileCount": 21
+        },
+        {
+          "name": "71-wegmans-food-markets-data",
+          "path": "71-wegmans-food-markets-data",
+          "fileCount": 5
+        },
+        {
+          "name": "72-rite-aid-remaining-retail-data",
+          "path": "72-rite-aid-remaining-retail-data",
+          "fileCount": 34
+        },
+        {
+          "name": "73-chewy-inc-data",
+          "path": "73-chewy-inc-data",
+          "fileCount": 1
+        },
+        {
+          "name": "74-wayfair-inc-data",
+          "path": "74-wayfair-inc-data",
+          "fileCount": 1
+        },
+        {
+          "name": "75-ulta-beauty-inc-data",
+          "path": "75-ulta-beauty-inc-data",
+          "fileCount": 87
+        },
+        {
+          "name": "76-winco-foods-data",
+          "path": "76-winco-foods-data",
+          "fileCount": 4
+        },
+        {
+          "name": "77-giant-eagle-inc-data",
+          "path": "77-giant-eagle-inc-data",
+          "fileCount": 42
+        },
+        {
+          "name": "78-burlington-stores-data",
+          "path": "78-burlington-stores-data",
+          "fileCount": 71
+        },
+        {
+          "name": "79-qvc-group-data",
+          "path": "79-qvc-group-data",
+          "fileCount": 1
+        },
+        {
+          "name": "8-jd-com-inc-data",
+          "path": "8-jd-com-inc-data",
+          "fileCount": 17
+        },
+        {
+          "name": "80-lululemon-athletica-data",
+          "path": "80-lululemon-athletica-data",
+          "fileCount": 43
+        },
+        {
+          "name": "81-aeon-mall-don-quijote-ppih-data",
+          "path": "81-aeon-mall-don-quijote-ppih-data",
+          "fileCount": 14
+        },
+        {
+          "name": "82-spar-international-system-data",
+          "path": "82-spar-international-system-data",
+          "fileCount": 933
+        },
+        {
+          "name": "83-good-neighbor-pharmacy-cencora-data",
+          "path": "83-good-neighbor-pharmacy-cencora-data",
+          "fileCount": 133
+        },
+        {
+          "name": "84-petsmart-data",
+          "path": "84-petsmart-data",
+          "fileCount": 108
+        },
+        {
+          "name": "85-army-and-air-force-exchange-data",
+          "path": "85-army-and-air-force-exchange-data",
+          "fileCount": 5
+        },
+        {
+          "name": "86-bass-pro-shops-cabelas-data",
+          "path": "86-bass-pro-shops-cabelas-data",
+          "fileCount": 6
+        },
+        {
+          "name": "87-odp-corp-office-depot-data",
+          "path": "87-odp-corp-office-depot-data",
+          "fileCount": 130
+        },
+        {
+          "name": "88-northeast-grocery-market-32-tops-data",
+          "path": "88-northeast-grocery-market-32-tops-data",
+          "fileCount": 17
+        },
+        {
+          "name": "89-sprouts-farmers-market-data",
+          "path": "89-sprouts-farmers-market-data",
+          "fileCount": 29
+        },
+        {
+          "name": "9-walgreens-boots-alliance-inc-data",
+          "path": "9-walgreens-boots-alliance-inc-data",
+          "fileCount": 474
+        },
+        {
+          "name": "90-harbor-freight-tools-data",
+          "path": "90-harbor-freight-tools-data",
+          "fileCount": 77
+        },
+        {
+          "name": "91-williams-sonoma-inc-data",
+          "path": "91-williams-sonoma-inc-data",
+          "fileCount": 59
+        },
+        {
+          "name": "92-staples-us-retail-data",
+          "path": "92-staples-us-retail-data",
+          "fileCount": 52
+        },
+        {
+          "name": "93-avb-brandsource-system-data",
+          "path": "93-avb-brandsource-system-data",
+          "fileCount": 1
+        },
+        {
+          "name": "94-hobby-lobby-stores-data",
+          "path": "94-hobby-lobby-stores-data",
+          "fileCount": 42
+        },
+        {
+          "name": "95-signet-jewelers-data",
+          "path": "95-signet-jewelers-data",
+          "fileCount": 38
+        },
+        {
+          "name": "96-discount-tire-data",
+          "path": "96-discount-tire-data",
+          "fileCount": 84
+        },
+        {
+          "name": "97-tapestry-coach-kate-spade-data",
+          "path": "97-tapestry-coach-kate-spade-data",
+          "fileCount": 117
+        },
+        {
+          "name": "98-dell-technologies-direct-data",
+          "path": "98-dell-technologies-direct-data",
+          "fileCount": 1
+        },
+        {
+          "name": "99-j-c-penney-data",
+          "path": "99-j-c-penney-data",
+          "fileCount": 49
+        }
+      ],
+      "rootFiles": [
+        {
+          "name": "7-eleven-seven-and-i-licensees-system-data.json",
+          "path": "7-eleven-seven-and-i-licensees-system-data.json"
+        },
+        {
+          "name": "aeon-co-ltd-data.json",
+          "path": "aeon-co-ltd-data.json"
+        },
+        {
+          "name": "aeon-mall-don-quijote-ppih-data.json",
+          "path": "aeon-mall-don-quijote-ppih-data.json"
+        },
+        {
+          "name": "ahold-delhaize-data.json",
+          "path": "ahold-delhaize-data.json"
+        },
+        {
+          "name": "albertsons-companies-inc-data.json",
+          "path": "albertsons-companies-inc-data.json"
+        },
+        {
+          "name": "aldi-nord-sud-data.json",
+          "path": "aldi-nord-sud-data.json"
+        },
+        {
+          "name": "alibaba-new-retail-and-direct-data.json",
+          "path": "alibaba-new-retail-and-direct-data.json"
+        },
+        {
+          "name": "alimentation-couche-tard-circle-k-data.json",
+          "path": "alimentation-couche-tard-circle-k-data.json"
+        },
+        {
+          "name": "amazon-com-inc-retail-data.json",
+          "path": "amazon-com-inc-retail-data.json"
+        },
+        {
+          "name": "apple-store-direct-retail-data.json",
+          "path": "apple-store-direct-retail-data.json"
+        },
+        {
+          "name": "army-and-air-force-exchange-data.json",
+          "path": "army-and-air-force-exchange-data.json"
+        },
+        {
+          "name": "asda-group-limited-data.json",
+          "path": "asda-group-limited-data.json"
+        },
+        {
+          "name": "autozone-inc-data.json",
+          "path": "autozone-inc-data.json"
+        },
+        {
+          "name": "avb-brandsource-system-data.json",
+          "path": "avb-brandsource-system-data.json"
+        },
+        {
+          "name": "bass-pro-shops-cabelas-data.json",
+          "path": "bass-pro-shops-cabelas-data.json"
+        },
+        {
+          "name": "best-buy-co-inc-data.json",
+          "path": "best-buy-co-inc-data.json"
+        },
+        {
+          "name": "bjs-wholesale-club-data.json",
+          "path": "bjs-wholesale-club-data.json"
+        },
+        {
+          "name": "brands.json",
+          "path": "brands.json"
+        },
+        {
+          "name": "burlington-stores-data.json",
+          "path": "burlington-stores-data.json"
+        },
+        {
+          "name": "carrefour-s-a-data.json",
+          "path": "carrefour-s-a-data.json"
+        },
+        {
+          "name": "centres-e-leclerc-data.json",
+          "path": "centres-e-leclerc-data.json"
+        },
+        {
+          "name": "chains.json",
+          "path": "chains.json"
+        },
+        {
+          "name": "chedraui-smart-and-final-data.json",
+          "path": "chedraui-smart-and-final-data.json"
+        },
+        {
+          "name": "chewy-inc-data.json",
+          "path": "chewy-inc-data.json"
+        },
+        {
+          "name": "coles-group-limited-data.json",
+          "path": "coles-group-limited-data.json"
+        },
+        {
+          "name": "coop-group-switzerland-data.json",
+          "path": "coop-group-switzerland-data.json"
+        },
+        {
+          "name": "costco-wholesale-corporation-data.json",
+          "path": "costco-wholesale-corporation-data.json"
+        },
+        {
+          "name": "cp-all-7-eleven-thailand-data.json",
+          "path": "cp-all-7-eleven-thailand-data.json"
+        },
+        {
+          "name": "cvs-health-corporation-retail-data.json",
+          "path": "cvs-health-corporation-retail-data.json"
+        },
+        {
+          "name": "dell-technologies-direct-data.json",
+          "path": "dell-technologies-direct-data.json"
+        },
+        {
+          "name": "dicks-sporting-goods-data.json",
+          "path": "dicks-sporting-goods-data.json"
+        },
+        {
+          "name": "discount-tire-data.json",
+          "path": "discount-tire-data.json"
+        },
+        {
+          "name": "dollar-general-corporation-data.json",
+          "path": "dollar-general-corporation-data.json"
+        },
+        {
+          "name": "dollar-tree-inc-data.json",
+          "path": "dollar-tree-inc-data.json"
+        },
+        {
+          "name": "edeka-group-data.json",
+          "path": "edeka-group-data.json"
+        },
+        {
+          "name": "elo-auchan-data.json",
+          "path": "elo-auchan-data.json"
+        },
+        {
+          "name": "essilorluxottica-retail-data.json",
+          "path": "essilorluxottica-retail-data.json"
+        },
+        {
+          "name": "femsa-comercio-oxxo-data.json",
+          "path": "femsa-comercio-oxxo-data.json"
+        },
+        {
+          "name": "gap-inc-data.json",
+          "path": "gap-inc-data.json"
+        },
+        {
+          "name": "giant-eagle-inc-data.json",
+          "path": "giant-eagle-inc-data.json"
+        },
+        {
+          "name": "good-neighbor-pharmacy-cencora-data.json",
+          "path": "good-neighbor-pharmacy-cencora-data.json"
+        },
+        {
+          "name": "groupe-adeo-leroy-merlin-data.json",
+          "path": "groupe-adeo-leroy-merlin-data.json"
+        },
+        {
+          "name": "h-and-m-hennes-and-mauritz-data.json",
+          "path": "h-and-m-hennes-and-mauritz-data.json"
+        },
+        {
+          "name": "h-e-b-grocery-company-data.json",
+          "path": "h-e-b-grocery-company-data.json"
+        },
+        {
+          "name": "harbor-freight-tools-data.json",
+          "path": "harbor-freight-tools-data.json"
+        },
+        {
+          "name": "hobby-lobby-stores-data.json",
+          "path": "hobby-lobby-stores-data.json"
+        },
+        {
+          "name": "hy-vee-inc-data.json",
+          "path": "hy-vee-inc-data.json"
+        },
+        {
+          "name": "ikea-ingka-holding-data.json",
+          "path": "ikea-ingka-holding-data.json"
+        },
+        {
+          "name": "inditex-s-a-zara-etc-data.json",
+          "path": "inditex-s-a-zara-etc-data.json"
+        },
+        {
+          "name": "intermarche-itm-data.json",
+          "path": "intermarche-itm-data.json"
+        },
+        {
+          "name": "j-c-penney-data.json",
+          "path": "j-c-penney-data.json"
+        },
+        {
+          "name": "j-sainsbury-plc-data.json",
+          "path": "j-sainsbury-plc-data.json"
+        },
+        {
+          "name": "jd-com-inc-data.json",
+          "path": "jd-com-inc-data.json"
+        },
+        {
+          "name": "jeronimo-martins-data.json",
+          "path": "jeronimo-martins-data.json"
+        },
+        {
+          "name": "kohls-corporation-data.json",
+          "path": "kohls-corporation-data.json"
+        },
+        {
+          "name": "levi-strauss-and-co-direct-data.json",
+          "path": "levi-strauss-and-co-direct-data.json"
+        },
+        {
+          "name": "loblaw-companies-limited-data.json",
+          "path": "loblaw-companies-limited-data.json"
+        },
+        {
+          "name": "lowes-companies-inc-data.json",
+          "path": "lowes-companies-inc-data.json"
+        },
+        {
+          "name": "lululemon-athletica-data.json",
+          "path": "lululemon-athletica-data.json"
+        },
+        {
+          "name": "lvmh-selective-retailing-est-data.json",
+          "path": "lvmh-selective-retailing-est-data.json"
+        },
+        {
+          "name": "macys-inc-data.json",
+          "path": "macys-inc-data.json"
+        },
+        {
+          "name": "meijer-inc-data.json",
+          "path": "meijer-inc-data.json"
+        },
+        {
+          "name": "menards-data.json",
+          "path": "menards-data.json"
+        },
+        {
+          "name": "mercadona-s-a-data.json",
+          "path": "mercadona-s-a-data.json"
+        },
+        {
+          "name": "metro-ag-data.json",
+          "path": "metro-ag-data.json"
+        },
+        {
+          "name": "migros-genossenschafts-bund-data.json",
+          "path": "migros-genossenschafts-bund-data.json"
+        },
+        {
+          "name": "nordstrom-inc-data.json",
+          "path": "nordstrom-inc-data.json"
+        },
+        {
+          "name": "northeast-grocery-market-32-tops-data.json",
+          "path": "northeast-grocery-market-32-tops-data.json"
+        },
+        {
+          "name": "odp-corp-office-depot-data.json",
+          "path": "odp-corp-office-depot-data.json"
+        },
+        {
+          "name": "oreilly-auto-parts-data.json",
+          "path": "oreilly-auto-parts-data.json"
+        },
+        {
+          "name": "petsmart-data.json",
+          "path": "petsmart-data.json"
+        },
+        {
+          "name": "publix-super-markets-inc-data.json",
+          "path": "publix-super-markets-inc-data.json"
+        },
+        {
+          "name": "qvc-group-data.json",
+          "path": "qvc-group-data.json"
+        },
+        {
+          "name": "reliance-retail-limited-data.json",
+          "path": "reliance-retail-limited-data.json"
+        },
+        {
+          "name": "retail-data.json",
+          "path": "retail-data.json"
+        },
+        {
+          "name": "rewe-group-data.json",
+          "path": "rewe-group-data.json"
+        },
+        {
+          "name": "rite-aid-remaining-retail-data.json",
+          "path": "rite-aid-remaining-retail-data.json"
+        },
+        {
+          "name": "ross-stores-inc-data.json",
+          "path": "ross-stores-inc-data.json"
+        },
+        {
+          "name": "schwarz-group-lidl-kaufland-data.json",
+          "path": "schwarz-group-lidl-kaufland-data.json"
+        },
+        {
+          "name": "sephora-lvmh-data.json",
+          "path": "sephora-lvmh-data.json"
+        },
+        {
+          "name": "seven-and-i-holdings-co-data.json",
+          "path": "seven-and-i-holdings-co-data.json"
+        },
+        {
+          "name": "shein-retail-sales-data.json",
+          "path": "shein-retail-sales-data.json"
+        },
+        {
+          "name": "sherwin-williams-stores-data.json",
+          "path": "sherwin-williams-stores-data.json"
+        },
+        {
+          "name": "signet-jewelers-data.json",
+          "path": "signet-jewelers-data.json"
+        },
+        {
+          "name": "spar-international-system-data.json",
+          "path": "spar-international-system-data.json"
+        },
+        {
+          "name": "sprouts-farmers-market-data.json",
+          "path": "sprouts-farmers-market-data.json"
+        },
+        {
+          "name": "staples-us-retail-data.json",
+          "path": "staples-us-retail-data.json"
+        },
+        {
+          "name": "systeme-u-data.json",
+          "path": "systeme-u-data.json"
+        },
+        {
+          "name": "tapestry-coach-kate-spade-data.json",
+          "path": "tapestry-coach-kate-spade-data.json"
+        },
+        {
+          "name": "target-corporation-data.json",
+          "path": "target-corporation-data.json"
+        },
+        {
+          "name": "tesco-plc-data.json",
+          "path": "tesco-plc-data.json"
+        },
+        {
+          "name": "the-home-depot-inc-data.json",
+          "path": "the-home-depot-inc-data.json"
+        },
+        {
+          "name": "the-kroger-co-data.json",
+          "path": "the-kroger-co-data.json"
+        },
+        {
+          "name": "the-tjx-companies-inc-data.json",
+          "path": "the-tjx-companies-inc-data.json"
+        },
+        {
+          "name": "tractor-supply-co-data.json",
+          "path": "tractor-supply-co-data.json"
+        },
+        {
+          "name": "ulta-beauty-inc-data.json",
+          "path": "ulta-beauty-inc-data.json"
+        },
+        {
+          "name": "walgreens-boots-alliance-inc-data.json",
+          "path": "walgreens-boots-alliance-inc-data.json"
+        },
+        {
+          "name": "walmart-inc-data.json",
+          "path": "walmart-inc-data.json"
+        },
+        {
+          "name": "wayfair-inc-data.json",
+          "path": "wayfair-inc-data.json"
+        },
+        {
+          "name": "wegmans-food-markets-data.json",
+          "path": "wegmans-food-markets-data.json"
+        },
+        {
+          "name": "williams-sonoma-inc-data.json",
+          "path": "williams-sonoma-inc-data.json"
+        },
+        {
+          "name": "winco-foods-data.json",
+          "path": "winco-foods-data.json"
+        },
+        {
+          "name": "woolworths-group-data.json",
+          "path": "woolworths-group-data.json"
+        }
+      ]
+    },
+    {
+      "id": "fastfood",
+      "name": "Fastfood",
+      "subfoldersCount": 101,
+      "filesCount": 103,
+      "totalFiles": 11326,
+      "subfolders": [
+        {
+          "name": "1-mcdonalds-data",
+          "path": "1-mcdonalds-data",
+          "fileCount": 1404
+        },
+        {
+          "name": "10-wendys-data",
+          "path": "10-wendys-data",
+          "fileCount": 259
+        },
+        {
+          "name": "100-black-rifle-coffee-shops-data",
+          "path": "100-black-rifle-coffee-shops-data",
+          "fileCount": 1
+        },
+        {
+          "name": "11-dunkin-data",
+          "path": "11-dunkin-data",
+          "fileCount": 539
+        },
+        {
+          "name": "12-chipotle-mexican-grill-data",
+          "path": "12-chipotle-mexican-grill-data",
+          "fileCount": 138
+        },
+        {
+          "name": "13-panera-bread-data",
+          "path": "13-panera-bread-data",
+          "fileCount": 65
+        },
+        {
+          "name": "14-tim-hortons-data",
+          "path": "14-tim-hortons-data",
+          "fileCount": 176
+        },
+        {
+          "name": "15-popeyes-louisiana-kitchen-data",
+          "path": "15-popeyes-louisiana-kitchen-data",
+          "fileCount": 143
+        },
+        {
+          "name": "16-dairy-queen-data",
+          "path": "16-dairy-queen-data",
+          "fileCount": 221
+        },
+        {
+          "name": "17-panda-express-data",
+          "path": "17-panda-express-data",
+          "fileCount": 57
+        },
+        {
+          "name": "18-jollibee-data",
+          "path": "18-jollibee-data",
+          "fileCount": 62
+        },
+        {
+          "name": "19-whataburger-data",
+          "path": "19-whataburger-data",
+          "fileCount": 42
+        },
+        {
+          "name": "2-starbucks-data",
+          "path": "2-starbucks-data",
+          "fileCount": 1499
+        },
+        {
+          "name": "20-jack-in-the-box-data",
+          "path": "20-jack-in-the-box-data",
+          "fileCount": 61
+        },
+        {
+          "name": "21-arbys-data",
+          "path": "21-arbys-data",
+          "fileCount": 57
+        },
+        {
+          "name": "22-sonic-drive-in-data",
+          "path": "22-sonic-drive-in-data",
+          "fileCount": 102
+        },
+        {
+          "name": "23-five-guys-data",
+          "path": "23-five-guys-data",
+          "fileCount": 41
+        },
+        {
+          "name": "24-little-caesars-data",
+          "path": "24-little-caesars-data",
+          "fileCount": 196
+        },
+        {
+          "name": "25-papa-johns-data",
+          "path": "25-papa-johns-data",
+          "fileCount": 141
+        },
+        {
+          "name": "26-luckin-coffee-data",
+          "path": "26-luckin-coffee-data",
+          "fileCount": 5
+        },
+        {
+          "name": "27-mixue-ice-cream-and-tea-data",
+          "path": "27-mixue-ice-cream-and-tea-data",
+          "fileCount": 7
+        },
+        {
+          "name": "28-raising-canes-data",
+          "path": "28-raising-canes-data",
+          "fileCount": 26
+        },
+        {
+          "name": "29-culvers-data",
+          "path": "29-culvers-data",
+          "fileCount": 13
+        },
+        {
+          "name": "3-kfc-data",
+          "path": "3-kfc-data",
+          "fileCount": 618
+        },
+        {
+          "name": "30-in-n-out-burger-data",
+          "path": "30-in-n-out-burger-data",
+          "fileCount": 13
+        },
+        {
+          "name": "31-jersey-mikes-subs-data",
+          "path": "31-jersey-mikes-subs-data",
+          "fileCount": 81
+        },
+        {
+          "name": "32-jimmy-johns-data",
+          "path": "32-jimmy-johns-data",
+          "fileCount": 88
+        },
+        {
+          "name": "33-zaxbys-data",
+          "path": "33-zaxbys-data",
+          "fileCount": 34
+        },
+        {
+          "name": "34-bojangles-data",
+          "path": "34-bojangles-data",
+          "fileCount": 25
+        },
+        {
+          "name": "35-wingstop-data",
+          "path": "35-wingstop-data",
+          "fileCount": 78
+        },
+        {
+          "name": "36-hardees-data",
+          "path": "36-hardees-data",
+          "fileCount": 42
+        },
+        {
+          "name": "37-carls-jr-data",
+          "path": "37-carls-jr-data",
+          "fileCount": 70
+        },
+        {
+          "name": "38-dutch-bros-coffee-data",
+          "path": "38-dutch-bros-coffee-data",
+          "fileCount": 65
+        },
+        {
+          "name": "39-greggs-data",
+          "path": "39-greggs-data",
+          "fileCount": 87
+        },
+        {
+          "name": "4-burger-king-data",
+          "path": "4-burger-king-data",
+          "fileCount": 628
+        },
+        {
+          "name": "40-dodo-pizza-data",
+          "path": "40-dodo-pizza-data",
+          "fileCount": 49
+        },
+        {
+          "name": "41-krispy-kreme-data",
+          "path": "41-krispy-kreme-data",
+          "fileCount": 76
+        },
+        {
+          "name": "42-qdoba-mexican-eats-data",
+          "path": "42-qdoba-mexican-eats-data",
+          "fileCount": 22
+        },
+        {
+          "name": "43-el-pollo-loco-data",
+          "path": "43-el-pollo-loco-data",
+          "fileCount": 21
+        },
+        {
+          "name": "44-firehouse-subs-data",
+          "path": "44-firehouse-subs-data",
+          "fileCount": 30
+        },
+        {
+          "name": "45-shake-shack-data",
+          "path": "45-shake-shack-data",
+          "fileCount": 17
+        },
+        {
+          "name": "46-mos-burger-data",
+          "path": "46-mos-burger-data",
+          "fileCount": 18
+        },
+        {
+          "name": "47-sukiya-zensho-data",
+          "path": "47-sukiya-zensho-data",
+          "fileCount": 29
+        },
+        {
+          "name": "48-yoshinoya-data",
+          "path": "48-yoshinoya-data",
+          "fileCount": 71
+        },
+        {
+          "name": "49-lotteria-data",
+          "path": "49-lotteria-data",
+          "fileCount": 2
+        },
+        {
+          "name": "5-chick-fil-a-data",
+          "path": "5-chick-fil-a-data",
+          "fileCount": 127
+        },
+        {
+          "name": "50-nandos-data",
+          "path": "50-nandos-data",
+          "fileCount": 34
+        },
+        {
+          "name": "51-marcos-pizza-data",
+          "path": "51-marcos-pizza-data",
+          "fileCount": 21
+        },
+        {
+          "name": "52-freddys-frozen-custard-data",
+          "path": "52-freddys-frozen-custard-data",
+          "fileCount": 6
+        },
+        {
+          "name": "53-mcalisters-deli-data",
+          "path": "53-mcalisters-deli-data",
+          "fileCount": 6
+        },
+        {
+          "name": "54-tropical-smoothie-cafe-data",
+          "path": "54-tropical-smoothie-cafe-data",
+          "fileCount": 45
+        },
+        {
+          "name": "55-cava-data",
+          "path": "55-cava-data",
+          "fileCount": 13
+        },
+        {
+          "name": "56-del-taco-data",
+          "path": "56-del-taco-data",
+          "fileCount": 6
+        },
+        {
+          "name": "57-churchs-texas-chicken-data",
+          "path": "57-churchs-texas-chicken-data",
+          "fileCount": 56
+        },
+        {
+          "name": "58-scooters-coffee-data",
+          "path": "58-scooters-coffee-data",
+          "fileCount": 24
+        },
+        {
+          "name": "59-pret-a-manger-data",
+          "path": "59-pret-a-manger-data",
+          "fileCount": 14
+        },
+        {
+          "name": "6-subway-data",
+          "path": "6-subway-data",
+          "fileCount": 1307
+        },
+        {
+          "name": "60-home-original-chicken-laoxiangji-data",
+          "path": "60-home-original-chicken-laoxiangji-data",
+          "fileCount": 2
+        },
+        {
+          "name": "61-wallace-hua-lai-shi-data",
+          "path": "61-wallace-hua-lai-shi-data",
+          "fileCount": 3
+        },
+        {
+          "name": "62-good-me-guming-data",
+          "path": "62-good-me-guming-data",
+          "fileCount": 2
+        },
+        {
+          "name": "63-heytea-data",
+          "path": "63-heytea-data",
+          "fileCount": 3
+        },
+        {
+          "name": "64-coco-fresh-tea-and-juice-data",
+          "path": "64-coco-fresh-tea-and-juice-data",
+          "fileCount": 9
+        },
+        {
+          "name": "65-gong-cha-data",
+          "path": "65-gong-cha-data",
+          "fileCount": 24
+        },
+        {
+          "name": "66-jamba-data",
+          "path": "66-jamba-data",
+          "fileCount": 18
+        },
+        {
+          "name": "67-a-and-w-restaurants-data",
+          "path": "67-a-and-w-restaurants-data",
+          "fileCount": 70
+        },
+        {
+          "name": "68-white-castle-data",
+          "path": "68-white-castle-data",
+          "fileCount": 10
+        },
+        {
+          "name": "69-checkers-rallys-data",
+          "path": "69-checkers-rallys-data",
+          "fileCount": 24
+        },
+        {
+          "name": "7-taco-bell-data",
+          "path": "7-taco-bell-data",
+          "fileCount": 336
+        },
+        {
+          "name": "70-krystal-data",
+          "path": "70-krystal-data",
+          "fileCount": 13
+        },
+        {
+          "name": "71-steak-n-shake-data",
+          "path": "71-steak-n-shake-data",
+          "fileCount": 10
+        },
+        {
+          "name": "72-captain-ds-data",
+          "path": "72-captain-ds-data",
+          "fileCount": 11
+        },
+        {
+          "name": "73-long-john-silvers-data",
+          "path": "73-long-john-silvers-data",
+          "fileCount": 9
+        },
+        {
+          "name": "74-boston-market-data",
+          "path": "74-boston-market-data",
+          "fileCount": 2
+        },
+        {
+          "name": "75-pollo-campero-data",
+          "path": "75-pollo-campero-data",
+          "fileCount": 11
+        },
+        {
+          "name": "76-bonchon-chicken-data",
+          "path": "76-bonchon-chicken-data",
+          "fileCount": 14
+        },
+        {
+          "name": "77-kyochon-chicken-data",
+          "path": "77-kyochon-chicken-data",
+          "fileCount": 4
+        },
+        {
+          "name": "78-norberts-nordsee-data",
+          "path": "78-norberts-nordsee-data",
+          "fileCount": 10
+        },
+        {
+          "name": "79-wetherspoons-fast-casual-pubs-data",
+          "path": "79-wetherspoons-fast-casual-pubs-data",
+          "fileCount": 17
+        },
+        {
+          "name": "8-dominos-data",
+          "path": "8-dominos-data",
+          "fileCount": 603
+        },
+        {
+          "name": "80-leon-data",
+          "path": "80-leon-data",
+          "fileCount": 4
+        },
+        {
+          "name": "81-ebers-burger-ranch-data",
+          "path": "81-ebers-burger-ranch-data",
+          "fileCount": 1
+        },
+        {
+          "name": "82-bobs-burgers-bobs-data",
+          "path": "82-bobs-burgers-bobs-data",
+          "fileCount": 4
+        },
+        {
+          "name": "83-giraffas-data",
+          "path": "83-giraffas-data",
+          "fileCount": 13
+        },
+        {
+          "name": "84-cafe-coffee-day-data",
+          "path": "84-cafe-coffee-day-data",
+          "fileCount": 29
+        },
+        {
+          "name": "85-haldirams-qsr-segment-data",
+          "path": "85-haldirams-qsr-segment-data",
+          "fileCount": 9
+        },
+        {
+          "name": "86-dominos-india-jubilant-foodworks-data",
+          "path": "86-dominos-india-jubilant-foodworks-data",
+          "fileCount": 33
+        },
+        {
+          "name": "87-ichibanya-coco-ichibanya-data",
+          "path": "87-ichibanya-coco-ichibanya-data",
+          "fileCount": 48
+        },
+        {
+          "name": "88-matsuya-foods-data",
+          "path": "88-matsuya-foods-data",
+          "fileCount": 29
+        },
+        {
+          "name": "89-fei-dicos-ting-hsin-data",
+          "path": "89-fei-dicos-ting-hsin-data",
+          "fileCount": 3
+        },
+        {
+          "name": "9-pizza-hut-data",
+          "path": "9-pizza-hut-data",
+          "fileCount": 501
+        },
+        {
+          "name": "90-tims-china-th-international-data",
+          "path": "90-tims-china-th-international-data",
+          "fileCount": 2
+        },
+        {
+          "name": "91-cotti-coffee-data",
+          "path": "91-cotti-coffee-data",
+          "fileCount": 2
+        },
+        {
+          "name": "92-teastone-nayuki-data",
+          "path": "92-teastone-nayuki-data",
+          "fileCount": 3
+        },
+        {
+          "name": "93-orange-julius-dq-system-data",
+          "path": "93-orange-julius-dq-system-data",
+          "fileCount": 2
+        },
+        {
+          "name": "94-baskin-robbins-qsr-ice-cream-data",
+          "path": "94-baskin-robbins-qsr-ice-cream-data",
+          "fileCount": 151
+        },
+        {
+          "name": "95-cold-stone-creamery-data",
+          "path": "95-cold-stone-creamery-data",
+          "fileCount": 35
+        },
+        {
+          "name": "96-auntie-annes-data",
+          "path": "96-auntie-annes-data",
+          "fileCount": 26
+        },
+        {
+          "name": "97-cinnabon-data",
+          "path": "97-cinnabon-data",
+          "fileCount": 33
+        },
+        {
+          "name": "98-7-brew-coffee-data",
+          "path": "98-7-brew-coffee-data",
+          "fileCount": 2
+        },
+        {
+          "name": "99-biggby-coffee-data",
+          "path": "99-biggby-coffee-data",
+          "fileCount": 9
+        },
+        {
+          "name": "fastfood-data",
+          "path": "fastfood-data",
+          "fileCount": 1
+        }
+      ],
+      "rootFiles": [
+        {
+          "name": "7-brew-coffee-data.json",
+          "path": "7-brew-coffee-data.json"
+        },
+        {
+          "name": "a-and-w-restaurants-data.json",
+          "path": "a-and-w-restaurants-data.json"
+        },
+        {
+          "name": "arbys-data.json",
+          "path": "arbys-data.json"
+        },
+        {
+          "name": "auntie-annes-data.json",
+          "path": "auntie-annes-data.json"
+        },
+        {
+          "name": "baskin-robbins-qsr-ice-cream-data.json",
+          "path": "baskin-robbins-qsr-ice-cream-data.json"
+        },
+        {
+          "name": "biggby-coffee-data.json",
+          "path": "biggby-coffee-data.json"
+        },
+        {
+          "name": "black-rifle-coffee-shops-data.json",
+          "path": "black-rifle-coffee-shops-data.json"
+        },
+        {
+          "name": "bobs-burgers-bobs-data.json",
+          "path": "bobs-burgers-bobs-data.json"
+        },
+        {
+          "name": "bojangles-data.json",
+          "path": "bojangles-data.json"
+        },
+        {
+          "name": "bonchon-chicken-data.json",
+          "path": "bonchon-chicken-data.json"
+        },
+        {
+          "name": "boston-market-data.json",
+          "path": "boston-market-data.json"
+        },
+        {
+          "name": "brands.json",
+          "path": "brands.json"
+        },
+        {
+          "name": "burger-king-data.json",
+          "path": "burger-king-data.json"
+        },
+        {
+          "name": "cafe-coffee-day-data.json",
+          "path": "cafe-coffee-day-data.json"
+        },
+        {
+          "name": "captain-ds-data.json",
+          "path": "captain-ds-data.json"
+        },
+        {
+          "name": "carls-jr-data.json",
+          "path": "carls-jr-data.json"
+        },
+        {
+          "name": "cava-data.json",
+          "path": "cava-data.json"
+        },
+        {
+          "name": "chains.json",
+          "path": "chains.json"
+        },
+        {
+          "name": "checkers-rallys-data.json",
+          "path": "checkers-rallys-data.json"
+        },
+        {
+          "name": "chick-fil-a-data.json",
+          "path": "chick-fil-a-data.json"
+        },
+        {
+          "name": "chipotle-mexican-grill-data.json",
+          "path": "chipotle-mexican-grill-data.json"
+        },
+        {
+          "name": "churchs-texas-chicken-data.json",
+          "path": "churchs-texas-chicken-data.json"
+        },
+        {
+          "name": "cinnabon-data.json",
+          "path": "cinnabon-data.json"
+        },
+        {
+          "name": "coco-fresh-tea-and-juice-data.json",
+          "path": "coco-fresh-tea-and-juice-data.json"
+        },
+        {
+          "name": "cold-stone-creamery-data.json",
+          "path": "cold-stone-creamery-data.json"
+        },
+        {
+          "name": "cotti-coffee-data.json",
+          "path": "cotti-coffee-data.json"
+        },
+        {
+          "name": "culvers-data.json",
+          "path": "culvers-data.json"
+        },
+        {
+          "name": "dairy-queen-data.json",
+          "path": "dairy-queen-data.json"
+        },
+        {
+          "name": "del-taco-data.json",
+          "path": "del-taco-data.json"
+        },
+        {
+          "name": "dodo-pizza-data.json",
+          "path": "dodo-pizza-data.json"
+        },
+        {
+          "name": "dominos-data.json",
+          "path": "dominos-data.json"
+        },
+        {
+          "name": "dominos-india-jubilant-foodworks-data.json",
+          "path": "dominos-india-jubilant-foodworks-data.json"
+        },
+        {
+          "name": "dunkin-data.json",
+          "path": "dunkin-data.json"
+        },
+        {
+          "name": "dutch-bros-coffee-data.json",
+          "path": "dutch-bros-coffee-data.json"
+        },
+        {
+          "name": "ebers-burger-ranch-data.json",
+          "path": "ebers-burger-ranch-data.json"
+        },
+        {
+          "name": "el-pollo-loco-data.json",
+          "path": "el-pollo-loco-data.json"
+        },
+        {
+          "name": "fastfood-data.json",
+          "path": "fastfood-data.json"
+        },
+        {
+          "name": "fei-dicos-ting-hsin-data.json",
+          "path": "fei-dicos-ting-hsin-data.json"
+        },
+        {
+          "name": "firehouse-subs-data.json",
+          "path": "firehouse-subs-data.json"
+        },
+        {
+          "name": "five-guys-data.json",
+          "path": "five-guys-data.json"
+        },
+        {
+          "name": "freddys-frozen-custard-data.json",
+          "path": "freddys-frozen-custard-data.json"
+        },
+        {
+          "name": "giraffas-data.json",
+          "path": "giraffas-data.json"
+        },
+        {
+          "name": "gong-cha-data.json",
+          "path": "gong-cha-data.json"
+        },
+        {
+          "name": "good-me-guming-data.json",
+          "path": "good-me-guming-data.json"
+        },
+        {
+          "name": "greggs-data.json",
+          "path": "greggs-data.json"
+        },
+        {
+          "name": "haldirams-qsr-segment-data.json",
+          "path": "haldirams-qsr-segment-data.json"
+        },
+        {
+          "name": "hardees-data.json",
+          "path": "hardees-data.json"
+        },
+        {
+          "name": "heytea-data.json",
+          "path": "heytea-data.json"
+        },
+        {
+          "name": "home-original-chicken-laoxiangji-data.json",
+          "path": "home-original-chicken-laoxiangji-data.json"
+        },
+        {
+          "name": "ichibanya-coco-ichibanya-data.json",
+          "path": "ichibanya-coco-ichibanya-data.json"
+        },
+        {
+          "name": "in-n-out-burger-data.json",
+          "path": "in-n-out-burger-data.json"
+        },
+        {
+          "name": "jack-in-the-box-data.json",
+          "path": "jack-in-the-box-data.json"
+        },
+        {
+          "name": "jamba-data.json",
+          "path": "jamba-data.json"
+        },
+        {
+          "name": "jersey-mikes-subs-data.json",
+          "path": "jersey-mikes-subs-data.json"
+        },
+        {
+          "name": "jimmy-johns-data.json",
+          "path": "jimmy-johns-data.json"
+        },
+        {
+          "name": "jollibee-data.json",
+          "path": "jollibee-data.json"
+        },
+        {
+          "name": "kfc-data.json",
+          "path": "kfc-data.json"
+        },
+        {
+          "name": "krispy-kreme-data.json",
+          "path": "krispy-kreme-data.json"
+        },
+        {
+          "name": "krystal-data.json",
+          "path": "krystal-data.json"
+        },
+        {
+          "name": "kyochon-chicken-data.json",
+          "path": "kyochon-chicken-data.json"
+        },
+        {
+          "name": "leon-data.json",
+          "path": "leon-data.json"
+        },
+        {
+          "name": "little-caesars-data.json",
+          "path": "little-caesars-data.json"
+        },
+        {
+          "name": "long-john-silvers-data.json",
+          "path": "long-john-silvers-data.json"
+        },
+        {
+          "name": "lotteria-data.json",
+          "path": "lotteria-data.json"
+        },
+        {
+          "name": "luckin-coffee-data.json",
+          "path": "luckin-coffee-data.json"
+        },
+        {
+          "name": "marcos-pizza-data.json",
+          "path": "marcos-pizza-data.json"
+        },
+        {
+          "name": "matsuya-foods-data.json",
+          "path": "matsuya-foods-data.json"
+        },
+        {
+          "name": "mcalisters-deli-data.json",
+          "path": "mcalisters-deli-data.json"
+        },
+        {
+          "name": "mcdonalds-data.json",
+          "path": "mcdonalds-data.json"
+        },
+        {
+          "name": "mixue-ice-cream-and-tea-data.json",
+          "path": "mixue-ice-cream-and-tea-data.json"
+        },
+        {
+          "name": "mos-burger-data.json",
+          "path": "mos-burger-data.json"
+        },
+        {
+          "name": "nandos-data.json",
+          "path": "nandos-data.json"
+        },
+        {
+          "name": "norberts-nordsee-data.json",
+          "path": "norberts-nordsee-data.json"
+        },
+        {
+          "name": "orange-julius-dq-system-data.json",
+          "path": "orange-julius-dq-system-data.json"
+        },
+        {
+          "name": "panda-express-data.json",
+          "path": "panda-express-data.json"
+        },
+        {
+          "name": "panera-bread-data.json",
+          "path": "panera-bread-data.json"
+        },
+        {
+          "name": "papa-johns-data.json",
+          "path": "papa-johns-data.json"
+        },
+        {
+          "name": "pizza-hut-data.json",
+          "path": "pizza-hut-data.json"
+        },
+        {
+          "name": "pollo-campero-data.json",
+          "path": "pollo-campero-data.json"
+        },
+        {
+          "name": "popeyes-louisiana-kitchen-data.json",
+          "path": "popeyes-louisiana-kitchen-data.json"
+        },
+        {
+          "name": "pret-a-manger-data.json",
+          "path": "pret-a-manger-data.json"
+        },
+        {
+          "name": "qdoba-mexican-eats-data.json",
+          "path": "qdoba-mexican-eats-data.json"
+        },
+        {
+          "name": "raising-canes-data.json",
+          "path": "raising-canes-data.json"
+        },
+        {
+          "name": "scooters-coffee-data.json",
+          "path": "scooters-coffee-data.json"
+        },
+        {
+          "name": "shake-shack-data.json",
+          "path": "shake-shack-data.json"
+        },
+        {
+          "name": "sonic-drive-in-data.json",
+          "path": "sonic-drive-in-data.json"
+        },
+        {
+          "name": "starbucks-data.json",
+          "path": "starbucks-data.json"
+        },
+        {
+          "name": "steak-n-shake-data.json",
+          "path": "steak-n-shake-data.json"
+        },
+        {
+          "name": "subway-data.json",
+          "path": "subway-data.json"
+        },
+        {
+          "name": "sukiya-zensho-data.json",
+          "path": "sukiya-zensho-data.json"
+        },
+        {
+          "name": "taco-bell-data.json",
+          "path": "taco-bell-data.json"
+        },
+        {
+          "name": "teastone-nayuki-data.json",
+          "path": "teastone-nayuki-data.json"
+        },
+        {
+          "name": "tim-hortons-data.json",
+          "path": "tim-hortons-data.json"
+        },
+        {
+          "name": "tims-china-th-international-data.json",
+          "path": "tims-china-th-international-data.json"
+        },
+        {
+          "name": "tropical-smoothie-cafe-data.json",
+          "path": "tropical-smoothie-cafe-data.json"
+        },
+        {
+          "name": "wallace-hua-lai-shi-data.json",
+          "path": "wallace-hua-lai-shi-data.json"
+        },
+        {
+          "name": "wendys-data.json",
+          "path": "wendys-data.json"
+        },
+        {
+          "name": "wetherspoons-fast-casual-pubs-data.json",
+          "path": "wetherspoons-fast-casual-pubs-data.json"
+        },
+        {
+          "name": "whataburger-data.json",
+          "path": "whataburger-data.json"
+        },
+        {
+          "name": "white-castle-data.json",
+          "path": "white-castle-data.json"
+        },
+        {
+          "name": "wingstop-data.json",
+          "path": "wingstop-data.json"
+        },
+        {
+          "name": "yoshinoya-data.json",
+          "path": "yoshinoya-data.json"
+        },
+        {
+          "name": "zaxbys-data.json",
+          "path": "zaxbys-data.json"
+        }
+      ]
+    },
+    {
+      "id": "universities",
+      "name": "Universities",
+      "subfoldersCount": 0,
+      "filesCount": 201,
+      "totalFiles": 201,
+      "subfolders": [],
+      "rootFiles": [
+        {
+          "name": "1-harvard-university-data.json",
+          "path": "1-harvard-university-data.json"
+        },
+        {
+          "name": "10-university-of-chicago-data.json",
+          "path": "10-university-of-chicago-data.json"
+        },
+        {
+          "name": "100-purdue-university-data.json",
+          "path": "100-purdue-university-data.json"
+        },
+        {
+          "name": "101-aix-marseille-university-data.json",
+          "path": "101-aix-marseille-university-data.json"
+        },
+        {
+          "name": "102-beijing-institute-of-technology-data.json",
+          "path": "102-beijing-institute-of-technology-data.json"
+        },
+        {
+          "name": "103-boston-university-data.json",
+          "path": "103-boston-university-data.json"
+        },
+        {
+          "name": "104-brown-university-data.json",
+          "path": "104-brown-university-data.json"
+        },
+        {
+          "name": "105-carnegie-mellon-university-data.json",
+          "path": "105-carnegie-mellon-university-data.json"
+        },
+        {
+          "name": "106-emory-university-data.json",
+          "path": "106-emory-university-data.json"
+        },
+        {
+          "name": "107-erasmus-university-rotterdam-data.json",
+          "path": "107-erasmus-university-rotterdam-data.json"
+        },
+        {
+          "name": "108-harbin-institute-of-technology-data.json",
+          "path": "108-harbin-institute-of-technology-data.json"
+        },
+        {
+          "name": "109-jilin-university-data.json",
+          "path": "109-jilin-university-data.json"
+        },
+        {
+          "name": "11-yale-university-data.json",
+          "path": "11-yale-university-data.json"
+        },
+        {
+          "name": "110-leiden-university-data.json",
+          "path": "110-leiden-university-data.json"
+        },
+        {
+          "name": "111-lund-university-data.json",
+          "path": "111-lund-university-data.json"
+        },
+        {
+          "name": "112-mcmaster-university-data.json",
+          "path": "112-mcmaster-university-data.json"
+        },
+        {
+          "name": "113-lomonosov-moscow-state-university-data.json",
+          "path": "113-lomonosov-moscow-state-university-data.json"
+        },
+        {
+          "name": "114-icahn-school-of-medicine-at-mount-sinai-data.json",
+          "path": "114-icahn-school-of-medicine-at-mount-sinai-data.json"
+        },
+        {
+          "name": "115-nagoya-university-data.json",
+          "path": "115-nagoya-university-data.json"
+        },
+        {
+          "name": "116-northwestern-polytechnical-university-data.json",
+          "path": "116-northwestern-polytechnical-university-data.json"
+        },
+        {
+          "name": "117-pennsylvania-state-university-data.json",
+          "path": "117-pennsylvania-state-university-data.json"
+        },
+        {
+          "name": "118-radboud-university-nijmegen-data.json",
+          "path": "118-radboud-university-nijmegen-data.json"
+        },
+        {
+          "name": "119-rice-university-data.json",
+          "path": "119-rice-university-data.json"
+        },
+        {
+          "name": "12-cornell-university-data.json",
+          "path": "12-cornell-university-data.json"
+        },
+        {
+          "name": "120-rutgers-university-new-brunswick-data.json",
+          "path": "120-rutgers-university-new-brunswick-data.json"
+        },
+        {
+          "name": "121-sapienza-university-of-rome-data.json",
+          "path": "121-sapienza-university-of-rome-data.json"
+        },
+        {
+          "name": "122-shandong-university-data.json",
+          "path": "122-shandong-university-data.json"
+        },
+        {
+          "name": "123-south-china-university-of-technology-data.json",
+          "path": "123-south-china-university-of-technology-data.json"
+        },
+        {
+          "name": "124-southern-university-of-science-and-technology-data.json",
+          "path": "124-southern-university-of-science-and-technology-data.json"
+        },
+        {
+          "name": "125-southeast-university-data.json",
+          "path": "125-southeast-university-data.json"
+        },
+        {
+          "name": "126-stockholm-university-data.json",
+          "path": "126-stockholm-university-data.json"
+        },
+        {
+          "name": "127-australian-national-university-data.json",
+          "path": "127-australian-national-university-data.json"
+        },
+        {
+          "name": "128-university-of-glasgow-data.json",
+          "path": "128-university-of-glasgow-data.json"
+        },
+        {
+          "name": "129-the-university-of-western-australia-data.json",
+          "path": "129-the-university-of-western-australia-data.json"
+        },
+        {
+          "name": "13-paris-saclay-university-data.json",
+          "path": "13-paris-saclay-university-data.json"
+        },
+        {
+          "name": "130-tianjin-university-data.json",
+          "path": "130-tianjin-university-data.json"
+        },
+        {
+          "name": "131-grenoble-alpes-university-data.json",
+          "path": "131-grenoble-alpes-university-data.json"
+        },
+        {
+          "name": "132-free-university-of-brussels-data.json",
+          "path": "132-free-university-of-brussels-data.json"
+        },
+        {
+          "name": "133-university-of-alberta-data.json",
+          "path": "133-university-of-alberta-data.json"
+        },
+        {
+          "name": "134-university-of-amsterdam-data.json",
+          "path": "134-university-of-amsterdam-data.json"
+        },
+        {
+          "name": "135-university-of-bern-data.json",
+          "path": "135-university-of-bern-data.json"
+        },
+        {
+          "name": "136-university-of-california-davis-data.json",
+          "path": "136-university-of-california-davis-data.json"
+        },
+        {
+          "name": "137-university-of-florida-data.json",
+          "path": "137-university-of-florida-data.json"
+        },
+        {
+          "name": "138-university-of-freiburg-data.json",
+          "path": "138-university-of-freiburg-data.json"
+        },
+        {
+          "name": "139-university-of-gothenburg-data.json",
+          "path": "139-university-of-gothenburg-data.json"
+        },
+        {
+          "name": "14-university-of-pennsylvania-data.json",
+          "path": "14-university-of-pennsylvania-data.json"
+        },
+        {
+          "name": "140-university-of-lausanne-data.json",
+          "path": "140-university-of-lausanne-data.json"
+        },
+        {
+          "name": "141-university-of-liverpool-data.json",
+          "path": "141-university-of-liverpool-data.json"
+        },
+        {
+          "name": "142-university-of-nottingham-data.json",
+          "path": "142-university-of-nottingham-data.json"
+        },
+        {
+          "name": "143-university-of-sao-paulo-data.json",
+          "path": "143-university-of-sao-paulo-data.json"
+        },
+        {
+          "name": "144-university-of-strasbourg-data.json",
+          "path": "144-university-of-strasbourg-data.json"
+        },
+        {
+          "name": "145-university-of-utah-data.json",
+          "path": "145-university-of-utah-data.json"
+        },
+        {
+          "name": "146-university-of-vienna-data.json",
+          "path": "146-university-of-vienna-data.json"
+        },
+        {
+          "name": "147-university-of-warwick-data.json",
+          "path": "147-university-of-warwick-data.json"
+        },
+        {
+          "name": "148-city-university-of-hong-kong-data.json",
+          "path": "148-city-university-of-hong-kong-data.json"
+        },
+        {
+          "name": "149-the-chinese-university-of-hong-kong-data.json",
+          "path": "149-the-chinese-university-of-hong-kong-data.json"
+        },
+        {
+          "name": "15-university-of-california-los-angeles-data.json",
+          "path": "15-university-of-california-los-angeles-data.json"
+        },
+        {
+          "name": "150-mayo-clinic-college-of-medicine-and-science-data.json",
+          "path": "150-mayo-clinic-college-of-medicine-and-science-data.json"
+        },
+        {
+          "name": "151-arizona-state-university-data.json",
+          "path": "151-arizona-state-university-data.json"
+        },
+        {
+          "name": "152-beihang-university-data.json",
+          "path": "152-beihang-university-data.json"
+        },
+        {
+          "name": "153-beijing-normal-university-data.json",
+          "path": "153-beijing-normal-university-data.json"
+        },
+        {
+          "name": "154-cardiff-university-data.json",
+          "path": "154-cardiff-university-data.json"
+        },
+        {
+          "name": "155-case-western-reserve-university-data.json",
+          "path": "155-case-western-reserve-university-data.json"
+        },
+        {
+          "name": "156-chongqing-university-data.json",
+          "path": "156-chongqing-university-data.json"
+        },
+        {
+          "name": "157-delft-university-of-technology-data.json",
+          "path": "157-delft-university-of-technology-data.json"
+        },
+        {
+          "name": "158-georgia-institute-of-technology-data.json",
+          "path": "158-georgia-institute-of-technology-data.json"
+        },
+        {
+          "name": "159-goethe-university-frankfurt-data.json",
+          "path": "159-goethe-university-frankfurt-data.json"
+        },
+        {
+          "name": "16-university-college-london-data.json",
+          "path": "16-university-college-london-data.json"
+        },
+        {
+          "name": "160-hunan-university-data.json",
+          "path": "160-hunan-university-data.json"
+        },
+        {
+          "name": "161-indiana-university-bloomington-data.json",
+          "path": "161-indiana-university-bloomington-data.json"
+        },
+        {
+          "name": "162-london-school-of-economics-and-political-science-data.json",
+          "path": "162-london-school-of-economics-and-political-science-data.json"
+        },
+        {
+          "name": "163-london-school-of-hygiene-and-tropical-medicine-data.json",
+          "path": "163-london-school-of-hygiene-and-tropical-medicine-data.json"
+        },
+        {
+          "name": "164-michigan-state-university-data.json",
+          "path": "164-michigan-state-university-data.json"
+        },
+        {
+          "name": "165-nankai-university-data.json",
+          "path": "165-nankai-university-data.json"
+        },
+        {
+          "name": "166-norwegian-university-of-science-and-technology-data.json",
+          "path": "166-norwegian-university-of-science-and-technology-data.json"
+        },
+        {
+          "name": "167-shenzhen-university-data.json",
+          "path": "167-shenzhen-university-data.json"
+        },
+        {
+          "name": "168-soochow-university-data.json",
+          "path": "168-soochow-university-data.json"
+        },
+        {
+          "name": "169-sungkyunkwan-university-data.json",
+          "path": "169-sungkyunkwan-university-data.json"
+        },
+        {
+          "name": "17-johns-hopkins-university-data.json",
+          "path": "17-johns-hopkins-university-data.json"
+        },
+        {
+          "name": "170-technical-university-of-denmark-data.json",
+          "path": "170-technical-university-of-denmark-data.json"
+        },
+        {
+          "name": "171-the-university-of-adelaide-data.json",
+          "path": "171-the-university-of-adelaide-data.json"
+        },
+        {
+          "name": "172-university-of-calgary-data.json",
+          "path": "172-university-of-calgary-data.json"
+        },
+        {
+          "name": "173-university-of-sheffield-data.json",
+          "path": "173-university-of-sheffield-data.json"
+        },
+        {
+          "name": "174-institute-of-science-tokyo-data.json",
+          "path": "174-institute-of-science-tokyo-data.json"
+        },
+        {
+          "name": "175-tongji-university-data.json",
+          "path": "175-tongji-university-data.json"
+        },
+        {
+          "name": "176-tufts-university-data.json",
+          "path": "176-tufts-university-data.json"
+        },
+        {
+          "name": "177-university-of-electronic-science-and-technology-of-china-data.json",
+          "path": "177-university-of-electronic-science-and-technology-of-china-data.json"
+        },
+        {
+          "name": "178-university-of-arizona-data.json",
+          "path": "178-university-of-arizona-data.json"
+        },
+        {
+          "name": "179-university-of-barcelona-data.json",
+          "path": "179-university-of-barcelona-data.json"
+        },
+        {
+          "name": "18-university-of-california-san-diego-data.json",
+          "path": "18-university-of-california-san-diego-data.json"
+        },
+        {
+          "name": "180-university-of-birmingham-data.json",
+          "path": "180-university-of-birmingham-data.json"
+        },
+        {
+          "name": "181-university-of-california-santa-cruz-data.json",
+          "path": "181-university-of-california-santa-cruz-data.json"
+        },
+        {
+          "name": "182-university-of-cologne-data.json",
+          "path": "182-university-of-cologne-data.json"
+        },
+        {
+          "name": "183-university-of-exeter-data.json",
+          "path": "183-university-of-exeter-data.json"
+        },
+        {
+          "name": "184-university-of-gottingen-data.json",
+          "path": "184-university-of-gottingen-data.json"
+        },
+        {
+          "name": "185-university-of-leeds-data.json",
+          "path": "185-university-of-leeds-data.json"
+        },
+        {
+          "name": "186-johannes-gutenberg-university-mainz-data.json",
+          "path": "186-johannes-gutenberg-university-mainz-data.json"
+        },
+        {
+          "name": "187-university-of-milan-data.json",
+          "path": "187-university-of-milan-data.json"
+        },
+        {
+          "name": "188-university-of-montpellier-data.json",
+          "path": "188-university-of-montpellier-data.json"
+        },
+        {
+          "name": "189-university-of-montreal-data.json",
+          "path": "189-university-of-montreal-data.json"
+        },
+        {
+          "name": "19-university-of-washington-data.json",
+          "path": "19-university-of-washington-data.json"
+        },
+        {
+          "name": "190-university-of-munster-data.json",
+          "path": "190-university-of-munster-data.json"
+        },
+        {
+          "name": "191-university-of-pisa-data.json",
+          "path": "191-university-of-pisa-data.json"
+        },
+        {
+          "name": "192-university-of-rochester-data.json",
+          "path": "192-university-of-rochester-data.json"
+        },
+        {
+          "name": "193-university-of-southampton-data.json",
+          "path": "193-university-of-southampton-data.json"
+        },
+        {
+          "name": "194-university-of-tubingen-data.json",
+          "path": "194-university-of-tubingen-data.json"
+        },
+        {
+          "name": "195-university-of-waterloo-data.json",
+          "path": "195-university-of-waterloo-data.json"
+        },
+        {
+          "name": "196-vrije-universiteit-amsterdam-data.json",
+          "path": "196-vrije-universiteit-amsterdam-data.json"
+        },
+        {
+          "name": "197-xiamen-university-data.json",
+          "path": "197-xiamen-university-data.json"
+        },
+        {
+          "name": "198-zhengzhou-university-data.json",
+          "path": "198-zhengzhou-university-data.json"
+        },
+        {
+          "name": "199-wageningen-university-and-research-data.json",
+          "path": "199-wageningen-university-and-research-data.json"
+        },
+        {
+          "name": "2-stanford-university-data.json",
+          "path": "2-stanford-university-data.json"
+        },
+        {
+          "name": "20-university-of-california-san-francisco-data.json",
+          "path": "20-university-of-california-san-francisco-data.json"
+        },
+        {
+          "name": "200-hong-kong-polytechnic-university-data.json",
+          "path": "200-hong-kong-polytechnic-university-data.json"
+        },
+        {
+          "name": "21-eth-zurich-data.json",
+          "path": "21-eth-zurich-data.json"
+        },
+        {
+          "name": "22-tsinghua-university-data.json",
+          "path": "22-tsinghua-university-data.json"
+        },
+        {
+          "name": "23-washington-university-in-st-louis-data.json",
+          "path": "23-washington-university-in-st-louis-data.json"
+        },
+        {
+          "name": "24-peking-university-data.json",
+          "path": "24-peking-university-data.json"
+        },
+        {
+          "name": "25-imperial-college-london-data.json",
+          "path": "25-imperial-college-london-data.json"
+        },
+        {
+          "name": "26-university-of-toronto-data.json",
+          "path": "26-university-of-toronto-data.json"
+        },
+        {
+          "name": "27-zhejiang-university-data.json",
+          "path": "27-zhejiang-university-data.json"
+        },
+        {
+          "name": "28-the-university-of-tokyo-data.json",
+          "path": "28-the-university-of-tokyo-data.json"
+        },
+        {
+          "name": "29-rockefeller-university-data.json",
+          "path": "29-rockefeller-university-data.json"
+        },
+        {
+          "name": "3-massachusetts-institute-of-technology-data.json",
+          "path": "3-massachusetts-institute-of-technology-data.json"
+        },
+        {
+          "name": "30-university-of-michigan-data.json",
+          "path": "30-university-of-michigan-data.json"
+        },
+        {
+          "name": "31-new-york-university-data.json",
+          "path": "31-new-york-university-data.json"
+        },
+        {
+          "name": "32-university-of-copenhagen-data.json",
+          "path": "32-university-of-copenhagen-data.json"
+        },
+        {
+          "name": "33-northwestern-university-data.json",
+          "path": "33-northwestern-university-data.json"
+        },
+        {
+          "name": "34-paris-sciences-et-lettres-university-data.json",
+          "path": "34-paris-sciences-et-lettres-university-data.json"
+        },
+        {
+          "name": "35-university-of-north-carolina-at-chapel-hill-data.json",
+          "path": "35-university-of-north-carolina-at-chapel-hill-data.json"
+        },
+        {
+          "name": "36-university-of-wisconsin-madison-data.json",
+          "path": "36-university-of-wisconsin-madison-data.json"
+        },
+        {
+          "name": "37-the-university-of-melbourne-data.json",
+          "path": "37-the-university-of-melbourne-data.json"
+        },
+        {
+          "name": "38-shanghai-jiao-tong-university-data.json",
+          "path": "38-shanghai-jiao-tong-university-data.json"
+        },
+        {
+          "name": "39-duke-university-data.json",
+          "path": "39-duke-university-data.json"
+        },
+        {
+          "name": "4-university-of-cambridge-data.json",
+          "path": "4-university-of-cambridge-data.json"
+        },
+        {
+          "name": "40-university-of-edinburgh-data.json",
+          "path": "40-university-of-edinburgh-data.json"
+        },
+        {
+          "name": "41-sorbonne-university-data.json",
+          "path": "41-sorbonne-university-data.json"
+        },
+        {
+          "name": "42-university-of-science-and-technology-of-china-data.json",
+          "path": "42-university-of-science-and-technology-of-china-data.json"
+        },
+        {
+          "name": "43-karolinska-institutet-data.json",
+          "path": "43-karolinska-institutet-data.json"
+        },
+        {
+          "name": "44-ludwig-maximilian-university-of-munich-data.json",
+          "path": "44-ludwig-maximilian-university-of-munich-data.json"
+        },
+        {
+          "name": "45-kyoto-university-data.json",
+          "path": "45-kyoto-university-data.json"
+        },
+        {
+          "name": "46-the-university-of-texas-at-austin-data.json",
+          "path": "46-the-university-of-texas-at-austin-data.json"
+        },
+        {
+          "name": "47-technical-university-of-munich-data.json",
+          "path": "47-technical-university-of-munich-data.json"
+        },
+        {
+          "name": "48-university-of-british-columbia-data.json",
+          "path": "48-university-of-british-columbia-data.json"
+        },
+        {
+          "name": "49-university-of-minnesota-data.json",
+          "path": "49-university-of-minnesota-data.json"
+        },
+        {
+          "name": "5-university-of-california-berkeley-data.json",
+          "path": "5-university-of-california-berkeley-data.json"
+        },
+        {
+          "name": "50-fudan-university-data.json",
+          "path": "50-fudan-university-data.json"
+        },
+        {
+          "name": "51-heidelberg-university-data.json",
+          "path": "51-heidelberg-university-data.json"
+        },
+        {
+          "name": "52-university-of-manchester-data.json",
+          "path": "52-university-of-manchester-data.json"
+        },
+        {
+          "name": "53-kings-college-london-data.json",
+          "path": "53-kings-college-london-data.json"
+        },
+        {
+          "name": "54-university-of-texas-southwestern-medical-center-data.json",
+          "path": "54-university-of-texas-southwestern-medical-center-data.json"
+        },
+        {
+          "name": "55-swiss-federal-institute-of-technology-lausanne-data.json",
+          "path": "55-swiss-federal-institute-of-technology-lausanne-data.json"
+        },
+        {
+          "name": "56-university-of-illinois-urbana-champaign-data.json",
+          "path": "56-university-of-illinois-urbana-champaign-data.json"
+        },
+        {
+          "name": "57-utrecht-university-data.json",
+          "path": "57-utrecht-university-data.json"
+        },
+        {
+          "name": "58-university-of-geneva-data.json",
+          "path": "58-university-of-geneva-data.json"
+        },
+        {
+          "name": "59-university-of-maryland-college-park-data.json",
+          "path": "59-university-of-maryland-college-park-data.json"
+        },
+        {
+          "name": "6-university-of-oxford-data.json",
+          "path": "6-university-of-oxford-data.json"
+        },
+        {
+          "name": "60-paris-cite-university-data.json",
+          "path": "60-paris-cite-university-data.json"
+        },
+        {
+          "name": "61-university-of-bonn-data.json",
+          "path": "61-university-of-bonn-data.json"
+        },
+        {
+          "name": "62-university-of-southern-california-data.json",
+          "path": "62-university-of-southern-california-data.json"
+        },
+        {
+          "name": "63-the-university-of-queensland-data.json",
+          "path": "63-the-university-of-queensland-data.json"
+        },
+        {
+          "name": "64-university-of-california-santa-barbara-data.json",
+          "path": "64-university-of-california-santa-barbara-data.json"
+        },
+        {
+          "name": "65-university-of-colorado-boulder-data.json",
+          "path": "65-university-of-colorado-boulder-data.json"
+        },
+        {
+          "name": "66-vanderbilt-university-data.json",
+          "path": "66-vanderbilt-university-data.json"
+        },
+        {
+          "name": "67-university-of-zurich-data.json",
+          "path": "67-university-of-zurich-data.json"
+        },
+        {
+          "name": "68-national-university-of-singapore-data.json",
+          "path": "68-national-university-of-singapore-data.json"
+        },
+        {
+          "name": "69-university-of-groningen-data.json",
+          "path": "69-university-of-groningen-data.json"
+        },
+        {
+          "name": "7-princeton-university-data.json",
+          "path": "7-princeton-university-data.json"
+        },
+        {
+          "name": "70-weizmann-institute-of-science-data.json",
+          "path": "70-weizmann-institute-of-science-data.json"
+        },
+        {
+          "name": "71-the-university-of-hong-kong-data.json",
+          "path": "71-the-university-of-hong-kong-data.json"
+        },
+        {
+          "name": "72-sun-yat-sen-university-data.json",
+          "path": "72-sun-yat-sen-university-data.json"
+        },
+        {
+          "name": "73-university-of-oslo-data.json",
+          "path": "73-university-of-oslo-data.json"
+        },
+        {
+          "name": "74-mcgill-university-data.json",
+          "path": "74-mcgill-university-data.json"
+        },
+        {
+          "name": "75-the-university-of-sydney-data.json",
+          "path": "75-the-university-of-sydney-data.json"
+        },
+        {
+          "name": "76-university-of-california-irvine-data.json",
+          "path": "76-university-of-california-irvine-data.json"
+        },
+        {
+          "name": "77-unsw-sydney-data.json",
+          "path": "77-unsw-sydney-data.json"
+        },
+        {
+          "name": "78-ku-leuven-data.json",
+          "path": "78-ku-leuven-data.json"
+        },
+        {
+          "name": "79-huazhong-university-of-science-and-technology-data.json",
+          "path": "79-huazhong-university-of-science-and-technology-data.json"
+        },
+        {
+          "name": "8-california-institute-of-technology-data.json",
+          "path": "8-california-institute-of-technology-data.json"
+        },
+        {
+          "name": "80-aarhus-university-data.json",
+          "path": "80-aarhus-university-data.json"
+        },
+        {
+          "name": "81-the-hebrew-university-of-jerusalem-data.json",
+          "path": "81-the-hebrew-university-of-jerusalem-data.json"
+        },
+        {
+          "name": "82-monash-university-data.json",
+          "path": "82-monash-university-data.json"
+        },
+        {
+          "name": "83-nanjing-university-data.json",
+          "path": "83-nanjing-university-data.json"
+        },
+        {
+          "name": "84-the-ohio-state-university-data.json",
+          "path": "84-the-ohio-state-university-data.json"
+        },
+        {
+          "name": "85-technion-israel-institute-of-technology-data.json",
+          "path": "85-technion-israel-institute-of-technology-data.json"
+        },
+        {
+          "name": "86-seoul-national-university-data.json",
+          "path": "86-seoul-national-university-data.json"
+        },
+        {
+          "name": "87-university-of-texas-md-anderson-cancer-center-data.json",
+          "path": "87-university-of-texas-md-anderson-cancer-center-data.json"
+        },
+        {
+          "name": "88-uppsala-university-data.json",
+          "path": "88-uppsala-university-data.json"
+        },
+        {
+          "name": "89-wuhan-university-data.json",
+          "path": "89-wuhan-university-data.json"
+        },
+        {
+          "name": "9-columbia-university-data.json",
+          "path": "9-columbia-university-data.json"
+        },
+        {
+          "name": "90-ghent-university-data.json",
+          "path": "90-ghent-university-data.json"
+        },
+        {
+          "name": "91-king-saud-university-data.json",
+          "path": "91-king-saud-university-data.json"
+        },
+        {
+          "name": "92-nanyang-technological-university-data.json",
+          "path": "92-nanyang-technological-university-data.json"
+        },
+        {
+          "name": "93-university-of-pittsburgh-data.json",
+          "path": "93-university-of-pittsburgh-data.json"
+        },
+        {
+          "name": "94-central-south-university-data.json",
+          "path": "94-central-south-university-data.json"
+        },
+        {
+          "name": "95-university-of-basel-data.json",
+          "path": "95-university-of-basel-data.json"
+        },
+        {
+          "name": "96-xian-jiaotong-university-data.json",
+          "path": "96-xian-jiaotong-university-data.json"
+        },
+        {
+          "name": "97-university-of-bristol-data.json",
+          "path": "97-university-of-bristol-data.json"
+        },
+        {
+          "name": "98-sichuan-university-data.json",
+          "path": "98-sichuan-university-data.json"
+        },
+        {
+          "name": "99-university-of-helsinki-data.json",
+          "path": "99-university-of-helsinki-data.json"
+        },
+        {
+          "name": "universities-data.json",
+          "path": "universities-data.json"
+        }
+      ]
+    },
+    {
+      "id": "airport",
+      "name": "Airport",
+      "subfoldersCount": 0,
+      "filesCount": 101,
+      "totalFiles": 101,
+      "subfolders": [],
+      "rootFiles": [
+        {
+          "name": "1-hartsfield-jackson-atlanta-international-airport-atl-data.json",
+          "path": "1-hartsfield-jackson-atlanta-international-airport-atl-data.json"
+        },
+        {
+          "name": "10-shanghai-pudong-international-airport-pvg-data.json",
+          "path": "10-shanghai-pudong-international-airport-pvg-data.json"
+        },
+        {
+          "name": "100-malaga-costa-del-sol-airport-agp-data.json",
+          "path": "100-malaga-costa-del-sol-airport-agp-data.json"
+        },
+        {
+          "name": "11-los-angeles-international-airport-lax-data.json",
+          "path": "11-los-angeles-international-airport-lax-data.json"
+        },
+        {
+          "name": "12-guangzhou-baiyun-international-airport-can-data.json",
+          "path": "12-guangzhou-baiyun-international-airport-can-data.json"
+        },
+        {
+          "name": "13-seoul-incheon-international-airport-icn-data.json",
+          "path": "13-seoul-incheon-international-airport-icn-data.json"
+        },
+        {
+          "name": "14-paris-charles-de-gaulle-airport-cdg-data.json",
+          "path": "14-paris-charles-de-gaulle-airport-cdg-data.json"
+        },
+        {
+          "name": "15-singapore-changi-airport-sin-data.json",
+          "path": "15-singapore-changi-airport-sin-data.json"
+        },
+        {
+          "name": "16-beijing-capital-international-airport-pek-data.json",
+          "path": "16-beijing-capital-international-airport-pek-data.json"
+        },
+        {
+          "name": "17-amsterdam-airport-schiphol-ams-data.json",
+          "path": "17-amsterdam-airport-schiphol-ams-data.json"
+        },
+        {
+          "name": "18-adolfo-suarez-madrid-barajas-airport-mad-data.json",
+          "path": "18-adolfo-suarez-madrid-barajas-airport-mad-data.json"
+        },
+        {
+          "name": "19-john-f-kennedy-international-airport-jfk-data.json",
+          "path": "19-john-f-kennedy-international-airport-jfk-data.json"
+        },
+        {
+          "name": "2-dubai-international-airport-dxb-data.json",
+          "path": "2-dubai-international-airport-dxb-data.json"
+        },
+        {
+          "name": "20-suvarnabhumi-airport-bkk-data.json",
+          "path": "20-suvarnabhumi-airport-bkk-data.json"
+        },
+        {
+          "name": "21-frankfurt-airport-fra-data.json",
+          "path": "21-frankfurt-airport-fra-data.json"
+        },
+        {
+          "name": "22-shenzhen-baoan-international-airport-szx-data.json",
+          "path": "22-shenzhen-baoan-international-airport-szx-data.json"
+        },
+        {
+          "name": "23-charlotte-douglas-international-airport-clt-data.json",
+          "path": "23-charlotte-douglas-international-airport-clt-data.json"
+        },
+        {
+          "name": "24-harry-reid-international-airport-las-data.json",
+          "path": "24-harry-reid-international-airport-las-data.json"
+        },
+        {
+          "name": "25-orlando-international-airport-mco-data.json",
+          "path": "25-orlando-international-airport-mco-data.json"
+        },
+        {
+          "name": "26-kuala-lumpur-international-airport-kul-data.json",
+          "path": "26-kuala-lumpur-international-airport-kul-data.json"
+        },
+        {
+          "name": "27-chhatrapati-shivaji-maharaj-international-airport-bom-data.json",
+          "path": "27-chhatrapati-shivaji-maharaj-international-airport-bom-data.json"
+        },
+        {
+          "name": "28-miami-international-airport-mia-data.json",
+          "path": "28-miami-international-airport-mia-data.json"
+        },
+        {
+          "name": "29-josep-tarradellas-barcelona-el-prat-airport-bcn-data.json",
+          "path": "29-josep-tarradellas-barcelona-el-prat-airport-bcn-data.json"
+        },
+        {
+          "name": "3-dallas-fort-worth-international-airport-dfw-data.json",
+          "path": "3-dallas-fort-worth-international-airport-dfw-data.json"
+        },
+        {
+          "name": "30-soekarno-hatta-international-airport-cgk-data.json",
+          "path": "30-soekarno-hatta-international-airport-cgk-data.json"
+        },
+        {
+          "name": "31-chengdu-tianfu-international-airport-tfu-data.json",
+          "path": "31-chengdu-tianfu-international-airport-tfu-data.json"
+        },
+        {
+          "name": "32-san-francisco-international-airport-sfo-data.json",
+          "path": "32-san-francisco-international-airport-sfo-data.json"
+        },
+        {
+          "name": "33-hong-kong-international-airport-hkg-data.json",
+          "path": "33-hong-kong-international-airport-hkg-data.json"
+        },
+        {
+          "name": "34-hamad-international-airport-doh-data.json",
+          "path": "34-hamad-international-airport-doh-data.json"
+        },
+        {
+          "name": "35-seattle-tacoma-international-airport-sea-data.json",
+          "path": "35-seattle-tacoma-international-airport-sea-data.json"
+        },
+        {
+          "name": "36-ninoy-aquino-international-airport-mnl-data.json",
+          "path": "36-ninoy-aquino-international-airport-mnl-data.json"
+        },
+        {
+          "name": "37-leonardo-da-vinci-fiumicino-airport-fco-data.json",
+          "path": "37-leonardo-da-vinci-fiumicino-airport-fco-data.json"
+        },
+        {
+          "name": "38-king-abdulaziz-international-airport-jed-data.json",
+          "path": "38-king-abdulaziz-international-airport-jed-data.json"
+        },
+        {
+          "name": "39-newark-liberty-international-airport-ewr-data.json",
+          "path": "39-newark-liberty-international-airport-ewr-data.json"
+        },
+        {
+          "name": "4-tokyo-haneda-airport-hnd-data.json",
+          "path": "4-tokyo-haneda-airport-hnd-data.json"
+        },
+        {
+          "name": "40-chongqing-jiangbei-international-airport-ckg-data.json",
+          "path": "40-chongqing-jiangbei-international-airport-ckg-data.json"
+        },
+        {
+          "name": "41-hangzhou-xiaoshan-international-airport-hgh-data.json",
+          "path": "41-hangzhou-xiaoshan-international-airport-hgh-data.json"
+        },
+        {
+          "name": "42-xian-xianyang-international-airport-xiy-data.json",
+          "path": "42-xian-xianyang-international-airport-xiy-data.json"
+        },
+        {
+          "name": "43-kunming-changshui-international-airport-kmg-data.json",
+          "path": "43-kunming-changshui-international-airport-kmg-data.json"
+        },
+        {
+          "name": "44-shanghai-hongqiao-international-airport-sha-data.json",
+          "path": "44-shanghai-hongqiao-international-airport-sha-data.json"
+        },
+        {
+          "name": "45-kunming-duplicate-guard-houston-george-bush-intercontinental-data.json",
+          "path": "45-kunming-duplicate-guard-houston-george-bush-intercontinental-data.json"
+        },
+        {
+          "name": "46-phoenix-sky-harbor-international-airport-phx-data.json",
+          "path": "46-phoenix-sky-harbor-international-airport-phx-data.json"
+        },
+        {
+          "name": "47-mexico-city-international-airport-mex-data.json",
+          "path": "47-mexico-city-international-airport-mex-data.json"
+        },
+        {
+          "name": "48-toronto-pearson-international-airport-yyz-data.json",
+          "path": "48-toronto-pearson-international-airport-yyz-data.json"
+        },
+        {
+          "name": "49-sao-paulo-guarulhos-international-airport-gru-data.json",
+          "path": "49-sao-paulo-guarulhos-international-airport-gru-data.json"
+        },
+        {
+          "name": "5-london-heathrow-airport-lhr-data.json",
+          "path": "5-london-heathrow-airport-lhr-data.json"
+        },
+        {
+          "name": "50-london-gatwick-airport-lgw-data.json",
+          "path": "50-london-gatwick-airport-lgw-data.json"
+        },
+        {
+          "name": "51-boston-logan-international-airport-bos-data.json",
+          "path": "51-boston-logan-international-airport-bos-data.json"
+        },
+        {
+          "name": "52-beijing-daxing-international-airport-pkx-data.json",
+          "path": "52-beijing-daxing-international-airport-pkx-data.json"
+        },
+        {
+          "name": "53-taipei-taoyuan-international-airport-tpe-data.json",
+          "path": "53-taipei-taoyuan-international-airport-tpe-data.json"
+        },
+        {
+          "name": "54-munich-airport-muc-data.json",
+          "path": "54-munich-airport-muc-data.json"
+        },
+        {
+          "name": "55-istanbul-sabiha-gokcen-international-airport-saw-data.json",
+          "path": "55-istanbul-sabiha-gokcen-international-airport-saw-data.json"
+        },
+        {
+          "name": "56-sydney-kingsford-smith-airport-syd-data.json",
+          "path": "56-sydney-kingsford-smith-airport-syd-data.json"
+        },
+        {
+          "name": "57-ho-chi-minh-city-tan-son-nhat-international-airport-sgn-data.json",
+          "path": "57-ho-chi-minh-city-tan-son-nhat-international-airport-sgn-data.json"
+        },
+        {
+          "name": "58-kempegowda-international-airport-blr-data.json",
+          "path": "58-kempegowda-international-airport-blr-data.json"
+        },
+        {
+          "name": "59-tokyo-narita-international-airport-nrt-data.json",
+          "path": "59-tokyo-narita-international-airport-nrt-data.json"
+        },
+        {
+          "name": "6-denver-international-airport-den-data.json",
+          "path": "6-denver-international-airport-den-data.json"
+        },
+        {
+          "name": "60-osaka-kansai-international-airport-kix-data.json",
+          "path": "60-osaka-kansai-international-airport-kix-data.json"
+        },
+        {
+          "name": "61-riyadh-king-khalid-international-airport-ruh-data.json",
+          "path": "61-riyadh-king-khalid-international-airport-ruh-data.json"
+        },
+        {
+          "name": "62-minneapolis-saint-paul-international-airport-msp-data.json",
+          "path": "62-minneapolis-saint-paul-international-airport-msp-data.json"
+        },
+        {
+          "name": "63-san-diego-international-airport-san-data.json",
+          "path": "63-san-diego-international-airport-san-data.json"
+        },
+        {
+          "name": "64-bogota-el-dorado-international-airport-bog-data.json",
+          "path": "64-bogota-el-dorado-international-airport-bog-data.json"
+        },
+        {
+          "name": "65-melbourne-airport-mel-data.json",
+          "path": "65-melbourne-airport-mel-data.json"
+        },
+        {
+          "name": "66-lisbon-humberto-delgado-airport-lis-data.json",
+          "path": "66-lisbon-humberto-delgado-airport-lis-data.json"
+        },
+        {
+          "name": "67-dublin-airport-dub-data.json",
+          "path": "67-dublin-airport-dub-data.json"
+        },
+        {
+          "name": "68-palma-de-mallorca-airport-pmi-data.json",
+          "path": "68-palma-de-mallorca-airport-pmi-data.json"
+        },
+        {
+          "name": "69-cancun-international-airport-cun-data.json",
+          "path": "69-cancun-international-airport-cun-data.json"
+        },
+        {
+          "name": "7-istanbul-airport-ist-data.json",
+          "path": "7-istanbul-airport-ist-data.json"
+        },
+        {
+          "name": "70-wuhan-tianhe-international-airport-wuh-data.json",
+          "path": "70-wuhan-tianhe-international-airport-wuh-data.json"
+        },
+        {
+          "name": "71-detroit-metropolitan-airport-dtw-data.json",
+          "path": "71-detroit-metropolitan-airport-dtw-data.json"
+        },
+        {
+          "name": "72-athens-international-airport-ath-data.json",
+          "path": "72-athens-international-airport-ath-data.json"
+        },
+        {
+          "name": "73-vienna-international-airport-vie-data.json",
+          "path": "73-vienna-international-airport-vie-data.json"
+        },
+        {
+          "name": "74-zurich-airport-zrh-data.json",
+          "path": "74-zurich-airport-zrh-data.json"
+        },
+        {
+          "name": "75-manchester-airport-man-data.json",
+          "path": "75-manchester-airport-man-data.json"
+        },
+        {
+          "name": "76-xiamen-gaoqi-international-airport-xmn-data.json",
+          "path": "76-xiamen-gaoqi-international-airport-xmn-data.json"
+        },
+        {
+          "name": "77-changsha-huanghua-international-airport-csx-data.json",
+          "path": "77-changsha-huanghua-international-airport-csx-data.json"
+        },
+        {
+          "name": "78-nanjing-lukou-international-airport-nkg-data.json",
+          "path": "78-nanjing-lukou-international-airport-nkg-data.json"
+        },
+        {
+          "name": "79-philadelphia-international-airport-phl-data.json",
+          "path": "79-philadelphia-international-airport-phl-data.json"
+        },
+        {
+          "name": "8-chicago-ohare-international-airport-ord-data.json",
+          "path": "8-chicago-ohare-international-airport-ord-data.json"
+        },
+        {
+          "name": "80-copenhagen-airport-cph-data.json",
+          "path": "80-copenhagen-airport-cph-data.json"
+        },
+        {
+          "name": "81-don-mueang-international-airport-dmk-data.json",
+          "path": "81-don-mueang-international-airport-dmk-data.json"
+        },
+        {
+          "name": "82-london-stansted-airport-stn-data.json",
+          "path": "82-london-stansted-airport-stn-data.json"
+        },
+        {
+          "name": "83-milan-malpensa-airport-mxp-data.json",
+          "path": "83-milan-malpensa-airport-mxp-data.json"
+        },
+        {
+          "name": "84-salt-lake-city-international-airport-slc-data.json",
+          "path": "84-salt-lake-city-international-airport-slc-data.json"
+        },
+        {
+          "name": "85-stockholm-arlanda-airport-arn-data.json",
+          "path": "85-stockholm-arlanda-airport-arn-data.json"
+        },
+        {
+          "name": "86-cairo-international-airport-cai-data.json",
+          "path": "86-cairo-international-airport-cai-data.json"
+        },
+        {
+          "name": "87-washington-dulles-international-airport-iad-data.json",
+          "path": "87-washington-dulles-international-airport-iad-data.json"
+        },
+        {
+          "name": "88-baltimore-washington-international-airport-bwi-data.json",
+          "path": "88-baltimore-washington-international-airport-bwi-data.json"
+        },
+        {
+          "name": "89-qingdao-jiaodong-international-airport-tao-data.json",
+          "path": "89-qingdao-jiaodong-international-airport-tao-data.json"
+        },
+        {
+          "name": "9-indira-gandhi-international-airport-del-data.json",
+          "path": "9-indira-gandhi-international-airport-del-data.json"
+        },
+        {
+          "name": "90-urumqi-diwopu-international-airport-urc-data.json",
+          "path": "90-urumqi-diwopu-international-airport-urc-data.json"
+        },
+        {
+          "name": "91-oslo-gardermoen-airport-osl-data.json",
+          "path": "91-oslo-gardermoen-airport-osl-data.json"
+        },
+        {
+          "name": "92-vancouver-international-airport-yvr-data.json",
+          "path": "92-vancouver-international-airport-yvr-data.json"
+        },
+        {
+          "name": "93-haikou-meilan-international-airport-hak-data.json",
+          "path": "93-haikou-meilan-international-airport-hak-data.json"
+        },
+        {
+          "name": "94-ronald-reagan-washington-national-airport-dca-data.json",
+          "path": "94-ronald-reagan-washington-national-airport-dca-data.json"
+        },
+        {
+          "name": "95-berlin-brandenburg-airport-ber-data.json",
+          "path": "95-berlin-brandenburg-airport-ber-data.json"
+        },
+        {
+          "name": "96-fukuoka-airport-fuk-data.json",
+          "path": "96-fukuoka-airport-fuk-data.json"
+        },
+        {
+          "name": "97-santiago-arturo-merino-benitez-airport-scl-data.json",
+          "path": "97-santiago-arturo-merino-benitez-airport-scl-data.json"
+        },
+        {
+          "name": "98-brisbane-airport-bne-data.json",
+          "path": "98-brisbane-airport-bne-data.json"
+        },
+        {
+          "name": "99-sapporo-new-chitose-airport-cts-data.json",
+          "path": "99-sapporo-new-chitose-airport-cts-data.json"
+        },
+        {
+          "name": "airport-data.json",
+          "path": "airport-data.json"
+        }
+      ]
+    },
+    {
+      "id": "ports",
+      "name": "Ports",
+      "subfoldersCount": 0,
+      "filesCount": 101,
+      "totalFiles": 101,
+      "subfolders": [],
+      "rootFiles": [
+        {
+          "name": "1-port-of-shanghai-cnsha-data.json",
+          "path": "1-port-of-shanghai-cnsha-data.json"
+        },
+        {
+          "name": "10-port-klang-mypkg-data.json",
+          "path": "10-port-klang-mypkg-data.json"
+        },
+        {
+          "name": "100-port-of-dar-es-salaam-tzdar-data.json",
+          "path": "100-port-of-dar-es-salaam-tzdar-data.json"
+        },
+        {
+          "name": "11-port-of-rotterdam-nlrtm-data.json",
+          "path": "11-port-of-rotterdam-nlrtm-data.json"
+        },
+        {
+          "name": "12-port-of-hong-kong-hkhkg-data.json",
+          "path": "12-port-of-hong-kong-hkhkg-data.json"
+        },
+        {
+          "name": "13-port-of-antwerp-bruges-beanr-data.json",
+          "path": "13-port-of-antwerp-bruges-beanr-data.json"
+        },
+        {
+          "name": "14-port-of-xiamen-cnxmn-data.json",
+          "path": "14-port-of-xiamen-cnxmn-data.json"
+        },
+        {
+          "name": "15-port-of-tanjung-pelepas-mytpp-data.json",
+          "path": "15-port-of-tanjung-pelepas-mytpp-data.json"
+        },
+        {
+          "name": "16-port-of-los-angeles-uslax-data.json",
+          "path": "16-port-of-los-angeles-uslax-data.json"
+        },
+        {
+          "name": "17-tanger-med-port-matng-data.json",
+          "path": "17-tanger-med-port-matng-data.json"
+        },
+        {
+          "name": "18-port-of-suzhou-taicang-cntag-data.json",
+          "path": "18-port-of-suzhou-taicang-cntag-data.json"
+        },
+        {
+          "name": "19-port-of-long-beach-uslgb-data.json",
+          "path": "19-port-of-long-beach-uslgb-data.json"
+        },
+        {
+          "name": "2-port-of-singapore-sgsin-data.json",
+          "path": "2-port-of-singapore-sgsin-data.json"
+        },
+        {
+          "name": "20-laem-chabang-port-thlch-data.json",
+          "path": "20-laem-chabang-port-thlch-data.json"
+        },
+        {
+          "name": "21-port-of-kaohsiung-twkhh-data.json",
+          "path": "21-port-of-kaohsiung-twkhh-data.json"
+        },
+        {
+          "name": "22-saigon-port-ho-chi-minh-city-vnsgn-data.json",
+          "path": "22-saigon-port-ho-chi-minh-city-vnsgn-data.json"
+        },
+        {
+          "name": "23-beibu-gulf-port-qinzhou-cnqzh-data.json",
+          "path": "23-beibu-gulf-port-qinzhou-cnqzh-data.json"
+        },
+        {
+          "name": "24-port-of-new-york-new-jersey-usnyc-data.json",
+          "path": "24-port-of-new-york-new-jersey-usnyc-data.json"
+        },
+        {
+          "name": "25-mundra-port-inmun-data.json",
+          "path": "25-mundra-port-inmun-data.json"
+        },
+        {
+          "name": "26-port-of-tanjung-priok-jakarta-idjkt-data.json",
+          "path": "26-port-of-tanjung-priok-jakarta-idjkt-data.json"
+        },
+        {
+          "name": "27-port-of-hamburg-deham-data.json",
+          "path": "27-port-of-hamburg-deham-data.json"
+        },
+        {
+          "name": "28-port-of-colombo-lkcmb-data.json",
+          "path": "28-port-of-colombo-lkcmb-data.json"
+        },
+        {
+          "name": "29-port-of-haiphong-vnhph-data.json",
+          "path": "29-port-of-haiphong-vnhph-data.json"
+        },
+        {
+          "name": "3-port-of-ningbo-zhoushan-cnngb-data.json",
+          "path": "3-port-of-ningbo-zhoushan-cnngb-data.json"
+        },
+        {
+          "name": "30-cai-mep-vung-tau-port-vnvut-data.json",
+          "path": "30-cai-mep-vung-tau-port-vnvut-data.json"
+        },
+        {
+          "name": "31-jawaharlal-nehru-port-nhava-sheva-innsa-data.json",
+          "path": "31-jawaharlal-nehru-port-nhava-sheva-innsa-data.json"
+        },
+        {
+          "name": "32-port-of-rizhao-cnrzh-data.json",
+          "path": "32-port-of-rizhao-cnrzh-data.json"
+        },
+        {
+          "name": "33-port-of-lianyungang-cnlyg-data.json",
+          "path": "33-port-of-lianyungang-cnlyg-data.json"
+        },
+        {
+          "name": "34-port-of-yingkou-cnyko-data.json",
+          "path": "34-port-of-yingkou-cnyko-data.json"
+        },
+        {
+          "name": "35-port-of-savannah-ussav-data.json",
+          "path": "35-port-of-savannah-ussav-data.json"
+        },
+        {
+          "name": "36-port-of-manila-mnmnl-data.json",
+          "path": "36-port-of-manila-mnmnl-data.json"
+        },
+        {
+          "name": "37-port-of-santos-brssz-data.json",
+          "path": "37-port-of-santos-brssz-data.json"
+        },
+        {
+          "name": "38-port-of-valencia-esval-data.json",
+          "path": "38-port-of-valencia-esval-data.json"
+        },
+        {
+          "name": "39-khalifa-port-abu-dhabi-aekhl-data.json",
+          "path": "39-khalifa-port-abu-dhabi-aekhl-data.json"
+        },
+        {
+          "name": "4-port-of-shenzhen-cnszx-data.json",
+          "path": "4-port-of-shenzhen-cnszx-data.json"
+        },
+        {
+          "name": "40-port-of-dalian-cndlc-data.json",
+          "path": "40-port-of-dalian-cndlc-data.json"
+        },
+        {
+          "name": "41-colon-port-cristobal-pactg-data.json",
+          "path": "41-colon-port-cristobal-pactg-data.json"
+        },
+        {
+          "name": "42-port-of-yantai-cnynt-data.json",
+          "path": "42-port-of-yantai-cnynt-data.json"
+        },
+        {
+          "name": "43-port-of-piraeus-grpir-data.json",
+          "path": "43-port-of-piraeus-grpir-data.json"
+        },
+        {
+          "name": "44-port-of-algeciras-esalg-data.json",
+          "path": "44-port-of-algeciras-esalg-data.json"
+        },
+        {
+          "name": "45-port-of-tokyo-jptyo-data.json",
+          "path": "45-port-of-tokyo-jptyo-data.json"
+        },
+        {
+          "name": "46-port-of-bremen-bremerhaven-debre-data.json",
+          "path": "46-port-of-bremen-bremerhaven-debre-data.json"
+        },
+        {
+          "name": "47-port-of-tanjung-perak-surabaya-idsub-data.json",
+          "path": "47-port-of-tanjung-perak-surabaya-idsub-data.json"
+        },
+        {
+          "name": "48-port-of-houston-ushou-data.json",
+          "path": "48-port-of-houston-ushou-data.json"
+        },
+        {
+          "name": "49-port-of-dongguan-cndgg-data.json",
+          "path": "49-port-of-dongguan-cndgg-data.json"
+        },
+        {
+          "name": "5-port-of-qingdao-cntao-data.json",
+          "path": "5-port-of-qingdao-cntao-data.json"
+        },
+        {
+          "name": "50-port-of-balboa-pablb-data.json",
+          "path": "50-port-of-balboa-pablb-data.json"
+        },
+        {
+          "name": "51-port-of-gioia-tauro-itgit-data.json",
+          "path": "51-port-of-gioia-tauro-itgit-data.json"
+        },
+        {
+          "name": "52-port-of-salalah-omsll-data.json",
+          "path": "52-port-of-salalah-omsll-data.json"
+        },
+        {
+          "name": "53-port-said-port-egpsd-data.json",
+          "path": "53-port-said-port-egpsd-data.json"
+        },
+        {
+          "name": "54-jeddah-islamic-port-sajed-data.json",
+          "path": "54-jeddah-islamic-port-sajed-data.json"
+        },
+        {
+          "name": "55-port-of-fuzhou-cnfoc-data.json",
+          "path": "55-port-of-fuzhou-cnfoc-data.json"
+        },
+        {
+          "name": "56-port-of-incheon-krinc-data.json",
+          "path": "56-port-of-incheon-krinc-data.json"
+        },
+        {
+          "name": "57-ambarli-port-istanbul-tramb-data.json",
+          "path": "57-ambarli-port-istanbul-tramb-data.json"
+        },
+        {
+          "name": "58-port-of-felixstowe-gbfxt-data.json",
+          "path": "58-port-of-felixstowe-gbfxt-data.json"
+        },
+        {
+          "name": "59-port-of-cartagena-coctg-data.json",
+          "path": "59-port-of-cartagena-coctg-data.json"
+        },
+        {
+          "name": "6-port-of-guangzhou-cncan-data.json",
+          "path": "6-port-of-guangzhou-cncan-data.json"
+        },
+        {
+          "name": "60-manzanillo-international-terminal-panam-pamit-data.json",
+          "path": "60-manzanillo-international-terminal-panam-pamit-data.json"
+        },
+        {
+          "name": "61-port-of-barcelona-esbcn-data.json",
+          "path": "61-port-of-barcelona-esbcn-data.json"
+        },
+        {
+          "name": "62-malta-freeport-marsaxlokk-mtmar-data.json",
+          "path": "62-malta-freeport-marsaxlokk-mtmar-data.json"
+        },
+        {
+          "name": "63-port-of-chattogram-chittagong-bdcgp-data.json",
+          "path": "63-port-of-chattogram-chittagong-bdcgp-data.json"
+        },
+        {
+          "name": "64-port-of-callao-lima-pecll-data.json",
+          "path": "64-port-of-callao-lima-pecll-data.json"
+        },
+        {
+          "name": "65-king-abdulaziz-port-dammam-sadmm-data.json",
+          "path": "65-king-abdulaziz-port-dammam-sadmm-data.json"
+        },
+        {
+          "name": "66-port-of-durban-zadur-data.json",
+          "path": "66-port-of-durban-zadur-data.json"
+        },
+        {
+          "name": "67-khor-fakkan-port-sharjah-aekhf-data.json",
+          "path": "67-khor-fakkan-port-sharjah-aekhf-data.json"
+        },
+        {
+          "name": "68-port-of-gdansk-plgdn-data.json",
+          "path": "68-port-of-gdansk-plgdn-data.json"
+        },
+        {
+          "name": "69-port-of-kingston-jamaica-jmkin-data.json",
+          "path": "69-port-of-kingston-jamaica-jmkin-data.json"
+        },
+        {
+          "name": "7-port-of-busan-krpus-data.json",
+          "path": "7-port-of-busan-krpus-data.json"
+        },
+        {
+          "name": "70-port-of-guayaquil-ecgye-data.json",
+          "path": "70-port-of-guayaquil-ecgye-data.json"
+        },
+        {
+          "name": "71-port-of-oakland-usoak-data.json",
+          "path": "71-port-of-oakland-usoak-data.json"
+        },
+        {
+          "name": "72-port-of-seattle-tacoma-nwsa-ussea-data.json",
+          "path": "72-port-of-seattle-tacoma-nwsa-ussea-data.json"
+        },
+        {
+          "name": "73-port-of-vancouver-cavan-data.json",
+          "path": "73-port-of-vancouver-cavan-data.json"
+        },
+        {
+          "name": "74-port-of-melbourne-aumel-data.json",
+          "path": "74-port-of-melbourne-aumel-data.json"
+        },
+        {
+          "name": "75-port-botany-sydney-ausyd-data.json",
+          "path": "75-port-botany-sydney-ausyd-data.json"
+        },
+        {
+          "name": "76-port-of-charleston-uschs-data.json",
+          "path": "76-port-of-charleston-uschs-data.json"
+        },
+        {
+          "name": "77-port-of-virginia-norfolk-usorf-data.json",
+          "path": "77-port-of-virginia-norfolk-usorf-data.json"
+        },
+        {
+          "name": "78-port-of-montreal-camtr-data.json",
+          "path": "78-port-of-montreal-camtr-data.json"
+        },
+        {
+          "name": "79-port-of-le-havre-haropa-frleh-data.json",
+          "path": "79-port-of-le-havre-haropa-frleh-data.json"
+        },
+        {
+          "name": "8-port-of-tianjin-cntxg-data.json",
+          "path": "8-port-of-tianjin-cntxg-data.json"
+        },
+        {
+          "name": "80-port-of-genoa-itgoa-data.json",
+          "path": "80-port-of-genoa-itgoa-data.json"
+        },
+        {
+          "name": "81-chennai-port-inmaa-data.json",
+          "path": "81-chennai-port-inmaa-data.json"
+        },
+        {
+          "name": "82-port-of-haifa-carmel-ilhfa-data.json",
+          "path": "82-port-of-haifa-carmel-ilhfa-data.json"
+        },
+        {
+          "name": "83-port-of-alexandria-egaly-data.json",
+          "path": "83-port-of-alexandria-egaly-data.json"
+        },
+        {
+          "name": "84-port-of-mombasa-kemba-data.json",
+          "path": "84-port-of-mombasa-kemba-data.json"
+        },
+        {
+          "name": "85-lagos-port-apapa-tincan-ngapp-data.json",
+          "path": "85-lagos-port-apapa-tincan-ngapp-data.json"
+        },
+        {
+          "name": "86-port-of-montevideo-uymvd-data.json",
+          "path": "86-port-of-montevideo-uymvd-data.json"
+        },
+        {
+          "name": "87-port-of-navegantes-itajai-brnvt-data.json",
+          "path": "87-port-of-navegantes-itajai-brnvt-data.json"
+        },
+        {
+          "name": "88-port-of-paranagua-brpng-data.json",
+          "path": "88-port-of-paranagua-brpng-data.json"
+        },
+        {
+          "name": "89-port-of-manzanillo-mexico-mxzlo-data.json",
+          "path": "89-port-of-manzanillo-mexico-mxzlo-data.json"
+        },
+        {
+          "name": "9-port-of-jebel-ali-dubai-aejea-data.json",
+          "path": "9-port-of-jebel-ali-dubai-aejea-data.json"
+        },
+        {
+          "name": "90-port-of-lazaro-cardenas-mxlzc-data.json",
+          "path": "90-port-of-lazaro-cardenas-mxlzc-data.json"
+        },
+        {
+          "name": "91-port-of-caucedo-boca-chica-docau-data.json",
+          "path": "91-port-of-caucedo-boca-chica-docau-data.json"
+        },
+        {
+          "name": "92-port-of-san-antonio-chile-clsai-data.json",
+          "path": "92-port-of-san-antonio-chile-clsai-data.json"
+        },
+        {
+          "name": "93-port-of-auckland-nzakl-data.json",
+          "path": "93-port-of-auckland-nzakl-data.json"
+        },
+        {
+          "name": "94-port-of-yokohama-jpyok-data.json",
+          "path": "94-port-of-yokohama-jpyok-data.json"
+        },
+        {
+          "name": "95-port-of-kobe-jpukb-data.json",
+          "path": "95-port-of-kobe-jpukb-data.json"
+        },
+        {
+          "name": "96-port-of-gothenburg-segot-data.json",
+          "path": "96-port-of-gothenburg-segot-data.json"
+        },
+        {
+          "name": "97-port-of-liverpool-gbliv-data.json",
+          "path": "97-port-of-liverpool-gbliv-data.json"
+        },
+        {
+          "name": "98-portmiami-usmia-data.json",
+          "path": "98-portmiami-usmia-data.json"
+        },
+        {
+          "name": "99-port-of-halifax-cahal-data.json",
+          "path": "99-port-of-halifax-cahal-data.json"
+        },
+        {
+          "name": "ports-data.json",
+          "path": "ports-data.json"
+        }
+      ]
+    },
+    {
+      "id": "ev",
+      "name": "Ev",
+      "subfoldersCount": 0,
+      "filesCount": 4,
+      "totalFiles": 4,
+      "subfolders": [],
+      "rootFiles": [
+        {
+          "name": "brands.json",
+          "path": "brands.json"
+        },
+        {
+          "name": "chains.json",
+          "path": "chains.json"
+        },
+        {
+          "name": "ev-charging-data.json",
+          "path": "ev-charging-data.json"
+        },
+        {
+          "name": "ev-data.json",
+          "path": "ev-data.json"
+        }
+      ]
+    },
+    {
+      "id": "bess",
+      "name": "Bess",
+      "subfoldersCount": 0,
+      "filesCount": 3,
+      "totalFiles": 3,
+      "subfolders": [],
+      "rootFiles": [
+        {
+          "name": "bess-data.json",
+          "path": "bess-data.json"
+        },
+        {
+          "name": "brands.json",
+          "path": "brands.json"
+        },
+        {
+          "name": "chains.json",
+          "path": "chains.json"
+        }
+      ]
+    },
+    {
+      "id": "stadiums",
+      "name": "Stadiums",
+      "subfoldersCount": 0,
+      "filesCount": 3,
+      "totalFiles": 3,
+      "subfolders": [],
+      "rootFiles": [
+        {
+          "name": "brands.json",
+          "path": "brands.json"
+        },
+        {
+          "name": "chains.json",
+          "path": "chains.json"
+        },
+        {
+          "name": "stadiums-data.json",
+          "path": "stadiums-data.json"
+        }
+      ]
+    },
+    {
+      "id": "billionaires",
+      "name": "Billionaires",
+      "subfoldersCount": 0,
+      "filesCount": 1,
+      "totalFiles": 1,
+      "subfolders": [],
+      "rootFiles": [
+        {
+          "name": "billionaires-data.json",
+          "path": "billionaires-data.json"
+        }
+      ]
+    },
+    {
+      "id": "companies",
+      "name": "Companies",
+      "subfoldersCount": 0,
+      "filesCount": 1,
+      "totalFiles": 1,
+      "subfolders": [],
+      "rootFiles": [
+        {
+          "name": "companies-data.json",
+          "path": "companies-data.json"
+        }
+      ]
+    },
+    {
+      "id": "parks",
+      "name": "Parks",
+      "subfoldersCount": 0,
+      "filesCount": 1,
+      "totalFiles": 1,
+      "subfolders": [],
+      "rootFiles": [
+        {
+          "name": "parks-data.json",
+          "path": "parks-data.json"
+        }
+      ]
+    },
+    {
+      "id": "shopping",
+      "name": "Shopping",
+      "subfoldersCount": 0,
+      "filesCount": 1,
+      "totalFiles": 1,
+      "subfolders": [],
+      "rootFiles": [
+        {
+          "name": "shopping-data.json",
+          "path": "shopping-data.json"
+        }
+      ]
+    }
+  ],
+  "generatedAt": "2026-10-10T04:28:37.964Z"
+}
