@@ -31,8 +31,8 @@
 	const filteredCities = $derived.by(() => {
 		const query = q.trim().toLowerCase();
 		let rows = cities.filter((c: any) => {
-			if (onlyMissing && c.presentCount === 5) return false;
-			if (onlyComplete && c.presentCount < 5) return false;
+			if (onlyMissing && c.presentCount === themes.length) return false;
+			if (onlyComplete && c.presentCount < themes.length) return false;
 			if (selectedTheme !== 'all' && !c.themes[selectedTheme]?.present) return false;
 			if (query) {
 				const matchName = c.name.toLowerCase().includes(query);
@@ -64,7 +64,7 @@
 				<Badge variant="outline" class="font-mono text-xs">R2 globe/data/&lt;slug&gt;-2d/</Badge>
 			</div>
 			<p class="text-muted-foreground mt-1 text-sm">
-				Real-time monitoring of all 5 thematic atlas JSON datasets (metro/transit, worship, schools, property, universities) across {report.totalCities} global cities.
+				Real-time monitoring of all thematic atlas JSON datasets across {report.totalCities} global cities in R2.
 			</p>
 		</div>
 
@@ -97,8 +97,8 @@
 		</div>
 	{/if}
 
-	<!-- 5 Themes Metric Cards -->
-	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-5">
+	<!-- Themes Metric Cards -->
+	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
 		{#each themes as t}
 			{@const stat = report.summary[t.id] || { present: 0, missing: 0 }}
 			{@const pct = Math.round((stat.present / (report.totalCities || 1)) * 100)}
@@ -215,11 +215,11 @@
 							{/each}
 							<td class="px-4 py-3 text-center font-sans">
 								{#if city.isComplete}
-									<Badge variant="default" class="bg-emerald-600">5 / 5</Badge>
-								{:else if city.presentCount >= 3}
-									<Badge variant="secondary">{city.presentCount} / 5</Badge>
+									<Badge variant="default" class="bg-emerald-600">{themes.length} / {themes.length}</Badge>
+								{:else if city.presentCount >= Math.ceil(themes.length / 2)}
+									<Badge variant="secondary">{city.presentCount} / {themes.length}</Badge>
 								{:else}
-									<Badge variant="destructive">{city.presentCount} / 5</Badge>
+									<Badge variant="destructive">{city.presentCount} / {themes.length}</Badge>
 								{/if}
 							</td>
 							<td class="px-4 py-3 text-right font-sans">

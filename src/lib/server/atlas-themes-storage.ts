@@ -13,11 +13,27 @@ import cityQid from '$lib/data/city-qid.json';
 export const ATLAS_THEMES = [
 	{
 		id: 'metro',
-		name: 'Metro & Train Stations',
-		file: 'transit.json',
-		altFile: 'metro-train-atlas-data.json',
-		accent: '#c084fc',
+		name: 'Metro Landmarks',
+		file: 'metro-train-atlas-data.json',
+		altFile: 'transit.json',
+		accent: '#fbbf24',
 		description: 'Curated hub stations, ridership rankings, lines, and passenger notes'
+	},
+	{
+		id: 'transitStations',
+		name: 'Transit Stations',
+		file: 'transit-stations.json',
+		altFile: null,
+		accent: '#c084fc',
+		description: 'Local transit stops and smaller secondary stations'
+	},
+	{
+		id: 'transitLines',
+		name: 'Transit Routes',
+		file: 'transit-lines.json',
+		altFile: null,
+		accent: '#a855f7',
+		description: 'Subway, railway, and tram network line geometry'
 	},
 	{
 		id: 'worship',
@@ -37,15 +53,15 @@ export const ATLAS_THEMES = [
 	},
 	{
 		id: 'property',
-		name: 'Property & Wealth Districts',
+		name: 'Property Districts',
 		file: 'property.json',
 		altFile: null,
-		accent: '#fbbf24',
+		accent: '#f59e0b',
 		description: 'Top residential housing districts and high-value property areas'
 	},
 	{
 		id: 'universities',
-		name: 'Universities & Institutes',
+		name: 'Universities',
 		file: 'universities.json',
 		altFile: null,
 		accent: '#f472b6',
@@ -95,13 +111,10 @@ export async function loadAtlasThemesReport(platform: any): Promise<AtlasThemesR
 
 	// Build from seed and cityQid
 	const rawCities = (themesSeed as any).cities || [];
-	const summary: Record<AtlasThemeId, { present: number; missing: number }> = {
-		metro: { present: 0, missing: 0 },
-		worship: { present: 0, missing: 0 },
-		schools: { present: 0, missing: 0 },
-		property: { present: 0, missing: 0 },
-		universities: { present: 0, missing: 0 }
-	};
+	const summary = {} as Record<AtlasThemeId, { present: number; missing: number }>;
+	for (const t of ATLAS_THEMES) {
+		summary[t.id] = { present: 0, missing: 0 };
+	}
 
 	const cities: CityThemeRecord[] = [];
 
@@ -110,11 +123,13 @@ export async function loadAtlasThemesReport(platform: any): Promise<AtlasThemesR
 		const qidInfo = (cityQid as Record<string, any>)[slug] || (cityQid as Record<string, any>)[slug.replace(/-/g, '')];
 
 		const themePresence: Record<AtlasThemeId, { present: boolean }> = {
-			metro: { present: Boolean(c.metro) },
-			worship: { present: Boolean(c.worship) },
-			schools: { present: Boolean(c.schools) },
-			property: { present: Boolean(c.property) },
-			universities: { present: Boolean(c.universities) }
+			metro: Boolean(c.metro),
+			transitStations: Boolean(c.transitStations),
+			transitLines: Boolean(c.transitLines),
+			worship: Boolean(c.worship),
+			schools: Boolean(c.schools),
+			property: Boolean(c.property),
+			universities: Boolean(c.universities)
 		};
 
 		let presentCount = 0;
@@ -135,8 +150,8 @@ export async function loadAtlasThemesReport(platform: any): Promise<AtlasThemesR
 			pop: Number(qidInfo?.pop) || 0,
 			themes: themePresence,
 			presentCount,
-			missingCount: 5 - presentCount,
-			isComplete: presentCount === 5
+			missingCount: ATLAS_THEMES.length - presentCount,
+			isComplete: presentCount === ATLAS_THEMES.length
 		});
 	}
 
