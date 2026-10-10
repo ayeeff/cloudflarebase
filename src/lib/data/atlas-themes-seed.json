@@ -1,0 +1,4909 @@
+{
+  "generatedAt": "2026-10-10T12:17:14.627Z",
+  "totalCities": 612,
+  "themes": [
+    "metro",
+    "worship",
+    "schools",
+    "property",
+    "universities"
+  ],
+  "cities": [
+    {
+      "slug": "abidjan",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "abu dhabi",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "abudhabi",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "abuja",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "accra",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "adana",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "addis ababa",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "addisababa",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "adelaide",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ahmedabad",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "albuquerque",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "alexandria",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "algiers",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "amman",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "amsterdam",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "anaheim",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "anchorage",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "andorra",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "andorra la vella",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "ankara",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "antananarivo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "anyang",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "apia",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "arlington",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ashburn",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ashdod",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ashgabat",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ashkelon",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "asmara",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "astana",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "asuncion",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "asunción",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "athens",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "atlanta",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "auckland",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "aurora",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "austin",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "az zour",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "azzour",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "baghdad",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "baguio",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bakersfield",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "baku",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "baltimore",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bamako",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bandar seri begawan",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "bandarseribegawan",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "bangalore",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "bangkok",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bangui",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "banjul",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "barcelona",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "barka",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "basseterre",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "beijing",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "beirut",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "belgrade",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bellevue",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "belmopan",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "belo horizonte",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "belohorizonte",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "bengaluru",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "berlin",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bern",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "binningup",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "birlehlou",
+      "metro": false,
+      "worship": false,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "birmingham",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bishkek",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bissau",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bloemfontein",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bogota",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "bogotá",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "bordeaux",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "boston",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "boumerdes",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "brampton",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "brasilia",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "brasília",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "bratislava",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "brazzaville",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bridgetown",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "brisbane",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bristol",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "brussels",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bucharest",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "budapest",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "buenos aires",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "buenosaires",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "buffalo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bujumbura",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "burbank",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "bursa",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "cairo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "calgary",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "canberra",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "cape town",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "capetown",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "caracas",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "cardiff",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "carlsbad",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "cary",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "casablanca",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "castries",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "cebu city",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "cebucity",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "changsha",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "charlotte",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "chengdu",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "chennai",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "chicago",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "chisinau",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "chișinău",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "chlef",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "chongqing",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "cincinnati",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "cleveland",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "cologne",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "colombo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "colorado springs",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "coloradosprings",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "columbus",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "conakry",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "copenhagen",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "corpus christi",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "corpuschristi",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "cotonou",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "council bluffs",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "councilbluffs",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "crete",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "curitiba",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dakar",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dalian",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dallas",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dalyston",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "damascus",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dammam",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dar es salaam",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "daressalaam",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "dc",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": false,
+      "universities": false
+    },
+    {
+      "slug": "dearborn",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "delhi",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "denver",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "des moines",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "desmoines",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "detroit",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dhaka",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dili",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "djibouti",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dodoma",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "doha",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dongguan",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dubai",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dublin",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "durham",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "dushanbe",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "edinburgh",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "edmonton",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "el paso",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "el tarf",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "elpaso",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "eltarf",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "espoo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "florence",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "fort lauderdale",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "fort wayne",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "fort worth",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "fortlauderdale",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "fortwayne",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "fortworth",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "foshan",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "frankfurt",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "freetown",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "fresno",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "fujairah",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "fukuoka",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "funafuti",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "fuzhou",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "gaborone",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "gaziantep",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "geneva",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "georgetown",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ghent",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "gilbert",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "glasgow",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "goiania",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "goinia",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "gold coast",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "goldcoast",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "grand rapids",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "grandrapids",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "greensboro",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "grozny",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "guadalajara",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "guangzhou",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "guatemala",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "guatemala city",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "gui'an",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "guian",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "guildford",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "hadera",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "halifax",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "hamburg",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "hamina",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "hangzhou",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "hanoi",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "harare",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "harbin",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "hargeisa",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "hargeysa",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "havana",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "hcmc",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": false,
+      "universities": false
+    },
+    {
+      "slug": "hefei",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "helsinki",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "henderson",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "hillsboro",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ho chi minh city",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "hochiminh",
+      "metro": true,
+      "worship": false,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "hohhot",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "hong kong",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "hongkong",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "honiara",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "honolulu",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "horsham",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "houston",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "huizhou",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "hyderabad",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "indianapolis",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "irving",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "isfahan",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "islamabad",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "istanbul",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "jacksonville",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "jakarta",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "jeddah",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "jeju",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "jerusalem",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "jiangyin",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "johannesburg",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "johor bahru",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "johorbahru",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "juba",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "jubail",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kabul",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kairouan",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kampala",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kansas city",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "kansascity",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "kaohsiung",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "karachi",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kashgar",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kathmandu",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "khartoum",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "khobar",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kigali",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kingston",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kingstown",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kinshasa",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kitchener",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kolkata",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "krakow",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kuala lumpur",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "kualalumpur",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "kuwait",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "kuwait city",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "kyiv",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "kyoto",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "la",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": false,
+      "universities": false
+    },
+    {
+      "slug": "la paz",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "laayoune",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "lagos",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "lahore",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "lapaz",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "las vegas",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "lasvegas",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "laâyoune",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "leamington spa",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "leamingtonspa",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "leeds",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "lexington",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "libreville",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "lilongwe",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "lima",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "lincoln",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "lisbon",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "liverpool",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ljubljana",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "lobamba",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "lome",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "lomé",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "london",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "long beach",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "longbeach",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "los angeles",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "losangeles",
+      "metro": true,
+      "worship": false,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "louisville",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "luanda",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "lusaka",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "luxembourg",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "lyon",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "madison",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "madrid",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "majuro",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "malabo",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "male",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "malé",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "managua",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "manama",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "manchester",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "manila",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "maputo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "marrakech",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "marseille",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "maseru",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "mashhad",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "mbabane",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "mecca",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "medina",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "melbourne",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "melekeok",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "memphis",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "merida",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "mesa",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "mexico city",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "mexicocity",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "miami",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "midrand",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "milan",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "milwaukee",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "minneapolis",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "minsk",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "mississauga",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "mogadishu",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "monaco",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "monrovia",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "monterrey",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "montevideo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "montreal",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "moroni",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "moscow",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "mostaganem",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "mount pleasant",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "mountpleasant",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "mrida",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "mumbai",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "munich",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "murcia",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "muscat",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "mykonos",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "n'djamena",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "nagoya",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "nairobi",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "nanjing",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "naples",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "narvik",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "nashville",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "nassau",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "naypyidaw",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ndjamena",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "new albany",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "new orleans",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "new taipei",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "new york",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "newalbany",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "newark",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "newcastle",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "newcastleupontyne",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "neworleans",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "newtaipeicity",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "newyork",
+      "metro": true,
+      "worship": false,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "ngerulmud",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": false
+    },
+    {
+      "slug": "niamey",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "nicosia",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ningbo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ningde",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "norfolk",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "nottingham",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "nouakchott",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "nukualofa",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "nukuʻalofa",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "ny",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": false,
+      "universities": false
+    },
+    {
+      "slug": "oakland",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "odessa",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "okinawa",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "oklahoma city",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "oklahomacity",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "omaha",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "oran",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "orange",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "orange county",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "orlando",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "osaka",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "oslo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ottawa",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ouagadougou",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "palikir",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "palmachim",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "panama city",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "panamacity",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "paramaribo",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "paris",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "pedro abad",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "pedroabad",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "perth",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "petaling jaya",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "petalingjaya",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "philadelphia",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "phnom penh",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "phnompenh",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "phoenix",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "pittsburgh",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "plano",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "plymouth",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "podgorica",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "port louis",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "port moresby",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "port of spain",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "port vila",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "port-au-prince",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "portauprince",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "portland",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "portlouis",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "portmoresby",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "porto-novo",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "portofspain",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "portonovo",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "portvila",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "prague",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "praia",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "pretoria",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "pristina",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "puebla",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "pune",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "putrajaya",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "pyongyang",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "qingdao",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "qubec",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "quebec city",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "queretaro",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "quezon city",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "quezoncity",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "quito",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "rabat",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "rabigh",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "raleigh",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ras al khair",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "ras laffan",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "rasalkhair",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "raslaffan",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "reykjavik",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "reykjavík",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "richmond",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "riga",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "rio de janeiro",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "riodejaneiro",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "riverside",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "riyadh",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "rochester",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "rockville",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "rome",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "roseau",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "sacramento",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "saint petersburg",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "saint-ghislain",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "saintgeorges",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "saintghislain",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "saintjohns",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "saintpaul",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "saintpetersburg",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "salt lake city",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "saltlakecity",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "samarkand",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "san antonio",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "san bernardino",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "san diego",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "san francisco",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "san josé",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "san juan",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "san marino",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "san salvador",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "sana'a",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "sanaa",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "sanantonio",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "sanbernardino",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "sandiego",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "sanfrancisco",
+      "metro": true,
+      "worship": false,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "sanjose",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "sanjuan",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "sanmarino",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "sansalvador",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "santa ana",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "santa monica",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "santaana",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "santamonica",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "santiago",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "santo domingo",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "santodomingo",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "saopaulo",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "saotome",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "sapporo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "sarajevo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "seattle",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "semarang",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "seoul",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "sf",
+      "metro": false,
+      "worship": true,
+      "schools": false,
+      "property": false,
+      "universities": false
+    },
+    {
+      "slug": "shah alam",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "shahalam",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "shanghai",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "sharjah",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "shenyang",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "shenzhen",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "sherman oaks",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "shermanoaks",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "shymkent",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "singapore",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "skopje",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "sliema",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "sofia",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "sohar",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "sri jayawardenepura kotte",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "srijayawardenepurakotte",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "st. george's",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "st. john's",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "st. louis",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "st. paul",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "stlouis",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "stockholm",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "stockton",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "subiya",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "sucre",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "surabaya",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "surat",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "surrey",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "suva",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "suzhou",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "sydney",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "syracuse",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "são paulo",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "são tomé",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "tacoma",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "taichung",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "taipei",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tallinn",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tampa",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "taoyuan",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tarawa",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tashkent",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tbilisi",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tegucigalpa",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tehran",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tel aviv",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "telaviv",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "the hague",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "thehague",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "thessaloniki",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "thimphu",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tianjin",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tijuana",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tipaza",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tirana",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tlemcen",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tokyo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "toledo",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "toronto",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tripoli",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tucson",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tulsa",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "tunis",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "twycross",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ulaanbaatar",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "umm al quwain",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "ummalquwain",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "urumqi",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "vaduz",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "valletta",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "valparaiso",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "valparaíso",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "vancouver",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "vatican city",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "vaticancity",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "vaughan",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "venice",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "victoria",
+      "metro": false,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "vienna",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "vientiane",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "vilnius",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "virginia beach",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "virginiabeach",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "warsaw",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "washington dc",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "washingtondc",
+      "metro": true,
+      "worship": false,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "wellington",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "wichita",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "windhoek",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "windsor",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "winnipeg",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "wroclaw",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "wuhan",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "wuxi",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "xi'an",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "xian",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "xianning",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "yamoussoukro",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "yangon",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "yaounde",
+      "metro": true,
+      "worship": true,
+      "schools": false,
+      "property": true,
+      "universities": false
+    },
+    {
+      "slug": "yaoundé",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    },
+    {
+      "slug": "yerevan",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "zagreb",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "zapopan",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "zhaoqing",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "zhengzhou",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "zurich",
+      "metro": true,
+      "worship": true,
+      "schools": true,
+      "property": true,
+      "universities": true
+    },
+    {
+      "slug": "ürümqi",
+      "metro": false,
+      "worship": false,
+      "schools": true,
+      "property": false,
+      "universities": true
+    }
+  ]
+}
