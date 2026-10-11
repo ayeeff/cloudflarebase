@@ -3658,27 +3658,6 @@
     "pop": 267918,
     "qid": "Q43382"
   },
-  "acailandia": {
-    "municipality": "Açailândia",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 113783,
-    "qid": "Q1763534"
-  },
-  "acu": {
-    "municipality": "Açu",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 59099,
-    "qid": "Q1788873"
-  },
-  "abadiania": {
-    "municipality": "Abadiânia",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 20873,
-    "qid": "Q304716"
-  },
   "abruzzo": {
     "municipality": "Abruzzo",
     "country": "Italy",
@@ -3780,10 +3759,12 @@
     "pop": 940,
     "qid": "Q367038"
   },
-  "alto-alegre-do-maranh-o": {
-    "qid": "Q373783",
+  "alto-alegre-do-maranhao": {
     "municipality": "Alto Alegre do Maranhão",
-    "pop": 28066
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 24048,
+    "qid": "Q613854"
   },
   "alto-alegre-do-pindar": {
     "qid": "Q2028638",
@@ -4126,10 +4107,12 @@
     "pop": 35505,
     "qid": "Q256700"
   },
-  "bigua-u": {
-    "qid": "Q1754582",
+  "biguacu": {
     "municipality": "Biguaçu",
-    "pop": 83756
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 69486,
+    "qid": "Q134373"
   },
   "binghamton": {
     "municipality": "Binghamton",
@@ -4138,10 +4121,12 @@
     "pop": 47969,
     "qid": "Q213814"
   },
-  "bl-nod-l-s-pont-mousson": {
-    "qid": "Q227728",
+  "blenod-les-pont-a-mousson": {
     "municipality": "Blénod-lès-Pont-à-Mousson",
-    "pop": 4899
+    "country": "France",
+    "continent": "Europe",
+    "pop": 4500,
+    "qid": "Q1018447"
   },
   "blagnac": {
     "municipality": "Blagnac",
@@ -4280,10 +4265,12 @@
     "pop": 186948,
     "qid": "Q224175"
   },
-  "c-cuta": {
-    "qid": "Q216847",
+  "cucuta": {
     "municipality": "Cúcuta",
-    "pop": 806378
+    "country": "Colombia",
+    "continent": "South America",
+    "pop": 777106,
+    "qid": "Q267487"
   },
   "caapor": {
     "qid": "Q1816118",
@@ -4365,10 +4352,12 @@
     "pop": 86825,
     "qid": "Q399799"
   },
-  "capit-o-po-o": {
-    "qid": "Q955914",
+  "capitao-poco": {
     "municipality": "Capitão Poço",
-    "pop": 60318
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 56506,
+    "qid": "Q885413"
   },
   "cariacica": {
     "municipality": "Cariacica",
@@ -4596,15 +4585,19 @@
     "pop": 142416,
     "qid": "Q766625"
   },
-  "concei-o-do-araguaia": {
-    "qid": "Q1788037",
+  "conceicao-do-araguaia": {
     "municipality": "Conceição do Araguaia",
-    "pop": 111332
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 47991,
+    "qid": "Q931655"
   },
-  "concei-o-do-coit": {
-    "qid": "Q1772525",
+  "conceicao-do-coite": {
     "municipality": "Conceição do Coité",
-    "pop": 71601
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 67825,
+    "qid": "Q497391"
   },
   "concord": {
     "municipality": "Concord",
@@ -5120,15 +5113,17 @@
     "pop": 88243,
     "qid": "Q179406"
   },
-  "gro-r-hrsdorf": {
+  "grossroehrsdorf": {
     "qid": "Q81736",
     "municipality": "Großröhrsdorf",
     "pop": 9708
   },
-  "gua-doce-do-maranh-o": {
-    "qid": "Q2013406",
+  "agua-doce-do-maranhao": {
     "municipality": "Água Doce do Maranhão",
-    "pop": 12731
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 12600,
+    "qid": "Q1807185"
   },
   "guajar-mirim": {
     "qid": "Q983810",
@@ -5755,10 +5750,12 @@
     "pop": 581382,
     "qid": "Q192387"
   },
-  "longeville-l-s-saint-avold": {
-    "qid": "Q21963",
+  "longeville-les-saint-avold": {
     "municipality": "Longeville-lès-Saint-Avold",
-    "pop": 3784
+    "country": "France",
+    "continent": "Europe",
+    "pop": 3700,
+    "qid": "Q1018451"
   },
   "longmont": {
     "municipality": "Longmont",
@@ -5781,9 +5778,12 @@
     "pop": 38028,
     "qid": "Q953876"
   },
-  "lu-s-eduardo-magalh-es": {
-    "qid": "Q138312911",
-    "municipality": "Luís Eduardo Magalhães"
+  "luis-eduardo-magalhaes": {
+    "municipality": "Luis Eduardo Magalhães",
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 107909,
+    "qid": "Q551589"
   },
   "lubbock": {
     "municipality": "Lubbock",
@@ -5806,15 +5806,19 @@
     "pop": 3801,
     "qid": "Q261414"
   },
-  "m-laga": {
-    "qid": "Q8851",
+  "malaga": {
     "municipality": "Málaga",
-    "pop": 603144
+    "country": "Spain",
+    "continent": "Europe",
+    "pop": 592346,
+    "qid": "Q780707"
   },
-  "m-xico": {
-    "qid": "Q96",
-    "municipality": "México",
-    "pop": 132274416
+  "mexico": {
+    "municipality": "Mexico",
+    "country": "Philippines",
+    "continent": "Asia",
+    "pop": 43694,
+    "qid": "Q889751"
   },
   "maca": {
     "qid": "Q473250",
@@ -5879,10 +5883,12 @@
     "pop": 465902,
     "qid": "Q9085"
   },
-  "manhua-u": {
-    "qid": "Q935191",
+  "manhuacu": {
     "municipality": "Manhuaçu",
-    "pop": 97328
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 91886,
+    "qid": "Q610372"
   },
   "manilva": {
     "municipality": "Manilva",
@@ -5990,10 +5996,12 @@
     "pop": 162898,
     "qid": "Q286361"
   },
-  "medell-n": {
-    "qid": "Q48278",
+  "medellin": {
     "municipality": "Medellín",
-    "pop": 2529403
+    "country": "Colombia",
+    "continent": "South America",
+    "pop": 1999979,
+    "qid": "Q566519"
   },
   "medford": {
     "municipality": "Medford",
@@ -6002,9 +6010,12 @@
     "pop": 79805,
     "qid": "Q241552"
   },
-  "medve-a": {
-    "qid": "Q846082",
-    "municipality": "Medveđa"
+  "medveda": {
+    "municipality": "Medveđa",
+    "country": "Serbia",
+    "continent": "Europe",
+    "pop": 7400,
+    "qid": "Q1018453"
   },
   "meg-ve": {
     "qid": "Q259283",
@@ -6039,10 +6050,12 @@
     "pop": 144788,
     "qid": "Q3315767"
   },
-  "michoac-n-de-ocampo": {
-    "qid": "Q79861",
-    "municipality": "Michoacán de Ocampo",
-    "pop": 4584471
+  "michoacan-de-ocampo": {
+    "municipality": "Michoacán",
+    "country": "Mexico",
+    "continent": "North America",
+    "pop": 4748846,
+    "qid": "Q79861"
   },
   "middletown": {
     "municipality": "Middletown",
@@ -6652,7 +6665,7 @@
     "pop": 2610,
     "qid": "Q700407"
   },
-  "pi-n": {
+  "pinon": {
     "qid": "Q1803835",
     "municipality": "Piên",
     "pop": 14409
@@ -6678,10 +6691,12 @@
     "pop": 8072,
     "qid": "Q570287"
   },
-  "po-o-das-trincheiras": {
-    "qid": "Q1795960",
+  "poco-das-trincheiras": {
     "municipality": "Poço das Trincheiras",
-    "pop": 14575
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 14500,
+    "qid": "Q352378"
   },
   "poitiers": {
     "municipality": "Poitiers",
@@ -6697,10 +6712,12 @@
     "pop": 40401,
     "qid": "Q1794165"
   },
-  "pola-a": {
-    "qid": "Q1277273",
-    "municipality": "Polača",
-    "pop": 1389
+  "polaca": {
+    "municipality": "Polaca",
+    "country": "Serbia",
+    "continent": "Europe",
+    "pop": 1100,
+    "qid": "Q909246"
   },
   "polanka-nad-odrou": {
     "municipality": "Polanka nad Odrou",
@@ -6744,10 +6761,12 @@
     "pop": 229,
     "qid": "Q126522089"
   },
-  "popay-n": {
-    "qid": "Q335135",
+  "popayan": {
     "municipality": "Popayán",
-    "pop": 300837
+    "country": "Colombia",
+    "continent": "South America",
+    "pop": 318059,
+    "qid": "Q395853"
   },
   "pornic": {
     "municipality": "Pornic",
@@ -6918,10 +6937,12 @@
     "pop": 264165,
     "qid": "Q49225"
   },
-  "reoc-n": {
-    "qid": "Q1623013",
+  "reocin": {
     "municipality": "Reocín",
-    "pop": 8455
+    "country": "Spain",
+    "continent": "Europe",
+    "pop": 8300,
+    "qid": "Q1018455"
   },
   "reseda": {
     "municipality": "Marion",
@@ -7033,10 +7054,12 @@
     "pop": 17397,
     "qid": "Q727297"
   },
-  "ropczycko-s-dziszowski": {
-    "qid": "Q1335538",
-    "municipality": "ropczycko-sędziszowski",
-    "pop": 74515
+  "ropczycko-sedziszowski": {
+    "municipality": "Ropczyce",
+    "country": "Poland",
+    "continent": "Europe",
+    "pop": 15800,
+    "qid": "Q983713"
   },
   "ros-rio-do-sul": {
     "qid": "Q266960",
@@ -7064,10 +7087,12 @@
     "pop": 79550,
     "qid": "Q1806654"
   },
-  "rzesz-w": {
-    "qid": "Q598",
+  "rzeszow": {
     "municipality": "Rzeszów",
-    "pop": 195871
+    "country": "Poland",
+    "continent": "Europe",
+    "pop": 198317,
+    "qid": "Q393614"
   },
   "s-hertogenbosch": {
     "municipality": "'s-Hertogenbosch",
@@ -7076,54 +7101,73 @@
     "pop": 158753,
     "qid": "Q2766547"
   },
-  "s-o-bento": {
-    "qid": "Q298459",
-    "municipality": "São Bento"
+  "sao-bento": {
+    "municipality": "São Bento",
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 45604,
+    "qid": "Q998959"
   },
-  "s-o-carlos": {
-    "qid": "Q194338",
+  "sao-carlos": {
     "municipality": "São Carlos",
-    "pop": 266427
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 266427,
+    "qid": "Q884983"
   },
-  "s-o-domingos-do-capim": {
-    "qid": "Q955985",
+  "sao-domingos-do-capim": {
     "municipality": "São Domingos do Capim",
-    "pop": 63548
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 32139,
+    "qid": "Q906390"
   },
-  "s-o-gon-alo-dos-campos": {
-    "qid": "Q1793783",
+  "sao-goncalo-dos-campos": {
     "municipality": "São Gonçalo dos Campos",
-    "pop": 42171
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 39513,
+    "qid": "Q415585"
   },
-  "s-o-jo-o-da-barra": {
-    "qid": "Q923201",
+  "sao-joao-da-barra": {
     "municipality": "São João da Barra",
-    "pop": 59561
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 38708,
+    "qid": "Q172689"
   },
-  "s-o-louren-o-do-sul": {
-    "qid": "Q326349",
+  "sao-lourenco-do-sul": {
     "municipality": "São Lourenço do Sul",
-    "pop": 44580
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 43540,
+    "qid": "Q709134"
   },
-  "s-o-luiz-gonzaga": {
-    "qid": "Q647406",
+  "sao-luiz-gonzaga": {
     "municipality": "São Luiz Gonzaga",
-    "pop": 47533
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 33293,
+    "qid": "Q575469"
   },
-  "s-o-miguel-do-igua-u": {
+  "s-o-miguel-do-iguacu": {
     "qid": "Q1773060",
     "municipality": "São Miguel do Iguaçu",
     "pop": 34241
   },
-  "s-o-roque-do-cana": {
-    "qid": "Q1806620",
+  "sao-roque-do-canaa": {
     "municipality": "São Roque do Canaã",
-    "pop": 12602
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 12500,
+    "qid": "Q129834"
   },
-  "s-o-sebasti-o-da-boa-vista": {
-    "qid": "Q1868533",
+  "sao-sebastiao-da-boa-vista": {
     "municipality": "São Sebastião da Boa Vista",
-    "pop": 27651
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 26974,
+    "qid": "Q434886"
   },
   "saarbr-cken": {
     "qid": "Q1724",
@@ -7175,10 +7219,12 @@
     "pop": 5208,
     "qid": "Q141613"
   },
-  "saint-s-bastien-sur-loire": {
-    "qid": "Q337636",
+  "saint-sebastien-sur-loire": {
     "municipality": "Saint-Sébastien-sur-Loire",
-    "pop": 28596
+    "country": "France",
+    "continent": "Europe",
+    "pop": 29238,
+    "qid": "Q294450"
   },
   "saint-vallier": {
     "municipality": "Saint-Vallier",
@@ -7244,11 +7290,14 @@
     "pop": 92931,
     "qid": "Q227943"
   },
-  "santa-b-rbara": {
-    "qid": "Q956878",
-    "municipality": "Santa Bàrbara"
+  "santa-barbara": {
+    "municipality": "Santa Barbara",
+    "country": "USA",
+    "continent": "North America",
+    "pop": 91842,
+    "qid": "Q443479"
   },
-  "santa-b-rbara-d-oeste": {
+  "santa-barbara-d-oeste": {
     "qid": "Q983747",
     "municipality": "Santa Bárbara d'Oeste",
     "pop": 195278
@@ -7460,10 +7509,12 @@
     "pop": 216518,
     "qid": "Q25804"
   },
-  "tubar-o": {
-    "qid": "Q1815730",
+  "tubarao": {
     "municipality": "Tubarão",
-    "pop": 116725
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 116725,
+    "qid": "Q395666"
   },
   "tunja": {
     "municipality": "Tunja",
@@ -7486,10 +7537,12 @@
     "pop": 103700,
     "qid": "Q1299153"
   },
-  "tyrn-v": {
-    "qid": "Q992898",
+  "tyrnava": {
     "municipality": "Tyrnävä",
-    "pop": 6793
+    "country": "Finland",
+    "continent": "Europe",
+    "pop": 6500,
+    "qid": "Q998064"
   },
   "ubajara": {
     "municipality": "Ubajara",
@@ -7524,10 +7577,12 @@
     "pop": 35000,
     "qid": "Q349206"
   },
-  "urua-u": {
-    "qid": "Q22067078",
+  "uruacu": {
     "municipality": "Uruaçu",
-    "pop": 44533
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 40840,
+    "qid": "Q634686"
   },
   "uruar": {
     "qid": "Q2009083",
@@ -7541,9 +7596,12 @@
     "pop": 35164,
     "qid": "Q2021056"
   },
-  "v-ksy": {
-    "qid": "Q2233799",
-    "municipality": "Vääksy"
+  "vaaksy": {
+    "municipality": "Vääksy",
+    "country": "Finland",
+    "continent": "Europe",
+    "pop": 5000,
+    "qid": "Q3132646"
   },
   "vacqui-res": {
     "qid": "Q196452",
@@ -7554,9 +7612,12 @@
     "qid": "Q2426231",
     "municipality": "Vale do Paraíso"
   },
-  "valen-a": {
-    "qid": "Q228984",
-    "municipality": "Valença"
+  "valenca": {
+    "municipality": "Valença",
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 97873,
+    "qid": "Q970201"
   },
   "vargem-alegre": {
     "municipality": "Vargem Alegre",
@@ -7905,7 +7966,7 @@
     "pop": 106037,
     "qid": "Q692459"
   },
-  "svo-e": {
+  "svojse": {
     "qid": "Q2053162",
     "municipality": "Svođe"
   },
@@ -8044,7 +8105,7 @@
     "pop": 1922,
     "qid": "Q917185"
   },
-  "trentino-alto-adige-s-dtirol": {
+  "trentino-alto-adige-suedtirol": {
     "qid": "Q1237",
     "municipality": "Trentino-Alto Adige/Südtirol",
     "pop": 1072276
@@ -8055,13 +8116,6 @@
     "continent": "South America",
     "pop": 63104,
     "qid": "Q352444"
-  },
-  "agua-doce-do-maranhao": {
-    "municipality": "Água Doce do Maranhão",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 12600,
-    "qid": "Q1807185"
   },
   "aguas-de-lindoia": {
     "municipality": "Águas de Lindóia",
@@ -8083,13 +8137,6 @@
     "continent": "Asia",
     "pop": 35000,
     "qid": "Q147576"
-  },
-  "alto-alegre-do-maranhao": {
-    "municipality": "Alto Alegre do Maranhão",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 24048,
-    "qid": "Q613854"
   },
   "alto-alegre-do-pindare": {
     "municipality": "Alto Alegre do Pindaré",
@@ -8168,20 +8215,6 @@
     "pop": 3755251,
     "qid": "Q64"
   },
-  "biguacu": {
-    "municipality": "Biguaçu",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 69486,
-    "qid": "Q134373"
-  },
-  "blenod-les-pont-a-mousson": {
-    "municipality": "Blénod-lès-Pont-à-Mousson",
-    "country": "France",
-    "continent": "Europe",
-    "pop": 4500,
-    "qid": "Q1018447"
-  },
   "bogot": {
     "municipality": "Bogotá",
     "country": "Colombia",
@@ -8224,13 +8257,6 @@
     "pop": 792189,
     "qid": "Q654603"
   },
-  "capitao-poco": {
-    "municipality": "Capitão Poço",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 56506,
-    "qid": "Q885413"
-  },
   "chiinu": {
     "municipality": "Chișinău",
     "country": "Moldova",
@@ -8252,33 +8278,12 @@
     "pop": 114275,
     "qid": "Q816913"
   },
-  "conceicao-do-araguaia": {
-    "municipality": "Conceição do Araguaia",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 47991,
-    "qid": "Q931655"
-  },
-  "conceicao-do-coite": {
-    "municipality": "Conceição do Coité",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 67825,
-    "qid": "Q497391"
-  },
   "cuauhtemoc": {
     "municipality": "Cuauhtémoc",
     "country": "Mexico",
     "continent": "North America",
     "pop": 531831,
     "qid": "Q335917"
-  },
-  "cucuta": {
-    "municipality": "Cúcuta",
-    "country": "Colombia",
-    "continent": "South America",
-    "pop": 777106,
-    "qid": "Q267487"
   },
   "cuiaba": {
     "municipality": "Cuiabá",
@@ -8322,6 +8327,13 @@
     "pop": 191468,
     "qid": "Q14440"
   },
+  "del-biobio": {
+    "municipality": "Concepción",
+    "country": "Chile",
+    "continent": "South America",
+    "pop": 220000,
+    "qid": "Q1880"
+  },
   "del-maule": {
     "municipality": "Talca",
     "country": "Chile",
@@ -8356,6 +8368,13 @@
     "continent": "South America",
     "pop": 74170,
     "qid": "Q931971"
+  },
+  "filadelfia": {
+    "municipality": "Filadélfia",
+    "country": "Brazil",
+    "continent": "South America",
+    "pop": 35000,
+    "qid": "Q863976"
   },
   "fuente-alamo": {
     "municipality": "Fuente Álamo",
@@ -8476,12 +8495,26 @@
     "pop": 65408,
     "qid": "Q574651"
   },
+  "jindrichuv-hradec-ii": {
+    "municipality": "Jindřichův Hradec II",
+    "country": "Czech Republic",
+    "continent": "Europe",
+    "pop": 35000,
+    "qid": "Q508911"
+  },
   "jp-cand": {
     "municipality": "邑楽郡板倉町",
     "country": "Japan",
     "continent": "Asia",
     "pop": 35000,
     "qid": "Q694523"
+  },
+  "kasam": {
+    "municipality": "Käsämä",
+    "country": "Finland",
+    "continent": "Europe",
+    "pop": 35000,
+    "qid": "Q520772"
   },
   "karper": {
     "municipality": "Karperö",
@@ -8504,6 +8537,13 @@
     "pop": 2962180,
     "qid": "Q1899"
   },
+  "kosicke": {
+    "municipality": "Košický",
+    "country": "Slovakia",
+    "continent": "Europe",
+    "pop": 35000,
+    "qid": "Q483679"
+  },
   "koscianski": {
     "municipality": "Kościan",
     "country": "Poland",
@@ -8525,12 +8565,26 @@
     "pop": 11000,
     "qid": "Q1018449"
   },
+  "la-font-den-carros": {
+    "municipality": "la Font d'en Carròs",
+    "country": "Spain",
+    "continent": "Europe",
+    "pop": 35000,
+    "qid": "Q941317"
+  },
   "lacarak": {
     "municipality": "Laćarak",
     "country": "Serbia",
     "continent": "Europe",
     "pop": 10500,
     "qid": "Q1018450"
+  },
+  "lelik": {
+    "municipality": "Lelių k.",
+    "country": "Lithuania",
+    "continent": "Europe",
+    "pop": 35000,
+    "qid": "Q847773"
   },
   "leppavirta": {
     "municipality": "Leppävirta",
@@ -8560,13 +8614,6 @@
     "pop": 18593,
     "qid": "Q370145"
   },
-  "longeville-les-saint-avold": {
-    "municipality": "Longeville-lès-Saint-Avold",
-    "country": "France",
-    "continent": "Europe",
-    "pop": 3700,
-    "qid": "Q1018451"
-  },
   "losangeles": {
     "municipality": "Los Angeles",
     "country": "USA",
@@ -8574,12 +8621,12 @@
     "pop": 3990456,
     "qid": "Q960981"
   },
-  "luis-eduardo-magalhaes": {
-    "municipality": "Luis Eduardo Magalhães",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 107909,
-    "qid": "Q551589"
+  "mayry": {
+    "municipality": "Mäyry",
+    "country": "Finland",
+    "continent": "Europe",
+    "pop": 35000,
+    "qid": "Q826541"
   },
   "macae": {
     "municipality": "Macaé",
@@ -8616,20 +8663,6 @@
     "pop": 35000,
     "qid": "Q734873"
   },
-  "malaga": {
-    "municipality": "Málaga",
-    "country": "Spain",
-    "continent": "Europe",
-    "pop": 592346,
-    "qid": "Q780707"
-  },
-  "manhuacu": {
-    "municipality": "Manhuaçu",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 91886,
-    "qid": "Q610372"
-  },
   "maraba": {
     "municipality": "Marabá",
     "country": "Brazil",
@@ -8651,40 +8684,12 @@
     "pop": 2900,
     "qid": "Q1018452"
   },
-  "medellin": {
-    "municipality": "Medellín",
-    "country": "Colombia",
-    "continent": "South America",
-    "pop": 1999979,
-    "qid": "Q566519"
-  },
-  "medveda": {
-    "municipality": "Medveđa",
-    "country": "Serbia",
-    "continent": "Europe",
-    "pop": 7400,
-    "qid": "Q1018453"
-  },
   "megeve": {
     "municipality": "Megève",
     "country": "France",
     "continent": "Europe",
     "pop": 3000,
     "qid": "Q1018454"
-  },
-  "mexico": {
-    "municipality": "Mexico",
-    "country": "Philippines",
-    "continent": "Asia",
-    "pop": 43694,
-    "qid": "Q889751"
-  },
-  "michoacan-de-ocampo": {
-    "municipality": "Michoacán",
-    "country": "Mexico",
-    "continent": "North America",
-    "pop": 4748846,
-    "qid": "Q79861"
   },
   "mojui-dos-campos": {
     "municipality": "Mojuí dos Campos",
@@ -8749,7 +8754,7 @@
     "pop": 35000,
     "qid": "Q104873"
   },
-  "noum-a": {
+  "noumea": {
     "municipality": "Nouméa",
     "country": "France",
     "continent": "Oceania",
@@ -8798,33 +8803,19 @@
     "pop": 13800,
     "qid": "Q493712"
   },
-  "poco-das-trincheiras": {
-    "municipality": "Poço das Trincheiras",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 14500,
-    "qid": "Q352378"
-  },
-  "polaca": {
-    "municipality": "Polaca",
-    "country": "Serbia",
-    "continent": "Europe",
-    "pop": 1100,
-    "qid": "Q909246"
-  },
-  "popayan": {
-    "municipality": "Popayán",
-    "country": "Colombia",
-    "continent": "South America",
-    "pop": 318059,
-    "qid": "Q395853"
-  },
   "presidente-epitacio": {
     "municipality": "Presidente Epitácio",
     "country": "Brazil",
     "continent": "South America",
     "pop": 39505,
     "qid": "Q713619"
+  },
+  "prien-am-chiemsee": {
+    "municipality": "Prienų m.",
+    "country": "Lithuania",
+    "continent": "Europe",
+    "pop": 35000,
+    "qid": "Q449089"
   },
   "pszczynski": {
     "municipality": "Pszczyna",
@@ -8847,13 +8838,6 @@
     "pop": 35000,
     "qid": "Q476039"
   },
-  "reocin": {
-    "municipality": "Reocín",
-    "country": "Spain",
-    "continent": "Europe",
-    "pop": 8300,
-    "qid": "Q1018455"
-  },
   "reykjavk": {
     "municipality": "Reykjavk",
     "country": "Iceland",
@@ -8861,26 +8845,12 @@
     "pop": 35000,
     "qid": "Q850538"
   },
-  "ropczycko-sedziszowski": {
-    "municipality": "Ropczyce",
-    "country": "Poland",
-    "continent": "Europe",
-    "pop": 15800,
-    "qid": "Q983713"
-  },
   "rosario-do-sul": {
     "municipality": "Rosário do Sul",
     "country": "Brazil",
     "continent": "South America",
     "pop": 39314,
     "qid": "Q426762"
-  },
-  "rzeszow": {
-    "municipality": "Rzeszów",
-    "country": "Poland",
-    "continent": "Europe",
-    "pop": 198317,
-    "qid": "Q393614"
   },
   "saarbrucken": {
     "municipality": "Saarbrücken",
@@ -8902,13 +8872,6 @@
     "continent": "North America",
     "pop": 3200,
     "qid": "Q1018456"
-  },
-  "saint-sebastien-sur-loire": {
-    "municipality": "Saint-Sébastien-sur-Loire",
-    "country": "France",
-    "continent": "Europe",
-    "pop": 29238,
-    "qid": "Q294450"
   },
   "salesopolis": {
     "municipality": "Salesópolis",
@@ -8945,13 +8908,6 @@
     "pop": 35000,
     "qid": "Q518213"
   },
-  "santa-barbara": {
-    "municipality": "Santa Barbara",
-    "country": "USA",
-    "continent": "North America",
-    "pop": 91842,
-    "qid": "Q443479"
-  },
   "santa-barbara-doeste": {
     "municipality": "Santa Bárbara d'Oeste",
     "country": "Brazil",
@@ -8973,75 +8929,12 @@
     "pop": 31918,
     "qid": "Q920921"
   },
-  "sao-bento": {
-    "municipality": "São Bento",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 45604,
-    "qid": "Q998959"
-  },
-  "sao-carlos": {
-    "municipality": "São Carlos",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 266427,
-    "qid": "Q884983"
-  },
-  "sao-domingos-do-capim": {
-    "municipality": "São Domingos do Capim",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 32139,
-    "qid": "Q906390"
-  },
-  "sao-goncalo-dos-campos": {
-    "municipality": "São Gonçalo dos Campos",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 39513,
-    "qid": "Q415585"
-  },
-  "sao-joao-da-barra": {
-    "municipality": "São João da Barra",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 38708,
-    "qid": "Q172689"
-  },
-  "sao-lourenco-do-sul": {
-    "municipality": "São Lourenço do Sul",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 43540,
-    "qid": "Q709134"
-  },
-  "sao-luiz-gonzaga": {
-    "municipality": "São Luiz Gonzaga",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 33293,
-    "qid": "Q575469"
-  },
   "sao-miguel-do-iguacu": {
     "municipality": "São Miguel do Iguaçu",
     "country": "Brazil",
     "continent": "South America",
     "pop": 27576,
     "qid": "Q689332"
-  },
-  "sao-roque-do-canaa": {
-    "municipality": "São Roque do Canaã",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 12500,
-    "qid": "Q129834"
-  },
-  "sao-sebastiao-da-boa-vista": {
-    "municipality": "São Sebastião da Boa Vista",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 26974,
-    "qid": "Q434886"
   },
   "sao-tome": {
     "municipality": "São Tomé",
@@ -9099,6 +8992,13 @@
     "pop": 10000,
     "qid": "Q1018457"
   },
+  "stare-holice": {
+    "municipality": "Staré Holice",
+    "country": "Czech Republic",
+    "continent": "Europe",
+    "pop": 35000,
+    "qid": "Q262459"
+  },
   "svode": {
     "municipality": "Svode",
     "country": "Serbia",
@@ -9155,6 +9055,13 @@
     "pop": 15000,
     "qid": "Q544383"
   },
+  "trenciansky": {
+    "municipality": "Trenčiansky",
+    "country": "Slovakia",
+    "continent": "Europe",
+    "pop": 35000,
+    "qid": "Q825626"
+  },
   "trentino-alto-adige-sudtirol": {
     "municipality": "Trento",
     "country": "Italy",
@@ -9169,26 +9076,12 @@
     "pop": 41915,
     "qid": "Q534197"
   },
-  "tubarao": {
-    "municipality": "Tubarão",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 116725,
-    "qid": "Q395666"
-  },
   "tw-cand": {
     "municipality": "安定區",
     "country": "Taiwan",
     "continent": "Asia",
     "pop": 35000,
     "qid": "Q718677"
-  },
-  "tyrnava": {
-    "municipality": "Tyrnävä",
-    "country": "Finland",
-    "continent": "Europe",
-    "pop": 6500,
-    "qid": "Q998064"
   },
   "uberlandia": {
     "municipality": "Uberlândia",
@@ -9197,26 +9090,12 @@
     "pop": 754954,
     "qid": "Q716356"
   },
-  "uruacu": {
-    "municipality": "Uruaçu",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 40840,
-    "qid": "Q634686"
-  },
   "uruara": {
     "municipality": "Uruará",
     "country": "Brazil",
     "continent": "South America",
     "pop": 43558,
     "qid": "Q780868"
-  },
-  "vaaksy": {
-    "municipality": "Vääksy",
-    "country": "Finland",
-    "continent": "Europe",
-    "pop": 5000,
-    "qid": "Q3132646"
   },
   "vacquieres": {
     "municipality": "Vacquières",
@@ -9232,13 +9111,6 @@
     "pop": 8000,
     "qid": "Q1772648"
   },
-  "valenca": {
-    "municipality": "Valença",
-    "country": "Brazil",
-    "continent": "South America",
-    "pop": 97873,
-    "qid": "Q970201"
-  },
   "valparaso": {
     "municipality": "Valparaso",
     "country": "Chile",
@@ -9252,6 +9124,13 @@
     "continent": "South America",
     "pop": 76430,
     "qid": "Q258295"
+  },
+  "vila-nova-de-famalicao": {
+    "municipality": "Vila Nova De Famalicão",
+    "country": "Portugal",
+    "continent": "Europe",
+    "pop": 35000,
+    "qid": "Q247240"
   },
   "vinica-breg": {
     "municipality": "Vinica Breg",
