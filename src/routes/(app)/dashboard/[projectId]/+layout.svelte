@@ -26,6 +26,7 @@
 		Camera,
 		Check,
 		ChevronDown,
+		Compass,
 		CopyCheck,
 		ChevronsUpDown,
 		Database,
