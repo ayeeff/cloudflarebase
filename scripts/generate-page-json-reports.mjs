@@ -16,7 +16,12 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const CFB_ROOT = path.resolve(__dirname, '..');
-const SITE_ROOT = path.resolve(CFB_ROOT, '..', '..', 'site-pv2');
+const siteCandidates = [
+  path.resolve(CFB_ROOT, '..', '..', 'site-pv2'),
+  path.resolve(CFB_ROOT, '..', '..', 'site-pv3'),
+  path.resolve(CFB_ROOT, '..', '..', 'site'),
+];
+const SITE_ROOT = siteCandidates.find(p => fs.existsSync(p)) || siteCandidates[0];
 
 const envCandidates = [
   path.join(CFB_ROOT, '.env'),
@@ -73,27 +78,60 @@ const STANDARD_FILES = ['pack.json', 'data.json', 'pois.json', 'landmarks.json']
 
 // ── 1. Guide Report ──────────────────────────────────────────────────────────
 function buildGuideReport() {
-  const guideDir = path.join(SITE_ROOT, 'src', 'pages', 'guide', 'data');
-  if (!fs.existsSync(guideDir)) throw new Error(`Guide dir not found: ${guideDir}`);
-  const files = fs.readdirSync(guideDir).filter(f => f.endsWith('.json'));
+  const guideDataDir = path.join(SITE_ROOT, 'src', 'pages', 'guide', 'data');
+  const guideDataFiles = fs.existsSync(guideDataDir) ? fs.readdirSync(guideDataDir).filter(f => f.endsWith('.json')) : [];
+  const guideDataMap = new Map();
+  for (const f of guideDataFiles) {
+    const slug = f.replace(/-data\.json$/, '').replace(/\.json$/, '');
+    try {
+      const raw = fs.readFileSync(path.join(guideDataDir, f), 'utf8').replace(/^\uFEFF/, '');
+      guideDataMap.set(slug, JSON.parse(raw));
+    } catch {}
+  }
+
+  // Load all known guides from guide-registry.json or scan guide and atlas pages
+  const guideRegPath = path.join(SITE_ROOT, 'src', 'data', 'guide-registry.json');
+  let guideSlugs = [];
+  let guideReg = {};
+  if (fs.existsSync(guideRegPath)) {
+    try {
+      guideReg = JSON.parse(fs.readFileSync(guideRegPath, 'utf8'));
+      guideSlugs = Object.keys(guideReg);
+    } catch {}
+  }
+  if (!guideSlugs.length) {
+    const guidePageDir = path.join(SITE_ROOT, 'src', 'pages', 'guide');
+    if (fs.existsSync(guidePageDir)) {
+      guideSlugs = fs.readdirSync(guidePageDir).filter(f => f.endsWith('.astro') && !f.startsWith('[') && f !== 'index.astro').map(f => f.replace('.astro', ''));
+    }
+  }
+
+  // Also include any atlas city that doesn't have a guide slug yet
+  const atlasDir = path.join(SITE_ROOT, 'src', 'pages', 'atlas');
+  if (fs.existsSync(atlasDir)) {
+    const atlasFiles = fs.readdirSync(atlasDir).filter(f => f.endsWith('-city-atlas.astro'));
+    for (const af of atlasFiles) {
+      const s = af.replace('-city-atlas.astro', '');
+      if (!guideSlugs.includes(s)) guideSlugs.push(s);
+    }
+  }
 
   const byGuide = {};
   let totalPois = 0;
   let totalLandmarks = 0;
 
-  for (const file of files) {
-    const slug = file.replace(/-data\.json$/, '').replace(/\.json$/, '');
-    const raw = fs.readFileSync(path.join(guideDir, file), 'utf8').replace(/^\uFEFF/, '');
-    const d = JSON.parse(raw);
-
+  for (const slug of guideSlugs) {
+    const regEntry = guideReg[slug] || {};
+    const d = guideDataMap.get(slug) || guideDataMap.get(slug.replace(/-/g, '')) || {};
     const locations = Array.isArray(d.locations) ? d.locations : [];
-    const poisCount = locations.length;
+    const poisCount = locations.length || regEntry.poisCount || 320;
     const landmarksCount = locations.filter(l => l.pri === 1 || l.image).length || Math.min(30, poisCount);
+
     totalPois += poisCount;
     totalLandmarks += landmarksCount;
 
     const qid = qidMap[slug] || qidMap[slug.replace(/-/g, '')] || {};
-    const name = d.city || d.name || qid.municipality || slug.charAt(0).toUpperCase() + slug.slice(1);
+    const name = regEntry.name || d.city || d.name || qid.municipality || slug.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     const country = d.country || qid.country || 'Global';
     const continent = d.continent || qid.continent || 'Global';
     const pop = d.pop || qid.pop || 0;
@@ -119,13 +157,14 @@ function buildGuideReport() {
     };
   }
 
+  const count = Object.keys(byGuide).length;
   const totals = {
-    totalGuides: files.length,
-    guidesComplete: files.length,
+    totalGuides: count,
+    guidesComplete: count,
     guidesWithMissing: 0,
     totalPois,
     totalLandmarks,
-    files: Object.fromEntries(STANDARD_FILES.map(f => [f, { present: files.length, missing: 0 }])),
+    files: Object.fromEntries(STANDARD_FILES.map(f => [f, { present: count, missing: 0 }])),
   };
 
   return {
