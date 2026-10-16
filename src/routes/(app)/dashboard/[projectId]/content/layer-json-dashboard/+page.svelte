@@ -64,7 +64,7 @@
 				<Badge variant="outline" class="font-mono text-xs">R2 globe/data/&lt;slug&gt;-2d/*.json</Badge>
 			</div>
 			<p class="text-muted-foreground mt-1 text-sm">
-				Real-time monitoring of all 8 extracted thematic layer JSON files across {report.totalCities} global cities in R2.
+				Real-time monitoring of all {layers.length} extracted thematic layer JSON files across {report.totalCities} global cities in R2.
 			</p>
 		</div>
 
@@ -98,7 +98,7 @@
 	{/if}
 
 	<!-- Layer Metric Cards -->
-	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8">
+	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-9">
 		{#each layers as l}
 			{@const stat = report.summary[l.id] || { present: 0, missing: 0 }}
 			{@const pct = Math.round((stat.present / (report.totalCities || 1)) * 100)}
@@ -156,11 +156,11 @@
 		<div class="flex items-center gap-3 text-sm flex-wrap">
 			<label class="flex items-center gap-2 text-muted-foreground cursor-pointer">
 				<input type="checkbox" bind:checked={onlyComplete} onchange={() => { if (onlyComplete) onlyMissing = false; }} />
-				Only Complete (8/8)
+				Only Complete ({layers.length}/{layers.length})
 			</label>
 			<label class="flex items-center gap-2 text-muted-foreground cursor-pointer">
 				<input type="checkbox" bind:checked={onlyMissing} onchange={() => { if (onlyMissing) onlyComplete = false; }} />
-				Has Missing (&lt;8)
+				Has Missing (&lt;{layers.length})
 			</label>
 			<div class="h-4 w-px bg-border"></div>
 			<div class="flex items-center gap-1.5 text-xs text-muted-foreground">

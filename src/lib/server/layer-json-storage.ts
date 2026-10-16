@@ -1,19 +1,27 @@
 // site/cloudflarebase/src/lib/server/layer-json-storage.ts
 //
-// Tracking presence of 8 extracted layer JSON datasets across R2 (globe/data/<slug>-2d/):
-// 1. bathymetry.json  (Bathymetry DEM depth points & underwater relief)
-// 2. kartaview.json   (Street View camera coverage polygon footprint)
-// 3. mapillary.json   (Street-level sequence traces and optical nodes)
-// 4. osmtransit.json  (OSM transit relation lines and routes)
-// 5. population.json  (Kontur 400m H3 population hexagon density)
-// 6. power.json       (Grid power lines & distribution substations)
-// 7. speed.json       (Ookla fixed & mobile internet speed performance)
-// 8. transit.json     (GTFS scheduled transit routes and station stops)
+// Tracking presence of 9 extracted layer JSON datasets across R2 (globe/data/<slug>-2d/):
+// 1. terrain.json     (Mountain relief, elevation contours, and peaks above 200m)
+// 2. bathymetry.json  (Bathymetry DEM depth points & underwater relief)
+// 3. kartaview.json   (Street View camera coverage polygon footprint)
+// 4. mapillary.json   (Street-level sequence traces and optical nodes)
+// 5. osmtransit.json  (OSM transit relation lines and routes)
+// 6. population.json  (Kontur 400m H3 population hexagon density)
+// 7. power.json       (Grid power lines & distribution substations)
+// 8. speed.json       (Ookla fixed & mobile internet speed performance)
+// 9. transit.json     (GTFS scheduled transit routes and station stops)
 
 import seedCities from '$lib/data/atlas-themes-seed.json';
 import cityQid from '$lib/data/city-qid.json';
 
 export const LAYER_JSON_FILES = [
+	{
+		id: 'terrain',
+		name: 'Terrain Relief',
+		file: 'terrain.json',
+		accent: '#64748b',
+		description: 'Mountain relief, elevation contours, and peaks above 200m'
+	},
 	{
 		id: 'bathymetry',
 		name: 'Bathymetry Relief',
@@ -136,6 +144,7 @@ export async function loadLayerJsonReport(platform: any): Promise<LayerJsonRepor
 
 		// By default check known layers or initialize
 		const layerPresence: Record<LayerJsonId, { present: boolean }> = {
+			terrain: false,
 			bathymetry: false,
 			population: false,
 			speed: false,
