@@ -888,6 +888,19 @@
 						Guide JSON Architecture
 					</a>
 					<a
+						href="/dashboard/geo-site/content/infobox-json-dashboard"
+						data-testid="nav-content-infobox-json-dashboard"
+						class={[
+							'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+							navActive('/dashboard/geo-site/content/infobox-json-dashboard')
+								? 'bg-primary/10 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+						]}
+					>
+						<Sparkles class="h-4 w-4" />
+						AI Infobox JSON
+					</a>
+					<a
 						href="/dashboard/geo-site/content/maps-json-dashboard"
 						data-testid="nav-content-maps-json-dashboard"
 						class={[
